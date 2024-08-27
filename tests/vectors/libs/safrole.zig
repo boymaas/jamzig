@@ -52,49 +52,37 @@ const Extrinsic = struct {
 };
 
 const KeySet = struct {
-    bandersnatch: []const u8,
-    ed25519: []const u8,
-    bls: []const u8,
-    metadata: []const u8,
+    bandersnatch: HexBytes,
+    ed25519: HexBytes,
+    bls: HexBytes,
+    metadata: HexBytes,
 };
 
 const GammaS = struct {
-    keys: []const u8,
+    keys: []HexBytes,
 };
 
-const PreState = struct {
-    // tau: u64,
-    // eta: []const u8,
-    // lambda: []KeySet,
-    // kappa: []KeySet,
-    // gamma_k: []KeySet,
-    // iota: []KeySet,
-    // gamma_a: []KeySet,
-    // gamma_s: GammaS,
-    // gamma_z: []const u8,
+const State = struct {
+    tau: u64,
+    eta: []HexBytes,
+    lambda: []KeySet,
+    kappa: []KeySet,
+    gamma_k: []KeySet,
+    iota: []KeySet,
+    gamma_a: []KeySet,
+    gamma_s: GammaS,
+    gamma_z: HexBytes,
 };
 
 const Output = struct {
-    // err: ?[]const u8,
-};
-
-const PostState = struct {
-    // tau: u64,
-    // eta: []const u8,
-    // lambda: []KeySet,
-    // kappa: []KeySet,
-    // gamma_k: []KeySet,
-    // iota: []KeySet,
-    // gamma_a: []KeySet,
-    // gamma_s: GammaS,
-    // gamma_z: []const u8,
+    err: ?[]u8,
 };
 
 pub const TestVector = struct {
     input: Input,
-    pre_state: PreState,
+    pre_state: State,
     output: Output,
-    post_state: PostState,
+    post_state: State,
 
     pub fn build_from(allocator: Allocator, file_path: []const u8) !json.Parsed(TestVector) {
         const file = try std.fs.cwd().openFile(file_path, .{});
