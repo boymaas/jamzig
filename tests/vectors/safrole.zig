@@ -10,6 +10,10 @@ pub fn main() !void {
     defer test_vector.deinit();
 
     // std.debug.print("Test vector: {}\n", .{test_vector.value.input.entropy});
-    std.debug.print("Test vector: {any}\n", .{test_vector.value.input.extrinsic[1]});
-    std.debug.print("Test vector: {}\n", .{test_vector.value});
+    // std.debug.print("Test vector: {any}\n", .{test_vector.value.input.extrinsic[1]});
+    // std.debug.print("Test vector: {}\n", .{test_vector.value});
+
+    // stringify the JSON string
+    const stdout = std.io.getStdOut().writer();
+    try std.json.stringify(test_vector.value, .{ .whitespace = .indent_2 }, stdout);
 }
