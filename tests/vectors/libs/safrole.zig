@@ -2,76 +2,55 @@ const std = @import("std");
 const json = std.json;
 const Allocator = std.mem.Allocator;
 
-const HexBytes = struct {
-    bytes: []u8,
+const types = @import("types.zig");
 
-    pub fn jsonParse(allocator: Allocator, scanner: *json.Scanner, _: json.ParseOptions) json.ParseError(@TypeOf(scanner.*))!HexBytes {
-        const token = try scanner.nextAlloc(allocator, .alloc_always);
-        std.debug.print("token: {}\n", .{token});
-        switch (token) {
-            .allocated_string => |string| {
-                // ensure the string starts with "0x"
-                if (string.len < 2 or string[0] != '0' or string[1] != 'x') {
-                    return error.UnexpectedToken;
-                }
-                const bytes = try HexBytes.hexStringToBytes(allocator, string[2..]);
-                return HexBytes{ .bytes = bytes };
-            },
-            else => {
-                return error.UnexpectedToken;
-            },
-        }
-    }
+const HexBytes = types.hex.HexBytes;
+const Ed25519Key = types.hex.HexBytesFixed(32);
+const BandersnatchKey = types.hex.HexBytesFixed(32);
+const OpaqueHash = types.hex.HexBytesFixed(32);
 
-    pub fn hexStringToBytes(allocator: Allocator, hex_str: []const u8) json.ParseError(json.Scanner)![]u8 {
-        const len = hex_str.len;
-        if (len % 2 != 0) return error.LengthMismatch; // Ensure even number of characters
+const TicketOrKey = union { tickets: []TicketBody, keys: []BandersnatchKey };
 
-        const byte_count = len / 2;
-        var result = try allocator.alloc(u8, byte_count);
-
-        var i: usize = 0;
-        while (i < byte_count) : (i += 1) {
-            const hex_pair = hex_str[i * 2 .. i * 2 + 2];
-            result[i] = try std.fmt.parseInt(u8, hex_pair, 16);
-        }
-
-        return result;
-    }
+const TicketBody = struct {
+    id: OpaqueHash,
+    attempt: u8,
 };
 
-const Input = struct {
-    slot: u64,
-    entropy: HexBytes,
-    extrinsic: []Extrinsic,
-};
-
-const Extrinsic = struct {
+const TicketEnvelope = struct {
     attempt: u8,
     signature: HexBytes,
 };
 
-const KeySet = struct {
+const ValidatorData = struct {
     bandersnatch: HexBytes,
     ed25519: HexBytes,
     bls: HexBytes,
     metadata: HexBytes,
 };
 
+// TODO: Make a custom type to handle TicketOrKey
 const GammaS = struct {
-    keys: []HexBytes,
+    keys: []BandersnatchKey,
 };
 
+const GammaZ = types.hex.HexBytesFixed(144);
+
 const State = struct {
-    tau: u64,
-    eta: []HexBytes,
-    lambda: []KeySet,
-    kappa: []KeySet,
-    gamma_k: []KeySet,
-    iota: []KeySet,
-    gamma_a: []KeySet,
+    tau: u32,
+    eta: [4]OpaqueHash,
+    lambda: []ValidatorData,
+    kappa: []ValidatorData,
+    gamma_k: []ValidatorData,
+    iota: []ValidatorData,
+    gamma_a: []TicketBody,
     gamma_s: GammaS,
-    gamma_z: HexBytes,
+    gamma_z: GammaZ,
+};
+
+const Input = struct {
+    slot: u32,
+    entropy: OpaqueHash,
+    extrinsic: []TicketEnvelope,
 };
 
 const Output = struct {
