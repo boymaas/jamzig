@@ -30,7 +30,6 @@ pub const HexBytes = struct {
 
 pub fn nextHexStringToBytes(allocator: Allocator, scanner: *json.Scanner) Error![]u8 {
     const token = scanner.nextAlloc(allocator, .alloc_always) catch return error.AllocNextError;
-    std.debug.print("token: {}\n", .{token});
     switch (token) {
         .allocated_string => |string| {
             // ensure the string starts with "0x"

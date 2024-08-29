@@ -11,6 +11,13 @@ const OpaqueHash = types.hex.HexBytesFixed(32);
 
 const TicketOrKey = union { tickets: []TicketBody, keys: []BandersnatchKey };
 
+const EpochMark = struct {
+    entropy: OpaqueHash,
+    validators: []BandersnatchKey,
+};
+
+const TicketMark = []TicketBody;
+
 const TicketBody = struct {
     id: OpaqueHash,
     attempt: u8,
@@ -29,8 +36,9 @@ const ValidatorData = struct {
 };
 
 // TODO: Make a custom type to handle TicketOrKey
+// see mark-5
 const GammaS = struct {
-    keys: []BandersnatchKey,
+    // keys: []BandersnatchKey,
 };
 
 const GammaZ = types.hex.HexBytesFixed(144);
@@ -53,8 +61,53 @@ const Input = struct {
     extrinsic: []TicketEnvelope,
 };
 
-const Output = struct {
+const Output = union(enum) {
     err: ?[]u8,
+    ok: OutputMarks,
+
+    // The JSON defines an output which can be either an Ok variant or an Error variant.
+    // This is not supported by default by the Zig JSON parser. As such,
+    // we have implemented a custom parser for this. Based on an "ok" value or an "err" value,
+    // the union will be filled with either the ok case or the error case.
+    pub fn jsonParse(allocator: Allocator, source: *json.Scanner, options: json.ParseOptions) json.ParseError(json.Scanner)!Output {
+        if (.object_begin != try source.next()) return error.UnexpectedToken;
+
+        while (true) {
+            const name_token: ?json.Token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
+            _ = switch (name_token.?) {
+                .string, .allocated_string => |slice| {
+                    if (std.mem.eql(u8, slice, "err")) {
+                        const val = try json.innerParse([]u8, allocator, source, options);
+                        if (.object_end != try source.next()) return error.UnexpectedToken;
+
+                        // do something for "err" case
+                        return Output{ .err = val };
+                    } else if (std.mem.eql(u8, slice, "ok")) {
+                        const val = try json.innerParse(OutputMarks, allocator, source, options);
+                        if (.object_end != try source.next()) return error.UnexpectedToken;
+
+                        return Output{ .ok = val };
+                    } else {
+                        return error.UnexpectedToken;
+                    }
+                },
+                .object_end => { // No more fields.
+                    break;
+                },
+                else => {
+                    return error.UnexpectedToken;
+                },
+            };
+        }
+        unreachable;
+    }
+};
+
+const OutputErr = ?[]u8;
+
+const OutputMarks = struct {
+    epoch_mark: ?EpochMark,
+    tickets_mark: ?TicketMark,
 };
 
 pub const TestVector = struct {
@@ -76,6 +129,9 @@ pub const TestVector = struct {
             return error.IncompleteRead;
         }
 
-        return try json.parseFromSlice(TestVector, allocator, buffer, .{ .ignore_unknown_fields = true, .parse_numbers = false });
+        return json.parseFromSlice(TestVector, allocator, buffer, .{ .ignore_unknown_fields = true, .parse_numbers = false }) catch |err| {
+            std.debug.print("Incompatible TestVector [{s}]: {}\n", .{ file_path, err });
+            return err;
+        };
     }
 };
