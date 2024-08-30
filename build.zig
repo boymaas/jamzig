@@ -3,7 +3,7 @@ const std = @import("std");
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -14,6 +14,9 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+
+    var rust_deps = try buildRustDependencies(b);
+    defer rust_deps.deinit();
 
     const lib = b.addStaticLibrary(.{
         .name = "jamzig",
@@ -35,6 +38,15 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    // This declares that the executable depends on all Rust dependencies
+    // to build correctly.
+    for (rust_deps.deps.items) |dep| {
+        exe.step.dependOn(dep.step);
+
+        exe.addLibraryPath(b.path(dep.path));
+        exe.linkSystemLibrary(dep.name);
+    }
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -88,4 +100,46 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+}
+
+const RustDeps = struct {
+    deps: std.ArrayList(RustDep),
+
+    pub fn init(allocator: std.mem.Allocator) RustDeps {
+        return RustDeps{
+            .deps = std.ArrayList(RustDep).init(allocator),
+        };
+    }
+
+    pub fn register(self: *RustDeps, path: []const u8, name: []const u8, step: *std.Build.Step) !void {
+        try self.deps.append(RustDep{ .name = name, .step = step, .path = path });
+    }
+
+    fn deinit(self: *RustDeps) void {
+        self.deps.deinit();
+    }
+};
+
+const RustDep = struct {
+    step: *std.Build.Step,
+    name: []const u8,
+    path: []const u8,
+};
+
+pub fn buildRustDependencies(b: *std.Build) !RustDeps {
+    var deps = RustDeps.init(b.allocator);
+    errdefer deps.deinit();
+
+    // Build the rust library, always
+    var crypto = b.addSystemCommand(&[_][]const u8{
+        "cargo",
+        "build",
+        "--release",
+        "--manifest-path",
+        "ffi/rust/crypto/Cargo.toml",
+    });
+
+    try deps.register("ffi/rust/crypto/target/release", "jamzig_crypto", &crypto.step);
+
+    return deps;
 }

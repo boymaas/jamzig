@@ -1,0 +1,11 @@
+[package]
+name = "jamzig-crypto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[lib]
+crate-type = ["staticlib"]
+
+
