@@ -11,10 +11,15 @@ test "update tau" {
     const tv = &tv_parsed.value;
 
     // Assume these are populated from your JSON parsing
-    var pre_state = safrole.State{ .tau = tv.pre_state.tau };
-    const input = safrole.Input{ .slot = tv.input.slot };
+    const pre_state = safrole.types.State{ .tau = tv.pre_state.tau };
+    const input = safrole.types.Input{ .slot = tv.input.slot };
+    var post_state = pre_state;
 
-    const output = safrole.transition(&pre_state, input);
+    const output = safrole.transition(
+        &pre_state,
+        input,
+        &post_state,
+    );
 
     // Handle the output
     switch (output) {
