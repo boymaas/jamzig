@@ -1,13 +1,12 @@
 const std = @import("std");
 
-const TestVector = @import("vectors/libs/safrole.zig").TestVector;
+const TestVector = @import("tests/vectors/libs/safrole.zig").TestVector;
 
-const jamzig = @import("jamzig");
-const safrole = jamzig.safrole;
+const safrole = @import("safrole.zig");
 
 test "update tau" {
     const allocator = std.testing.allocator;
-    const tv_parsed = try TestVector.build_from(allocator, "tests/vectors/jam/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
+    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/jam/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
     defer tv_parsed.deinit();
     const tv = &tv_parsed.value;
 
