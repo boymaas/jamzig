@@ -3,7 +3,11 @@ const types = @import("../types.zig");
 
 pub fn formatState(state: types.State, writer: anytype) !void {
     try writer.writeAll("State {\n");
+
+    try writer.writeAll("\n---- Timeslot (τ) ----\n");
     try writer.print("  tau: {}\n", .{state.tau});
+
+    try writer.writeAll("\n---- Entropy Accumulator (η) ----\n");
     try writer.writeAll("  eta: [\n");
     for (state.eta) |hash| {
         try writer.print("    0x{x}\n", .{std.fmt.fmtSliceHexLower(&hash)});
@@ -58,7 +62,7 @@ pub fn formatState(state: types.State, writer: anytype) !void {
     try writer.writeAll("\n---- Total Tickets and Keys ----\n");
     try writer.print("  {} tickets, {} keys\n", .{ totalTickets, totalKeys });
 
-    try writer.writeAll("}");
+    try writer.writeAll("}\n");
 }
 
 fn formatTicketSlice(writer: anytype, name: []const u8, tickets: []const types.TicketBody) !void {
