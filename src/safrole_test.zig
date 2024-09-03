@@ -11,21 +11,33 @@ test "format State" {
     defer tv_parsed.deinit();
     const tv = &tv_parsed.value;
 
-    const pre_state = try tests.stateFromTestVector(allocator, &tv.pre_state);
-    defer pre_state.deinit(allocator);
+    const input = try tests.inputFromTestVector(allocator, &tv.input);
+    input.deinit(allocator);
 
-    std.debug.print("\n{any}\n", .{pre_state});
+    std.debug.print("\n{any}\n", .{input});
 
-    const post_state = try tests.stateFromTestVector(allocator, &tv.post_state);
-    defer post_state.deinit(allocator);
-
-    std.debug.print("\n{any}\n", .{post_state});
+    // const pre_state = try tests.stateFromTestVector(allocator, &tv.pre_state);
+    // defer pre_state.deinit(allocator);
+    //
+    // std.debug.print("\n{any}\n", .{pre_state});
+    //
+    // const post_state = try tests.stateFromTestVector(allocator, &tv.post_state);
+    // defer post_state.deinit(allocator);
+    //
+    // std.debug.print("\n{any}\n", .{post_state});
 }
 
-// *** /tmp/pre_state  2024-09-03 20:36:21.442597011 +0200
-// --- /tmp/post_state 2024-09-03 20:36:28.579596880 +0200
-// ***************
-// *** 1,11 ****
+// Input {
+// ---- Slot ----
+//   slot: 1
+//
+// ---- Entropy ----
+//   entropy: 0x8c2e6d327dfaa6ff8195513810496949210ad20a96e2b0672a3e1b9335080801
+//
+// ---- Extrinsic ----
+//   extrinsic: 0 ticket envelopes
+// }
+
 //   State {
 //
 //   ---- Timeslot (τ) ----

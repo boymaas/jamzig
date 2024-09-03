@@ -111,6 +111,16 @@ pub const Input = struct {
     pub fn deinit(self: Input, allocator: Allocator) void {
         allocator.free(self.extrinsic);
     }
+
+    /// Implement the default format function
+    pub fn format(
+        self: Input,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("types/format.zig").formatInput(self, writer);
+    }
 };
 
 pub const Output = union(enum) {

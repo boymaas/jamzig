@@ -1,6 +1,24 @@
 const std = @import("std");
 const types = @import("../types.zig");
 
+pub fn formatInput(input: types.Input, writer: anytype) !void {
+    try writer.writeAll("Input {\n");
+
+    try writer.writeAll("---- Slot ----\n");
+    try writer.print("  slot: {}\n", .{input.slot});
+
+    try writer.writeAll("\n---- Entropy ----\n");
+    try writer.print("  entropy: 0x{x}\n", .{std.fmt.fmtSliceHexLower(&input.entropy)});
+
+    try writer.writeAll("\n---- Extrinsic ----\n");
+    try writer.print("  extrinsic: {} ticket envelopes\n", .{input.extrinsic.len});
+    for (input.extrinsic, 0..) |envelope, i| {
+        try writer.print("    Envelope {}: attempt: {}, signature: 0x{x}\n", .{ i, envelope.attempt, std.fmt.fmtSliceHexLower(&envelope.signature) });
+    }
+
+    try writer.writeAll("}\n");
+}
+
 pub fn formatState(state: types.State, writer: anytype) !void {
     try writer.writeAll("State {\n");
 
