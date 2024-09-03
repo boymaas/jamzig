@@ -52,7 +52,7 @@ test "format Output" {
 //   extrinsic: 0 ticket envelopes
 // }
 
-//   State {
+//   State Changes {
 //
 //   ---- Timeslot (τ) ----
 // !   tau: 0
@@ -75,6 +75,13 @@ test "format Output" {
 //       0xee155ace9c40292074cb6aff8c9ccdd273c81648ff1149ef36bcea6ebb8a3e25
 //       0xbb30a42c1e62f0afda5f0a4e8a562f7a13a24cea00ee81917b86b89e801314aa
 //       0xe88bd757ad5b9bedf372d8d3f0cf6c962a469db61a265f6418e1ffed86da29ec
+
+// Expected Output {
+//   ok: {
+//     epoch_mark: null
+//     tickets_mark: null
+//   }
+// }
 test "tiny/enact-epoch-change-with-no-tickets-1" {
     const allocator = std.testing.allocator;
     const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/jam/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
