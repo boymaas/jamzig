@@ -78,7 +78,7 @@ pub const State = struct {
     gamma_z: GammaZ,
 
     /// Frees all allocated memory in the State struct.
-    fn deinit(self: *State, allocator: Allocator) void {
+    pub fn deinit(self: State, allocator: Allocator) void {
         allocator.free(self.lambda);
         allocator.free(self.kappa);
         allocator.free(self.gamma_k);
@@ -96,6 +96,11 @@ pub const Input = struct {
     slot: u32,
     entropy: OpaqueHash,
     extrinsic: []TicketEnvelope,
+
+    /// Frees all allocated memory in the Input struct.
+    pub fn deinit(self: Input, allocator: Allocator) void {
+        allocator.free(self.extrinsic);
+    }
 };
 
 pub const Output = union(enum) {
