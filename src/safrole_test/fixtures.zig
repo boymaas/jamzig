@@ -19,8 +19,13 @@ pub const Fixtures = struct {
     }
 };
 
+const TEST_VECTOR_PREFIX = "src/tests/vectors/jam/safrole/";
+
 pub fn buildFixtures(allocator: std.mem.Allocator, name: []const u8) !Fixtures {
-    const tv_parsed = try TestVector.build_from(allocator, name);
+    const full_path = try std.fs.path.join(allocator, &[_][]const u8{ TEST_VECTOR_PREFIX, name });
+    defer allocator.free(full_path);
+
+    const tv_parsed = try TestVector.build_from(allocator, full_path);
     defer tv_parsed.deinit();
     const tv = &tv_parsed.value;
 

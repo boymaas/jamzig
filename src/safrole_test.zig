@@ -50,7 +50,7 @@ test "tiny/enact-epoch-change-with-no-tickets-1" {
 
     const fixtures = try safrole_fixtures.buildFixtures(
         allocator,
-        "src/tests/vectors/jam/safrole/tiny/enact-epoch-change-with-no-tickets-1.json",
+        "tiny/enact-epoch-change-with-no-tickets-1.json",
     );
     defer fixtures.deinit(allocator);
 
