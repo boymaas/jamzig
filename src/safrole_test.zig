@@ -15,7 +15,7 @@ test "format Input" {
     const input = try tests.inputFromTestVector(allocator, &tv.input);
     input.deinit(allocator);
 
-    try pretty.print(allocator, input, .{});
+    // try pretty.print(allocator, input, .{});
 
     std.debug.print("\n{any}\n", .{input});
 }

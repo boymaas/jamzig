@@ -22,8 +22,7 @@ pub fn build(b: *std.Build) !void {
     //
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
 
-    std.debug.print("Test filters: {any}\n", .{test_filters});
-
+    // Build any rust dependencies
     var rust_deps = try buildRustDependencies(b);
     defer rust_deps.deinit();
 
@@ -83,6 +82,15 @@ pub fn build(b: *std.Build) !void {
     //https://github.com/timfayz/pretty
     const pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
     unit_tests.root_module.addImport("pretty", pretty.module("pretty"));
+
+    // This declares that the tests depends on all Rust dependencies
+    // to build correctly.
+    for (rust_deps.deps.items) |dep| {
+        unit_tests.step.dependOn(dep.step);
+
+        unit_tests.addLibraryPath(b.path(dep.path));
+        unit_tests.linkSystemLibrary(dep.name);
+    }
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
