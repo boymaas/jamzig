@@ -1,5 +1,6 @@
 comptime {
     _ = @import("safrole_test.zig");
+    _ = @import("safrole/types_test.zig");
 }
 
 const std = @import("std");
