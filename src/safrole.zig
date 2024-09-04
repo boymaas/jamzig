@@ -6,11 +6,30 @@ pub const types = @import("safrole/types.zig");
 // Constants
 pub const EPOCH_LENGTH: u32 = 600; // E in the grapaper
 
-pub fn transition(allocator: std.mem.Allocator, pre_state: types.State, input: types.Input) !types.Output {
+pub const TransitionResult = struct {
+    output: types.Output,
+    state: ?types.State,
+
+    pub fn deinit(self: TransitionResult, allocator: std.mem.Allocator) void {
+        if (self.state != null) {
+            self.state.?.deinit(allocator);
+        }
+        self.output.deinit(allocator);
+    }
+};
+
+pub fn transition(allocator: std.mem.Allocator, pre_state: types.State, input: types.Input) !TransitionResult {
     // Equation 41: H_t ∈ N_T, P(H)_t < H_t ∧ H_t · P ≤ T
     if (input.slot <= pre_state.tau) {
-        return types.Output{ .err = .bad_slot };
+        return .{
+            .output = .{ .err = .bad_slot },
+            .state = null,
+        };
     }
+
+    var post_state = try pre_state.deepClone(allocator);
+
+    post_state.tau = input.slot;
 
     // Calculate epoch and slot phase
     const prev_epoch = pre_state.tau / EPOCH_LENGTH;
@@ -29,13 +48,16 @@ pub fn transition(allocator: std.mem.Allocator, pre_state: types.State, input: t
 
     // Create empty ArrayLists for epoch_mark and tickets_mark
 
-    return types.Output{
-        .ok = types.OutputMarks{
-            .epoch_mark = types.EpochMark{
-                .entropy = [_]u8{0} ** 32, // Initialize with 32 zero bytes
-                .validators = try allocator.alloc(types.BandersnatchKey, 0),
+    return .{
+        .output = .{
+            .ok = types.OutputMarks{
+                .epoch_mark = types.EpochMark{
+                    .entropy = [_]u8{0} ** 32, // Initialize with 32 zero bytes
+                    .validators = try allocator.alloc(types.BandersnatchKey, 0),
+                },
+                .tickets_mark = null,
             },
-            .tickets_mark = null,
         },
+        .state = post_state,
     };
 }

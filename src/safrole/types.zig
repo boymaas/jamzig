@@ -100,6 +100,24 @@ pub const State = struct {
     ) !void {
         try @import("types/format.zig").formatState(self, writer);
     }
+
+    /// Creates a deep clone of the State struct.
+    pub fn deepClone(self: *const State, allocator: Allocator) !State {
+        return State{
+            .tau = self.tau,
+            .eta = self.eta,
+            .lambda = try allocator.dupe(ValidatorData, self.lambda),
+            .kappa = try allocator.dupe(ValidatorData, self.kappa),
+            .gamma_k = try allocator.dupe(ValidatorData, self.gamma_k),
+            .iota = try allocator.dupe(ValidatorData, self.iota),
+            .gamma_a = try allocator.dupe(TicketBody, self.gamma_a),
+            .gamma_s = switch (self.gamma_s) {
+                .tickets => |tickets| TicketOrKey{ .tickets = try allocator.dupe(TicketBody, tickets) },
+                .keys => |keys| TicketOrKey{ .keys = try allocator.dupe(BandersnatchKey, keys) },
+            },
+            .gamma_z = self.gamma_z,
+        };
+    }
 };
 
 pub const Input = struct {
