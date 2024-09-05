@@ -19,6 +19,10 @@
             .url = "https://github.com/timfayz/pretty/archive/v0.10.4.tar.gz",
             .hash = "1220db3fa6510f1686587aab46ac92a882d4f5a287a20d7b687f654a7b8ce3a0e8d6",
         },
+        .diffz = .{
+            .url = "https://github.com/ziglibs/diffz/archive/420fcb22306ffd4c9c3c761863dfbb6bdbb18a73.tar.gz",
+            .hash = "12203b5da388003e513da4a48d1c52a8ef4bf4401e27ee54bd4db9771cd6101420cc",
+        },
     },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally

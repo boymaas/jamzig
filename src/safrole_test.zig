@@ -71,3 +71,20 @@ test "tiny/enact-epoch-change-with-no-tickets-1" {
         result.state.?.eta[0],
     );
 }
+
+test "tiny/enact-epoch-change-with-no-tickets-2" {
+    const allocator = std.testing.allocator;
+
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/enact-epoch-change-with-no-tickets-2.json",
+    );
+    defer fixtures.deinit(allocator);
+
+    var result = try safrole.transition(
+        allocator,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+}

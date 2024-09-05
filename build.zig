@@ -22,6 +22,14 @@ pub fn build(b: *std.Build) !void {
     //
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
 
+    // Dependencies
+    // Add the pretty module as a dependency to the executable
+    // https://github.com/timfayz/pretty
+    const pretty_module = b.dependency("pretty", .{ .target = target, .optimize = optimize }).module("pretty");
+    // Add the diffz module:
+    // https://github.com/ziglibs/diffz/tree/420fcb22306ffd4c9c3c761863dfbb6bdbb18a73
+    const diffz_module = b.dependency("diffz", .{ .target = target, .optimize = optimize }).module("diffz");
+
     // Build any rust dependencies
     var rust_deps = try buildRustDependencies(b);
     defer rust_deps.deinit();
@@ -32,6 +40,10 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+
+    // Resister the dependencies
+    // exe.root_module.addImport("diffz", diffz_dependency.module("diffz"));
+    // exe.root_module.addImport("pretty", pretty_module);
 
     // This declares that the executable depends on all Rust dependencies
     // to build correctly.
@@ -78,10 +90,8 @@ pub fn build(b: *std.Build) !void {
         .filters = test_filters,
     });
 
-    // Add the pretty module as a dependency to the executable
-    //https://github.com/timfayz/pretty
-    const pretty = b.dependency("pretty", .{ .target = target, .optimize = optimize });
-    unit_tests.root_module.addImport("pretty", pretty.module("pretty"));
+    unit_tests.root_module.addImport("pretty", pretty_module);
+    unit_tests.root_module.addImport("diffz", diffz_module);
 
     // This declares that the tests depends on all Rust dependencies
     // to build correctly.
@@ -91,6 +101,10 @@ pub fn build(b: *std.Build) !void {
         unit_tests.addLibraryPath(b.path(dep.path));
         unit_tests.linkSystemLibrary(dep.name);
     }
+    // Since our rust static lib depend on libc and libccp we need to link
+    // against them as well.
+    unit_tests.linkLibC();
+    unit_tests.linkLibCpp();
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 

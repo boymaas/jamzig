@@ -43,3 +43,8 @@ pub fn buildFixtures(allocator: std.mem.Allocator, name: []const u8) !Fixtures {
         .output = output,
     };
 }
+
+// pub fn diffFixtureStates(allocator: std.mem.Allocator, fixture: Fixtures) ![]const u8 {
+//
+// }
+//

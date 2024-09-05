@@ -1,6 +1,7 @@
 comptime {
     _ = @import("safrole_test.zig");
     _ = @import("safrole/types_test.zig");
+    _ = @import("safrole_test/diffz.zig");
 }
 
 const std = @import("std");
@@ -65,7 +66,7 @@ pub fn outputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Ou
 
 fn convertOutputError(from: ?[]const u8) Error!lib_safrole.OutputError {
     if (from) |err_str| {
-        inline for (@typeInfo(lib_safrole.OutputError).Enum.fields) |field| {
+        inline for (@typeInfo(lib_safrole.OutputError).@"enum".fields) |field| {
             if (std.mem.eql(u8, err_str, field.name)) {
                 return @field(lib_safrole.OutputError, field.name);
             }
