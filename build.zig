@@ -45,14 +45,8 @@ pub fn build(b: *std.Build) !void {
     // exe.root_module.addImport("diffz", diffz_dependency.module("diffz"));
     // exe.root_module.addImport("pretty", pretty_module);
 
-    // This declares that the executable depends on all Rust dependencies
-    // to build correctly.
-    for (rust_deps.deps.items) |dep| {
-        exe.step.dependOn(dep.step);
-
-        exe.addLibraryPath(b.path(dep.path));
-        exe.linkSystemLibrary(dep.name);
-    }
+    // Statically link our rust_deps to the executable
+    rust_deps.statically_link_to(exe);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -93,14 +87,9 @@ pub fn build(b: *std.Build) !void {
     unit_tests.root_module.addImport("pretty", pretty_module);
     unit_tests.root_module.addImport("diffz", diffz_module);
 
-    // This declares that the tests depends on all Rust dependencies
-    // to build correctly.
-    for (rust_deps.deps.items) |dep| {
-        unit_tests.step.dependOn(dep.step);
+    // Statically link our rust_deps to the unit tests
+    rust_deps.statically_link_to(unit_tests);
 
-        unit_tests.addLibraryPath(b.path(dep.path));
-        unit_tests.linkSystemLibrary(dep.name);
-    }
     // Since our rust static lib depend on libc and libccp we need to link
     // against them as well.
     unit_tests.linkLibC();
@@ -117,18 +106,30 @@ pub fn build(b: *std.Build) !void {
 
 const RustDeps = struct {
     deps: std.ArrayList(RustDep),
+    b: *std.Build,
 
-    pub fn init(allocator: std.mem.Allocator) RustDeps {
-        return RustDeps{
-            .deps = std.ArrayList(RustDep).init(allocator),
-        };
+    pub fn init(b: *std.Build) RustDeps {
+        return RustDeps{ .deps = std.ArrayList(RustDep).init(b.allocator), .b = b };
     }
 
     pub fn register(self: *RustDeps, path: []const u8, name: []const u8, step: *std.Build.Step) !void {
-        try self.deps.append(RustDep{ .name = name, .step = step, .path = path });
+        const lib_name = try std.fmt.allocPrint(self.b.allocator, "lib{s}.a", .{name});
+        defer self.b.allocator.free(lib_name);
+        const fullpath = try std.fs.path.join(self.b.allocator, &[_][]const u8{ path, lib_name });
+        try self.deps.append(RustDep{ .name = name, .step = step, .path = path, .fullpath = fullpath });
+    }
+
+    pub fn statically_link_to(self: *RustDeps, comp_step: *std.Build.Step.Compile) void {
+        for (self.deps.items) |dep| {
+            comp_step.step.dependOn(dep.step);
+            comp_step.addObjectFile(self.b.path(dep.fullpath));
+        }
     }
 
     fn deinit(self: *RustDeps) void {
+        for (self.deps.items) |dep| {
+            self.b.allocator.free(dep.fullpath);
+        }
         self.deps.deinit();
     }
 };
@@ -137,10 +138,11 @@ const RustDep = struct {
     step: *std.Build.Step,
     name: []const u8,
     path: []const u8,
+    fullpath: []const u8,
 };
 
 pub fn buildRustDependencies(b: *std.Build) !RustDeps {
-    var deps = RustDeps.init(b.allocator);
+    var deps = RustDeps.init(b);
     errdefer deps.deinit();
 
     // Build the rust library, always
