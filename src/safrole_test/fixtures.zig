@@ -13,26 +13,27 @@ pub const Fixtures = struct {
     input: safrole.types.Input,
     output: safrole.types.Output,
 
-    pub fn diffStates(self: @This(), allocator: std.mem.Allocator) ![]const u8 {
-        return try diff.diffStates(allocator, &self.pre_state, &self.post_state);
+    allocator: std.mem.Allocator,
+
+    pub fn diffStates(self: @This()) ![]const u8 {
+        return try diff.diffStates(self.allocator, &self.pre_state, &self.post_state);
     }
 
-    pub fn diffStatesAndPrint(self: @This(), allocator: std.mem.Allocator) !void {
-        const diff_result = self.diffStates(allocator) catch |err| {
+    pub fn diffStatesAndPrint(self: @This()) !void {
+        const diff_result = self.diffStates() catch |err| {
             std.debug.print("DiffStates err {any}\n", .{err});
             return err;
         };
-        defer allocator.free(diff_result);
+        defer self.allocator.free(diff_result);
         try std.io.getStdErr().writer().print("{s}\n", .{diff_result});
     }
 
     pub fn diffAgainstPostState(
         self: @This(),
-        allocator: std.mem.Allocator,
         state: *safrole.types.State,
     ) ![]const u8 {
         return try diff.diffStates(
-            allocator,
+            self.allocator,
             &self.post_state,
             state,
         );
@@ -40,22 +41,21 @@ pub const Fixtures = struct {
 
     pub fn diffAgainstPostStateAndPrint(
         self: @This(),
-        allocator: std.mem.Allocator,
         state: *safrole.types.State,
     ) !void {
-        const diff_result = self.diffAgainstPostState(allocator, state) catch |err| {
+        const diff_result = self.diffAgainstPostState(state) catch |err| {
             std.debug.print("DiffAgainstPostState err {any}\n", .{err});
             return err;
         };
-        defer allocator.free(diff_result);
+        defer self.allocator.free(diff_result);
         try std.io.getStdErr().writer().print("{s}\n", .{diff_result});
     }
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        self.pre_state.deinit(allocator);
-        self.input.deinit(allocator);
-        self.post_state.deinit(allocator);
-        self.output.deinit(allocator);
+    pub fn deinit(self: @This()) void {
+        self.pre_state.deinit(self.allocator);
+        self.input.deinit(self.allocator);
+        self.post_state.deinit(self.allocator);
+        self.output.deinit(self.allocator);
     }
 };
 
@@ -81,5 +81,6 @@ pub fn buildFixtures(allocator: std.mem.Allocator, name: []const u8) !Fixtures {
         .input = input,
         .post_state = post_state,
         .output = output,
+        .allocator = allocator,
     };
 }
