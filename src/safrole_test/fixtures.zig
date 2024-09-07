@@ -18,7 +18,10 @@ pub const Fixtures = struct {
     }
 
     pub fn diffStatesAndPrint(self: @This(), allocator: std.mem.Allocator) !void {
-        const diff_result = try self.diffStates(allocator);
+        const diff_result = self.diffStates(allocator) catch |err| {
+            std.debug.print("DiffStates err {any}\n", .{err});
+            return err;
+        };
         defer allocator.free(diff_result);
         try std.io.getStdErr().writer().print("{s}\n", .{diff_result});
     }

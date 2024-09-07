@@ -23,6 +23,10 @@
             .url = "https://github.com/ziglibs/diffz/archive/420fcb22306ffd4c9c3c761863dfbb6bdbb18a73.tar.gz",
             .hash = "12203b5da388003e513da4a48d1c52a8ef4bf4401e27ee54bd4db9771cd6101420cc",
         },
+        .tmpfile = .{
+            .url = "https://github.com/jamzig/tmpfile.zig/archive/ae9b03377ee74348ded1785fa9a05050b41c5ff9.zip",
+            .hash = "1220539d4f1e7476034cb732b9008144090938c9c78dd332d28cfd48851be2558cd7",
+        },
     },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally

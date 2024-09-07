@@ -29,6 +29,9 @@ pub fn build(b: *std.Build) !void {
     // Add the diffz module:
     // https://github.com/ziglibs/diffz/tree/420fcb22306ffd4c9c3c761863dfbb6bdbb18a73
     const diffz_module = b.dependency("diffz", .{ .target = target, .optimize = optimize }).module("diffz");
+    // Add tmpfile module
+    // https://github.com/liyu1981/tmpfile.zig/archive/7ca14fb3a8a59e5ab83d3fca7aa0b85e087bd6ff.zip
+    const tmpfile_module = b.dependency("tmpfile", .{}).module("tmpfile");
 
     // Build any rust dependencies
     var rust_deps = try buildRustDependencies(b);
@@ -86,6 +89,7 @@ pub fn build(b: *std.Build) !void {
 
     unit_tests.root_module.addImport("pretty", pretty_module);
     unit_tests.root_module.addImport("diffz", diffz_module);
+    unit_tests.root_module.addImport("tmpfile", tmpfile_module);
 
     // Statically link our rust_deps to the unit tests
     rust_deps.statically_link_to(unit_tests);
