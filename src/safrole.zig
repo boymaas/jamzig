@@ -23,7 +23,12 @@ const Safrole = struct {
     }
 
     pub fn Y(self: *@This(), input: types.Input) !TransitionResult {
-        return transition(self.allocator, self.state, input);
+        const result = try transition(self.allocator, self.params, self.state, input);
+        if (result.state) |new_state| {
+            self.state.deinit(self.allocator);
+            self.state = new_state;
+        }
+        return result;
     }
 
     pub fn deinit(self: Safrole) void {
