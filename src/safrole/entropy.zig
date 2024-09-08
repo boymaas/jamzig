@@ -20,7 +20,7 @@ pub fn concatenate(a: [32]u8, b: [32]u8) [64]u8 {
 }
 
 /// The entropy update function
-/// η′0 ≡H(η0 ⌢ Y(Hv))
+/// (66) η′0 ≡H(η0 ⌢ Y(Hv))
 pub fn update(eta0: [32]u8, Hv: [32]u8) [32]u8 {
     // Concatenate η0 and Y(Hv)
     const concatenated = concatenate(eta0, Hv);

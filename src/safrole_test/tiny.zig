@@ -102,7 +102,7 @@ test "tiny/enact-epoch-change-with-no-tickets-4" {
     );
     defer fixtures.deinit();
 
-    try fixtures.printInputStateChangesAndOutput();
+    // try fixtures.printInputStateChangesAndOutput();
 
     var result = try safrole.transition(
         allocator,
@@ -112,7 +112,8 @@ test "tiny/enact-epoch-change-with-no-tickets-4" {
     );
     defer result.deinit(allocator);
 
-    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+    try fixtures.printInput();
+    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
 
     // Compare the fixture poststate with the result state
     // try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);

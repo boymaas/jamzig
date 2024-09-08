@@ -65,11 +65,8 @@ pub fn transition(
 
     var post_state = try pre_state.deepClone(allocator);
 
+    // Update the tau
     post_state.tau = input.slot;
-
-    // Combine previous entropy accumulator (η0) with new entropy
-    // input η′0 ≡H(η0 ⌢ Y(Hv))
-    post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
 
     // Calculate epoch and slot phase
     const prev_epoch = pre_state.tau / params.epoch_length;
@@ -80,9 +77,36 @@ pub fn transition(
     // Check for epoch transition
     if (current_epoch > prev_epoch) {
         // Perform epoch transition logic here
-        // This might include updating gamma_k, kappa, lambda, gamma_z, etc.
-        // You'll need to implement this based on the specific requirements in the whitepaper
+        post_state.eta[3] = post_state.eta[2];
+        post_state.eta[2] = post_state.eta[1];
+        post_state.eta[1] = post_state.eta[0];
+
+        // Validator keys are rotated at the beginning of each epoch. The
+        // current active set of validator keys κ is replaced by the queued
+        // set, and any offenders (validators removed from the set) are
+        // replaced with zeroed keys.
+        //
+        // state.κ = state.γ_k
+        // state.γ_k = state.ι
+        // state.λ = state.κ
+        const lamda = post_state.lambda;
+        const kappa = post_state.kappa;
+        const gamma_k = post_state.gamma_k;
+        const iota = post_state.iota;
+
+        post_state.kappa = gamma_k;
+        post_state.gamma_k = try allocator.dupe(types.ValidatorData, iota);
+        post_state.lambda = kappa;
+
+        // TODO: (58) Zero out any offenders on post_state.iota, The origin of
+        // the offenders is explained in section 10.
+
+        allocator.free(lamda);
     }
+
+    // Combine previous entropy accumulator (η0) with new entropy
+    // input η′0 ≡H(η0 ⌢ Y(Hv))
+    post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
 
     // Additional logic for other state updates can be added here
 
