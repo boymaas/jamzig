@@ -82,7 +82,7 @@ pub const Fixtures = struct {
     }
 };
 
-const TEST_VECTOR_PREFIX = "src/tests/vectors/jam/safrole/";
+const TEST_VECTOR_PREFIX = "src/tests/vectors/safrole/safrole/";
 
 pub fn buildFixtures(allocator: std.mem.Allocator, name: []const u8) !Fixtures {
     const full_path = try std.fs.path.join(allocator, &[_][]const u8{ TEST_VECTOR_PREFIX, name });

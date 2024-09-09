@@ -7,7 +7,7 @@ const tests = @import("../tests.zig");
 
 test "format Input" {
     const allocator = std.testing.allocator;
-    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/jam/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
+    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/safrole/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
     defer tv_parsed.deinit();
     const tv = &tv_parsed.value;
 
@@ -21,7 +21,7 @@ test "format Input" {
 
 test "format State" {
     const allocator = std.testing.allocator;
-    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/jam/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
+    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/safrole/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
     defer tv_parsed.deinit();
     const tv = &tv_parsed.value;
 
@@ -33,7 +33,7 @@ test "format State" {
 
 test "format State pretty" {
     const allocator = std.testing.allocator;
-    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/jam/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
+    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/safrole/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
     defer tv_parsed.deinit();
     const tv = &tv_parsed.value;
 
@@ -46,7 +46,7 @@ test "format State pretty" {
 
 test "format Output" {
     const allocator = std.testing.allocator;
-    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/jam/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
+    const tv_parsed = try TestVector.build_from(allocator, "src/tests/vectors/safrole/safrole/tiny/enact-epoch-change-with-no-tickets-1.json");
     defer tv_parsed.deinit();
     const tv = &tv_parsed.value;
 

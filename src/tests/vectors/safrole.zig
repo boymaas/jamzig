@@ -61,10 +61,10 @@ test "Load and dump a tiny test vector, and check the outputs" {
     const allocator = std.testing.allocator;
 
     const test_jsons: [4][]const u8 = .{
-        "tests/vectors/jam/safrole/tiny/publish-tickets-no-mark-1.json",
-        "tests/vectors/jam/safrole/tiny/publish-tickets-no-mark-4.json",
-        "tests/vectors/jam/safrole/tiny/publish-tickets-no-mark-9.json",
-        "tests/vectors/jam/safrole/tiny/publish-tickets-with-mark-4.json",
+        "tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-1.json",
+        "tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-4.json",
+        "tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-9.json",
+        "tests/vectors/safrole/safrole/tiny/publish-tickets-with-mark-4.json",
     };
 
     // const stdout = std.io.getStdOut().writer();
@@ -81,13 +81,13 @@ test "Load and dump a tiny test vector, and check the outputs" {
 test "Correct parsing of all tiny test vectors" {
     const allocator = std.testing.allocator;
 
-    var test_vectors = try buildTestVectors(allocator, "tests/vectors/jam/safrole/tiny/");
+    var test_vectors = try buildTestVectors(allocator, "tests/vectors/safrole/safrole/tiny/");
     defer test_vectors.deinit();
 }
 
 test "Correct parsing of all full test vectors" {
     const allocator = std.testing.allocator;
 
-    var test_vectors = try buildTestVectors(allocator, "tests/vectors/jam/safrole/full/");
+    var test_vectors = try buildTestVectors(allocator, "tests/vectors/safrole/safrole/full/");
     defer test_vectors.deinit();
 }
