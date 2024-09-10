@@ -5,32 +5,66 @@ pub fn deserialize(comptime T: type, data: []u8) !T {
     return error.NotImplemented;
 }
 
-// TODO: look into optimizing this
-
-// (271) Function to encode an integer into a specified number of octets in
-// little-endian format
-fn encodeFixedLengthInteger(comptime L: usize, x: u64, allocator: std.mem.Allocator) ![]u8 {
-    if (L == 0) {
-        return allocator.alloc(u8, 0);
-    } else {
-        const lower_byte = x & 0xff;
-        const rest_encoded = try encodeFixedLengthInteger(L - 1, x >> 8, allocator);
-        defer allocator.free(rest_encoded);
-        const result = try allocator.alloc(u8, 1 + rest_encoded.len);
-        result[0] = @intCast(lower_byte);
-        std.mem.copyForwards(u8, result[1..], rest_encoded);
-        return result;
-    }
+/// (271) Function to encode an integer into a specified number of octets in
+/// little-endian format
+fn encodeFixedLengthInteger(x: anytype) [@sizeOf(@TypeOf(x))]u8 {
+    const L = @sizeOf(@TypeOf(x)); // Determine the size of the value in bytes
+    return encodeFixedLengthIntegerWithSize(L, x);
 }
 
-test "codec: encodeFixedLengthInteger" {
-    const allocator = std.testing.allocator;
-    const encoded = try encodeFixedLengthInteger(3, 0x123456, allocator);
-    defer allocator.free(encoded);
-    const expected: [3]u8 = [_]u8{
-        0x56, 0x34, 0x12,
-    };
-    try std.testing.expectEqualSlices(u8, &expected, encoded);
+fn encodeFixedLengthIntegerWithSize(comptime L: usize, x: anytype) [L]u8 {
+    var result: [L]u8 = undefined;
+
+    if (L == 1) {
+        result[0] = @intCast(x);
+        return result;
+    }
+
+    var value: @TypeOf(x) = x;
+    var i: usize = 0;
+
+    while (i < L) : (i += 1) {
+        result[i] = @intCast(value & 0xff);
+        value >>= 8;
+    }
+
+    return result;
+}
+
+test "codec: encodeFixedLengthInteger - u24" {
+    const encoded24: [4]u8 = encodeFixedLengthInteger(@as(u24, 0x123456));
+    const expected24: [4]u8 = [_]u8{ 0x56, 0x34, 0x12, 0x00 };
+    try std.testing.expectEqualSlices(u8, &expected24, &encoded24);
+}
+
+test "codec: encodeFixedLengthInteger - u8 (edge case: 0)" {
+    const encoded8: [1]u8 = encodeFixedLengthInteger(@as(u8, 0));
+    const expected8: [1]u8 = [_]u8{0x00};
+    try std.testing.expectEqualSlices(u8, &expected8, &encoded8);
+}
+
+test "codec: encodeFixedLengthInteger - u16 (max value)" {
+    const encoded16: [2]u8 = encodeFixedLengthInteger(@as(u16, 0xFFFF));
+    const expected16: [2]u8 = [_]u8{ 0xFF, 0xFF };
+    try std.testing.expectEqualSlices(u8, &expected16, &encoded16);
+}
+
+test "codec: encodeFixedLengthInteger - u32" {
+    const encoded32: [4]u8 = encodeFixedLengthInteger(@as(u32, 0x12345678));
+    const expected32: [4]u8 = [_]u8{ 0x78, 0x56, 0x34, 0x12 };
+    try std.testing.expectEqualSlices(u8, &expected32, &encoded32);
+}
+
+test "codec: encodeFixedLengthInteger - u64" {
+    const encoded64: [8]u8 = encodeFixedLengthInteger(@as(u64, 0x123456789ABCDEF0));
+    const expected64: [8]u8 = [_]u8{ 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 };
+    try std.testing.expectEqualSlices(u8, &expected64, &encoded64);
+}
+
+test "codec: encodeFixedLengthInteger - u128" {
+    const encoded128: [16]u8 = encodeFixedLengthInteger(@as(u128, 0x123456789ABCDEF0123456789ABCDEF0));
+    const expected128: [16]u8 = [_]u8{ 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12, 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 };
+    try std.testing.expectEqualSlices(u8, &expected128, &encoded128);
 }
 
 /// (272) Function to encode an integer (0 to 2^64 - 1) into a variable-length
