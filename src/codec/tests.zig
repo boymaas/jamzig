@@ -1,173 +1,27 @@
 const std = @import("std");
-const codec = @import("../codec.zig");
-const codec_utils = @import("util.zig");
 
-// encodeFixedLengthInteger tests
+const encoder = @import("encoder.zig");
+const decoder = @import("decoder.zig");
 
-const encodeFixedLengthInteger = codec.encodeFixedLengthInteger;
+const TestCase = struct {
+    value: u64,
 
-test "codec: encodeFixedLengthInteger - u8 (edge case: 0)" {
-    var encoded8: [1]u8 = undefined;
-    encodeFixedLengthInteger(1, @as(u8, 0), &encoded8);
-    const expected8: [1]u8 = [_]u8{0x00};
-    try std.testing.expectEqualSlices(u8, &expected8, &encoded8);
-}
-
-test "codec: encodeFixedLengthInteger - u16 (max value)" {
-    var encoded16: [2]u8 = undefined;
-    encodeFixedLengthInteger(2, @as(u16, 0xFFFF), &encoded16);
-    const expected16: [2]u8 = [_]u8{ 0xFF, 0xFF };
-    try std.testing.expectEqualSlices(u8, &expected16, &encoded16);
-}
-test "codec: encodeFixedLengthInteger - u24" {
-    var encoded24: [3]u8 = undefined;
-    encodeFixedLengthInteger(3, @as(u24, 0x123456), &encoded24);
-    const expected24: [3]u8 = [_]u8{ 0x56, 0x34, 0x12 };
-    try std.testing.expectEqualSlices(u8, &expected24, &encoded24);
-}
-
-test "codec: encodeFixedLengthInteger - u32" {
-    var encoded32: [4]u8 = undefined;
-    encodeFixedLengthInteger(4, @as(u32, 0x12345678), &encoded32);
-    const expected32: [4]u8 = [_]u8{ 0x78, 0x56, 0x34, 0x12 };
-    try std.testing.expectEqualSlices(u8, &expected32, &encoded32);
-}
-
-test "codec: encodeFixedLengthInteger - u64" {
-    var encoded64: [8]u8 = undefined;
-    encodeFixedLengthInteger(8, @as(u64, 0x123456789ABCDEF0), &encoded64);
-    const expected64: [8]u8 = [_]u8{ 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 };
-    try std.testing.expectEqualSlices(u8, &expected64, &encoded64);
-}
-
-// test "codec: encodeFixedLengthInteger - u128" {
-//     const encoded128: [16]u8 = encodeFixedLengthInteger(@as(u128, 0x123456789ABCDEF0123456789ABCDEF0));
-//     const expected128: [16]u8 = [_]u8{ 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12, 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 };
-//     try std.testing.expectEqualSlices(u8, &expected128, &encoded128);
-// }
-
-// find_l tests
-
-const find_l = codec_utils.find_l;
-
-test "codec: find_l - u8 values" {
-    // lower bound for u8 will be 1
-    // upper bound for u8 will be 128
-    try std.testing.expectEqual(@as(?u8, null), find_l(@as(u8, 0)));
-    for (1..128) |i| {
-        try std.testing.expectEqual(@as(?u8, 0), find_l(@as(u8, @intCast(i))));
+    fn generate(prng: std.Random) TestCase {
+        const bitsize = prng.intRangeAtMost(u6, 0, 63);
+        const mask = if (bitsize == 64) std.math.maxInt(u64) else ((@as(u64, 1) << bitsize) - 1);
+        return TestCase{
+            .value = prng.int(u64) & mask,
+        };
     }
-    for (128..256) |i| {
-        try std.testing.expectEqual(@as(?u8, 1), find_l(@as(u8, @intCast(i))));
-    }
-}
+};
 
-test "codec: find_l - u16 values" {
-    // lower bound for u8 will be 1
-    // upper bound for u8 will be 128
-    try std.testing.expectEqual(@as(?u8, null), find_l(@as(u16, 0)));
-
-    try std.testing.expectEqual(@as(?u8, 0), find_l(@as(u16, 127)));
-    try std.testing.expectEqual(@as(?u8, 1), find_l(@as(u16, 128)));
-
-    try std.testing.expectEqual(@as(?u8, 1), find_l(@as(u16, 256)));
-    try std.testing.expectEqual(@as(?u8, 1), find_l(@as(u16, 16383)));
-    try std.testing.expectEqual(@as(?u8, 2), find_l(@as(u16, 16384)));
-}
-
-test "codec: find_l - u32 values" {
-    try std.testing.expectEqual(@as(?u8, 2), find_l(@as(u32, 65536)));
-    try std.testing.expectEqual(@as(?u8, 3), find_l(@as(u32, 2097152)));
-    try std.testing.expectEqual(@as(?u8, 4), find_l(@as(u32, 268435456)));
-}
-
-test "codec: find_l - u64 values" {
-    try std.testing.expectEqual(@as(?u8, 4), find_l(@as(u64, 4294967296)));
-    try std.testing.expectEqual(@as(?u8, 5), find_l(@as(u64, 34359738368)));
-
-    try std.testing.expectEqual(@as(?u8, 5), find_l(@as(u64, 4398046511103)));
-    try std.testing.expectEqual(@as(?u8, 6), find_l(@as(u64, 4398046511104)));
-
-    try std.testing.expectEqual(@as(?u8, 6), find_l(@as(u64, 562949953421311)));
-    try std.testing.expectEqual(@as(?u8, 7), find_l(@as(u64, 562949953421312)));
-
-    try std.testing.expectEqual(@as(?u8, 7), find_l(@as(u64, 72057594037927935)));
-    try std.testing.expectEqual(@as(?u8, null), find_l(@as(u64, 72057594037927936)));
-
-    try std.testing.expectEqual(@as(?u8, null), find_l(@as(u64, std.math.maxInt(u64))));
-}
-
-// encodeInteger tests
-
-const encodeInteger = codec.encodeInteger;
-
-test "codec: encode test" {
-    // l=0 one byte return for all values to 127
-    const result_100 = encodeInteger(@as(u8, 100));
-    try std.testing.expectEqualSlices(u8, &[_]u8{100}, result_100.as_slice());
-
-    // l=1 two bytes return for all values to 128 where we have a prefix indicating
-    // the length of the value.
-    const result_128 = encodeInteger(@as(u8, 128));
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0x80, 0x80 }, result_128.as_slice());
-
-    // 562949953421312 (2^49)
-    const result_large = encodeInteger(@as(u64, 562949953421312));
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0xFE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02 }, result_large.as_slice());
-
-    // 562949953421312 (2^64)
-    const result_max = encodeInteger(std.math.maxInt(u64));
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF }, result_max.as_slice());
-}
-
-test "codec: encodeInteger - u8 (0)" {
-    const result = encodeInteger(@as(u8, 0));
-    try std.testing.expectEqual(@as(u8, 1), result.len);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x00}, result.as_slice());
-}
-
-test "codec: encodeInteger - u8 (10)" {
-    const result = encodeInteger(@as(u8, 10));
-    try std.testing.expectEqual(@as(u8, 1), result.len);
-}
-
-test "codec: encodeInteger - u8 (127)" {
-    const result = encodeInteger(@as(u8, 127));
-    try std.testing.expectEqual(@as(u8, 1), result.len);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x7F}, result.data[0..1]);
-}
-
-test "codec: encodeInteger - u8 (128)" {
-    const result = encodeInteger(@as(u8, 128));
-    try std.testing.expectEqual(@as(u8, 2), result.len);
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0x80, 0x80 }, result.data[0..2]);
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0x80, 0x80 }, result.as_slice());
-}
-
-test "codec: encodeInteger - fuzz test" {
-    const TestCase = struct {
-        value: u64,
-        bit_width: u8,
-    };
-
+test "codec.fuzz: encodeInteger - fuzz test" {
     var random = std.Random.DefaultPrng.init(0);
     const prng = random.random();
 
-    const bit_widths = [_]u8{ 8, 16, 32, 64 };
-
     for (0..1_000_000) |_| {
-        const test_case = TestCase{
-            .value = prng.int(u64),
-            .bit_width = bit_widths[prng.intRangeAtMost(usize, 0, 3)],
-        };
-
-        const encoded = switch (test_case.bit_width) {
-            8 => encodeInteger(@as(u8, @intCast(test_case.value % std.math.maxInt(u8)))),
-            16 => encodeInteger(@as(u16, @intCast(test_case.value % std.math.maxInt(u16)))),
-            32 => encodeInteger(@as(u32, @intCast(test_case.value % std.math.maxInt(u32)))),
-            64 => encodeInteger(@as(u64, test_case.value % std.math.maxInt(u64))),
-            else => unreachable,
-        };
+        const test_case = TestCase.generate(prng);
+        const encoded = encoder.encodeInteger(test_case.value);
 
         // Verify that the encoded result is not empty
         try std.testing.expect(encoded.len > 0);
@@ -175,6 +29,11 @@ test "codec: encodeInteger - fuzz test" {
         // Verify that the encoded result is not longer than 9 bytes
         try std.testing.expect(encoded.len <= 9);
 
-        // TODO: Add decoding function and verify that decoding the result gives back the original value
+        // Decode the encoded value and verify it matches the original
+        const decoded = try decoder.decodeInteger(encoded.as_slice());
+
+        // std.debug.print("Original: {}, Encoded: {any}, Decoded: {}\n", .{ test_case.value, encoded.as_slice(), decoded });
+
+        try std.testing.expectEqual(test_case.value, decoded);
     }
 }
