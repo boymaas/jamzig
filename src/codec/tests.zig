@@ -34,6 +34,6 @@ test "codec.fuzz: encodeInteger - fuzz test" {
 
         // std.debug.print("Original: {}, Encoded: {any}, Decoded: {}\n", .{ test_case.value, encoded.as_slice(), decoded });
 
-        try std.testing.expectEqual(test_case.value, decoded);
+        try std.testing.expectEqual(test_case.value, decoded.value);
     }
 }

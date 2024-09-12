@@ -24,6 +24,7 @@ pub const BlockTestVector = struct {
         var diagnostics = std.json.Diagnostics{};
         var scanner = std.json.Scanner.initCompleteInput(allocator, json_buffer);
         scanner.enableDiagnostics(&diagnostics);
+        defer scanner.deinit();
 
         // parse from tokensource using the scanner
         const expected = std.json.parseFromTokenSource(
@@ -38,6 +39,7 @@ pub const BlockTestVector = struct {
             std.debug.print("Could not parse codec.Block [{s}]: {}\n{any}", .{ json_path, err, diagnostics });
             return err;
         };
+        errdefer expected.deinit();
 
         // Read the corresponding binary file
         const bin_path = try std.mem.replaceOwned(

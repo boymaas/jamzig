@@ -12,5 +12,11 @@ test "codec.active: deserialize header from supplied test vector" {
     const vector = try codec_test.BlockTestVector.build_from(allocator, "src/tests/vectors/codec/codec/data/block.json");
     defer vector.deinit();
 
-    _ = codec.deserialize(types.Header, allocator, vector.binary) catch {};
+    var header = try codec.deserialize(types.Header, allocator, vector.binary);
+    defer header.deinit();
+
+    std.debug.print("header: {any}\n", .{header.value});
+
+    try std.json.stringify(header.value, .{ .whitespace = .indent_2 }, std.io.getStdErr().writer());
+    std.debug.print("\n", .{});
 }
