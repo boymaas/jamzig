@@ -37,32 +37,32 @@ const decodeInteger = decoder.decodeInteger;
 
 test "codec.decoder: decodeInteger - u8 (0)" {
     const result = try decodeInteger(&[_]u8{0x00});
-    try std.testing.expectEqual(@as(u64, 0), result);
+    try std.testing.expectEqual(@as(u64, 0), result.value);
 }
 
 test "codec.decoder: decodeInteger - u8 (10)" {
     const result = try decodeInteger(&[_]u8{10});
-    try std.testing.expectEqual(@as(u64, 10), result);
+    try std.testing.expectEqual(@as(u64, 10), result.value);
 }
 
 test "codec.decoder: decodeInteger - u8 (127)" {
     const result = try decodeInteger(&[_]u8{0x7F});
-    try std.testing.expectEqual(@as(u64, 127), result);
+    try std.testing.expectEqual(@as(u64, 127), result.value);
 }
 
 test "codec.decoder: decodeInteger - u8 (128)" {
     const result = try decodeInteger(&[_]u8{ 0x80, 0x80 });
-    try std.testing.expectEqual(@as(u64, 128), result);
+    try std.testing.expectEqual(@as(u64, 128), result.value);
 }
 
 test "codec.decoder: decodeInteger - large value" {
     const result = try decodeInteger(&[_]u8{ 0xFE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02 });
-    try std.testing.expectEqual(@as(u64, 562949953421312), result);
+    try std.testing.expectEqual(@as(u64, 562949953421312), result.value);
 }
 
 test "codec.decoder: decodeInteger - max u64" {
     const result = try decodeInteger(&[_]u8{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF });
-    try std.testing.expectEqual(std.math.maxInt(u64), result);
+    try std.testing.expectEqual(std.math.maxInt(u64), result.value);
 }
 
 test "codec.decoder: decodeInteger - error cases" {
