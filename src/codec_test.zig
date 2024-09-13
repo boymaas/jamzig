@@ -23,7 +23,12 @@ test "codec: decode header-0" {
     const vector = try codec_test.CodecTestVector(codec_test.types.Header).build_from(allocator, "src/tests/vectors/codec/codec/data/header_0.json");
     defer vector.deinit();
 
-    var header = try codec.deserialize(types.Header, TINY_PARAMS, allocator, vector.binary);
+    var header = try codec.deserialize(
+        types.Header,
+        TINY_PARAMS,
+        allocator,
+        vector.binary,
+    );
     defer header.deinit();
 
     const expected = try convert.convertHeader(allocator, vector.expected.value);
@@ -38,7 +43,12 @@ test "codec.active: decode header-1" {
     const vector = try codec_test.CodecTestVector(codec_test.types.Header).build_from(allocator, "src/tests/vectors/codec/codec/data/header_1.json");
     defer vector.deinit();
 
-    const header = try codec.deserialize(types.Header, TINY_PARAMS, allocator, vector.binary);
+    const header = try codec.deserialize(
+        types.Header,
+        TINY_PARAMS,
+        allocator,
+        vector.binary,
+    );
     defer header.deinit();
 
     const expected = try convert.convertHeader(allocator, vector.expected.value);
