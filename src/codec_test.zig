@@ -46,8 +46,9 @@ test "codec.active: decode header-1" {
     // try std.json.stringify(header.value, .{ .whitespace = .indent_2 }, std.io.getStdErr().writer());
     std.debug.print("\n", .{});
 
-    const expected = try convert.headerFromTestVector(allocator, &vector.expected.value);
-    defer convert.freeObject(allocator, expected);
+    // const expected = try convert.headerFromTestVector(allocator, &vector.expected.value);
+    const expected = try convert.convertHeader(allocator, vector.expected.value);
+    defer convert.generic.free(allocator, expected);
 
     std.debug.print("expected: {any}\n", .{expected});
 
