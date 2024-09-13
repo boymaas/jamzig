@@ -26,10 +26,10 @@ test "codec: decode header-0" {
     var header = try codec.deserialize(types.Header, TINY_PARAMS, allocator, vector.binary);
     defer header.deinit();
 
-    std.debug.print("header: {any}\n", .{header.value});
+    const expected = try convert.convertHeader(allocator, vector.expected.value);
+    defer convert.generic.free(allocator, expected);
 
-    // try std.json.stringify(header.value, .{ .whitespace = .indent_2 }, std.io.getStdErr().writer());
-    std.debug.print("\n", .{});
+    try std.testing.expectEqualDeep(expected, header.value);
 }
 
 test "codec.active: decode header-1" {
@@ -41,16 +41,8 @@ test "codec.active: decode header-1" {
     const header = try codec.deserialize(types.Header, TINY_PARAMS, allocator, vector.binary);
     defer header.deinit();
 
-    std.debug.print("header: {any}\n", .{header.value});
-
-    // try std.json.stringify(header.value, .{ .whitespace = .indent_2 }, std.io.getStdErr().writer());
-    std.debug.print("\n", .{});
-
-    // const expected = try convert.headerFromTestVector(allocator, &vector.expected.value);
     const expected = try convert.convertHeader(allocator, vector.expected.value);
     defer convert.generic.free(allocator, expected);
-
-    std.debug.print("expected: {any}\n", .{expected});
 
     try std.testing.expectEqualDeep(expected, header.value);
 }
