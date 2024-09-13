@@ -156,6 +156,11 @@ pub const Verdict = struct {
     target: OpaqueHash,
     age: U32,
     votes: []Judgement, // validators_super_majority
+
+    // validators_super_majority size is defined at runtime
+    fn votes_size(params: CodecParams) usize {
+        return params.validators_super_majority;
+    }
 };
 
 pub const Culprit = struct {
