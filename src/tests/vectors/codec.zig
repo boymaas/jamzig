@@ -1,77 +1,79 @@
 const std = @import("std");
-const codec = @import("./libs/codec.zig");
+pub const types = @import("./libs/codec.zig");
 
-pub const BlockTestVector = struct {
-    expected: std.json.Parsed(codec.Block),
-    binary: []u8,
+pub fn CodecTestVector(comptime T: type) type {
+    return struct {
+        expected: std.json.Parsed(T),
+        binary: []u8,
 
-    allocator: std.mem.Allocator,
-
-    /// Build the vector from the JSON file. The binary is loaded by stripping the JSON
-    /// and using the bin extension to load the binary associated as the expected binary format,
-    /// to which serialization and deserialization should conform.
-    pub fn build_from(
         allocator: std.mem.Allocator,
-        json_path: []const u8,
-    ) !BlockTestVector {
-        const file = try std.fs.cwd().openFile(json_path, .{});
-        defer file.close();
 
-        const json_buffer = try file.readToEndAlloc(allocator, 5 * 1024 * 1024);
-        defer allocator.free(json_buffer);
+        /// Build the vector from the JSON file. The binary is loaded by stripping the JSON
+        /// and using the bin extension to load the binary associated as the expected binary format,
+        /// to which serialization and deserialization should conform.
+        pub fn build_from(
+            allocator: std.mem.Allocator,
+            json_path: []const u8,
+        ) !CodecTestVector(T) {
+            const file = try std.fs.cwd().openFile(json_path, .{});
+            defer file.close();
 
-        // configure json scanner to track diagnostics for easier debugging
-        var diagnostics = std.json.Diagnostics{};
-        var scanner = std.json.Scanner.initCompleteInput(allocator, json_buffer);
-        scanner.enableDiagnostics(&diagnostics);
-        defer scanner.deinit();
+            const json_buffer = try file.readToEndAlloc(allocator, 5 * 1024 * 1024);
+            defer allocator.free(json_buffer);
 
-        // parse from tokensource using the scanner
-        const expected = std.json.parseFromTokenSource(
-            codec.Block,
-            allocator,
-            &scanner,
-            .{
-                .ignore_unknown_fields = true,
-                .parse_numbers = false,
-            },
-        ) catch |err| {
-            std.debug.print("Could not parse codec.Block [{s}]: {}\n{any}", .{ json_path, err, diagnostics });
-            return err;
-        };
-        errdefer expected.deinit();
+            // configure json scanner to track diagnostics for easier debugging
+            var diagnostics = std.json.Diagnostics{};
+            var scanner = std.json.Scanner.initCompleteInput(allocator, json_buffer);
+            scanner.enableDiagnostics(&diagnostics);
+            defer scanner.deinit();
 
-        // Read the corresponding binary file
-        const bin_path = try std.mem.replaceOwned(
-            u8,
-            allocator,
-            json_path,
-            ".json",
-            ".bin",
-        );
-        defer allocator.free(bin_path);
+            // parse from tokensource using the scanner
+            const expected = std.json.parseFromTokenSource(
+                T,
+                allocator,
+                &scanner,
+                .{
+                    .ignore_unknown_fields = true,
+                    .parse_numbers = false,
+                },
+            ) catch |err| {
+                std.debug.print("Could not parse {s} [{s}]: {}\n{any}", .{ @typeName(T), json_path, err, diagnostics });
+                return err;
+            };
+            errdefer expected.deinit();
 
-        const bin_file = try std.fs.cwd().openFile(bin_path, .{});
-        defer bin_file.close();
+            // Read the corresponding binary file
+            const bin_path = try std.mem.replaceOwned(
+                u8,
+                allocator,
+                json_path,
+                ".json",
+                ".bin",
+            );
+            defer allocator.free(bin_path);
 
-        const binary = try bin_file.readToEndAlloc(allocator, 5 * 1024 * 1024);
+            const bin_file = try std.fs.cwd().openFile(bin_path, .{});
+            defer bin_file.close();
 
-        return .{
-            .expected = expected,
-            .binary = binary,
-            .allocator = allocator,
-        };
-    }
+            const binary = try bin_file.readToEndAlloc(allocator, 5 * 1024 * 1024);
 
-    pub fn deinit(self: @This()) void {
-        self.expected.deinit();
-        self.allocator.free(self.binary);
-    }
-};
+            return .{
+                .expected = expected,
+                .binary = binary,
+                .allocator = allocator,
+            };
+        }
+
+        pub fn deinit(self: @This()) void {
+            self.expected.deinit();
+            self.allocator.free(self.binary);
+        }
+    };
+}
 
 test "codec: parsing the block" {
     const allocator = std.heap.page_allocator;
-    const vector = try BlockTestVector.build_from(allocator, "src/tests/vectors/codec/codec/data/block.json");
+    const vector = try CodecTestVector(types.Block).build_from(allocator, "src/tests/vectors/codec/codec/data/block.json");
     defer vector.deinit();
 
     // Test if the vector contains the block type

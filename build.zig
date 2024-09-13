@@ -15,12 +15,20 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const tracing_scopes = b.option([][]const u8, "tracing_scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
-    const tracing_source_location = b.option([][]const u8, "tracing_source", "Enable detailed tracing by source location") orelse &[_][]const u8{};
+    const tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
+    const tracing_source_location = b.option([][]const u8, "tracing-source", "Enable detailed tracing by source location") orelse &[_][]const u8{};
 
     const tracy = b.option([]const u8, "tracy", "Enable Tracy integration. Supply path to Tracy source");
     const tracy_callstack = b.option(bool, "tracy-callstack", "Include callstack information with Tracy data. Does nothing if -Dtracy is not provided") orelse (tracy != null);
     const tracy_allocation = b.option(bool, "tracy-allocation", "Include allocation information with Tracy data. Does nothing if -Dtracy is not provided") orelse (tracy != null);
+
+    const build_options = b.addOptions();
+    build_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
+    build_options.addOption([]const []const u8, "enable_tracing_source_location", tracing_source_location);
+
+    build_options.addOption(bool, "enable_tracy", tracy != null);
+    build_options.addOption(bool, "enable_tracy_callstack", tracy_callstack);
+    build_options.addOption(bool, "enable_tracy_allocation", tracy_allocation);
 
     // This is a list of filters that can be passed to the test step to run only
     // can be specified by:
@@ -51,15 +59,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    const exe_options = b.addOptions();
-    exe.root_module.addOptions("build_options", exe_options);
-
-    exe_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
-    exe_options.addOption([]const []const u8, "enable_tracing_source_location", tracing_source_location);
-
-    exe_options.addOption(bool, "enable_tracy", tracy != null);
-    exe_options.addOption(bool, "enable_tracy_callstack", tracy_callstack);
-    exe_options.addOption(bool, "enable_tracy_allocation", tracy_allocation);
+    exe.root_module.addOptions("build_options", build_options);
 
     if (tracy) |tracy_path| {
         const client_cpp = b.pathJoin(
@@ -119,6 +119,8 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .filters = test_filters,
     });
+
+    unit_tests.root_module.addOptions("build_options", build_options);
 
     unit_tests.root_module.addImport("pretty", pretty_module);
     unit_tests.root_module.addImport("diffz", diffz_module);

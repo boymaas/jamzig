@@ -108,6 +108,17 @@ pub const TicketBody = struct {
 
 const TicketsMark = []TicketBody; // epoch-length
 
+const CodecParams = struct {
+    validators: usize,
+    epoch_length: usize,
+    cores_count: usize,
+
+    // -- (validators-count * 2/3 + 1)
+    validators_super_majority: usize,
+    // -- (cores-count + 7) / 8
+    avail_bitfield_bytes: usize,
+};
+
 pub const Header = struct {
     parent: OpaqueHash,
     parent_state_root: OpaqueHash,

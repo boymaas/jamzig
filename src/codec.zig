@@ -2,7 +2,7 @@ const std = @import("std");
 const ArenaAllocator = std.heap.ArenaAllocator;
 const decoder = @import("codec/decoder.zig");
 const Scanner = @import("codec/scanner.zig").Scanner;
-const tracy = @import("tracy.zig");
+const trace = @import("tracing.zig").src;
 
 pub fn Deserialized(T: anytype) type {
     return struct {
@@ -18,8 +18,8 @@ pub fn Deserialized(T: anytype) type {
 }
 
 pub fn deserialize(comptime T: type, parent_allocator: std.mem.Allocator, data: []u8) !Deserialized(T) {
-    const t = tracy.trace(@src());
-    defer t.end();
+    trace(@src(), "deserialize: start", .{});
+    defer trace(@src(), "deserialize: end", .{});
 
     var result = Deserialized(T){
         .arena = try parent_allocator.create(ArenaAllocator),
@@ -39,22 +39,29 @@ pub fn deserialize(comptime T: type, parent_allocator: std.mem.Allocator, data: 
 /// Allocations made during this operation are not carefully tracked and may not be possible to individually clean up.
 /// It is recommended to use a `std.heap.ArenaAllocator` or similar.
 fn recursiveDeserializeLeaky(comptime T: type, allocator: std.mem.Allocator, scanner: *Scanner) !T {
+    trace(@src(), "start - type: {s}", .{@typeName(T)});
+    defer trace(@src(), "recursiveDeserializeLeaky: end - type: {s}", .{@typeName(T)});
+
     switch (@typeInfo(T)) {
-        .int => {
-            // Handle integer deserialization
-            const integer = try decoder.decodeInteger(scanner.remainingBuffer());
-            try scanner.advanceCursor(integer.bytes_read);
-            return @intCast(integer.value);
+        .int => |intInfo| {
+            trace(@src(), "handling integer", .{});
+            inline for (.{ u8, u16, u32, u64, u128 }) |t| {
+                if (intInfo.bits == @bitSizeOf(t)) {
+                    const integer = decoder.decodeFixedLengthInteger(t, try scanner.readBytes(intInfo.bits / 8));
+                    // trace(@src(), "handling integer: {} => {}", .{ @typeName(t), integer });
+                    return integer;
+                }
+            }
+            @panic("unhandled integer type");
         },
         .optional => |optionalInfo| {
-            // pub const Optional = struct {
-            //     child: type,
-            // };
-            std.log.info("Deserializing optional\n", .{});
             const present = try scanner.readByte();
+            trace(@src(), "handling optional {d}", .{present});
             if (present == 0) {
+                trace(@src(), "handling optional: null", .{});
                 return null;
             } else if (present == 1) {
+                trace(@src(), "handling optional: present {any}", .{@typeName(optionalInfo.child)});
                 return try recursiveDeserializeLeaky(optionalInfo.child, allocator, scanner);
             } else {
                 return error.InvalidValueForOptional;
@@ -65,9 +72,11 @@ fn recursiveDeserializeLeaky(comptime T: type, allocator: std.mem.Allocator, sca
             @compileError("Float deserialization not implemented yet");
         },
         .@"struct" => |structInfo| {
+            trace(@src(), "handling struct", .{});
             const fields = structInfo.fields;
             var result: T = undefined;
             inline for (fields) |field| {
+                trace(@src(), "deserializing struct field: {s}", .{field.name});
                 const field_type = field.type;
                 const field_value = try recursiveDeserializeLeaky(field_type, allocator, scanner);
                 @field(result, field.name) = field_value;
@@ -81,11 +90,13 @@ fn recursiveDeserializeLeaky(comptime T: type, allocator: std.mem.Allocator, sca
             return try deserializeArray(arrayInfo.child, arrayInfo.len, scanner);
         },
         .pointer => |pointerInfo| {
+            trace(@src(), "handling pointer", .{});
             switch (pointerInfo.size) {
                 .Slice => {
+                    trace(@src(), "handling slice", .{});
                     const len = try decoder.decodeInteger(scanner.remainingBuffer());
                     try scanner.advanceCursor(len.bytes_read);
-                    std.debug.print("len: {}\n", .{len.value});
+                    trace(@src(), "recursiveDeserializeLeaky: slice length: {}", .{len.value});
                     const slice = try allocator.alloc(pointerInfo.child, @intCast(len.value));
                     for (slice) |*item| {
                         item.* = try recursiveDeserializeLeaky(pointerInfo.child, allocator, scanner);
@@ -115,6 +126,9 @@ fn recursiveDeserializeLeaky(comptime T: type, allocator: std.mem.Allocator, sca
 }
 
 fn deserializeArray(comptime T: type, comptime len: usize, scanner: *Scanner) ![len]T {
+    trace(@src(), "deserializeArray: start - type: {s}, length: {}", .{ @typeName(T), len });
+    defer trace(@src(), "deserializeArray: end", .{});
+
     var result: [len]T = undefined;
     const bytes_to_read = @sizeOf(T) * len;
     const data = try scanner.readBytes(bytes_to_read);
