@@ -18,30 +18,34 @@ const TINY_PARAMS = types.CodecParams{
 };
 
 /// Helper function to decode and compare test vectors
-fn testDecodeAndCompare(comptime T: type, file_path: []const u8) !void {
+fn testDecodeAndCompare(comptime DomainType: type, comptime VectorType: type, file_path: []const u8) !void {
     const allocator = std.testing.allocator;
 
-    const vector = try codec_test.CodecTestVector(codec_test.types.Header).build_from(allocator, file_path);
+    const vector = try codec_test.CodecTestVector(VectorType).build_from(allocator, file_path);
     defer vector.deinit();
 
     var decoded = try codec.deserialize(
-        T,
+        DomainType,
         TINY_PARAMS,
         allocator,
         vector.binary,
     );
     defer decoded.deinit();
 
-    const expected = try convert.convertHeader(allocator, vector.expected.value);
+    const expected: DomainType = try convert.convert(VectorType, DomainType, allocator, vector.expected.value);
     defer convert.generic.free(allocator, expected);
 
     try std.testing.expectEqualDeep(expected, decoded.value);
 }
 
 test "codec: decode header-0" {
-    try testDecodeAndCompare(types.Header, "src/tests/vectors/codec/codec/data/header_0.json");
+    try testDecodeAndCompare(types.Header, codec_test.types.Header, "src/tests/vectors/codec/codec/data/header_0.json");
 }
 
-test "codec.active: decode header-1" {
-    try testDecodeAndCompare(types.Header, "src/tests/vectors/codec/codec/data/header_1.json");
+test "codec: decode header-1" {
+    try testDecodeAndCompare(types.Header, codec_test.types.Header, "src/tests/vectors/codec/codec/data/header_1.json");
+}
+
+test "codec.active: decode extrinsic" {
+    try testDecodeAndCompare(types.Extrinsic, codec_test.types.Extrinsic, "src/tests/vectors/codec/codec/data/extrinsic.json");
 }

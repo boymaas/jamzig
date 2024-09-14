@@ -43,6 +43,11 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
     defer trace(@src(), "recursiveDeserializeLeaky: end - type: {s}", .{@typeName(T)});
 
     switch (@typeInfo(T)) {
+        .bool => {
+            trace(@src(), "handling boolean", .{});
+            const byte = try scanner.readByte();
+            return byte != 0;
+        },
         .int => |intInfo| {
             trace(@src(), "handling integer", .{});
             inline for (.{ u8, u16, u32, u64, u128 }) |t| {
@@ -130,7 +135,8 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
             //     decls: []const Declaration,
             // };
             _ = unionInfo;
-            @compileError("Unions are not supported for deserialization");
+            trace(@src(), "handling union field: {s}", .{@typeName(T)});
+            @compileError("Unions are not supported for deserialization. Field: " ++ @typeName(T));
         },
 
         else => {

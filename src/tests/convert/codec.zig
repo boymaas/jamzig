@@ -32,6 +32,11 @@ pub fn convertHeader(allocator: Allocator, from: tv_lib_codec.Header) !lib_codec
     return try generic.convert(lib_codec.Header, TypeMapping, allocator, from);
 }
 
+/// Convert a `testvecor.<any>` to a `codec.<any>`.
+pub fn convert(comptime From: type, comptime To: type, allocator: Allocator, from: From) !To {
+    return try generic.convert(To, TypeMapping, allocator, from);
+}
+
 // Utilities
 fn convertHexBytesFixedToArray(comptime size: u32, from: tv_types.hex.HexBytesFixed(size)) [size]u8 {
     var to: [size]u8 = undefined;
