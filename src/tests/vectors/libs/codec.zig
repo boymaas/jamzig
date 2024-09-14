@@ -175,7 +175,7 @@ pub const TicketEnvelope = struct {
     signature: BandersnatchRingSignature,
 };
 
-const TicketsExtrinsic = []TicketEnvelope;
+pub const TicketsExtrinsic = []TicketEnvelope;
 
 pub const Judgement = struct {
     vote: bool,
@@ -213,7 +213,7 @@ pub const Preimage = struct {
     blob: HexBytes,
 };
 
-const PreimagesExtrinsic = []Preimage;
+pub const PreimagesExtrinsic = []Preimage;
 
 pub const AvailAssurance = struct {
     anchor: OpaqueHash,
@@ -222,7 +222,7 @@ pub const AvailAssurance = struct {
     signature: Ed25519Signature,
 };
 
-const AssurancesExtrinsic = []AvailAssurance; // validators_count
+pub const AssurancesExtrinsic = []AvailAssurance; // validators_count
 
 pub const ValidatorSignature = struct {
     validator_index: ValidatorIndex,
@@ -235,7 +235,7 @@ pub const ReportGuarantee = struct {
     signatures: []ValidatorSignature,
 };
 
-const GuaranteesExtrinsic = []ReportGuarantee; // cores_count
+pub const GuaranteesExtrinsic = []ReportGuarantee; // cores_count
 
 pub const Extrinsic = struct {
     tickets: TicketsExtrinsic,

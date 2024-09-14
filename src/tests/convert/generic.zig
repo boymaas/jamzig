@@ -4,86 +4,12 @@ const Allocator = std.mem.Allocator;
 const trace = @import("../../tracing.zig").src;
 
 pub fn convert(comptime ToType: type, conversionFunctions: anytype, allocator: anytype, from: anytype) !ToType {
-    var to: ToType = undefined;
-    const toTypeInfo = @typeInfo(ToType);
-    const fromTypeInfo = @typeInfo(@TypeOf(from));
-
-    if (toTypeInfo != .@"struct" or fromTypeInfo != .@"struct") {
-        return error.InvalidType;
-    }
-
-    inline for (toTypeInfo.@"struct".fields) |toField| {
-        const fieldName = toField.name;
-        const toFieldType = toField.type;
-        const fromField = @field(from, fieldName);
-
-        @field(to, fieldName) = try convertField(conversionFunctions, allocator, fromField, toFieldType);
-    }
-
-    return to;
-}
-
-/// This a generic function to free an generic converted object using the allocator.
-pub fn free(allocator: Allocator, obj: anytype) void {
-    const T = @TypeOf(obj);
-    trace(@src(), "Freeing object of type: {s}\n", .{@typeName(T)});
-    switch (@typeInfo(T)) {
-        .@"struct" => |structInfo| {
-            trace(@src(), "Freeing struct fields\n", .{});
-            inline for (structInfo.fields) |field| {
-                trace(@src(), "Freeing field: {s}\n", .{field.name});
-                free(allocator, @field(obj, field.name));
-            }
-        },
-        .pointer => |ptrInfo| {
-            if (ptrInfo.size == .Slice) {
-                trace(@src(), "Freeing slice elements\n", .{});
-                for (obj) |item| {
-                    free(allocator, item);
-                }
-                trace(@src(), "Freeing slice\n", .{});
-                allocator.free(obj);
-            } else if (ptrInfo.size == .One) {
-                trace(@src(), "Freeing single pointer\n", .{});
-                free(allocator, obj.*);
-                allocator.destroy(obj);
-            } else {
-                trace(@src(), "Unsupported pointer size\n", .{});
-            }
-        },
-        .optional => {
-            trace(@src(), "Freeing optional\n", .{});
-            if (obj) |value| {
-                free(allocator, value);
-            } else {
-                trace(@src(), "Optional is null, nothing to free\n", .{});
-            }
-        },
-        .array => {
-            trace(@src(), "Freeing array elements\n", .{});
-            for (obj, 0..) |item, index| {
-                trace(@src(), "Freeing array element at index: {d}\n", .{index});
-                free(allocator, item);
-            }
-        },
-        .@"union" => |unionInfo| {
-            if (unionInfo.tag_type) |_| {
-                trace(@src(), "Freeing tagged union\n", .{});
-                switch (obj) {
-                    inline else => |field| {
-                        trace(@src(), "Freeing union field {any}\n", .{field});
-                        free(allocator, field);
-                    },
-                }
-            } else {
-                @compileError("Cannot free untagged union");
-            }
-        },
-        else => {
-            trace(@src(), "No specific free action for type: {s}\n", .{@typeName(T)});
-        },
-    }
-    trace(@src(), "Finished freeing object of type: {s}\n", .{@typeName(T)});
+    return try convertField(
+        conversionFunctions,
+        allocator,
+        from,
+        ToType,
+    );
 }
 
 fn convertField(conversionFunctions: anytype, allocator: anytype, fromValue: anytype, ToType: type) !ToType {
@@ -171,8 +97,17 @@ fn convertField(conversionFunctions: anytype, allocator: anytype, fromValue: any
             },
             .@"struct" => {
                 const FromTypeInfo = @typeInfo(FromType);
+
+                var to: ToType = undefined;
                 if (FromTypeInfo == .@"struct") {
-                    return try convert(ToType, conversionFunctions, allocator, fromValue);
+                    inline for (toTypeInfo.@"struct".fields) |toField| {
+                        const toFieldName = toField.name;
+                        const toFieldType = toField.type;
+                        const fromFieldValue = @field(fromValue, toFieldName);
+
+                        @field(to, toFieldName) = try convertField(conversionFunctions, allocator, fromFieldValue, toFieldType);
+                    }
+                    return to;
                 } else {
                     // @compileLog("Calling conversion function for type: ", @typeName(FromType), " to ", @typeName(ToType));
                     return try callConversionFunction(conversionFunctions, allocator, fromValue, ToType);
@@ -223,4 +158,67 @@ fn getTypeNameInfo(comptime T: type) struct { typeNameWithoutPath: []const u8, g
         .genericTypeName = genericTypeName,
         .hasParameters = hasParameters,
     };
+}
+
+/// This a generic function to free an generic converted object using the allocator.
+pub fn free(allocator: Allocator, obj: anytype) void {
+    const T = @TypeOf(obj);
+    trace(@src(), "Freeing object of type: {s}\n", .{@typeName(T)});
+    switch (@typeInfo(T)) {
+        .@"struct" => |structInfo| {
+            trace(@src(), "Freeing struct fields\n", .{});
+            inline for (structInfo.fields) |field| {
+                trace(@src(), "Freeing field: {s}\n", .{field.name});
+                free(allocator, @field(obj, field.name));
+            }
+        },
+        .pointer => |ptrInfo| {
+            if (ptrInfo.size == .Slice) {
+                trace(@src(), "Freeing slice elements\n", .{});
+                for (obj) |item| {
+                    free(allocator, item);
+                }
+                trace(@src(), "Freeing slice\n", .{});
+                allocator.free(obj);
+            } else if (ptrInfo.size == .One) {
+                trace(@src(), "Freeing single pointer\n", .{});
+                free(allocator, obj.*);
+                allocator.destroy(obj);
+            } else {
+                trace(@src(), "Unsupported pointer size\n", .{});
+            }
+        },
+        .optional => {
+            trace(@src(), "Freeing optional\n", .{});
+            if (obj) |value| {
+                free(allocator, value);
+            } else {
+                trace(@src(), "Optional is null, nothing to free\n", .{});
+            }
+        },
+        .array => {
+            trace(@src(), "Freeing array elements\n", .{});
+            for (obj, 0..) |item, index| {
+                trace(@src(), "Freeing array element at index: {d}\n", .{index});
+                free(allocator, item);
+            }
+        },
+        .@"union" => |unionInfo| {
+            if (unionInfo.tag_type) |_| {
+                trace(@src(), "Freeing tagged union\n", .{});
+                switch (obj) {
+                    inline else => |field| {
+                        trace(@src(), "Freeing union field {any}\n", .{field});
+                        free(allocator, field);
+                    },
+                }
+            } else {
+                @compileError("Cannot free untagged union");
+            }
+        },
+        else => {
+            trace(@src(), "No specific free action for type: {s}\n", .{@typeName(T)});
+        },
+    }
+    trace(@src(), "Finished freeing object of type: {s}\n", .{@typeName(T)});
 }

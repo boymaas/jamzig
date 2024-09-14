@@ -46,6 +46,54 @@ test "codec: decode header-1" {
     try testDecodeAndCompare(types.Header, codec_test.types.Header, "src/tests/vectors/codec/codec/data/header_1.json");
 }
 
-test "codec.active: decode extrinsic" {
+test "codec: decode extrinsic" {
     try testDecodeAndCompare(types.Extrinsic, codec_test.types.Extrinsic, "src/tests/vectors/codec/codec/data/extrinsic.json");
+}
+
+test "codec: decode block" {
+    try testDecodeAndCompare(types.Block, codec_test.types.Block, "src/tests/vectors/codec/codec/data/block.json");
+}
+
+test "codec: decode assurances_extrinsic" {
+    try testDecodeAndCompare(types.AssurancesExtrinsic, codec_test.types.AssurancesExtrinsic, "src/tests/vectors/codec/codec/data/assurances_extrinsic.json");
+}
+
+test "codec: decode disputes_extrinsic" {
+    try testDecodeAndCompare(types.DisputesExtrinsic, codec_test.types.DisputesExtrinsic, "src/tests/vectors/codec/codec/data/disputes_extrinsic.json");
+}
+
+test "codec: decode guarantees_extrinsic" {
+    try testDecodeAndCompare(types.GuaranteesExtrinsic, codec_test.types.GuaranteesExtrinsic, "src/tests/vectors/codec/codec/data/guarantees_extrinsic.json");
+}
+
+test "codec: decode preimages_extrinsic" {
+    try testDecodeAndCompare(types.PreimagesExtrinsic, codec_test.types.PreimagesExtrinsic, "src/tests/vectors/codec/codec/data/preimages_extrinsic.json");
+}
+
+test "codec: decode refine_context" {
+    try testDecodeAndCompare(types.RefineContext, codec_test.types.RefineContext, "src/tests/vectors/codec/codec/data/refine_context.json");
+}
+
+test "codec: decode tickets_extrinsic" {
+    try testDecodeAndCompare(types.TicketsExtrinsic, codec_test.types.TicketsExtrinsic, "src/tests/vectors/codec/codec/data/tickets_extrinsic.json");
+}
+
+test "codec: decode work_item" {
+    try testDecodeAndCompare(types.WorkItem, codec_test.types.WorkItem, "src/tests/vectors/codec/codec/data/work_item.json");
+}
+
+test "codec: decode work_package" {
+    try testDecodeAndCompare(types.WorkPackage, codec_test.types.WorkPackage, "src/tests/vectors/codec/codec/data/work_package.json");
+}
+
+test "codec: decode work_report" {
+    try testDecodeAndCompare(types.WorkReport, codec_test.types.WorkReport, "src/tests/vectors/codec/codec/data/work_report.json");
+}
+
+test "codec: decode work_result_0" {
+    try testDecodeAndCompare(types.WorkResult, codec_test.types.WorkResult, "src/tests/vectors/codec/codec/data/work_result_0.json");
+}
+
+test "codec: decode work_result_1" {
+    try testDecodeAndCompare(types.WorkResult, codec_test.types.WorkResult, "src/tests/vectors/codec/codec/data/work_result_1.json");
 }
