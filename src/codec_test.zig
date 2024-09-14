@@ -17,42 +17,31 @@ const TINY_PARAMS = types.CodecParams{
     .avail_bitfield_bytes = 1,
 };
 
-test "codec: decode header-0" {
+/// Helper function to decode and compare test vectors
+fn testDecodeAndCompare(comptime T: type, file_path: []const u8) !void {
     const allocator = std.testing.allocator;
 
-    const vector = try codec_test.CodecTestVector(codec_test.types.Header).build_from(allocator, "src/tests/vectors/codec/codec/data/header_0.json");
+    const vector = try codec_test.CodecTestVector(codec_test.types.Header).build_from(allocator, file_path);
     defer vector.deinit();
 
-    var header = try codec.deserialize(
-        types.Header,
+    var decoded = try codec.deserialize(
+        T,
         TINY_PARAMS,
         allocator,
         vector.binary,
     );
-    defer header.deinit();
+    defer decoded.deinit();
 
     const expected = try convert.convertHeader(allocator, vector.expected.value);
     defer convert.generic.free(allocator, expected);
 
-    try std.testing.expectEqualDeep(expected, header.value);
+    try std.testing.expectEqualDeep(expected, decoded.value);
+}
+
+test "codec: decode header-0" {
+    try testDecodeAndCompare(types.Header, "src/tests/vectors/codec/codec/data/header_0.json");
 }
 
 test "codec.active: decode header-1" {
-    const allocator = std.testing.allocator;
-
-    const vector = try codec_test.CodecTestVector(codec_test.types.Header).build_from(allocator, "src/tests/vectors/codec/codec/data/header_1.json");
-    defer vector.deinit();
-
-    const header = try codec.deserialize(
-        types.Header,
-        TINY_PARAMS,
-        allocator,
-        vector.binary,
-    );
-    defer header.deinit();
-
-    const expected = try convert.convertHeader(allocator, vector.expected.value);
-    defer convert.generic.free(allocator, expected);
-
-    try std.testing.expectEqualDeep(expected, header.value);
+    try testDecodeAndCompare(types.Header, "src/tests/vectors/codec/codec/data/header_1.json");
 }
