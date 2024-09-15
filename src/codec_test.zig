@@ -17,13 +17,47 @@ const TINY_PARAMS = types.CodecParams{
     .avail_bitfield_bytes = 1,
 };
 
+const TestCase = struct {
+    name: []const u8,
+    domain_type: []const u8,
+};
+
+const test_cases = [_]TestCase{
+    .{ .name = "header_0", .domain_type = "Header" },
+    .{ .name = "header_1", .domain_type = "Header" },
+    .{ .name = "extrinsic", .domain_type = "Extrinsic" },
+    .{ .name = "block", .domain_type = "Block" },
+    .{ .name = "assurances_extrinsic", .domain_type = "AssurancesExtrinsic" },
+    .{ .name = "disputes_extrinsic", .domain_type = "DisputesExtrinsic" },
+    .{ .name = "guarantees_extrinsic", .domain_type = "GuaranteesExtrinsic" },
+    .{ .name = "preimages_extrinsic", .domain_type = "PreimagesExtrinsic" },
+    .{ .name = "refine_context", .domain_type = "RefineContext" },
+    .{ .name = "tickets_extrinsic", .domain_type = "TicketsExtrinsic" },
+    .{ .name = "work_item", .domain_type = "WorkItem" },
+    .{ .name = "work_package", .domain_type = "WorkPackage" },
+    .{ .name = "work_report", .domain_type = "WorkReport" },
+    .{ .name = "work_result_0", .domain_type = "WorkResult" },
+    .{ .name = "work_result_1", .domain_type = "WorkResult" },
+};
+
+test "codec: decode" {
+    inline for (test_cases) |test_case| {
+        const test_name = "codec: decode " ++ test_case.name;
+        std.debug.print("{s}\n", .{test_name});
+
+        try testDecodeAndCompare(test_case);
+    }
+}
+
 /// Helper function to decode and compare test vectors
-fn testDecodeAndCompare(comptime DomainType: type, comptime VectorType: type, name: []const u8) !void {
+fn testDecodeAndCompare(comptime test_case: TestCase) !void {
     const allocator = std.testing.allocator;
 
-    const file_path = try std.fmt.allocPrint(allocator, "src/tests/vectors/codec/codec/data/{s}.json", .{name});
+    const file_path = try std.fmt.allocPrint(allocator, "src/tests/vectors/codec/codec/data/{s}.json", .{test_case.name});
     defer allocator.free(file_path);
 
+    const DomainType = @field(types, test_case.domain_type);
+    const VectorType = @field(codec_test.types, test_case.domain_type);
     const vector = try codec_test.CodecTestVector(VectorType).build_from(allocator, file_path);
     defer vector.deinit();
 
@@ -39,35 +73,4 @@ fn testDecodeAndCompare(comptime DomainType: type, comptime VectorType: type, na
     defer convert.generic.free(allocator, expected);
 
     try std.testing.expectEqualDeep(expected, decoded.value);
-}
-
-const test_cases = [_]struct {
-    name: []const u8,
-    domain_type: type,
-    vector_type: type,
-}{
-    .{ .name = "header_0", .domain_type = types.Header, .vector_type = codec_test.types.Header },
-    .{ .name = "header_1", .domain_type = types.Header, .vector_type = codec_test.types.Header },
-    .{ .name = "extrinsic", .domain_type = types.Extrinsic, .vector_type = codec_test.types.Extrinsic },
-    .{ .name = "block", .domain_type = types.Block, .vector_type = codec_test.types.Block },
-    .{ .name = "assurances_extrinsic", .domain_type = types.AssurancesExtrinsic, .vector_type = codec_test.types.AssurancesExtrinsic },
-    .{ .name = "disputes_extrinsic", .domain_type = types.DisputesExtrinsic, .vector_type = codec_test.types.DisputesExtrinsic },
-    .{ .name = "guarantees_extrinsic", .domain_type = types.GuaranteesExtrinsic, .vector_type = codec_test.types.GuaranteesExtrinsic },
-    .{ .name = "preimages_extrinsic", .domain_type = types.PreimagesExtrinsic, .vector_type = codec_test.types.PreimagesExtrinsic },
-    .{ .name = "refine_context", .domain_type = types.RefineContext, .vector_type = codec_test.types.RefineContext },
-    .{ .name = "tickets_extrinsic", .domain_type = types.TicketsExtrinsic, .vector_type = codec_test.types.TicketsExtrinsic },
-    .{ .name = "work_item", .domain_type = types.WorkItem, .vector_type = codec_test.types.WorkItem },
-    .{ .name = "work_package", .domain_type = types.WorkPackage, .vector_type = codec_test.types.WorkPackage },
-    .{ .name = "work_report", .domain_type = types.WorkReport, .vector_type = codec_test.types.WorkReport },
-    .{ .name = "work_result_0", .domain_type = types.WorkResult, .vector_type = codec_test.types.WorkResult },
-    .{ .name = "work_result_1", .domain_type = types.WorkResult, .vector_type = codec_test.types.WorkResult },
-};
-
-test "codec: decode" {
-    inline for (test_cases) |test_case| {
-        const test_name = "codec: decode " ++ test_case.name;
-        std.debug.print("{s}\n", .{test_name});
-
-        try testDecodeAndCompare(test_case.domain_type, test_case.vector_type, test_case.name);
-    }
 }
