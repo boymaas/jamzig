@@ -330,3 +330,12 @@ pub unsafe extern "C" fn get_padding_point(output: *mut u8) -> bool {
 
     true
 }
+
+/// # Safety
+///
+/// This function is unsafe because it triggers the initialization of the ring context.
+/// It should be called before any other operations that require the ring context.
+#[no_mangle]
+pub unsafe extern "C" fn initialize_ring_context() {
+    ring_context();
+}

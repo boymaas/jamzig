@@ -36,6 +36,13 @@ pub extern fn get_padding_point(
     output: [*c]u8,
 ) callconv(.C) bool;
 
+pub extern fn initialize_ring_context() void;
+
+// Zig wrapper function for initialize_ring_context
+pub fn initializeRingContext() void {
+    initialize_ring_context();
+}
+
 // Zig wrapper functions
 pub fn generateRingSignature(
     public_keys: []const types.BandersnatchKey,
@@ -150,6 +157,16 @@ test "crypto: createKeyPairFromSeed" {
     std.debug.print("Public key: {s}\n", .{std.fmt.fmtSliceHexLower(&key_pair.public_key)});
 }
 
+fn timeFunction(comptime desc: []const u8, comptime func: anytype, args: anytype) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
+    var timer = std.time.Timer.start() catch unreachable;
+    const result = @call(.auto, func, args);
+    const elapsed_nanos = timer.read();
+    const elapsed_time = @as(f64, @floatFromInt(elapsed_nanos)) / 1_000_000.0;
+
+    std.debug.print(desc ++ " took {d:.3} ms\n", .{elapsed_time});
+    return result;
+}
+
 test "crypto: ring signature and VRF" {
     const RING_SIZE: usize = 10;
     var ring: [RING_SIZE]types.BandersnatchKey = undefined;
@@ -170,6 +187,9 @@ test "crypto: ring signature and VRF" {
         }
     }
 
+    // Initialize the Ring context
+    timeFunction("initRingCtx", initializeRingContext, .{});
+
     const prover_key_index: usize = 3;
 
     // Generate a key pair for the prover
@@ -180,15 +200,22 @@ test "crypto: ring signature and VRF" {
     std.debug.print("Public key length: {} bytes\n", .{prover_key_pair.public_key.len});
 
     // Replace some keys with padding points
-    // const padding_point = try getPaddingPoint();
-    // ring[2] = padding_point;
-    // ring[7] = padding_point;
+    const padding_point = try getPaddingPoint();
+    ring[2] = padding_point;
+    ring[7] = padding_point;
 
+    // Create some input data
     const vrf_input_data = [_]u8{ 'f', 'o', 'o' };
     const aux_data = [_]u8{ 'b', 'a', 'r' };
 
     // Generate ring signature
-    const ring_signature = try generateRingSignature(&ring, &vrf_input_data, &aux_data, prover_key_index, prover_key_pair.private_key);
+    const ring_signature = try timeFunction("genRingSig", generateRingSignature, .{
+        &ring,
+        &vrf_input_data,
+        &aux_data,
+        prover_key_index,
+        prover_key_pair.private_key,
+    });
     std.debug.print("Ring signature length: {} bytes\n", .{ring_signature.len});
     std.debug.print("Ring signature: ", .{});
     for (ring_signature) |byte| {
@@ -197,7 +224,12 @@ test "crypto: ring signature and VRF" {
     std.debug.print("\n", .{});
 
     // Verify ring signature
-    const ring_vrf_output = try verifyRingSignature(&ring, &vrf_input_data, &aux_data, &ring_signature);
+    const ring_vrf_output = try timeFunction("verifyRingSig", verifyRingSignature, .{
+        &ring,
+        &vrf_input_data,
+        &aux_data,
+        &ring_signature,
+    });
     std.debug.print("Ring VRF output length: {} bytes\n", .{ring_vrf_output.len});
     std.debug.print("Ring VRF output: ", .{});
     for (ring_vrf_output) |byte| {
