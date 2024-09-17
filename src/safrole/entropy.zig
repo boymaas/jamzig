@@ -3,7 +3,7 @@ const std = @import("std");
 const Blake2b_256 = std.crypto.hash.blake2.Blake2b(256);
 
 // Hashing function (Blake2b)
-fn hash(input: []const u8) [32]u8 {
+pub fn hash(input: []const u8) [32]u8 {
     var hasher = Blake2b_256.init(.{});
     hasher.update(input);
     var output: [32]u8 = undefined;

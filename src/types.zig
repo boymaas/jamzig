@@ -16,11 +16,18 @@ pub const ValidatorIndex = U16;
 pub const CoreIndex = U16;
 pub const TicketAttempt = u8; // as the range is 0..1
 
+pub const BandersnatchPrivateKey = ByteArray32;
 pub const BandersnatchKey = ByteArray32;
 pub const Ed25519Key = ByteArray32;
+pub const BandersnatchVrfOutput = [32]u8;
 pub const BandersnatchVrfSignature = [96]u8;
 pub const BandersnatchRingSignature = [784]u8;
 pub const Ed25519Signature = [64]u8;
+
+pub const BandersnatchKeyPair = struct {
+    private_key: BandersnatchPrivateKey,
+    public_key: BandersnatchKey,
+};
 
 pub const RefineContext = struct {
     anchor: OpaqueHash,

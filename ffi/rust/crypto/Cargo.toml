@@ -3,8 +3,12 @@ name = "jamzig-crypto"
 version = "0.1.0"
 edition = "2021"
 
+# [dependencies]
+# bandersnatch_vrfs = { git = "https://github.com/w3f/ring-vrf", version = "0.0.4" }
+
 [dependencies]
-bandersnatch_vrfs = { git = "https://github.com/w3f/ring-vrf", version = "0.0.4" }
+ark-ec-vrfs ={ git = "https://github.com/davxy/ark-ec-vrfs", rev = "376eb16", features = ["bandersnatch", "ring", "parallel"] }
+hex = "0.4.3"
 
 [lib]
 crate-type = ["staticlib"]

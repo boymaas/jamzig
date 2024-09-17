@@ -6,6 +6,8 @@ comptime {
     _ = @import("safrole_test.zig");
     _ = @import("safrole/types_test.zig");
     _ = @import("safrole_test/diffz.zig");
+
+    _ = @import("crypto.zig");
 }
 
 pub const tv_types = @import("tests/vectors/libs/types.zig");

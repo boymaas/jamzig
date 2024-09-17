@@ -30,6 +30,8 @@ pub const ValidatorData = struct {
     metadata: [128]u8,
 };
 
+pub const GammaK = []ValidatorData;
+
 // γₛ ∈ ⟦C⟧E ∪ ⟦HB⟧E
 // the current epoch’s slot-sealer series, which is either a
 // full complement of E tickets or, in the case of a fallback
@@ -63,7 +65,7 @@ pub const State = struct {
 
     /// γₖ: The keys for the validators of the next epoch, which help in planning
     /// the upcoming validation process.
-    gamma_k: []ValidatorData,
+    gamma_k: GammaK,
 
     /// ι: Validator keys and metadata to be drawn from next, which indicates the
     /// future state and validators likely to be active.
