@@ -31,15 +31,6 @@ fn ring_context() -> &'static RingContext {
     static RING_CTX: OnceLock<RingContext> = OnceLock::new();
     RING_CTX.get_or_init(|| {
         use bandersnatch::PcsParams;
-
-        // use std::{fs::File, io::Read};
-        // let manifest_dir =
-        //     std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set");
-        // let filename = format!("{}/data/zcash-srs-2-11-uncompressed.bin", manifest_dir);
-        // let mut file = File::open(filename).unwrap();
-        // let mut buf = Vec::new();
-        // file.read_to_end(&mut buf).unwrap();
-
         let pcs_params = PcsParams::deserialize_uncompressed_unchecked(ZCASH_SRS).unwrap();
         RingContext::from_srs(RING_SIZE, pcs_params).unwrap()
     })

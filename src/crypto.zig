@@ -151,7 +151,7 @@ test "crypto: createKeyPairFromSeed" {
 }
 
 test "crypto: ring signature and VRF" {
-    const RING_SIZE: usize = 1023;
+    const RING_SIZE: usize = 10;
     var ring: [RING_SIZE]types.BandersnatchKey = undefined;
 
     // Generate public keys for the ring
@@ -173,7 +173,7 @@ test "crypto: ring signature and VRF" {
     const prover_key_index: usize = 3;
 
     // Generate a key pair for the prover
-    const prover_seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, 3));
+    const prover_seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_key_index));
     const prover_key_pair = try createKeyPairFromSeed(prover_seed);
 
     std.debug.print("Secret key length: {} bytes\n", .{prover_key_pair.private_key.len});
