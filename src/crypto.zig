@@ -257,17 +257,17 @@ test "crypto: fuzz | takes 10s" {
         ring[i] = key_pair.public_key;
     }
 
-    // Create some input data
-    var vrf_input_data: [32]u8 = undefined;
-    random.bytes(&vrf_input_data);
-    var aux_data: [32]u8 = undefined;
-    random.bytes(&aux_data);
-
     // Test multiple iterations
     const ITERATIONS: usize = 10;
     for (0..ITERATIONS) |iteration| {
         // choose a random prover key index
         const prover_key_index = random.uintLessThan(usize, RING_SIZE);
+
+        // Create some input data
+        var vrf_input_data: [32]u8 = undefined;
+        random.bytes(&vrf_input_data);
+        var aux_data: [32]u8 = undefined;
+        random.bytes(&aux_data);
 
         std.debug.print("Iteration: {}, Prover Key Index: {}\n", .{ iteration, prover_key_index });
 
