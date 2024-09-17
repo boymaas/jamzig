@@ -237,3 +237,57 @@ test "crypto: ring signature and VRF" {
     }
     std.debug.print("\n", .{});
 }
+
+test "crypto: fuzz | takes 10s" {
+    var prng = std.Random.DefaultPrng.init(0);
+    const random = prng.random();
+
+    // Initialize the Ring context
+    initializeRingContext();
+
+    // Generate public keys for the ring
+    const RING_SIZE: usize = 10;
+    var ring_keypairs: [RING_SIZE]types.BandersnatchKeyPair = undefined;
+    var ring: [RING_SIZE]types.BandersnatchKey = undefined;
+    for (0..RING_SIZE) |i| {
+        var seed: [32]u8 = undefined;
+        random.bytes(&seed);
+        const key_pair = try createKeyPairFromSeed(&seed);
+        ring_keypairs[i] = key_pair;
+        ring[i] = key_pair.public_key;
+    }
+
+    // Create some input data
+    var vrf_input_data: [32]u8 = undefined;
+    random.bytes(&vrf_input_data);
+    var aux_data: [32]u8 = undefined;
+    random.bytes(&aux_data);
+
+    // Test multiple iterations
+    const ITERATIONS: usize = 10;
+    for (0..ITERATIONS) |iteration| {
+        // choose a random prover key index
+        const prover_key_index = random.uintLessThan(usize, RING_SIZE);
+
+        std.debug.print("Iteration: {}, Prover Key Index: {}\n", .{ iteration, prover_key_index });
+
+        // Generate ring signature
+        const ring_signature = try generateRingSignature(
+            &ring,
+            &vrf_input_data,
+            &aux_data,
+            prover_key_index,
+            ring_keypairs[prover_key_index].private_key,
+        );
+
+        // Verify ring signature
+        _ = try verifyRingSignature(
+            &ring,
+            &vrf_input_data,
+            &aux_data,
+            &ring_signature,
+        );
+    }
+
+    std.debug.print("\n\nFuzz test completed successfully.\n", .{});
+}
