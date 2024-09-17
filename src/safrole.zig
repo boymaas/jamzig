@@ -92,24 +92,45 @@ pub fn transition(
         const iota = post_state.iota;
 
         post_state.kappa = gamma_k;
-        post_state.gamma_k = try allocator.dupe(types.ValidatorData, iota);
+        post_state.gamma_k = phiZeroOutOffenders(try allocator.dupe(types.ValidatorData, iota));
         post_state.lambda = kappa;
         allocator.free(lamda);
 
-        // TODO: (58) Zero out any offenders on post_state.iota, The origin of
-        // the offenders is explained in section 10.
+        post_state.gamma_z = bandersnatchRingRoot(gamma_k);
 
-        // Tiny-4 presents us with a set of keys, and not tickets so we
-        // are in fallback mode.
-        const gamma_s = post_state.gamma_s.keys;
-        // TODO: gamma_s is a union check state
-        post_state.gamma_s.keys = try Z_outsideInOrdering(types.BandersnatchKey, allocator, gamma_s);
-        allocator.free(gamma_s);
+        // Check the state of gamma_s union
+        //
+        // (48) either keys or ticketsare in fallback mode.
+        // γs is the current epoch’s slot-sealer series, which is either a
+        // full complement of E tickets or, in the case of a fallback
+        // mode, a series of E Bandersnatch keys:
+
+        // (68) The posterior slot key sequence gamma_s' is one of three expressions
+        // depending on the circumstance of the block. If the block is not the
+        // first in an epoch, then it remains unchanged from the prior γs. If
+        // the block signals the next epoch (by epoch index) and the previous
+        // block’s slot was within the closing period of the previous epoch,
+        // then it takes the value of the prior ticket accumulator γa.
+
+        // TODO: determine if this is the first block in the new epoch
+        switch (post_state.gamma_s) {
+            .tickets => |tickets| {
+                // We can use the Z_outsideInOrdering algorithm on tickets
+                post_state.gamma_s.tickets = try Z_outsideInOrdering(types.TicketBody, allocator, tickets);
+                allocator.free(tickets);
+            },
+            // fallback
+            .keys => |keys| {
+                // We are in fallback mode
+                post_state.gamma_s.keys = try gammaS_Fallback(allocator, post_state.eta[2], keys);
+                allocator.free(keys);
+            },
+        }
     }
 
     // (66) Combine previous entropy accumulator (η0) with new entropy
     // input η′0 ≡H(η0 ⌢ Y(Hv))
-    post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
+    // post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
 
     // Additional logic for other state updates can be added here
 
@@ -127,6 +148,55 @@ pub fn transition(
         },
         .state = post_state,
     };
+}
+
+// O: See section 3.8 and appendix G
+fn bandersnatchRingRoot(gamma_k: types.GammaK) types.GammaZ {
+    _ = gamma_k;
+    return [_]u8{0} ** 144;
+}
+
+// 58. PHI: Zero out any offenders on post_state.iota
+fn phiZeroOutOffenders(data: []types.ValidatorData) []types.ValidatorData {
+    // TODO: (58) Zero out any offenders on post_state.iota, The origin of
+    // the offenders is explained in section 10.
+    return data;
+}
+
+fn gammaS_Fallback(
+    allocator: std.mem.Allocator,
+    r: types.OpaqueHash,
+    keys: []types.BandersnatchKey,
+) ![]types.BandersnatchKey {
+    // Allocate memory of the same length as keys to return
+    var result = try allocator.alloc(types.BandersnatchKey, keys.len);
+    errdefer allocator.free(result);
+
+    for (keys, 0..) |_, i| {
+        // Step 1: Encode the index i into 4 bytes (u32)
+        var encoded_index: [4]u8 = undefined;
+        std.mem.writeInt(u32, &encoded_index, @intCast(i), .little);
+
+        // Step 2: Concatenate r with the encoded value
+        const concatenated = r ++ encoded_index;
+
+        // Step 3: Hash the concatenated value and take the first 4 bytes
+        var hashed = entropy.hash(&concatenated);
+        var first_4_bytes: [4]u8 = hashed[0..4].*;
+
+        // Step 4: Decode the result
+        const decoded = std.mem.readInt(u32, &first_4_bytes, .little);
+
+        // Step 5: Take the modulus over the length of the keys
+        const index = decoded % keys.len;
+
+        std.debug.print("Index: {}\n", .{index});
+
+        // Step 6: Use this index to add that key to the result
+        result[i] = keys[index];
+    }
+
+    return result;
 }
 
 // (69) Outside in ordering function

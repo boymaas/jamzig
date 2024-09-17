@@ -32,8 +32,15 @@ fn ring_context() -> &'static RingContext {
     RING_CTX.get_or_init(|| {
         use bandersnatch::PcsParams;
 
-        let pcs_params =
-            PcsParams::deserialize_uncompressed_unchecked(&mut &ZCASH_SRS[..]).unwrap();
+        // use std::{fs::File, io::Read};
+        // let manifest_dir =
+        //     std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set");
+        // let filename = format!("{}/data/zcash-srs-2-11-uncompressed.bin", manifest_dir);
+        // let mut file = File::open(filename).unwrap();
+        // let mut buf = Vec::new();
+        // file.read_to_end(&mut buf).unwrap();
+
+        let pcs_params = PcsParams::deserialize_uncompressed_unchecked(ZCASH_SRS).unwrap();
         RingContext::from_srs(RING_SIZE, pcs_params).unwrap()
     })
 }
@@ -51,10 +58,10 @@ struct Prover {
 }
 
 impl Prover {
-    pub fn new(ring: Vec<Public>, prover_idx: usize) -> Self {
+    pub fn new(ring: Vec<Public>, prover_secret: Secret, prover_idx: usize) -> Self {
         Self {
             prover_idx,
-            secret: Secret::from_seed(&prover_idx.to_le_bytes()),
+            secret: prover_secret,
             ring,
         }
     }
@@ -140,7 +147,7 @@ impl Verifier {
         let output = signature.output;
 
         let ring_ctx = ring_context();
-
+        //
         // The verifier key is reconstructed from the commitment and the constant
         // verifier key component of the SRS in order to verify some proof.
         // As an alternative we can construct the verifier key using the
@@ -149,14 +156,11 @@ impl Verifier {
         let verifier_key = ring_ctx.verifier_key_from_commitment(self.commitment.clone());
         let verifier = ring_ctx.verifier(verifier_key);
         if Public::verify(input, output, aux_data, &signature.proof, &verifier).is_err() {
-            println!("Ring signature verification failure");
             return Err(());
         }
-        println!("Ring signature verified");
-
-        // This truncated hash is the actual value used as ticket-id/score in JAM
+        //
+        // // This truncated hash is the actual value used as ticket-id/score in JAM
         let vrf_output_hash: [u8; 32] = output.hash()[..32].try_into().unwrap();
-        println!(" vrf-output-hash: {}", hex::encode(vrf_output_hash));
         Ok(vrf_output_hash)
     }
 
@@ -216,32 +220,29 @@ pub unsafe extern "C" fn generate_ring_signature(
     vrf_input_len: usize,
     aux_data: *const u8,
     aux_data_len: usize,
-    prover_key_index: usize,
+    prover_idx: usize,
+    prover_key: *const u8,
     output: *mut u8,
-    output_len: *mut usize,
 ) -> bool {
-    let public_keys_slice = unsafe { std::slice::from_raw_parts(public_keys, public_keys_len) };
+    let public_keys_slice = std::slice::from_raw_parts(public_keys, public_keys_len * 32);
+
     let ring: Vec<Public> = public_keys_slice
         .chunks(32)
         .map(|chunk| Public::deserialize_compressed(chunk).unwrap())
         .collect();
 
-    let prover = Prover::new(ring, prover_key_index);
+    let prover_key_slice = std::slice::from_raw_parts(prover_key, 64);
 
-    let vrf_input = unsafe { std::slice::from_raw_parts(vrf_input_data, vrf_input_len) };
-    let aux = unsafe { std::slice::from_raw_parts(aux_data, aux_data_len) };
+    let prover_secret = Secret::deserialize_compressed(prover_key_slice).unwrap();
+    let prover = Prover::new(ring.clone(), prover_secret, prover_idx);
+
+    let vrf_input = std::slice::from_raw_parts(vrf_input_data, vrf_input_len);
+    let aux = std::slice::from_raw_parts(aux_data, aux_data_len);
 
     let signature = prover.ring_vrf_sign(vrf_input, aux);
+    assert!(signature.len() == 784);
 
-    if signature.len() > *output_len {
-        *output_len = signature.len();
-        return false;
-    }
-
-    unsafe {
-        std::ptr::copy_nonoverlapping(signature.as_ptr(), output, signature.len());
-        *output_len = signature.len();
-    }
+    std::ptr::copy_nonoverlapping(signature.as_ptr(), output, 784);
 
     true
 }
@@ -265,10 +266,9 @@ pub unsafe extern "C" fn verify_ring_signature(
     aux_data: *const u8,
     aux_data_len: usize,
     signature: *const u8,
-    signature_len: usize,
     vrf_output: *mut u8,
 ) -> bool {
-    let public_keys_slice = std::slice::from_raw_parts(public_keys, public_keys_len);
+    let public_keys_slice = std::slice::from_raw_parts(public_keys, public_keys_len * 32);
     let ring: Vec<Public> = public_keys_slice
         .chunks(32)
         .map(|chunk| Public::deserialize_compressed(chunk).unwrap())
@@ -278,7 +278,8 @@ pub unsafe extern "C" fn verify_ring_signature(
 
     let vrf_input = std::slice::from_raw_parts(vrf_input_data, vrf_input_len);
     let aux = std::slice::from_raw_parts(aux_data, aux_data_len);
-    let sig = std::slice::from_raw_parts(signature, signature_len);
+
+    let sig = std::slice::from_raw_parts(signature, 784);
 
     match verifier.ring_vrf_verify(vrf_input, aux, sig) {
         Ok(output) => {
@@ -309,7 +310,6 @@ pub unsafe extern "C" fn create_key_pair_from_seed(
     seed: *const u8,
     seed_len: usize,
     output: *mut u8,
-    output_len: *mut usize,
 ) -> bool {
     let seed_slice = std::slice::from_raw_parts(seed, seed_len);
     let secret = Secret::from_seed(seed_slice);
@@ -317,14 +317,7 @@ pub unsafe extern "C" fn create_key_pair_from_seed(
 
     match serialize_key_pair(&secret, &public_key) {
         Some(serialized) => {
-            let total_len = serialized.len();
-            if total_len > *output_len {
-                return false;
-            }
-            unsafe {
-                std::ptr::copy_nonoverlapping(serialized.as_ptr(), output, total_len);
-            }
-            *output_len = total_len;
+            std::ptr::copy_nonoverlapping(serialized.as_ptr(), output, 64);
             true
         }
         None => false,
@@ -333,19 +326,15 @@ pub unsafe extern "C" fn create_key_pair_from_seed(
 
 /// # Safety
 #[no_mangle]
-pub unsafe extern "C" fn get_padding_point(output: *mut u8, output_len: *mut usize) -> bool {
+pub unsafe extern "C" fn get_padding_point(output: *mut u8) -> bool {
     let padding_point = Public::from(ring_context().padding_point());
     let mut serialized = Vec::new();
     if padding_point.serialize_compressed(&mut serialized).is_err() {
         return false;
     }
-    if serialized.len() > unsafe { *output_len } {
-        return false;
-    }
 
     unsafe {
-        std::ptr::copy_nonoverlapping(serialized.as_ptr(), output, serialized.len());
-        *output_len = serialized.len();
+        std::ptr::copy_nonoverlapping(serialized.as_ptr(), output, 32);
     }
 
     true
