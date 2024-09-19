@@ -130,7 +130,7 @@ pub fn transition(
 
     // (66) Combine previous entropy accumulator (η0) with new entropy
     // input η′0 ≡H(η0 ⌢ Y(Hv))
-    // post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
+    post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
 
     // Additional logic for other state updates can be added here
 
@@ -151,6 +151,7 @@ pub fn transition(
 }
 
 // O: See section 3.8 and appendix G
+// O(⟦HB⟧) ∈ Yr ≡ KZG_commitment(⟦HB⟧)
 fn bandersnatchRingRoot(gamma_k: types.GammaK) types.GammaZ {
     _ = gamma_k;
     return [_]u8{0} ** 144;

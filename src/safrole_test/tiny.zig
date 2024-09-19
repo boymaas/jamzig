@@ -112,7 +112,7 @@ test "tiny/enact-epoch-change-with-no-tickets-4" {
     );
     defer result.deinit(allocator);
 
-    // try fixtures.printInput();
+    try fixtures.printInput();
     // try fixtures.printPreState();
     try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
 

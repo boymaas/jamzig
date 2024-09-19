@@ -128,9 +128,13 @@ pub const State = struct {
     }
 };
 
+// Input for Safrole protocol.
 pub const Input = struct {
+    // Current slot.
     slot: u32,
+    // Per block entropy (originated from block entropy source VRF).
     entropy: OpaqueHash,
+    // Safrole extrinsic.
     extrinsic: []TicketEnvelope,
 
     /// Frees all allocated memory in the Input struct.
