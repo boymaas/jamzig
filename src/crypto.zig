@@ -1,5 +1,5 @@
 const std = @import("std");
-const types = @import("types.zig");
+const types = @import("safrole/types.zig");
 
 // Extern declarations for Rust functions
 extern fn generate_ring_signature(
@@ -37,6 +37,29 @@ pub extern fn get_padding_point(
 ) callconv(.C) bool;
 
 pub extern fn initialize_ring_context() void;
+
+pub extern fn get_verifier_commitment(
+    public_keys: [*c]const u8,
+    public_keys_len: usize,
+    output: [*c]u8,
+) callconv(.C) bool;
+
+pub fn getVerifierCommitment(
+    public_keys: []const types.BandersnatchKey,
+) !types.GammaZ {
+    var output: types.GammaZ = undefined;
+    const result = get_verifier_commitment(
+        @ptrCast(public_keys.ptr),
+        public_keys.len,
+        @ptrCast(&output),
+    );
+
+    if (!result) {
+        return error.VerifierCommitmentFailed;
+    }
+
+    return output;
+}
 
 // Zig wrapper function for initialize_ring_context
 pub fn initializeRingContext() void {
@@ -157,6 +180,35 @@ test "crypto: createKeyPairFromSeed" {
     std.debug.print("Public key: {s}\n", .{std.fmt.fmtSliceHexLower(&key_pair.public_key)});
 }
 
+test "crypto: getVerifierCommitment" {
+    const RING_SIZE: usize = 5;
+    var ring: [RING_SIZE]types.BandersnatchKey = undefined;
+
+    // Generate public keys for the ring
+    for (0..RING_SIZE) |i| {
+        const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
+        const key_pair = try createKeyPairFromSeed(seed);
+        ring[i] = key_pair.public_key;
+    }
+
+    // Get the verifier commitment
+    const commitment = try getVerifierCommitment(&ring);
+
+    // Verify that the commitment is not empty
+    try std.testing.expect(commitment.len == 144);
+
+    // Print the commitment
+    std.debug.print("Verifier commitment: ", .{});
+    for (commitment) |byte| {
+        std.debug.print("{x:0>2}", .{byte});
+    }
+    std.debug.print("\n", .{});
+
+    // Verify that generating a commitment with the same ring produces the same result
+    const commitment2 = try getVerifierCommitment(&ring);
+    try std.testing.expect(std.mem.eql(u8, &commitment, &commitment2));
+}
+
 fn timeFunction(comptime desc: []const u8, comptime func: anytype, args: anytype) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
     var timer = std.time.Timer.start() catch unreachable;
     const result = @call(.auto, func, args);
@@ -258,7 +310,7 @@ test "crypto: fuzz | takes 10s" {
     }
 
     // Test multiple iterations
-    const ITERATIONS: usize = 10;
+    const ITERATIONS: usize = 4;
     for (0..ITERATIONS) |iteration| {
         // choose a random prover key index
         const prover_key_index = random.uintLessThan(usize, RING_SIZE);

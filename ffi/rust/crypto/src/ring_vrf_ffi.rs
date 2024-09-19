@@ -139,6 +139,37 @@ pub unsafe extern "C" fn get_padding_point(output: *mut u8) -> bool {
 
 /// # Safety
 ///
+/// This function is unsafe because it dereferences raw pointers.
+/// The caller must ensure that:
+/// - `output` points to a memory region of at exactly 144 bytes.
+/// - The lifetime of the output data outlives the function call.
+#[no_mangle]
+pub unsafe extern "C" fn get_verifier_commitment(
+    public_keys: *const u8,
+    public_keys_len: usize,
+    output: *mut u8,
+) -> bool {
+    let public_keys_slice = std::slice::from_raw_parts(public_keys, public_keys_len * 32);
+    let ring: Vec<Public> = public_keys_slice
+        .chunks(32)
+        .map(|chunk| Public::deserialize_compressed(chunk).unwrap())
+        .collect();
+
+    let verifier = Verifier::new(ring);
+    let commitment = verifier.commitment;
+
+    // Serialize and print the commitment as a hexstring
+    let mut commitment_bytes = Vec::new();
+    commitment
+        .serialize_compressed(&mut commitment_bytes)
+        .unwrap();
+
+    std::ptr::copy_nonoverlapping(commitment_bytes.as_ptr(), output, 144);
+    true
+}
+
+/// # Safety
+///
 /// This function is unsafe because it triggers the initialization of the ring context.
 /// It should be called before any other operations that require the ring context.
 #[no_mangle]

@@ -3,7 +3,9 @@ use ark_ec_vrfs::{prelude::ark_serialize, suites::bandersnatch::edwards::RingCon
 pub use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 pub use bandersnatch::{IetfProof, Input, Output, Public, RingProof, Secret};
 
-const RING_SIZE: usize = 1023;
+// NOTE: for tiny test vecors RING_SIZE should be 6
+//       and ffull test vectors RING_SIZE should be 1023
+const RING_SIZE: usize = 6;
 
 // This is the IETF `Prove` procedure output as described in section 2.2
 // of the Bandersnatch VRFs specification

@@ -4,6 +4,8 @@ const ArrayList = std.ArrayList;
 pub const types = @import("safrole/types.zig");
 pub const entropy = @import("safrole/entropy.zig");
 
+const crypto = @import("crypto.zig");
+
 pub const Params = struct {
     epoch_length: u32 = 600,
 };
@@ -86,6 +88,7 @@ pub fn transition(
         // set, and any offenders (validators removed from the set) are
         // replaced with zeroed keys.
         //
+        // NOTE: using post_state to update post_state as we are moving pointers around
         const lamda = post_state.lambda;
         const kappa = post_state.kappa;
         const gamma_k = post_state.gamma_k;
@@ -96,7 +99,12 @@ pub fn transition(
         post_state.lambda = kappa;
         allocator.free(lamda);
 
-        post_state.gamma_z = bandersnatchRingRoot(gamma_k);
+        // post_state.iota seems to stay the same
+
+        // gamma_z is the epoch’s root, a Bandersnatch ring root composed with the
+        // one Bandersnatch key of each of the next epoch’s validators, defined
+        // in gamma_k
+        post_state.gamma_z = try bandersnatchRingRoot(allocator, post_state.gamma_k);
 
         // Check the state of gamma_s union
         //
@@ -152,9 +160,18 @@ pub fn transition(
 
 // O: See section 3.8 and appendix G
 // O(⟦HB⟧) ∈ Yr ≡ KZG_commitment(⟦HB⟧)
-fn bandersnatchRingRoot(gamma_k: types.GammaK) types.GammaZ {
-    _ = gamma_k;
-    return [_]u8{0} ** 144;
+fn bandersnatchRingRoot(allocator: std.mem.Allocator, gamma_k: types.GammaK) !types.GammaZ {
+    const keys = try allocator.alloc(types.BandersnatchKey, gamma_k.len);
+    defer allocator.free(keys);
+
+    for (gamma_k, 0..) |validator, i| {
+        keys[i] = validator.bandersnatch;
+
+        std.debug.print("Key {}: {x}\n", .{ i, std.fmt.fmtSliceHexLower(&keys[i]) });
+    }
+
+    const commitment = try crypto.getVerifierCommitment(keys);
+    return commitment;
 }
 
 // 58. PHI: Zero out any offenders on post_state.iota
