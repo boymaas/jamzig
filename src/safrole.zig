@@ -98,10 +98,12 @@ pub fn transition(
 
     // Chapter 6.7: The tickets should have been placed in order of their
     // implied identifier. Duplicate tickets are not allowed.
-    var prev_identity: ?types.OpaqueHash = null;
+    var prev_identity: ?*const types.TicketBody = null;
     for (verified_extrinsic) |ticket_body| {
         if (prev_identity) |prev| {
-            switch (std.mem.order(u8, &ticket_body.id, &prev)) {
+            // std.debug.print("Previous identity: {any}\n", .{prev.id});
+            // std.debug.print("Current identity: {any}\n", .{ticket_body.id});
+            switch (std.mem.order(u8, &ticket_body.id, &prev.id)) {
                 .eq => return .{
                     .output = .{ .err = .duplicate_ticket },
                     .state = null,
@@ -113,7 +115,7 @@ pub fn transition(
                 .gt => {},
             }
         }
-        prev_identity = ticket_body.id;
+        prev_identity = &ticket_body;
     }
 
     // Verify the order of the extrinisc
