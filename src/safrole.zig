@@ -8,6 +8,8 @@ const crypto = @import("crypto.zig");
 
 pub const Params = struct {
     epoch_length: u32 = 600,
+    // N: The number of ticket entries per validator
+    max_ticket_entries_per_validator: u8 = 2,
 };
 
 const Safrole = struct {
@@ -65,7 +67,20 @@ pub fn transition(
         };
     }
 
+    // Chapter 6.7 Ticketing and extrensics
+    // Check the number of ticket attempts in the input when more
+    // than N we have a bad ticket attempt
+    for (input.extrinsic) |extrinsic| {
+        if (extrinsic.attempt >= params.max_ticket_entries_per_validator) {
+            return .{
+                .output = .{ .err = .bad_ticket_attempt },
+                .state = null,
+            };
+        }
+    }
+
     var post_state = try pre_state.deepClone(allocator);
+    errdefer post_state.deinit(allocator);
 
     // Update the tau
     post_state.tau = input.slot;
@@ -136,7 +151,7 @@ pub fn transition(
         }
     }
 
-    // (66) Combine previous entropy accumulator (η0) with new entropy
+    // GP0.3.6@(66) Combine previous entropy accumulator (η0) with new entropy
     // input η′0 ≡H(η0 ⌢ Y(Hv))
     post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
 

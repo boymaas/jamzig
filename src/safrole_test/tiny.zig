@@ -121,3 +121,28 @@ test "tiny/enact-epoch-change-with-no-tickets-4" {
     // Compare the fixture poststate with the result state
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
 }
+
+test "tiny/publish-tickets-no-mark-1.json" {
+    const allocator = std.testing.allocator;
+
+    // src/tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-1.json
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/publish-tickets-no-mark-1.json",
+    );
+    defer fixtures.deinit();
+
+    // try fixtures.printInputStateChangesAndOutput();
+
+    var result = try safrole.transition(
+        allocator,
+        TINY_PARAMS,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+
+    // NOTE: this should produce a bad ticket attempt
+    try std.testing.expect(result.output == .err);
+    try std.testing.expectEqual(.bad_ticket_attempt, result.output.err);
+}
