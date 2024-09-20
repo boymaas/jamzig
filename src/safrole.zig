@@ -92,7 +92,8 @@ pub fn transition(
     }
 
     // Verify the extrinsic tickets on error return .bad_ticket_proof
-    const verified_extrinsic = try verifyTicketEnvelope(allocator, input.extrinsic);
+    // NOTE: we are using pre_state n2 which is weird as I expected n'2 which is post state
+    const verified_extrinsic = try verifyTicketEnvelope(allocator, pre_state.gamma_z, pre_state.eta[2], input.extrinsic);
     defer allocator.free(verified_extrinsic);
 
     // Chapter 6.7: The tickets should have been placed in order of their
@@ -229,13 +230,25 @@ pub fn transition(
     };
 }
 
-fn verifyTicketEnvelope(allocator: std.mem.Allocator, extrinsic: []const types.TicketEnvelope) ![]types.TicketBody {
+fn verifyTicketEnvelope(allocator: std.mem.Allocator, gamma_z: types.BandersnatchVrfRoot, n2: types.Entropy, extrinsic: []const types.TicketEnvelope) ![]types.TicketBody {
     // For now, map the extrinsic to the ticket setting the ticketbody.id to all 0s
     var tickets = try allocator.alloc(types.TicketBody, extrinsic.len);
 
+    const empty_aux_data = [_]u8{};
+
     for (extrinsic, 0..) |extr, i| {
+        const X_t = [_]u8{ 'j', 'a', 'm', '_', 't', 'i', 'c', 'k', 'e', 't', '_', 's', 'e', 'a', 'l' };
+
+        const vrf_input = X_t ++ n2 ++ [_]u8{extr.attempt};
+        const output = try crypto.verifyRingSignatureAgainstCommitment(
+            gamma_z,
+            &vrf_input,
+            &empty_aux_data,
+            &extr.signature,
+        );
+
         tickets[i].attempt = extr.attempt;
-        @memset(&tickets[i].id, @intCast(i));
+        tickets[i].id = output;
     }
 
     return tickets;

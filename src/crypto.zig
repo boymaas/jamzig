@@ -25,6 +25,16 @@ extern fn verify_ring_signature(
     vrf_output: [*c]u8,
 ) callconv(.C) bool;
 
+extern fn verify_ring_signature_against_commitment(
+    commitment: [*c]const u8,
+    vrf_input_data: [*c]const u8,
+    vrf_input_len: usize,
+    aux_data: [*c]const u8,
+    aux_data_len: usize,
+    signature: [*c]const u8,
+    vrf_output: [*c]u8,
+) callconv(.C) bool;
+
 // Extern declarations for Rust functions
 pub extern fn create_key_pair_from_seed(
     seed: [*c]const u8,
@@ -105,6 +115,31 @@ pub fn verifyRingSignature(
     const result = verify_ring_signature(
         @ptrCast(public_keys.ptr),
         public_keys.len,
+        @ptrCast(vrf_input.ptr),
+        vrf_input.len,
+        @ptrCast(aux_data.ptr),
+        aux_data.len,
+        @ptrCast(signature),
+        @ptrCast(&vrf_output),
+    );
+
+    if (!result) {
+        return error.SignatureVerificationFailed;
+    }
+
+    return vrf_output;
+}
+
+pub fn verifyRingSignatureAgainstCommitment(
+    commitment: types.BandersnatchVrfRoot,
+    vrf_input: []const u8,
+    aux_data: []const u8,
+    signature: *const types.BandersnatchRingSignature,
+) !types.BandersnatchVrfOutput {
+    var vrf_output: types.BandersnatchVrfOutput = undefined;
+
+    const result = verify_ring_signature_against_commitment(
+        @ptrCast(&commitment),
         @ptrCast(vrf_input.ptr),
         vrf_input.len,
         @ptrCast(aux_data.ptr),

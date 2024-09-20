@@ -164,6 +164,7 @@ test "tiny/publish-tickets-no-mark-2.json" {
     );
     defer fixtures.deinit();
 
+    // try fixtures.printInput();
     // try fixtures.printInputStateChangesAndOutput();
 
     var result = try safrole.transition(
@@ -176,7 +177,8 @@ test "tiny/publish-tickets-no-mark-2.json" {
 
     // std.debug.print("Result: {any}\n", .{result});
 
-    try fixtures.printInput();
     // try fixtures.printPreState();
     try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+
+    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
 }

@@ -87,6 +87,42 @@ pub unsafe extern "C" fn verify_ring_signature(
     }
 }
 
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers.
+/// The caller must ensure that:
+/// - All input pointers are valid and point to memory regions of at least their respective lengths.
+/// - The memory regions do not overlap.
+/// - The lifetimes of the input data outlive the function call.
+#[no_mangle]
+pub unsafe extern "C" fn verify_ring_signature_against_commitment(
+    commitment: *const u8,
+    vrf_input_data: *const u8,
+    vrf_input_len: usize,
+    aux_data: *const u8,
+    aux_data_len: usize,
+    signature: *const u8,
+    vrf_output: *mut u8,
+) -> bool {
+    let commitment_slice = std::slice::from_raw_parts(commitment, 144);
+
+    let vrf_input = std::slice::from_raw_parts(vrf_input_data, vrf_input_len);
+    let aux = std::slice::from_raw_parts(aux_data, aux_data_len);
+    let sig = std::slice::from_raw_parts(signature, 784);
+
+    // TODO: Clean this up, remove unwraps, and implement more fine-grained error handling.
+    let verifier =
+        CommitmentVerifier::new(RingCommitment::deserialize_compressed(commitment_slice).unwrap());
+
+    match verifier.ring_vrf_verify(vrf_input, aux, sig) {
+        Ok(output) => {
+            std::ptr::copy_nonoverlapping(output.as_ptr(), vrf_output, 32);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 fn serialize_key_pair(secret: &Secret, public_key: &Public) -> Option<Vec<u8>> {
     let mut serialized = Vec::new();
 

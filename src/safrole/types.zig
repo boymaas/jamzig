@@ -8,10 +8,13 @@ pub const BlsKey = types.BlsKey;
 pub const Ed25519Key = types.Ed25519Key;
 pub const OpaqueHash = types.OpaqueHash;
 
+pub const Entropy = types.Entropy;
+
 pub const BandersnatchKey = types.BandersnatchKey;
 pub const BandersnatchPrivateKey = types.BandersnatchPrivateKey;
 pub const BandersnatchRingSignature = types.BandersnatchRingSignature;
 pub const BandersnatchVrfOutput = types.BandersnatchVrfOutput;
+pub const BandersnatchVrfRoot = types.BandersnatchVrfRoot;
 pub const BandersnatchKeyPair = types.BandersnatchKeyPair;
 
 pub const EpochMark = types.EpochMark;
@@ -42,7 +45,7 @@ pub const GammaS = union(enum) { tickets: []TicketBody, keys: []BandersnatchKey 
 // be used for the next epoch
 pub const GammaA = []TicketBody;
 
-pub const GammaZ = [144]u8; // types.hex.HexBytesFixed(144);
+pub const GammaZ = BandersnatchVrfRoot; // types.hex.HexBytesFixed(144);
 
 /// Represents a Safrole state of the system as referenced in the GP γ.
 pub const State = struct {
@@ -52,7 +55,7 @@ pub const State = struct {
 
     /// η: The entropy accumulator, which contributes to the system's randomness
     /// and is updated with each block.
-    eta: [4]types.OpaqueHash,
+    eta: [4]types.Entropy,
 
     /// λ: Validator keys and metadata from the previous epoch, essential for
     /// ensuring continuity and validating current operations.
