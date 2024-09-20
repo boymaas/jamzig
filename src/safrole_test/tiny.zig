@@ -182,3 +182,36 @@ test "tiny/publish-tickets-no-mark-2.json" {
 
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
 }
+
+test "tiny/publish-tickets-no-mark-3.json" {
+    const allocator = std.testing.allocator;
+
+    // src/tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-1.json
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/publish-tickets-no-mark-3.json",
+    );
+    defer fixtures.deinit();
+
+    // try fixtures.printInput();
+    // try fixtures.printInputStateChangesAndOutput();
+
+    var result = try safrole.transition(
+        allocator,
+        TINY_PARAMS,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+
+    // std.debug.print("Result: {any}\n", .{result});
+
+    // try fixtures.printPreState();
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+
+    // NOTE: this should produce a duplicate ticket attempt
+    try std.testing.expect(result.output == .err);
+    try std.testing.expectEqual(.duplicate_ticket, result.output.err);
+
+    // try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+}
