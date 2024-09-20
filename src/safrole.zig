@@ -10,6 +10,10 @@ pub const Params = struct {
     epoch_length: u32 = 600,
     // N: The number of ticket entries per validator
     max_ticket_entries_per_validator: u8 = 2,
+    // Y: The number of slots into an epoch at which ticket submissions end
+    ticket_submission_end_epoch_slot: u32 = 500,
+    // K: The maximum tickets which may be submitted in a single extrinsic
+    max_tickets_per_extrinsic: u32 = 16,
 };
 
 const Safrole = struct {
@@ -78,6 +82,44 @@ pub fn transition(
             };
         }
     }
+
+    // We should not have more than K tickets in the input
+    if (input.extrinsic.len > params.epoch_length) {
+        return .{
+            .output = .{ .err = .too_many_tickets_in_extrinsic },
+            .state = null,
+        };
+    }
+
+    // Verify the extrinsic tickets on error return .bad_ticket_proof
+    const verified_extrinsic = try verifyTicketEnvelope(allocator, input.extrinsic);
+    defer allocator.free(verified_extrinsic);
+
+    // Chapter 6.7: The tickets should have been placed in order of their
+    // implied identifier. Duplicate tickets are not allowed.
+    var prev_identity: ?types.OpaqueHash = null;
+    for (verified_extrinsic) |ticket_body| {
+        if (prev_identity) |prev| {
+            switch (std.mem.order(u8, &ticket_body.id, &prev)) {
+                .eq => return .{
+                    .output = .{ .err = .duplicate_ticket },
+                    .state = null,
+                },
+                .lt => return .{
+                    .output = .{ .err = .bad_ticket_order },
+                    .state = null,
+                },
+                .gt => {},
+            }
+        }
+        prev_identity = ticket_body.id;
+    }
+
+    // Verify the order of the extrinisc
+    // Double check if there are no doubles
+
+    // The slot inside this epoch
+    const epoch_slot = input.slot % params.epoch_length;
 
     var post_state = try pre_state.deepClone(allocator);
     errdefer post_state.deinit(allocator);
@@ -149,15 +191,29 @@ pub fn transition(
                 allocator.free(keys);
             },
         }
+
+        // On an new epoch gamma_a will be reset to 0, other ticketing
+        // will happen in the next epoch
+        allocator.free(post_state.gamma_a);
+        post_state.gamma_a = try allocator.alloc(types.TicketBody, 0);
     }
 
     // GP0.3.6@(66) Combine previous entropy accumulator (η0) with new entropy
     // input η′0 ≡H(η0 ⌢ Y(Hv))
     post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
 
-    // Additional logic for other state updates can be added here
+    // Section 6.7 Ticketing
+    // GP0.3.6@(78) Merge the gamma_a and extrinsic tickets into a new ticket
+    // within the range ticket competition is happening
+    if (epoch_slot < params.ticket_submission_end_epoch_slot) {
 
-    // Create empty ArrayLists for epoch_mark and tickets_mark
+        // Merge the tickets into the ticket accumulator
+        const merged_gamma_a = try mergeTicketsIntoTicketAccumulatorGammaA(allocator, post_state.gamma_a, verified_extrinsic, params.epoch_length);
+        allocator.free(post_state.gamma_a);
+        post_state.gamma_a = merged_gamma_a;
+    }
+
+    // Additional logic for other state updates can be added here
 
     return .{
         .output = .{
@@ -171,6 +227,62 @@ pub fn transition(
         },
         .state = post_state,
     };
+}
+
+fn verifyTicketEnvelope(allocator: std.mem.Allocator, extrinsic: []const types.TicketEnvelope) ![]types.TicketBody {
+    // For now, map the extrinsic to the ticket setting the ticketbody.id to all 0s
+    var tickets = try allocator.alloc(types.TicketBody, extrinsic.len);
+
+    for (extrinsic, 0..) |extr, i| {
+        tickets[i].attempt = extr.attempt;
+        @memset(&tickets[i].id, @intCast(i));
+    }
+
+    return tickets;
+}
+
+// GP0.3.6@(78) Merges the gamma_a and extrinsic tickets into a new ticket
+// accumulator, limited by the epoch length.
+fn mergeTicketsIntoTicketAccumulatorGammaA(
+    allocator: std.mem.Allocator,
+    gamma_a: []types.TicketBody,
+    extrinsic: []types.TicketBody,
+    epoch_length: u32,
+) ![]types.TicketBody {
+    const total_tickets = @min(
+        gamma_a.len + extrinsic.len,
+        epoch_length,
+    );
+    var merged_tickets = try allocator.alloc(types.TicketBody, total_tickets);
+
+    var i: usize = 0;
+    var j: usize = 0;
+    var k: usize = 0;
+
+    while (i < gamma_a.len and j < extrinsic.len) {
+        if (std.mem.lessThan(u8, &gamma_a[i].id, &extrinsic[j].id)) {
+            merged_tickets[k] = gamma_a[i];
+            i += 1;
+        } else {
+            merged_tickets[k] = extrinsic[j];
+            j += 1;
+        }
+        k += 1;
+    }
+
+    while (i < gamma_a.len) {
+        merged_tickets[k] = gamma_a[i];
+        i += 1;
+        k += 1;
+    }
+
+    while (j < extrinsic.len) {
+        merged_tickets[k] = extrinsic[j];
+        j += 1;
+        k += 1;
+    }
+
+    return merged_tickets;
 }
 
 // O: See section 3.8 and appendix G

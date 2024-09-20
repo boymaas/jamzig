@@ -197,6 +197,9 @@ pub const OutputError = enum(u8) {
     reserved = 5,
     /// Found a ticket duplicate.
     duplicate_ticket = 6,
+
+    /// MY OWN ERROR CODES
+    too_many_tickets_in_extrinsic = 100,
 };
 
 pub const OutputMarks = struct {

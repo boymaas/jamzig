@@ -10,7 +10,14 @@ const safrole_fixtures = @import("fixtures.zig");
 //
 // NOTE: RING_SIZE = 6 in ffi/rust/crypto/ring_vrf.rs
 
-const TINY_PARAMS = safrole.Params{ .epoch_length = 12 };
+const TINY_PARAMS = safrole.Params{
+    .epoch_length = 12,
+    // TODO: what value of Y (ticket_submission_end_slot) should we use for the tiny vectors, now set to
+    // same ratio. Production values is 500 of and epohc length of 600 which
+    // would suggest 10
+    .ticket_submission_end_epoch_slot = 10,
+    .max_ticket_entries_per_validator = 2,
+};
 
 test "tiny/enact-epoch-change-with-no-tickets-1" {
     const allocator = std.testing.allocator;
@@ -145,4 +152,31 @@ test "tiny/publish-tickets-no-mark-1.json" {
     // NOTE: this should produce a bad ticket attempt
     try std.testing.expect(result.output == .err);
     try std.testing.expectEqual(.bad_ticket_attempt, result.output.err);
+}
+
+test "tiny/publish-tickets-no-mark-2.json" {
+    const allocator = std.testing.allocator;
+
+    // src/tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-1.json
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/publish-tickets-no-mark-2.json",
+    );
+    defer fixtures.deinit();
+
+    // try fixtures.printInputStateChangesAndOutput();
+
+    var result = try safrole.transition(
+        allocator,
+        TINY_PARAMS,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+
+    // std.debug.print("Result: {any}\n", .{result});
+
+    try fixtures.printInput();
+    // try fixtures.printPreState();
+    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
 }
