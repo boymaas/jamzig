@@ -92,12 +92,19 @@ pub fn transition(
     }
 
     // NOTE: we are using pre_state n2 which is weird as I expected n'2 which is post state
-    const verified_extrinsic = try verifyTicketEnvelope(
+    const verified_extrinsic = verifyTicketEnvelope(
         allocator,
         pre_state.gamma_z,
         pre_state.eta[2],
         input.extrinsic,
-    );
+    ) catch |e| {
+        if (e == error.SignatureVerificationFailed) {
+            return .{
+                .output = .{ .err = .bad_ticket_proof },
+                .state = null,
+            };
+        } else return e;
+    };
     defer allocator.free(verified_extrinsic);
 
     // Chapter 6.7: The tickets should have been placed in order of their
@@ -260,6 +267,7 @@ pub fn transition(
 fn verifyTicketEnvelope(allocator: std.mem.Allocator, gamma_z: types.BandersnatchVrfRoot, n2: types.Entropy, extrinsic: []const types.TicketEnvelope) ![]types.TicketBody {
     // For now, map the extrinsic to the ticket setting the ticketbody.id to all 0s
     var tickets = try allocator.alloc(types.TicketBody, extrinsic.len);
+    errdefer allocator.free(tickets);
 
     const empty_aux_data = [_]u8{};
 
