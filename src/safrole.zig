@@ -91,31 +91,56 @@ pub fn transition(
         };
     }
 
-    // Verify the extrinsic tickets on error return .bad_ticket_proof
     // NOTE: we are using pre_state n2 which is weird as I expected n'2 which is post state
-    const verified_extrinsic = try verifyTicketEnvelope(allocator, pre_state.gamma_z, pre_state.eta[2], input.extrinsic);
+    const verified_extrinsic = try verifyTicketEnvelope(
+        allocator,
+        pre_state.gamma_z,
+        pre_state.eta[2],
+        input.extrinsic,
+    );
     defer allocator.free(verified_extrinsic);
 
     // Chapter 6.7: The tickets should have been placed in order of their
     // implied identifier. Duplicate tickets are not allowed.
-    var prev_identity: ?*const types.TicketBody = null;
-    for (verified_extrinsic) |ticket_body| {
-        if (prev_identity) |prev| {
-            // std.debug.print("Previous identity: {any}\n", .{prev.id});
-            // std.debug.print("Current identity: {any}\n", .{ticket_body.id});
-            switch (std.mem.order(u8, &ticket_body.id, &prev.id)) {
-                .eq => return .{
+    var index: usize = 0;
+    while (index < verified_extrinsic.len) : (index += 1) {
+        const current_ticket = verified_extrinsic[index];
+
+        // Check if the ticket has already been seen
+        var i: usize = 0;
+        while (i < index) : (i += 1) {
+            if (std.mem.eql(u8, &verified_extrinsic[i].id, &current_ticket.id)) {
+                return .{
                     .output = .{ .err = .duplicate_ticket },
                     .state = null,
-                },
-                .lt => return .{
-                    .output = .{ .err = .bad_ticket_order },
-                    .state = null,
-                },
-                .gt => {},
+                };
             }
         }
-        prev_identity = &ticket_body;
+
+        // Check if we have an entry in the ordered ticket accumulator
+        // gamma_a. If this is the case we have a duplicat ticket
+        const position = std.sort.binarySearch(types.TicketBody, pre_state.gamma_a, current_ticket, struct {
+            fn order(context: types.TicketBody, item: types.TicketBody) std.math.Order {
+                return std.mem.order(u8, &item.id, &context.id);
+            }
+        }.order);
+        if (position != null) {
+            return .{
+                .output = .{ .err = .duplicate_ticket },
+                .state = null,
+            };
+        }
+
+        // Check the order of tickets
+        if (index > 0) {
+            const prev_ticket = verified_extrinsic[index - 1];
+            if (std.mem.order(u8, &current_ticket.id, &prev_ticket.id) == .lt) {
+                return .{
+                    .output = .{ .err = .bad_ticket_order },
+                    .state = null,
+                };
+            }
+        }
     }
 
     // Verify the order of the extrinisc
