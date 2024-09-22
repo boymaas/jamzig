@@ -317,7 +317,7 @@ fn mergeTicketsIntoTicketAccumulatorGammaA(
     var j: usize = 0;
     var k: usize = 0;
 
-    while (i < gamma_a.len and j < extrinsic.len) {
+    while (i < gamma_a.len and j < extrinsic.len and k < epoch_length) {
         if (std.mem.lessThan(u8, &gamma_a[i].id, &extrinsic[j].id)) {
             merged_tickets[k] = gamma_a[i];
             i += 1;
@@ -328,13 +328,13 @@ fn mergeTicketsIntoTicketAccumulatorGammaA(
         k += 1;
     }
 
-    while (i < gamma_a.len) {
+    while (i < gamma_a.len and k < epoch_length) {
         merged_tickets[k] = gamma_a[i];
         i += 1;
         k += 1;
     }
 
-    while (j < extrinsic.len) {
+    while (j < extrinsic.len and k < epoch_length) {
         merged_tickets[k] = extrinsic[j];
         j += 1;
         k += 1;
