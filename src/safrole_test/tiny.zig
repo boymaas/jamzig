@@ -271,3 +271,116 @@ test "tiny/publish-tickets-no-mark-5.json" {
     try std.testing.expect(result.output == .err);
     try std.testing.expectEqual(.bad_ticket_proof, result.output.err);
 }
+
+test "tiny/publish-tickets-no-mark-6.json" {
+    const allocator = std.testing.allocator;
+
+    // src/tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-6.json
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/publish-tickets-no-mark-6.json",
+    );
+    defer fixtures.deinit();
+
+    // try fixtures.printInput();
+    // try fixtures.printInputStateChangesAndOutput();
+
+    var result = try safrole.transition(
+        allocator,
+        TINY_PARAMS,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.output == .ok);
+    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+}
+
+// Test an epoch slot higher than Y with tickets. Which is not allowed.
+test "tiny/publish-tickets-no-mark-7.json" {
+    const allocator = std.testing.allocator;
+
+    // src/tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-7.json
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/publish-tickets-no-mark-7.json",
+    );
+    defer fixtures.deinit();
+
+    // try fixtures.printInput();
+    // try fixtures.printInputStateChangesAndOutput();
+
+    var result = try safrole.transition(
+        allocator,
+        TINY_PARAMS,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+
+    // try fixtures.printInput();
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+
+    try std.testing.expect(result.output == .err);
+    try std.testing.expectEqual(.unexpected_ticket, result.output.err);
+}
+
+// This tests an epoch_slot > Y with no tickets, which should
+// result in an OK.
+test "tiny/publish-tickets-no-mark-8.json" {
+    const allocator = std.testing.allocator;
+
+    // src/tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-8.json
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/publish-tickets-no-mark-8.json",
+    );
+    defer fixtures.deinit();
+
+    // try fixtures.printInput();
+    try fixtures.printInputStateChangesAndOutput();
+
+    var result = try safrole.transition(
+        allocator,
+        TINY_PARAMS,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+
+    // try fixtures.printInput();
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+
+    try std.testing.expect(result.output == .ok);
+    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+}
+
+// This tests an epoch transition
+test "tiny/publish-tickets-no-mark-9.json" {
+    const allocator = std.testing.allocator;
+
+    // src/tests/vectors/safrole/safrole/tiny/publish-tickets-no-mark-9.json
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/publish-tickets-no-mark-9.json",
+    );
+    defer fixtures.deinit();
+
+    // try fixtures.printInput();
+    // try fixtures.printInputStateChangesAndOutput();
+
+    var result = try safrole.transition(
+        allocator,
+        TINY_PARAMS,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+
+    // try fixtures.printInput();
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+
+    try std.testing.expect(result.output == .ok);
+    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+}
