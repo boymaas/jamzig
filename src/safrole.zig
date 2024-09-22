@@ -71,6 +71,9 @@ pub fn transition(
         };
     }
 
+    // The slot inside this epoch
+    const epoch_slot = input.slot % params.epoch_length;
+
     // Chapter 6.7 Ticketing and extrensics
     // Check the number of ticket attempts in the input when more
     // than N we have a bad ticket attempt
@@ -89,6 +92,16 @@ pub fn transition(
             .output = .{ .err = .too_many_tickets_in_extrinsic },
             .state = null,
         };
+    }
+
+    // We shuold not have any tickets when the epoch slot < Y
+    if (epoch_slot >= params.ticket_submission_end_epoch_slot) {
+        if (input.extrinsic.len > 0) {
+            return .{
+                .output = .{ .err = .unexpected_ticket },
+                .state = null,
+            };
+        }
     }
 
     // NOTE: we are using pre_state n2 which is weird as I expected n'2 which is post state
@@ -152,9 +165,6 @@ pub fn transition(
 
     // Verify the order of the extrinisc
     // Double check if there are no doubles
-
-    // The slot inside this epoch
-    const epoch_slot = input.slot % params.epoch_length;
 
     var post_state = try pre_state.deepClone(allocator);
     errdefer post_state.deinit(allocator);
