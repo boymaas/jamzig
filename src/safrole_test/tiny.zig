@@ -464,3 +464,29 @@ test "tiny/publish-tickets-with-mark-3.json" {
     try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
 }
+
+test "tiny/publish-tickets-with-mark-4.json" {
+    const allocator = std.testing.allocator;
+
+    // src/tests/vectors/safrole/safrole/tiny/publish-tickets-with-mark-4.json
+    const fixtures = try safrole_fixtures.buildFixtures(
+        allocator,
+        "tiny/publish-tickets-with-mark-4.json",
+    );
+    defer fixtures.deinit();
+
+    // try fixtures.printInput();
+    // try fixtures.printInputStateChangesAndOutput();
+
+    var result = try safrole.transition(
+        allocator,
+        TINY_PARAMS,
+        fixtures.pre_state,
+        fixtures.input,
+    );
+    defer result.deinit(allocator);
+
+    // try fixtures.printInput();
+    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+}
