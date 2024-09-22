@@ -30,6 +30,9 @@ test "tiny/enact-epoch-change-with-no-tickets-1" {
         post_eta[0..32].*,
         result.state.?.eta[0],
     );
+
+    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try fixtures.expectOkOutputWithNullEpochAndTicketMarkers(result.output);
 }
 
 test "tiny/enact-epoch-change-with-no-tickets-2" {
@@ -52,11 +55,7 @@ test "tiny/enact-epoch-change-with-no-tickets-2" {
     try std.testing.expect(result.state == null);
 
     try std.testing.expect(result.output == .err);
-    if (result.output == .err) {
-        try std.testing.expectEqual(.bad_slot, result.output.err);
-    } else {
-        @panic("unexpected output, expected and error");
-    }
+    try std.testing.expectEqual(.bad_slot, result.output.err);
 }
 
 test "tiny/enact-epoch-change-with-no-tickets-3" {
@@ -77,6 +76,7 @@ test "tiny/enact-epoch-change-with-no-tickets-3" {
     defer result.deinit(allocator);
 
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try fixtures.expectOkOutputWithNullEpochAndTicketMarkers(result.output);
 }
 
 test "tiny/enact-epoch-change-with-no-tickets-4" {
@@ -97,4 +97,5 @@ test "tiny/enact-epoch-change-with-no-tickets-4" {
     defer result.deinit(allocator);
 
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try fixtures.expectOutput(result.output);
 }

@@ -265,16 +265,39 @@ pub fn transition(
         post_state.gamma_a = merged_gamma_a;
     }
 
-    // Additional logic for other state updates can be added here
+    // Determine the output
+    var epoch_marker: ?types.EpochMark = null;
+    var winning_ticket_marker: ?types.TicketMark = null;
+
+    if (current_epoch > prev_epoch) {
+        epoch_marker = .{
+            .entropy = post_state.eta[1],
+            .validators = try extractBandersnatchKeys(allocator, post_state.gamma_k),
+        };
+    }
+
+    // (72)@GP0.3.6 e′ = e ∧ m < Y ≤ m′ ∧ ∣γa∣ = E
+    // Not crossing an epoch boundary
+    if (current_epoch == prev_epoch and
+        // But crosses the Y boundary
+        prev_epoch_slot < params.ticket_submission_end_epoch_slot and
+        params.ticket_submission_end_epoch_slot <= epoch_slot and
+        // And we have a full epoch worth of tickets accumulated
+        post_state.gamma_a.len == params.epoch_length)
+    {
+        winning_ticket_marker =
+            try Z_outsideInOrdering(
+            types.TicketBody,
+            allocator,
+            pre_state.gamma_a,
+        );
+    }
 
     return .{
         .output = .{
             .ok = types.OutputMarks{
-                .epoch_mark = types.EpochMark{
-                    .entropy = [_]u8{0} ** 32, // Initialize with 32 zero bytes
-                    .validators = try allocator.alloc(types.BandersnatchKey, 0),
-                },
-                .tickets_mark = null,
+                .epoch_mark = epoch_marker,
+                .tickets_mark = winning_ticket_marker,
             },
         },
         .state = post_state,

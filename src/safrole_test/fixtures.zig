@@ -80,6 +80,65 @@ pub const Fixtures = struct {
         self.post_state.deinit(self.allocator);
         self.output.deinit(self.allocator);
     }
+
+    pub fn expectOutput(self: @This(), actual_output: safrole.types.Output) !void {
+        switch (self.output) {
+            .err => |expected_err| {
+                try std.testing.expectEqual(expected_err, actual_output.err);
+            },
+            .ok => |expected_ok| {
+                const actual_ok = actual_output.ok;
+
+                if (expected_ok.epoch_mark) |expected_epoch_mark| {
+                    const actual_epoch_mark = actual_ok.epoch_mark orelse return error.MissingEpochMark;
+                    try std.testing.expectEqualSlices(
+                        safrole.types.BandersnatchKey,
+                        expected_epoch_mark.validators,
+                        actual_epoch_mark.validators,
+                    );
+                } else {
+                    try std.testing.expectEqual(
+                        null,
+                        actual_ok.epoch_mark,
+                    );
+                }
+
+                if (expected_ok.tickets_mark) |expected_tickets_mark| {
+                    const actual_tickets_mark = actual_ok.tickets_mark orelse return error.MissingTicketsMark;
+                    try std.testing.expectEqualSlices(
+                        safrole.types.TicketBody,
+                        expected_tickets_mark,
+                        actual_tickets_mark,
+                    );
+                } else {
+                    try std.testing.expectEqual(
+                        null,
+                        actual_ok.tickets_mark,
+                    );
+                }
+            },
+        }
+    }
+
+    /// Expect the output to be null, also double checks the expected output
+    /// is null.
+    pub fn expectOkOutputWithNullEpochAndTicketMarkers(self: @This(), actual_output: safrole.types.Output) !void {
+        switch (actual_output) {
+            .err => return error.UnexpectedError,
+            .ok => |actual_ok| {
+                try std.testing.expectEqual(null, actual_ok.epoch_mark);
+                try std.testing.expectEqual(null, actual_ok.tickets_mark);
+            },
+        }
+        const expected_output = self.output;
+        switch (expected_output) {
+            .err => {},
+            .ok => |expected_ok| {
+                try std.testing.expectEqual(null, expected_ok.epoch_mark);
+                try std.testing.expectEqual(null, expected_ok.tickets_mark);
+            },
+        }
+    }
 };
 
 const TEST_VECTOR_PREFIX = "src/tests/vectors/safrole/safrole/";
