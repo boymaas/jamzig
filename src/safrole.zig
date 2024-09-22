@@ -72,6 +72,7 @@ pub fn transition(
     }
 
     // The slot inside this epoch
+    const prev_epoch_slot = pre_state.tau % params.epoch_length;
     const epoch_slot = input.slot % params.epoch_length;
 
     // Chapter 6.7 Ticketing and extrensics
@@ -223,19 +224,19 @@ pub fn transition(
         // then it takes the value of the prior ticket accumulator γa.
 
         // TODO: determine if this is the first block in the new epoch
-        switch (post_state.gamma_s) {
-            .tickets => |tickets| {
-                // We can use the Z_outsideInOrdering algorithm on tickets
-                post_state.gamma_s.tickets = try Z_outsideInOrdering(types.TicketBody, allocator, tickets);
-                allocator.free(tickets);
-            },
-            // fallback
-            .keys => |keys| {
-                // We are in fallback mode
-                post_state.gamma_s.keys = try gammaS_Fallback(allocator, post_state.eta[2], params.epoch_length, post_state.kappa);
-                allocator.free(keys);
-            },
+        post_state.gamma_s.deinit(allocator);
+
+        // NOTE: the use of prev_epoch_slot ensures the ticket contest was closed
+        if (prev_epoch_slot >= params.ticket_submission_end_epoch_slot and post_state.gamma_a.len == params.epoch_length) {
+            post_state.gamma_s = .{
+                .tickets = try Z_outsideInOrdering(types.TicketBody, allocator, post_state.gamma_a),
+            };
+        } else {
+            post_state.gamma_s = .{
+                .keys = try gammaS_Fallback(allocator, post_state.eta[2], params.epoch_length, post_state.kappa),
+            };
         }
+        // We are in the new epoch
 
         // On an new epoch gamma_a will be reset to 0, other ticketing
         // will happen in the next epoch

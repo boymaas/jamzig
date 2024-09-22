@@ -38,7 +38,24 @@ pub const GammaK = []ValidatorData;
 // the current epoch’s slot-sealer series, which is either a
 // full complement of E tickets or, in the case of a fallback
 // mode, a series of E Bandersnatch keys
-pub const GammaS = union(enum) { tickets: []TicketBody, keys: []BandersnatchKey };
+pub const GammaS = union(enum) {
+    tickets: []TicketBody,
+    keys: []BandersnatchKey,
+
+    pub fn deinit(self: *@This(), allocator: Allocator) void {
+        switch (self.*) {
+            .tickets => |tickets| {
+                // We can use the Z_outsideInOrdering algorithm on tickets
+                allocator.free(tickets);
+            },
+            // fallback
+            .keys => |keys| {
+                // We are in fallback mode
+                allocator.free(keys);
+            },
+        }
+    }
+};
 
 // γₐ ∈ ⟦C⟧∶E
 // is the ticket accumulator, a series of highestscoring ticket identifiers to
