@@ -3,8 +3,8 @@ use ark_ec_vrfs::{
 };
 use bandersnatch::Public;
 
-use crate::{
-    ring_context::ring_context,
+use crate::ring_vrf::{
+    context::ring_context,
     types::{vrf_input_point, RingCommitment, RingVrfSignature},
 };
 

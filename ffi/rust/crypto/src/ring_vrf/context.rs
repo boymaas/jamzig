@@ -3,7 +3,7 @@ use ark_ec_vrfs::{prelude::ark_serialize, suites::bandersnatch::edwards::RingCon
 use ark_serialize::CanonicalDeserialize;
 
 // Include the binary data directly in the compiled binary
-static ZCASH_SRS: &[u8] = include_bytes!("../data/zcash-srs-2-11-uncompressed.bin");
+static ZCASH_SRS: &[u8] = include_bytes!("../../data/zcash-srs-2-11-uncompressed.bin");
 
 use lru::LruCache;
 use std::sync::OnceLock;
