@@ -10,12 +10,16 @@ use crate::ring_vrf::{
     types::{vrf_input_point, IetfVrfSignature, RingVrfSignature},
 };
 
+use super::context::RingContextError;
+
 #[derive(Error, Debug)]
 pub enum ProverError {
     #[error("Failed to serialize signature")]
     SerializationError,
     #[error("Invalid prover index")]
     InvalidProverIndex,
+    #[error(transparent)]
+    RingContextError(#[from] RingContextError),
 }
 
 // Prover actor.
@@ -51,7 +55,7 @@ impl Prover {
         let pts: Vec<_> = self.ring.iter().map(|pk| pk.0).collect();
 
         // Proof construction
-        let ring_ctx = ring_context(pts.len());
+        let ring_ctx = ring_context(pts.len())?;
         let prover_key = ring_ctx.prover_key(&pts);
         let prover = ring_ctx.prover(prover_key, self.prover_idx);
         let proof = self.secret.prove(input, output, aux_data, &prover);

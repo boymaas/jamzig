@@ -5,7 +5,7 @@ pub use bandersnatch::{IetfProof, Input, Output, Public, RingProof, Secret};
 use thiserror::Error;
 
 use super::{
-    context::ring_context,
+    context::{ring_context, RingContextError},
     types::{vrf_input_point, IetfVrfSignature, RingVrfSignature},
 };
 
@@ -19,6 +19,8 @@ pub enum VerifierError {
     VerificationFailed,
     #[error("Invalid signer key index")]
     InvalidSignerKeyIndex,
+    #[error(transparent)]
+    RingContextError(#[from] RingContextError),
 }
 
 // Verifier actor.
@@ -28,12 +30,12 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    pub fn new(ring: Vec<Public>) -> Self {
+    pub fn new(ring: Vec<Public>) -> Result<Self, VerifierError> {
         // Backend currently requires the wrapped type (plain affine points)
         let pts: Vec<_> = ring.iter().map(|pk| pk.0).collect();
-        let verifier_key = ring_context(ring.len()).verifier_key(&pts);
+        let verifier_key = ring_context(ring.len())?.verifier_key(&pts);
         let commitment = verifier_key.commitment();
-        Self { ring, commitment }
+        Ok(Self { ring, commitment })
     }
 
     /// Anonymous VRF signature verification.
@@ -55,7 +57,7 @@ impl Verifier {
         let input = vrf_input_point(vrf_input_data);
         let output = signature.output;
 
-        let ring_ctx = ring_context(self.ring.len());
+        let ring_ctx = ring_context(self.ring.len())?;
         //
         // The verifier key is reconstructed from the commitment and the constant
         // verifier key component of the SRS in order to verify some proof.

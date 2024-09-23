@@ -77,7 +77,11 @@ pub unsafe extern "C" fn verify_ring_signature(
         .map(|chunk| Public::deserialize_compressed(chunk).unwrap())
         .collect();
 
-    let verifier = Verifier::new(ring);
+    let verifier = if let Ok(verifier) = Verifier::new(ring) {
+        verifier
+    } else {
+        return false;
+    };
 
     let vrf_input = std::slice::from_raw_parts(vrf_input_data, vrf_input_len);
     let aux = std::slice::from_raw_parts(aux_data, aux_data_len);
@@ -169,7 +173,10 @@ pub unsafe extern "C" fn create_key_pair_from_seed(
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn get_padding_point(ring_size: usize, output: *mut u8) -> bool {
-    let padding_point = Public::from(ring_context(ring_size).padding_point());
+    let padding_point = match ring_context(ring_size) {
+        Ok(ctx) => Public::from(ctx.padding_point()),
+        Err(_) => return false,
+    };
     let mut serialized = Vec::new();
     if padding_point.serialize_compressed(&mut serialized).is_err() {
         return false;
@@ -200,7 +207,11 @@ pub unsafe extern "C" fn get_verifier_commitment(
         .map(|chunk| Public::deserialize_compressed(chunk).unwrap())
         .collect();
 
-    let verifier = Verifier::new(ring);
+    let verifier = if let Ok(verifier) = Verifier::new(ring) {
+        verifier
+    } else {
+        return false;
+    };
     let commitment = verifier.commitment;
 
     // Serialize and print the commitment as a hexstring
@@ -218,6 +229,6 @@ pub unsafe extern "C" fn get_verifier_commitment(
 /// This function is unsafe because it triggers the initialization of the ring context.
 /// It should be called before any other operations that require the ring context.
 #[no_mangle]
-pub unsafe extern "C" fn initialize_ring_context(ring_size: usize) {
-    ring_context(ring_size);
+pub unsafe extern "C" fn initialize_ring_context(ring_size: usize) -> bool {
+    ring_context(ring_size).is_ok()
 }

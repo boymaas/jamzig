@@ -48,7 +48,7 @@ pub extern fn get_padding_point(
     output: [*c]u8,
 ) callconv(.C) bool;
 
-pub extern fn initialize_ring_context(usize) void;
+pub extern fn initialize_ring_context(usize) bool;
 
 pub extern fn get_verifier_commitment(
     public_keys: [*c]const u8,
@@ -74,8 +74,8 @@ pub fn getVerifierCommitment(
 }
 
 // Zig wrapper function for initialize_ring_context
-pub fn initializeRingContext(ring_size: usize) void {
-    initialize_ring_context(ring_size);
+pub fn initializeRingContext(ring_size: usize) bool {
+    return initialize_ring_context(ring_size);
 }
 
 // Zig wrapper functions
@@ -280,7 +280,7 @@ test "crypto: ring signature and VRF" {
     }
 
     // Initialize the Ring context
-    timeFunction("initRingCtx", initializeRingContext, .{RING_SIZE});
+    _ = timeFunction("initRingCtx", initializeRingContext, .{RING_SIZE});
 
     const prover_key_index: usize = 3;
 
@@ -336,7 +336,7 @@ test "crypto: fuzz | takes 10s" {
 
     const RING_SIZE: usize = 10;
     // Initialize the Ring context
-    initializeRingContext(RING_SIZE);
+    _ = initializeRingContext(RING_SIZE);
 
     // Generate public keys for the ring
     var ring_keypairs: [RING_SIZE]types.BandersnatchKeyPair = undefined;

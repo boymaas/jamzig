@@ -9,6 +9,8 @@ use crate::ring_vrf::{
     types::{vrf_input_point, RingCommitment, RingVrfSignature},
 };
 
+use super::context::RingContextError;
+
 /// Verify based on Commitment
 pub struct CommitmentVerifier {
     pub commitment: RingCommitment,
@@ -21,6 +23,8 @@ pub enum CommitmentVerifierError {
     SignatureVerificationFailed,
     #[error("Deserialization error")]
     DeserializationError,
+    #[error(transparent)]
+    RingContextError(#[from] RingContextError),
 }
 
 impl CommitmentVerifier {
@@ -45,7 +49,7 @@ impl CommitmentVerifier {
         let input = vrf_input_point(vrf_input_data);
         let output = signature.output;
 
-        let ring_ctx = ring_context(self.ring_size);
+        let ring_ctx = ring_context(self.ring_size)?;
         let verifier_key = ring_ctx.verifier_key_from_commitment(self.commitment.clone());
         let verifier = ring_ctx.verifier(verifier_key);
         if Public::verify(input, output, aux_data, &signature.proof, &verifier).is_err() {
