@@ -6,7 +6,7 @@ pub use bandersnatch::{IetfProof, Input, Output, Public, RingProof, Secret};
 // NOTE: for tiny test vecors RING_SIZE should be 6
 //       and ffull test vectors RING_SIZE should be 1023
 //       Thu Sep 19 17:58:22 CEST 2024
-const RING_SIZE: usize = 6;
+// const RING_SIZE: usize = 1023;
 
 // This is the IETF `Prove` procedure output as described in section 2.2
 // of the Bandersnatch VRFs specification
@@ -28,15 +28,34 @@ struct RingVrfSignature {
 // Include the binary data directly in the compiled binary
 static ZCASH_SRS: &[u8] = include_bytes!("../data/zcash-srs-2-11-uncompressed.bin");
 
+use lru::LruCache;
+use std::sync::OnceLock;
+use std::{num::NonZeroUsize, sync::Mutex};
+
+static PCS_PARAMS: OnceLock<bandersnatch::PcsParams> = OnceLock::new();
+static RING_CONTEXT_CACHE: OnceLock<Mutex<LruCache<usize, RingContext>>> = OnceLock::new();
+
+const CACHE_CAPACITY: usize = 10; // Adjust this value as needed
+
+fn init_pcs_params() -> bandersnatch::PcsParams {
+    bandersnatch::PcsParams::deserialize_uncompressed_unchecked(ZCASH_SRS).unwrap()
+}
+
 // "Static" ring context data
-pub fn ring_context() -> &'static RingContext {
-    use std::sync::OnceLock;
-    static RING_CTX: OnceLock<RingContext> = OnceLock::new();
-    RING_CTX.get_or_init(|| {
-        use bandersnatch::PcsParams;
-        let pcs_params = PcsParams::deserialize_uncompressed_unchecked(ZCASH_SRS).unwrap();
-        RingContext::from_srs(RING_SIZE, pcs_params).unwrap()
-    })
+pub fn ring_context(ring_size: usize) -> RingContext {
+    let pcs_params = PCS_PARAMS.get_or_init(init_pcs_params);
+
+    let cache = RING_CONTEXT_CACHE
+        .get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(CACHE_CAPACITY).unwrap())));
+    let mut cache = cache.lock().unwrap();
+
+    if let Some(ctx) = cache.get(&ring_size) {
+        ctx.clone()
+    } else {
+        let ctx = RingContext::from_srs(ring_size, pcs_params.clone()).unwrap();
+        cache.put(ring_size, ctx.clone());
+        ctx
+    }
 }
 
 // Construct VRF Input Point from arbitrary data (section 1.2)
@@ -73,7 +92,7 @@ impl Prover {
         let pts: Vec<_> = self.ring.iter().map(|pk| pk.0).collect();
 
         // Proof construction
-        let ring_ctx = ring_context();
+        let ring_ctx = ring_context(pts.len());
         let prover_key = ring_ctx.prover_key(&pts);
         let prover = ring_ctx.prover(prover_key, self.prover_idx);
         let proof = self.secret.prove(input, output, aux_data, &prover);
@@ -111,7 +130,6 @@ pub type RingCommitment = ark_ec_vrfs::ring::RingCommitment<bandersnatch::Bander
 // Verifier actor.
 pub struct Verifier {
     pub commitment: RingCommitment,
-    #[allow(dead_code)]
     pub ring: Vec<Public>,
 }
 
@@ -119,7 +137,7 @@ impl Verifier {
     pub fn new(ring: Vec<Public>) -> Self {
         // Backend currently requires the wrapped type (plain affine points)
         let pts: Vec<_> = ring.iter().map(|pk| pk.0).collect();
-        let verifier_key = ring_context().verifier_key(&pts);
+        let verifier_key = ring_context(ring.len()).verifier_key(&pts);
         let commitment = verifier_key.commitment();
         Self { ring, commitment }
     }
@@ -142,7 +160,7 @@ impl Verifier {
         let input = vrf_input_point(vrf_input_data);
         let output = signature.output;
 
-        let ring_ctx = ring_context();
+        let ring_ctx = ring_context(self.ring.len());
         //
         // The verifier key is reconstructed from the commitment and the constant
         // verifier key component of the SRS in order to verify some proof.
@@ -204,11 +222,15 @@ impl Verifier {
 
 pub struct CommitmentVerifier {
     pub commitment: RingCommitment,
+    pub ring_size: usize,
 }
 
 impl CommitmentVerifier {
-    pub fn new(commitment: RingCommitment) -> Self {
-        Self { commitment }
+    pub fn new(commitment: RingCommitment, ring_size: usize) -> Self {
+        Self {
+            commitment,
+            ring_size,
+        }
     }
 
     pub fn ring_vrf_verify(
@@ -224,11 +246,10 @@ impl CommitmentVerifier {
         let input = vrf_input_point(vrf_input_data);
         let output = signature.output;
 
-        let ring_ctx = ring_context();
+        let ring_ctx = ring_context(self.ring_size);
         let verifier_key = ring_ctx.verifier_key_from_commitment(self.commitment.clone());
         let verifier = ring_ctx.verifier(verifier_key);
         if Public::verify(input, output, aux_data, &signature.proof, &verifier).is_err() {
-            eprintln!("Ring signature verification on commitment failed");
             return Err(());
         }
 

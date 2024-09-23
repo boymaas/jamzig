@@ -4,7 +4,7 @@ const safrole = @import("../safrole.zig");
 const safrole_fixtures = @import("fixtures.zig");
 const tiny_params = @import("tiny.zig").TINY_PARAMS;
 
-test "tiny/skip-epochs-1.json" {
+test "safrole/tiny/skip-epochs-1.json" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
@@ -29,7 +29,7 @@ test "tiny/skip-epochs-1.json" {
     try fixtures.expectOutput(result.output);
 }
 
-test "tiny/skip-epoch-tail-1.json" {
+test "safrole/tiny/skip-epoch-tail-1.json" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(

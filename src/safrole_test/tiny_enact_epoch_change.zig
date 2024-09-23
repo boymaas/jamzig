@@ -4,7 +4,7 @@ const safrole = @import("../safrole.zig");
 const safrole_fixtures = @import("fixtures.zig");
 const tiny_params = @import("tiny.zig").TINY_PARAMS;
 
-test "tiny/enact-epoch-change-with-no-tickets-1" {
+test "safrole/tiny/enact-epoch-change-with-no-tickets-1" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
@@ -35,7 +35,7 @@ test "tiny/enact-epoch-change-with-no-tickets-1" {
     try fixtures.expectOkOutputWithNullEpochAndTicketMarkers(result.output);
 }
 
-test "tiny/enact-epoch-change-with-no-tickets-2" {
+test "safrole/tiny/enact-epoch-change-with-no-tickets-2" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
@@ -58,7 +58,7 @@ test "tiny/enact-epoch-change-with-no-tickets-2" {
     try std.testing.expectEqual(.bad_slot, result.output.err);
 }
 
-test "tiny/enact-epoch-change-with-no-tickets-3" {
+test "safrole/tiny/enact-epoch-change-with-no-tickets-3" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
@@ -79,7 +79,7 @@ test "tiny/enact-epoch-change-with-no-tickets-3" {
     try fixtures.expectOkOutputWithNullEpochAndTicketMarkers(result.output);
 }
 
-test "tiny/enact-epoch-change-with-no-tickets-4" {
+test "safrole/tiny/enact-epoch-change-with-no-tickets-4" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(

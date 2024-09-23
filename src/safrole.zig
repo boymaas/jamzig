@@ -14,6 +14,8 @@ pub const Params = struct {
     ticket_submission_end_epoch_slot: u32 = 500,
     // K: The maximum tickets which may be submitted in a single extrinsic
     max_tickets_per_extrinsic: u32 = 16,
+    // Validators count
+    validators_count: u32,
 };
 
 const Safrole = struct {
@@ -108,6 +110,7 @@ pub fn transition(
     // NOTE: we are using pre_state n2 which is weird as I expected n'2 which is post state
     const verified_extrinsic = verifyTicketEnvelope(
         allocator,
+        params.validators_count,
         pre_state.gamma_z,
         pre_state.eta[2],
         input.extrinsic,
@@ -304,7 +307,7 @@ pub fn transition(
     };
 }
 
-fn verifyTicketEnvelope(allocator: std.mem.Allocator, gamma_z: types.BandersnatchVrfRoot, n2: types.Entropy, extrinsic: []const types.TicketEnvelope) ![]types.TicketBody {
+fn verifyTicketEnvelope(allocator: std.mem.Allocator, ring_size: usize, gamma_z: types.BandersnatchVrfRoot, n2: types.Entropy, extrinsic: []const types.TicketEnvelope) ![]types.TicketBody {
     // For now, map the extrinsic to the ticket setting the ticketbody.id to all 0s
     var tickets = try allocator.alloc(types.TicketBody, extrinsic.len);
     errdefer allocator.free(tickets);
@@ -317,6 +320,7 @@ fn verifyTicketEnvelope(allocator: std.mem.Allocator, gamma_z: types.Bandersnatc
         const vrf_input = X_t ++ n2 ++ [_]u8{extr.attempt};
         const output = try crypto.verifyRingSignatureAgainstCommitment(
             gamma_z,
+            ring_size,
             &vrf_input,
             &empty_aux_data,
             &extr.signature,

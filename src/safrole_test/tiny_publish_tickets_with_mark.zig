@@ -4,7 +4,7 @@ const safrole = @import("../safrole.zig");
 const safrole_fixtures = @import("fixtures.zig");
 const tiny_params = @import("tiny.zig").TINY_PARAMS;
 
-test "tiny/publish-tickets-with-mark-1.json" {
+test "safrole/tiny/publish-tickets-with-mark-1.json" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
@@ -26,7 +26,7 @@ test "tiny/publish-tickets-with-mark-1.json" {
     try fixtures.expectOutput(result.output);
 }
 
-test "tiny/publish-tickets-with-mark-2.json" {
+test "safrole/tiny/publish-tickets-with-mark-2.json" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
@@ -48,7 +48,7 @@ test "tiny/publish-tickets-with-mark-2.json" {
     try fixtures.expectOutput(result.output);
 }
 
-test "tiny/publish-tickets-with-mark-3.json" {
+test "safrole/tiny/publish-tickets-with-mark-3.json" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
@@ -70,7 +70,7 @@ test "tiny/publish-tickets-with-mark-3.json" {
     try fixtures.expectOutput(result.output);
 }
 
-test "tiny/publish-tickets-with-mark-4.json" {
+test "safrole/tiny/publish-tickets-with-mark-4.json" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
@@ -91,7 +91,7 @@ test "tiny/publish-tickets-with-mark-4.json" {
     try fixtures.expectOutput(result.output);
 }
 
-test "tiny/publish-tickets-with-mark-5.json" {
+test "safrole/tiny/publish-tickets-with-mark-5.json" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(

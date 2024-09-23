@@ -30,7 +30,7 @@ pub const Fixtures = struct {
 
     pub fn diffAgainstPostState(
         self: @This(),
-        state: *safrole.types.State,
+        state: *const safrole.types.State,
     ) ![]const u8 {
         return try diff.diffStates(
             self.allocator,
@@ -41,7 +41,7 @@ pub const Fixtures = struct {
 
     pub fn diffAgainstPostStateAndPrint(
         self: @This(),
-        state: *safrole.types.State,
+        state: *const safrole.types.State,
     ) !void {
         const diff_result = self.diffAgainstPostState(state) catch |err| {
             std.debug.print("DiffAgainstPostState err {any}\n", .{err});
@@ -79,6 +79,10 @@ pub const Fixtures = struct {
         self.input.deinit(self.allocator);
         self.post_state.deinit(self.allocator);
         self.output.deinit(self.allocator);
+    }
+
+    pub fn expectPostState(self: @This(), actual_state: *const safrole.types.State) !void {
+        try std.testing.expectEqualDeep(self.post_state, actual_state.*);
     }
 
     pub fn expectOutput(self: @This(), actual_output: safrole.types.Output) !void {

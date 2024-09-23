@@ -15,6 +15,7 @@ pub const TINY_PARAMS = safrole.Params{
     // would suggest 10
     .ticket_submission_end_epoch_slot = 10,
     .max_ticket_entries_per_validator = 2,
+    .validators_count = 6,
 };
 
 comptime {

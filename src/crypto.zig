@@ -27,6 +27,7 @@ extern fn verify_ring_signature(
 
 extern fn verify_ring_signature_against_commitment(
     commitment: [*c]const u8,
+    ring_size: usize,
     vrf_input_data: [*c]const u8,
     vrf_input_len: usize,
     aux_data: [*c]const u8,
@@ -43,10 +44,11 @@ pub extern fn create_key_pair_from_seed(
 ) callconv(.C) bool;
 
 pub extern fn get_padding_point(
+    ring_size: usize,
     output: [*c]u8,
 ) callconv(.C) bool;
 
-pub extern fn initialize_ring_context() void;
+pub extern fn initialize_ring_context(usize) void;
 
 pub extern fn get_verifier_commitment(
     public_keys: [*c]const u8,
@@ -72,8 +74,8 @@ pub fn getVerifierCommitment(
 }
 
 // Zig wrapper function for initialize_ring_context
-pub fn initializeRingContext() void {
-    initialize_ring_context();
+pub fn initializeRingContext(ring_size: usize) void {
+    initialize_ring_context(ring_size);
 }
 
 // Zig wrapper functions
@@ -132,6 +134,7 @@ pub fn verifyRingSignature(
 
 pub fn verifyRingSignatureAgainstCommitment(
     commitment: types.BandersnatchVrfRoot,
+    ring_size: usize,
     vrf_input: []const u8,
     aux_data: []const u8,
     signature: *const types.BandersnatchRingSignature,
@@ -140,6 +143,7 @@ pub fn verifyRingSignatureAgainstCommitment(
 
     const result = verify_ring_signature_against_commitment(
         @ptrCast(&commitment),
+        ring_size,
         @ptrCast(vrf_input.ptr),
         vrf_input.len,
         @ptrCast(aux_data.ptr),
@@ -176,9 +180,10 @@ pub fn createKeyPairFromSeed(seed: []const u8) !types.BandersnatchKeyPair {
     return key_pair;
 }
 
-pub fn getPaddingPoint() !types.BandersnatchKey {
+pub fn getPaddingPoint(ring_size: usize) !types.BandersnatchKey {
     var output: types.BandersnatchKey = undefined;
     const result = get_padding_point(
+        ring_size,
         &output,
     );
 
@@ -275,7 +280,7 @@ test "crypto: ring signature and VRF" {
     }
 
     // Initialize the Ring context
-    timeFunction("initRingCtx", initializeRingContext, .{});
+    timeFunction("initRingCtx", initializeRingContext, .{RING_SIZE});
 
     const prover_key_index: usize = 3;
 
@@ -287,7 +292,7 @@ test "crypto: ring signature and VRF" {
     std.debug.print("Public key length: {} bytes\n", .{prover_key_pair.public_key.len});
 
     // Replace some keys with padding points
-    const padding_point = try getPaddingPoint();
+    const padding_point = try getPaddingPoint(RING_SIZE);
     ring[2] = padding_point;
     ring[7] = padding_point;
 
@@ -329,11 +334,11 @@ test "crypto: fuzz | takes 10s" {
     var prng = std.Random.DefaultPrng.init(0);
     const random = prng.random();
 
+    const RING_SIZE: usize = 10;
     // Initialize the Ring context
-    initializeRingContext();
+    initializeRingContext(RING_SIZE);
 
     // Generate public keys for the ring
-    const RING_SIZE: usize = 10;
     var ring_keypairs: [RING_SIZE]types.BandersnatchKeyPair = undefined;
     var ring: [RING_SIZE]types.BandersnatchKey = undefined;
     for (0..RING_SIZE) |i| {
