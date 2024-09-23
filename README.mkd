@@ -1,7 +1,7 @@
 # JAMZIG node
 
 
-## **Enabling Tracing **
+## Enabling Tracing 
 =====================================
 
 This project allows you to enable tracing on specific scopes or source files using the `tracing` module. Tracing can be useful for debugging and understanding the execution flow of your program.
