@@ -1,4 +1,7 @@
-use crate::ring_vrf::*;
+pub use crate::commitment_verifier::CommitmentVerifier;
+use crate::ring_context::ring_context;
+pub use crate::ring_vrf::{Prover, Verifier};
+pub use crate::types::*;
 
 // Function to generate a ring signature
 /// # Safety
@@ -36,12 +39,14 @@ pub unsafe extern "C" fn generate_ring_signature(
     let vrf_input = std::slice::from_raw_parts(vrf_input_data, vrf_input_len);
     let aux = std::slice::from_raw_parts(aux_data, aux_data_len);
 
-    let signature = prover.ring_vrf_sign(vrf_input, aux);
-    assert!(signature.len() == 784);
-
-    std::ptr::copy_nonoverlapping(signature.as_ptr(), output, 784);
-
-    true
+    match prover.ring_vrf_sign(vrf_input, aux) {
+        Ok(signature) => {
+            assert!(signature.len() == 784);
+            std::ptr::copy_nonoverlapping(signature.as_ptr(), output, 784);
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 // Function to verify a ring signature

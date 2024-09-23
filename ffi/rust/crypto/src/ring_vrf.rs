@@ -1,66 +1,30 @@
+use ark_ec_vrfs::prelude::ark_serialize;
 use ark_ec_vrfs::suites::bandersnatch::edwards as bandersnatch;
-use ark_ec_vrfs::{prelude::ark_serialize, suites::bandersnatch::edwards::RingContext};
 pub use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 pub use bandersnatch::{IetfProof, Input, Output, Public, RingProof, Secret};
+use thiserror::Error;
 
-// NOTE: for tiny test vecors RING_SIZE should be 6
-//       and ffull test vectors RING_SIZE should be 1023
-//       Thu Sep 19 17:58:22 CEST 2024
-// const RING_SIZE: usize = 1023;
+use crate::{
+    ring_context::ring_context,
+    types::{vrf_input_point, IetfVrfSignature, RingVrfSignature},
+};
 
-// This is the IETF `Prove` procedure output as described in section 2.2
-// of the Bandersnatch VRFs specification
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-struct IetfVrfSignature {
-    output: Output,
-    proof: IetfProof,
+#[derive(Error, Debug)]
+pub enum ProverError {
+    #[error("Failed to serialize signature")]
+    SerializationError,
+    #[error("Invalid prover index")]
+    InvalidProverIndex,
 }
 
-// This is the IETF `Prove` procedure output as described in section 4.2
-// of the Bandersnatch VRFs specification
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-struct RingVrfSignature {
-    output: Output,
-    // This contains both the Pedersen proof and actual ring proof.
-    proof: RingProof,
-}
-
-// Include the binary data directly in the compiled binary
-static ZCASH_SRS: &[u8] = include_bytes!("../data/zcash-srs-2-11-uncompressed.bin");
-
-use lru::LruCache;
-use std::sync::OnceLock;
-use std::{num::NonZeroUsize, sync::Mutex};
-
-static PCS_PARAMS: OnceLock<bandersnatch::PcsParams> = OnceLock::new();
-static RING_CONTEXT_CACHE: OnceLock<Mutex<LruCache<usize, RingContext>>> = OnceLock::new();
-
-const CACHE_CAPACITY: usize = 10; // Adjust this value as needed
-
-fn init_pcs_params() -> bandersnatch::PcsParams {
-    bandersnatch::PcsParams::deserialize_uncompressed_unchecked(ZCASH_SRS).unwrap()
-}
-
-// "Static" ring context data
-pub fn ring_context(ring_size: usize) -> RingContext {
-    let pcs_params = PCS_PARAMS.get_or_init(init_pcs_params);
-
-    let cache = RING_CONTEXT_CACHE
-        .get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(CACHE_CAPACITY).unwrap())));
-    let mut cache = cache.lock().unwrap();
-
-    if let Some(ctx) = cache.get(&ring_size) {
-        ctx.clone()
-    } else {
-        let ctx = RingContext::from_srs(ring_size, pcs_params.clone()).unwrap();
-        cache.put(ring_size, ctx.clone());
-        ctx
-    }
-}
-
-// Construct VRF Input Point from arbitrary data (section 1.2)
-fn vrf_input_point(vrf_input_data: &[u8]) -> Input {
-    Input::new(vrf_input_data).unwrap()
+#[derive(Error, Debug)]
+pub enum VerifierError {
+    #[error("Failed to deserialize signature")]
+    DeserializationError,
+    #[error("Signature verification failed")]
+    VerificationFailed,
+    #[error("Invalid signer key index")]
+    InvalidSignerKeyIndex,
 }
 
 // Prover actor.
@@ -82,7 +46,11 @@ impl Prover {
     /// Anonymous VRF signature.
     ///
     /// Used for tickets submission.
-    pub fn ring_vrf_sign(&self, vrf_input_data: &[u8], aux_data: &[u8]) -> Vec<u8> {
+    pub fn ring_vrf_sign(
+        &self,
+        vrf_input_data: &[u8],
+        aux_data: &[u8],
+    ) -> Result<Vec<u8>, ProverError> {
         use ark_ec_vrfs::ring::Prover as _;
 
         let input = vrf_input_point(vrf_input_data);
@@ -100,16 +68,21 @@ impl Prover {
         // Output and Ring Proof bundled together (as per section 2.2)
         let signature = RingVrfSignature { output, proof };
         let mut buf = Vec::new();
-        signature.serialize_compressed(&mut buf).unwrap();
-        buf
+        signature
+            .serialize_compressed(&mut buf)
+            .map_err(|_| ProverError::SerializationError)?;
+        Ok(buf)
     }
 
     /// Non-Anonymous VRF signature.
     ///
     // Used for ticket claiming during block production.
     /// Not used with Safrole test vectors.
-    #[allow(dead_code)]
-    pub fn ietf_vrf_sign(&self, vrf_input_data: &[u8], aux_data: &[u8]) -> Vec<u8> {
+    pub fn ietf_vrf_sign(
+        &self,
+        vrf_input_data: &[u8],
+        aux_data: &[u8],
+    ) -> Result<Vec<u8>, ProverError> {
         use ark_ec_vrfs::ietf::Prover as _;
 
         let input = vrf_input_point(vrf_input_data);
@@ -120,8 +93,10 @@ impl Prover {
         // Output and IETF Proof bundled together (as per section 2.2)
         let signature = IetfVrfSignature { output, proof };
         let mut buf = Vec::new();
-        signature.serialize_compressed(&mut buf).unwrap();
-        buf
+        signature
+            .serialize_compressed(&mut buf)
+            .map_err(|_| ProverError::SerializationError)?;
+        Ok(buf)
     }
 }
 
@@ -152,10 +127,11 @@ impl Verifier {
         vrf_input_data: &[u8],
         aux_data: &[u8],
         signature: &[u8],
-    ) -> Result<[u8; 32], ()> {
+    ) -> Result<[u8; 32], VerifierError> {
         use ark_ec_vrfs::ring::Verifier as _;
 
-        let signature = RingVrfSignature::deserialize_compressed(signature).unwrap();
+        let signature = RingVrfSignature::deserialize_compressed(signature)
+            .map_err(|_| VerifierError::DeserializationError)?;
 
         let input = vrf_input_point(vrf_input_data);
         let output = signature.output;
@@ -169,11 +145,10 @@ impl Verifier {
         // In other words, we prefer computing the commitment once, when the keyset changes.
         let verifier_key = ring_ctx.verifier_key_from_commitment(self.commitment.clone());
         let verifier = ring_ctx.verifier(verifier_key);
-        if Public::verify(input, output, aux_data, &signature.proof, &verifier).is_err() {
-            return Err(());
-        }
-        //
-        // // This truncated hash is the actual value used as ticket-id/score in JAM
+        Public::verify(input, output, aux_data, &signature.proof, &verifier)
+            .map_err(|_| VerifierError::VerificationFailed)?;
+
+        // This truncated hash is the actual value used as ticket-id/score in JAM
         let vrf_output_hash: [u8; 32] = output.hash()[..32].try_into().unwrap();
         Ok(vrf_output_hash)
     }
@@ -191,22 +166,23 @@ impl Verifier {
         aux_data: &[u8],
         signature: &[u8],
         signer_key_index: usize,
-    ) -> Result<[u8; 32], ()> {
+    ) -> Result<[u8; 32], VerifierError> {
         use ark_ec_vrfs::ietf::Verifier as _;
 
-        let signature = IetfVrfSignature::deserialize_compressed(signature).unwrap();
+        let signature = IetfVrfSignature::deserialize_compressed(signature)
+            .map_err(|_| VerifierError::DeserializationError)?;
 
         let input = vrf_input_point(vrf_input_data);
         let output = signature.output;
 
-        let public = &self.ring[signer_key_index];
-        if public
+        let public = self
+            .ring
+            .get(signer_key_index)
+            .ok_or(VerifierError::InvalidSignerKeyIndex)?;
+        public
             .verify(input, output, aux_data, &signature.proof)
-            .is_err()
-        {
-            println!("Ring signature verification failure");
-            return Err(());
-        }
+            .map_err(|_| VerifierError::VerificationFailed)?;
+
         println!("Ietf signature verified");
 
         // This is the actual value used as ticket-id/score
@@ -214,46 +190,6 @@ impl Verifier {
         // using the ring-vrf (regardless of aux_data).
         let vrf_output_hash: [u8; 32] = output.hash()[..32].try_into().unwrap();
         println!(" vrf-output-hash: {}", hex::encode(vrf_output_hash));
-        Ok(vrf_output_hash)
-    }
-}
-
-// Verify based on Commitment
-
-pub struct CommitmentVerifier {
-    pub commitment: RingCommitment,
-    pub ring_size: usize,
-}
-
-impl CommitmentVerifier {
-    pub fn new(commitment: RingCommitment, ring_size: usize) -> Self {
-        Self {
-            commitment,
-            ring_size,
-        }
-    }
-
-    pub fn ring_vrf_verify(
-        &self,
-        vrf_input_data: &[u8],
-        aux_data: &[u8],
-        signature: &[u8],
-    ) -> Result<[u8; 32], ()> {
-        use ark_ec_vrfs::ring::Verifier as _;
-
-        let signature = RingVrfSignature::deserialize_compressed(signature).unwrap();
-
-        let input = vrf_input_point(vrf_input_data);
-        let output = signature.output;
-
-        let ring_ctx = ring_context(self.ring_size);
-        let verifier_key = ring_ctx.verifier_key_from_commitment(self.commitment.clone());
-        let verifier = ring_ctx.verifier(verifier_key);
-        if Public::verify(input, output, aux_data, &signature.proof, &verifier).is_err() {
-            return Err(());
-        }
-
-        let vrf_output_hash: [u8; 32] = output.hash()[..32].try_into().unwrap();
         Ok(vrf_output_hash)
     }
 }

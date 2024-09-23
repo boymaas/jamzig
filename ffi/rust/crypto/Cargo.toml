@@ -10,6 +10,7 @@ edition = "2021"
 ark-ec-vrfs ={ git = "https://github.com/davxy/ark-ec-vrfs", rev = "376eb16", features = ["bandersnatch", "ring", "parallel"] }
 hex = "0.4.3"
 lru = "0.12.4"
+thiserror = "1.0.64"
 
 [lib]
 crate-type = ["staticlib"]
