@@ -14,7 +14,7 @@ static RING_CONTEXT_CACHE: OnceLock<Mutex<LruCache<usize, RingContext>>> = OnceL
 const RING_CONTEXT_CACHE_CAPACITY: usize = 10; // Adjust this value as needed
 
 fn init_pcs_params() -> bandersnatch::PcsParams {
-    bandersnatch::PcsParams::deserialize_uncompressed_unchecked(ZCASH_SRS).unwrap()
+    bandersnatch::PcsParams::deserialize_uncompressed_unchecked(ZCASH_SRS).expect("Failed to deserialize PcsParams from ZCASH_SRS")
 }
 // "Static" ring context data
 pub fn ring_context(ring_size: usize) -> RingContext {
