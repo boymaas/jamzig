@@ -31,14 +31,19 @@ pub const PVM = struct {
         self.allocator.free(self.memory);
     }
 
+    const MAX_ITERATIONS = 1024;
     pub fn run(self: *PVM) !void {
         const decoder = Decoder.init(self.program.code, self.program.mask);
         var n: usize = 0;
-        while (self.pc < self.program.code.len and n < 32) : (n += 1) {
+        while (self.pc < self.program.code.len and n < MAX_ITERATIONS) : (n += 1) {
             const i = try decoder.decodeInstruction(self.pc);
 
             std.debug.print("{d:0>4}: {any}\n", .{ self.pc, i });
             self.pc = try updatePc(self.pc, try self.executeInstruction(i));
+        }
+
+        if (n == MAX_ITERATIONS) {
+            return error.MAX_ITERATIONS_REACHED;
         }
     }
 
@@ -81,6 +86,13 @@ pub const PVM = struct {
             },
             .fallthrough => {
                 // Do nothing, just move to the next instruction
+            },
+            .add => {
+                const args = i.args.three_registers;
+                self.registers[args.third_register_index] = @addWithOverflow(
+                    self.registers[args.first_register_index],
+                    self.registers[args.second_register_index],
+                )[0];
             },
             else => {
                 // For now, we'll just print a message for unimplemented instructions
