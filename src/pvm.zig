@@ -61,12 +61,22 @@ pub const PVM = struct {
                 const args = i.args.one_offset;
                 return args.offset;
             },
-            .fallthrough => {
+            .add_imm => {
+                // Add immediate value to register
+                const args = i.args.two_registers_one_immediate;
+                self.registers[args.first_register_index] = @addWithOverflow(
+                    self.registers[args.second_register_index],
+                    @as(u32, @bitCast(args.immediate)),
+                )[0];
+            },
+            .fallthrough,
+            => {
                 // Do nothing, just move to the next instruction
             },
             else => {
                 // For now, we'll just print a message for unimplemented instructions
                 std.debug.print("Instruction not implemented: {any}\n", .{i});
+                unreachable;
             },
         }
 
