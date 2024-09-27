@@ -69,8 +69,13 @@ pub const PVM = struct {
                     @as(u32, @bitCast(args.immediate)),
                 )[0];
             },
-            .fallthrough,
-            => {
+            .branch_eq_imm => {
+                const args = i.args.one_register_one_immediate_one_offset;
+                if (self.registers[args.register_index] == @as(u32, @bitCast(args.immediate))) {
+                    return args.offset;
+                }
+            },
+            .fallthrough => {
                 // Do nothing, just move to the next instruction
             },
             else => {
