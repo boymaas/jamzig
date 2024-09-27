@@ -75,6 +75,10 @@ pub const PVM = struct {
                     return args.offset;
                 }
             },
+            .move_reg => {
+                const args = i.args.two_registers;
+                self.registers[args.first_register_index] = self.registers[args.second_register_index];
+            },
             .fallthrough => {
                 // Do nothing, just move to the next instruction
             },
