@@ -5,11 +5,13 @@ const Program = @import("./pvm/program.zig").Program;
 const Decoder = @import("./pvm/decoder.zig").Decoder;
 const InstructionWithArgs = @import("./pvm/decoder.zig").InstructionWithArgs;
 
+const updatePc = @import("./pvm/utils.zig").updatePc;
+
 pub const PVM = struct {
     allocator: *Allocator,
     program: Program,
     registers: [13]u32,
-    pc: usize,
+    pc: u32,
     memory: []u8,
 
     pub fn init(allocator: *Allocator, raw_program: []const u8) !PVM {
@@ -31,17 +33,19 @@ pub const PVM = struct {
 
     pub fn run(self: *PVM) !void {
         const decoder = Decoder.init(self.program.code, self.program.mask);
-        while (self.pc < self.program.code.len) {
+        var n: usize = 0;
+        while (self.pc < self.program.code.len and n < 32) : (n += 1) {
             const i = try decoder.decodeInstruction(self.pc);
 
             std.debug.print("{d:0>4}: {any}\n", .{ self.pc, i });
-            try self.executeInstruction(i);
-
-            self.pc += i.skip_l() + 1;
+            self.pc = try updatePc(self.pc, try self.executeInstruction(i));
         }
     }
 
-    fn executeInstruction(self: *PVM, i: InstructionWithArgs) !void {
+    /// Offset to add to the program counter
+    const PcOffset = i32;
+    /// executes the instruction and returns the offset to add to the program counter
+    fn executeInstruction(self: *PVM, i: InstructionWithArgs) !PcOffset {
         switch (i.instruction) {
             .trap => {
                 // Halt the program
@@ -52,6 +56,11 @@ pub const PVM = struct {
                 const args = i.args.one_register_one_immediate;
                 self.registers[args.register_index] = @bitCast(args.immediate);
             },
+            .jump => {
+                // Jump to offset
+                const args = i.args.one_offset;
+                return args.offset;
+            },
             .fallthrough => {
                 // Do nothing, just move to the next instruction
             },
@@ -60,5 +69,8 @@ pub const PVM = struct {
                 std.debug.print("Instruction not implemented: {any}\n", .{i});
             },
         }
+
+        // default offset
+        return @intCast(i.skip_l() + 1);
     }
 };
