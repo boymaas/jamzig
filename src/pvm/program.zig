@@ -9,7 +9,7 @@ pub const Program = struct {
     jump_table: []const u8,
     jump_table_item_length: u8,
 
-    pub fn decode(allocator: *Allocator, raw_program: []const u8) !Program {
+    pub fn decode(allocator: Allocator, raw_program: []const u8) !Program {
         var program = Program{
             .code = undefined,
             .mask = undefined,
@@ -38,7 +38,7 @@ pub const Program = struct {
         return program;
     }
 
-    pub fn deinit(self: *Program, allocator: *Allocator) void {
+    pub fn deinit(self: *Program, allocator: Allocator) void {
         allocator.free(self.code);
         allocator.free(self.mask);
         allocator.free(self.jump_table);

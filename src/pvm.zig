@@ -8,13 +8,31 @@ const InstructionWithArgs = @import("./pvm/decoder.zig").InstructionWithArgs;
 const updatePc = @import("./pvm/utils.zig").updatePc;
 
 pub const PVM = struct {
-    allocator: *Allocator,
+    allocator: Allocator,
     program: Program,
     registers: [13]u32,
     pc: u32,
-    memory: []u8,
+    memory: []MemoryChunk,
+    page_map: []PageMap,
+    gas: i64,
 
-    pub fn init(allocator: *Allocator, raw_program: []const u8) !PVM {
+    pub const PageMap = struct {
+        address: u32,
+        length: u32,
+        is_writable: bool,
+    };
+
+    pub const MemoryChunk = struct {
+        address: u32,
+        contents: []u8,
+    };
+
+    pub const Status = enum {
+        trap,
+        halt,
+    };
+
+    pub fn init(allocator: Allocator, raw_program: []const u8, initial_gas: i64) !PVM {
         const program = try Program.decode(allocator, raw_program);
 
         return PVM{
@@ -22,13 +40,34 @@ pub const PVM = struct {
             .program = program,
             .registers = [_]u32{0} ** 13,
             .pc = 0,
-            .memory = try allocator.alloc(u8, 1024 * 1024), // Allocate 1MB of memory
+            .page_map = &[_]PageMap{},
+            .memory = &[_]MemoryChunk{},
+            .gas = initial_gas,
         };
     }
 
     pub fn deinit(self: *PVM) void {
         self.program.deinit(self.allocator);
+        self.allocator.free(self.page_map);
+        for (self.memory) |chunk| {
+            self.allocator.free(chunk.contents);
+        }
         self.allocator.free(self.memory);
+    }
+
+    pub fn pushMemory(self: *PVM, address: u32, contents: []const u8) !void {
+        const new_chunk = MemoryChunk{
+            .address = address,
+            .contents = try self.allocator.dupe(u8, contents),
+        };
+        const new_memory = try self.allocator.realloc(self.memory, self.memory.len + 1);
+        new_memory[self.memory.len] = new_chunk;
+        self.memory = new_memory;
+    }
+
+    pub fn setPageMap(self: *PVM, new_page_map: []const PageMap) !void {
+        self.allocator.free(self.page_map);
+        self.page_map = try self.allocator.dupe(PageMap, new_page_map);
     }
 
     const MAX_ITERATIONS = 1024;
@@ -40,6 +79,10 @@ pub const PVM = struct {
 
             std.debug.print("{d:0>4}: {any}\n", .{ self.pc, i });
             self.pc = try updatePc(self.pc, try self.executeInstruction(i));
+
+            if (self.gas <= 0) {
+                return error.OUT_OF_GAS;
+            }
         }
 
         if (n == MAX_ITERATIONS) {

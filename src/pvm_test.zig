@@ -1,6 +1,8 @@
 const std = @import("std");
 const pvmlib = @import("pvm.zig");
 
+const fixtures = @import("pvm_test/fixtures.zig");
+
 test "pvm:simple" {
     var allocator = std.testing.allocator;
 
@@ -18,4 +20,10 @@ test "pvm:simple" {
     for (pvm.registers, 0..) |reg, i| {
         std.debug.print("r{}: {}\n", .{ i, reg });
     }
+}
+
+test "pvm:inst_add" {
+    const allocator = std.testing.allocator;
+    const test_result = try fixtures.runTestFixtureFromPath(allocator, "src/tests/vectors/pvm/pvm/pvm/programs/inst_add.json");
+    try std.testing.expect(test_result);
 }
