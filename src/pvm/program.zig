@@ -6,6 +6,7 @@ const Allocator = std.mem.Allocator;
 pub const Program = struct {
     code: []const u8,
     mask: []const u8,
+    basic_blocks: []u32,
     jump_table: []const u8,
     jump_table_item_length: u8,
 
@@ -13,6 +14,7 @@ pub const Program = struct {
         var program = Program{
             .code = undefined,
             .mask = undefined,
+            .basic_blocks = undefined,
             .jump_table = undefined,
             .jump_table_item_length = undefined,
         };
@@ -35,6 +37,30 @@ pub const Program = struct {
         const mask_length_in_bytes = (code_length + 7) / 8;
         program.mask = try allocator.dupe(u8, raw_program[mask_first_index..][0..mask_length_in_bytes]);
 
+        // fill the mask_block_starts
+        var mask_block_count: usize = 0;
+        for (program.mask) |byte| {
+            mask_block_count += @popCount(byte);
+        }
+
+        program.basic_blocks = try allocator.alloc(u32, mask_block_count);
+
+        var block_index: usize = 0;
+        var bit_index: usize = 0;
+        for (program.mask) |byte| {
+            var mask: u8 = 1;
+            for (0..8) |_| {
+                if (byte & mask != 0) {
+                    program.basic_blocks[block_index] = @intCast(bit_index);
+                    block_index += 1;
+                }
+                mask <<= 1;
+                bit_index += 1;
+                if (bit_index >= code_length) break;
+            }
+            if (bit_index >= code_length) break;
+        }
+
         return program;
     }
 
@@ -42,6 +68,7 @@ pub const Program = struct {
         allocator.free(self.code);
         allocator.free(self.mask);
         allocator.free(self.jump_table);
+        allocator.free(self.basic_blocks);
     }
 
     pub fn format(

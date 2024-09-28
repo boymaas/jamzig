@@ -12,7 +12,7 @@ pub const InstructionWithArgs = struct {
     args_type: ArgumentType,
     args: InstructionArgs,
 
-    pub fn skip_l(self: *const @This()) usize {
+    pub fn skip_l(self: *const @This()) u32 {
         return self.args.skip_l();
     }
 
@@ -91,7 +91,7 @@ pub const Decoder = struct {
 
     fn decodeOneOffset(self: *const Decoder, pc: u32) !InstructionArgs {
         const l_x = @min(4, self.skip_l(pc + 1));
-        const offset = try self.decodeImmediate(pc + 1, l_x);
+        const offset = try self.decodeImmediateSigned(pc + 1, l_x);
         return .{
             .one_offset = .{
                 .no_of_bytes_to_skip = l_x,
@@ -134,7 +134,7 @@ pub const Decoder = struct {
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const l_x = @min(4, self.decodeHighNibble(pc + 1) % 8);
         const l_y = @min(4, @max(0, l - l_x - 1));
-        const offset = try self.decodeImmediate(pc + 2 + l_x, l_y);
+        const offset = try self.decodeImmediateSigned(pc + 2 + l_x, l_y);
         return .{
             .one_register_one_immediate_one_offset = .{
                 .no_of_bytes_to_skip = l,
@@ -179,7 +179,7 @@ pub const Decoder = struct {
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));
         const l_x = @min(4, l - 1);
-        const offset = try self.decodeImmediate(pc + 2, l_x);
+        const offset = try self.decodeImmediateSigned(pc + 2, l_x);
         return .{
             .two_registers_one_offset = .{
                 .no_of_bytes_to_skip = l,
@@ -224,17 +224,17 @@ pub const Decoder = struct {
     }
 
     /// (215)@0.3.8 Skip function
-    fn skip_l(self: *const Decoder, pc: u32) usize {
-        var count: usize = 0;
+    fn skip_l(self: *const Decoder, pc: u32) u32 {
+        var count: u32 = 0;
         const mask_index = pc / 8;
         const bit_offset: u3 = @intCast(pc % 8);
-        var mask_byte = self.mask[mask_index] >> bit_offset;
+        var mask_byte = self.getMaskAt(mask_index) >> bit_offset;
 
         while (mask_byte & 1 == 0) {
             count += 1;
             mask_byte >>= 1;
             if (bit_offset + count == 8) {
-                mask_byte = self.mask[mask_index + 1];
+                mask_byte = self.getMaskAt(mask_index + 1);
             }
         }
 
@@ -250,7 +250,19 @@ pub const Decoder = struct {
         return 0;
     }
 
-    inline fn decodeImmediate(self: *const Decoder, pc: u32, length: u32) !i32 {
+    pub fn getMaskAt(self: *const @This(), pc: u32) u8 {
+        if (pc < self.mask.len) {
+            return self.mask[pc];
+        }
+
+        return 0xFF;
+    }
+
+    inline fn decodeImmediate(self: *const Decoder, pc: u32, length: u32) !u32 {
+        return Immediate.decodeUnsigned(self.code[pc..][0..length]);
+    }
+
+    inline fn decodeImmediateSigned(self: *const Decoder, pc: u32, length: u32) !i32 {
         return Immediate.decodeSigned(self.code[pc..][0..length]);
     }
 
@@ -263,69 +275,69 @@ pub const Decoder = struct {
 };
 
 pub const InstructionArgs = union(ArgumentType) {
-    no_arguments: struct { no_of_bytes_to_skip: usize },
-    one_immediate: struct { no_of_bytes_to_skip: usize, immediate: i32 },
+    no_arguments: struct { no_of_bytes_to_skip: u32 },
+    one_immediate: struct { no_of_bytes_to_skip: u32, immediate: u32 },
     one_offset: struct {
-        no_of_bytes_to_skip: usize,
-        next_pc: usize,
+        no_of_bytes_to_skip: u32,
+        next_pc: u32,
         offset: i32,
     },
     one_register_one_immediate: struct {
-        no_of_bytes_to_skip: usize,
+        no_of_bytes_to_skip: u32,
         register_index: u8,
-        immediate: i32,
+        immediate: u32,
     },
     one_register_one_immediate_one_offset: struct {
-        no_of_bytes_to_skip: usize,
+        no_of_bytes_to_skip: u32,
         register_index: u8,
-        immediate: i32,
-        next_pc: usize,
+        immediate: u32,
+        next_pc: u32,
         offset: i32,
     },
     one_register_two_immediates: struct {
-        no_of_bytes_to_skip: usize,
+        no_of_bytes_to_skip: u32,
         register_index: u8,
-        first_immediate: i32,
-        second_immediate: i32,
+        first_immediate: u32,
+        second_immediate: u32,
     },
     three_registers: struct {
-        no_of_bytes_to_skip: usize,
+        no_of_bytes_to_skip: u32,
         first_register_index: u8,
         second_register_index: u8,
         third_register_index: u8,
     },
     two_immediates: struct {
-        no_of_bytes_to_skip: usize,
-        first_immediate: i32,
-        second_immediate: i32,
+        no_of_bytes_to_skip: u32,
+        first_immediate: u32,
+        second_immediate: u32,
     },
     two_registers: struct {
-        no_of_bytes_to_skip: usize,
+        no_of_bytes_to_skip: u32,
         first_register_index: u8,
         second_register_index: u8,
     },
     two_registers_one_immediate: struct {
-        no_of_bytes_to_skip: usize,
+        no_of_bytes_to_skip: u32,
         first_register_index: u8,
         second_register_index: u8,
-        immediate: i32,
+        immediate: u32,
     },
     two_registers_one_offset: struct {
-        no_of_bytes_to_skip: usize,
+        no_of_bytes_to_skip: u32,
         first_register_index: u8,
         second_register_index: u8,
-        next_pc: usize,
+        next_pc: u32,
         offset: i32,
     },
     two_registers_two_immediates: struct {
-        no_of_bytes_to_skip: usize,
+        no_of_bytes_to_skip: u32,
         first_register_index: u8,
         second_register_index: u8,
-        first_immediate: i32,
-        second_immediate: i32,
+        first_immediate: u32,
+        second_immediate: u32,
     },
 
-    pub fn skip_l(self: *const @This()) usize {
+    pub fn skip_l(self: *const @This()) u32 {
         return switch (self.*) {
             .no_arguments => |v| v.no_of_bytes_to_skip,
             .one_immediate => |v| v.no_of_bytes_to_skip,
