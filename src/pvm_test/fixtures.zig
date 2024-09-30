@@ -129,6 +129,7 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture) !boo
             error.PANIC => test_vector.expected_status == .trap,
             error.OUT_OF_GAS => test_vector.expected_status == .trap,
             error.MAX_ITERATIONS_REACHED => false,
+            error.MemoryChunkNotFound => test_vector.expected_status == .trap,
             error.MemoryAccessOutOfBounds => test_vector.expected_status == .trap,
             error.JumpAddressHalt => test_vector.expected_status == .halt,
             error.JumpAddressZero => test_vector.expected_status == .trap,

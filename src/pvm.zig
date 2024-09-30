@@ -196,19 +196,35 @@ pub const PVM = struct {
             },
             .set_lt_s_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = if (@as(i32, @bitCast(self.registers[args.second_register_index])) < args.immediate) 1 else 0;
+                self.registers[args.first_register_index] = if (@as(i32, @bitCast(self.registers[args.second_register_index])) < @as(i32, @bitCast(args.immediate))) 1 else 0;
             },
-            .shlo_l_imm, .shlo_l_imm_alt => {
+            .shlo_l_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = self.registers[args.second_register_index] << @intCast(args.immediate & 0x1F);
+                self.registers[args.first_register_index] = self.registers[args.second_register_index] << @intCast(args.immediate % 32);
             },
-            .shlo_r_imm, .shlo_r_imm_alt => {
+            .shlo_l_imm_alt => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = self.registers[args.second_register_index] >> @intCast(args.immediate & 0x1F);
+                self.registers[args.first_register_index] = args.immediate << @intCast(self.registers[args.second_register_index] % 32);
             },
-            .shar_r_imm, .shar_r_imm_alt => {
+            .shlo_r_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = @as(u32, @bitCast(@as(i32, @bitCast(self.registers[args.second_register_index])) >> @intCast(args.immediate & 0x1F)));
+                self.registers[args.first_register_index] = self.registers[args.second_register_index] >> @intCast(args.immediate % 32);
+            },
+            .shlo_r_imm_alt => {
+                const args = i.args.two_registers_one_immediate;
+                self.registers[args.first_register_index] = args.immediate >> @intCast(self.registers[args.second_register_index] % 32);
+            },
+            .shar_r_imm => {
+                const args = i.args.two_registers_one_immediate;
+                self.registers[args.first_register_index] = @bitCast(
+                    @as(i32, @bitCast(self.registers[args.second_register_index])) >> @intCast(args.immediate % 32),
+                );
+            },
+            .shar_r_imm_alt => {
+                const args = i.args.two_registers_one_immediate;
+                self.registers[args.first_register_index] = @bitCast(
+                    @as(i32, @bitCast(args.immediate)) >> @intCast(self.registers[args.second_register_index] % 32),
+                );
             },
             .neg_add_imm => {
                 const args = i.args.two_registers_one_immediate;
@@ -216,11 +232,11 @@ pub const PVM = struct {
             },
             .set_gt_u_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = if (self.registers[args.second_register_index] > @as(u32, @bitCast(args.immediate))) 1 else 0;
+                self.registers[args.first_register_index] = if (self.registers[args.second_register_index] > args.immediate) 1 else 0;
             },
             .set_gt_s_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = if (@as(i32, @bitCast(self.registers[args.second_register_index])) > args.immediate) 1 else 0;
+                self.registers[args.first_register_index] = if (@as(i32, @bitCast(self.registers[args.second_register_index])) > @as(i32, @bitCast(args.immediate))) 1 else 0;
             },
             .cmov_iz_imm => {
                 const args = i.args.two_registers_one_immediate;
