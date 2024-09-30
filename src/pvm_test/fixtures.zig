@@ -117,9 +117,6 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture) !boo
 
     const result = pvm.run();
 
-    std.debug.print("Result: {any}\n", .{result});
-    std.debug.print("Expected status: {any}\n", .{test_vector.expected_status});
-
     // Check if the execution status matches the expected status
     var status_matches: bool = undefined;
     if (result) {

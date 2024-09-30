@@ -41,11 +41,11 @@ test "pvm:test_vectors" {
     const allocator = std.testing.allocator;
 
     for (TEST_VECTORS) |test_vector| {
-        std.debug.print("Running test vector: {s}\n", .{test_vector});
+        // std.debug.print("Running test vector: {s}\n", .{test_vector});
         const path = try std.fmt.allocPrint(allocator, "src/tests/vectors/pvm/pvm/pvm/programs/{s}", .{test_vector});
         defer allocator.free(path);
 
-        try printProgramDecompilation(allocator, path);
+        // try printProgramDecompilation(allocator, path);
         const test_result = fixtures.runTestFixtureFromPath(allocator, path) catch |err| {
             std.debug.print("Test failed with error: {}\n", .{err});
             return err;

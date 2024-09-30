@@ -601,8 +601,6 @@ pub const PVM = struct {
 
         // Calculate the offset to the target address
         const offset: i32 = @as(i32, @intCast(b)) - @as(i32, @intCast(self.pc));
-        std.debug.print("branching to {}\n", .{b});
-        std.debug.print("branching to offset {}\n", .{offset});
         return offset;
     }
 
