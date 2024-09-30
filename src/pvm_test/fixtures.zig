@@ -98,11 +98,11 @@ pub fn initPVMFromTestVector(allocator: Allocator, test_vector: *const PVMFixtur
     @memcpy(&pvm.registers, &test_vector.initial_regs);
 
     // Set initial page map
-    try pvm.setPageMap(@ptrCast(test_vector.initial_page_map));
+    try pvm.setPageMap(@as([]PVM.PageMapConfig, @ptrCast(test_vector.initial_page_map)));
 
     // Set initial memory
     for (test_vector.initial_memory) |chunk| {
-        try pvm.pushMemory(chunk.address, chunk.contents);
+        try pvm.writeMemory(chunk.address, chunk.contents);
     }
 
     // Set initial PC
@@ -129,7 +129,9 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture) !boo
             error.PANIC => test_vector.expected_status == .trap,
             error.OUT_OF_GAS => test_vector.expected_status == .trap,
             error.MAX_ITERATIONS_REACHED => false,
-            error.MemoryChunkNotFound => test_vector.expected_status == .trap,
+
+            error.MemoryWriteProtected => test_vector.expected_status == .trap,
+            error.MemoryPageFault => test_vector.expected_status == .trap,
             error.MemoryAccessOutOfBounds => test_vector.expected_status == .trap,
             error.JumpAddressHalt => test_vector.expected_status == .halt,
             error.JumpAddressZero => test_vector.expected_status == .trap,
@@ -166,27 +168,18 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture) !boo
 
     // Check if memory matches
     for (test_vector.expected_memory) |expected_chunk| {
-        var found = false;
-        for (pvm.memory) |actual_chunk| {
-            if (actual_chunk.address == expected_chunk.address) {
-                found = true;
-                if (!std.mem.eql(u8, actual_chunk.contents, expected_chunk.contents)) {
-                    std.debug.print("Memory mismatch at address 0x{X:0>8}:\n", .{expected_chunk.address});
-                    std.debug.print("        Expected  |    Actual   | Diff?\n", .{});
-                    const max_len = @max(expected_chunk.contents.len, actual_chunk.contents.len);
-                    for (0..max_len) |i| {
-                        const expected = if (i < expected_chunk.contents.len) expected_chunk.contents[i] else 0;
-                        const actual = if (i < actual_chunk.contents.len) actual_chunk.contents[i] else 0;
-                        const mismatch = if (expected != actual) "*" else " ";
-                        std.debug.print("0x{X:0>2}: {X:0>2}         | {X:0>2}         | {s}\n", .{ i, expected, actual, mismatch });
-                    }
-                    return false;
-                }
-                break;
+        const actual_chunk = try pvm.readMemory(expected_chunk.address, expected_chunk.contents.len);
+        if (!std.mem.eql(u8, actual_chunk, expected_chunk.contents)) {
+            std.debug.print("Memory mismatch at address 0x{X:0>8}:\n", .{expected_chunk.address});
+            std.debug.print("Expected: ", .{});
+            for (expected_chunk.contents) |byte| {
+                std.debug.print("{X:0>2} ", .{byte});
             }
-        }
-        if (!found) {
-            std.debug.print("Expected memory chunk at address 0x{X:0>8} not found\n", .{expected_chunk.address});
+            std.debug.print("\nActual:   ", .{});
+            for (actual_chunk) |byte| {
+                std.debug.print("{X:0>2} ", .{byte});
+            }
+            std.debug.print("\n", .{});
             return false;
         }
     }

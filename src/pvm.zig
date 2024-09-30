@@ -12,11 +12,17 @@ pub const PVM = struct {
     program: Program,
     registers: [13]u32,
     pc: u32,
-    memory: []MemoryChunk,
     page_map: []PageMap,
     gas: i64,
 
     pub const PageMap = struct {
+        address: u32,
+        length: u32,
+        is_writable: bool,
+        data: []align(8) u8,
+    };
+
+    pub const PageMapConfig = struct {
         address: u32,
         length: u32,
         is_writable: bool,
@@ -41,7 +47,6 @@ pub const PVM = struct {
             .registers = [_]u32{0} ** 13,
             .pc = 0,
             .page_map = &[_]PageMap{},
-            .memory = &[_]MemoryChunk{},
             .gas = initial_gas,
         };
     }
@@ -49,25 +54,24 @@ pub const PVM = struct {
     pub fn deinit(self: *PVM) void {
         self.program.deinit(self.allocator);
         self.allocator.free(self.page_map);
-        for (self.memory) |chunk| {
-            self.allocator.free(chunk.contents);
+    }
+
+    pub fn setPageMap(self: *PVM, new_page_map: []const PageMapConfig) !void {
+        for (self.page_map) |page| {
+            self.allocator.free(page.data);
         }
-        self.allocator.free(self.memory);
-    }
-
-    pub fn pushMemory(self: *PVM, address: u32, contents: []const u8) !void {
-        const new_chunk = MemoryChunk{
-            .address = address,
-            .contents = try self.allocator.dupe(u8, contents),
-        };
-        const new_memory = try self.allocator.realloc(self.memory, self.memory.len + 1);
-        new_memory[self.memory.len] = new_chunk;
-        self.memory = new_memory;
-    }
-
-    pub fn setPageMap(self: *PVM, new_page_map: []const PageMap) !void {
         self.allocator.free(self.page_map);
-        self.page_map = try self.allocator.dupe(PageMap, new_page_map);
+
+        self.page_map = try self.allocator.alloc(PageMap, new_page_map.len);
+
+        for (new_page_map, 0..) |config, i| {
+            self.page_map[i] = PageMap{
+                .address = config.address,
+                .length = config.length,
+                .is_writable = config.is_writable,
+                .data = try self.allocator.allocWithOptions(u8, config.length, 8, null),
+            };
+        }
     }
 
     pub fn decompilePrint(self: *PVM) !void {
@@ -412,11 +416,11 @@ pub const PVM = struct {
             },
             .store_u8 => {
                 const args = i.args.one_register_one_immediate;
-                try self.storeMemory(args.immediate, @truncate(self.registers[args.register_index]), 1);
+                try self.storeMemory(args.immediate, self.registers[args.register_index], 1);
             },
             .store_u16 => {
                 const args = i.args.one_register_one_immediate;
-                try self.storeMemory(args.immediate, @truncate(self.registers[args.register_index]), 2);
+                try self.storeMemory(args.immediate, self.registers[args.register_index], 2);
             },
             .store_u32 => {
                 const args = i.args.one_register_one_immediate;
@@ -640,52 +644,69 @@ pub const PVM = struct {
     }
 
     fn loadMemory(self: *PVM, address: u32, size: u8) !u32 {
-        const u_address = @as(u32, @bitCast(address));
-        for (self.page_map) |page| {
-            if (u_address >= page.address and u_address < page.address + page.length) {
-                for (self.memory) |chunk| {
-                    if (u_address >= chunk.address and u_address < chunk.address + chunk.contents.len) {
-                        const offset = u_address - chunk.address;
-                        var result: u32 = 0;
-                        var i: u8 = 0;
-                        while (i < size) : (i += 1) {
-                            if (offset + i >= chunk.contents.len) {
-                                return error.MemoryAccessOutOfBounds;
-                            }
-                            result |= @as(u32, chunk.contents[offset + i]) << @as(u5, @intCast(i * 8));
-                        }
-                        return result;
-                    }
-                }
-                return error.MemoryChunkNotFound;
-            }
+        const data = try self.readMemory(address, size);
+        var result: u32 = 0;
+        var i: u8 = 0;
+        while (i < size) : (i += 1) {
+            result |= @as(u32, @intCast(data[i])) << @intCast(i * 8);
         }
-        return error.MemoryAccessOutOfBounds;
+        return result;
     }
 
-    fn storeMemory(self: *PVM, address: u32, value: u32, size: u8) !void {
-        const u_address = @as(u32, @bitCast(address));
+    pub fn readMemory(self: *PVM, address: u32, size: usize) ![]u8 {
         for (self.page_map) |page| {
-            if (u_address >= page.address and u_address < page.address + page.length) {
+            if (address >= page.address and address < page.address + page.length) {
+                if (address + size > page.address + page.length) {
+                    return error.MemoryAccessOutOfBounds;
+                }
+
+                const offset = address - page.address;
+                return page.data[offset .. offset + size];
+            }
+        }
+        return error.MemoryPageFault;
+    }
+
+    pub fn writeMemory(self: *PVM, address: u32, data: []u8) !void {
+        for (self.page_map) |page| {
+            if (address >= page.address and address < page.address + page.length) {
                 if (!page.is_writable) {
                     return error.MemoryWriteProtected;
                 }
-                for (self.memory) |*chunk| {
-                    if (u_address >= chunk.address and u_address < chunk.address + chunk.contents.len) {
-                        const offset = u_address - chunk.address;
-                        var i: u8 = 0;
-                        while (i < size) : (i += 1) {
-                            if (offset + i >= chunk.contents.len) {
-                                return error.MemoryAccessOutOfBounds;
-                            }
-                            chunk.contents[offset + i] = @truncate(value >> @intCast(i * 8));
-                        }
-                        return;
-                    }
+                if (address + data.len > page.address + page.length) {
+                    return error.MemoryAccessOutOfBounds;
                 }
-                return error.MemoryChunkNotFound;
+
+                const offset = address - page.address;
+                std.mem.copyForwards(u8, page.data[offset..], data);
+                return;
             }
         }
-        return error.MemoryAccessOutOfBounds;
+        return error.MemoryPageFault;
+    }
+
+    fn storeMemory(self: *PVM, address: u32, value: u32, size: u8) !void {
+        for (self.page_map) |page| {
+            if (address >= page.address and address < page.address + page.length) {
+                if (!page.is_writable) {
+                    return error.MemoryWriteProtected;
+                }
+                if (address + size > page.address + page.length) {
+                    return error.MemoryAccessOutOfBounds;
+                }
+
+                // position in the page.data is page starting address - page.address as such
+                // write size of bytes from the u32 to the page data
+                //    const offset = address - page.address;
+                const offset = address - page.address;
+                var i: u8 = 0;
+                while (i < size) : (i += 1) {
+                    // write to memory in little endian format
+                    page.data[offset + i] = @as(u8, @truncate(value >> @as(u5, @intCast(i * 8))));
+                }
+                return;
+            }
+        }
+        return error.MemoryPageFault;
     }
 };
