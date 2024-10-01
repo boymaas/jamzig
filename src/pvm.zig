@@ -139,7 +139,7 @@ pub const PVM = struct {
             .load_imm => {
                 // Load immediate value into register
                 const args = i.args.one_register_one_immediate;
-                self.registers[args.register_index] = @bitCast(args.immediate);
+                self.registers[args.register_index] = args.immediate;
             },
             .jump => {
                 // Jump to offset
@@ -149,10 +149,9 @@ pub const PVM = struct {
             .add_imm => {
                 // Add immediate value to register
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = @addWithOverflow(
-                    self.registers[args.second_register_index],
-                    @as(u32, @bitCast(args.immediate)),
-                )[0];
+                self.registers[args.first_register_index] =
+                    self.registers[args.second_register_index] +%
+                    args.immediate;
             },
             .move_reg => {
                 const args = i.args.two_registers;
@@ -163,10 +162,9 @@ pub const PVM = struct {
             },
             .add => {
                 const args = i.args.three_registers;
-                self.registers[args.third_register_index] = @addWithOverflow(
-                    self.registers[args.first_register_index],
-                    self.registers[args.second_register_index],
-                )[0];
+                self.registers[args.third_register_index] =
+                    self.registers[args.first_register_index] +%
+                    self.registers[args.second_register_index];
             },
             .@"and" => {
                 const args = i.args.three_registers;
@@ -174,32 +172,33 @@ pub const PVM = struct {
             },
             .and_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = self.registers[args.second_register_index] & @as(u32, @bitCast(args.immediate));
+                self.registers[args.first_register_index] = self.registers[args.second_register_index] & args.immediate;
             },
             .xor_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = self.registers[args.second_register_index] ^ @as(u32, @bitCast(args.immediate));
+                self.registers[args.first_register_index] = self.registers[args.second_register_index] ^ args.immediate;
             },
             .or_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = self.registers[args.second_register_index] | @as(u32, @bitCast(args.immediate));
+                self.registers[args.first_register_index] = self.registers[args.second_register_index] | args.immediate;
             },
             .mul_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = @mulWithOverflow(self.registers[args.second_register_index], @as(u32, @bitCast(args.immediate)))[0];
+                self.registers[args.first_register_index] = self.registers[args.second_register_index] *% args.immediate;
             },
             .mul_upper_s_s_imm => {
                 const args = i.args.two_registers_one_immediate;
-                const result = @as(i64, @intCast(@as(i32, @bitCast(self.registers[args.second_register_index])))) * @as(i64, @intCast(args.immediate));
+                const result: i64 = @as(i64, @intCast(@as(i32, @bitCast(self.registers[args.second_register_index])))) * @as(i64, @intCast(args.immediate));
                 self.registers[args.first_register_index] = @as(u32, @bitCast(@as(i32, @intCast(result >> 32))));
             },
             .mul_upper_u_u_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = self.registers[args.second_register_index] *% @as(u32, @bitCast(args.immediate));
+                const result: u64 = @as(u64, self.registers[args.second_register_index]) * @as(u64, args.immediate);
+                self.registers[args.first_register_index] = @as(u32, @intCast(result >> 32));
             },
             .set_lt_u_imm => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = if (self.registers[args.second_register_index] < @as(u32, @bitCast(args.immediate))) 1 else 0;
+                self.registers[args.first_register_index] = if (self.registers[args.second_register_index] < args.immediate) 1 else 0;
             },
             .set_lt_s_imm => {
                 const args = i.args.two_registers_one_immediate;
@@ -248,7 +247,7 @@ pub const PVM = struct {
             .cmov_iz_imm => {
                 const args = i.args.two_registers_one_immediate;
                 if (self.registers[args.second_register_index] == 0) {
-                    self.registers[args.first_register_index] = @bitCast(args.immediate);
+                    self.registers[args.first_register_index] = args.immediate;
                 }
             },
             .cmov_nz_imm => {
@@ -259,7 +258,7 @@ pub const PVM = struct {
             },
             .sub => {
                 const args = i.args.three_registers;
-                self.registers[args.third_register_index] = @subWithOverflow(self.registers[args.first_register_index], self.registers[args.second_register_index])[0];
+                self.registers[args.third_register_index] = self.registers[args.first_register_index] -% self.registers[args.second_register_index];
             },
             .xor => {
                 const args = i.args.three_registers;
@@ -271,7 +270,7 @@ pub const PVM = struct {
             },
             .mul => {
                 const args = i.args.three_registers;
-                self.registers[args.third_register_index] = @mulWithOverflow(self.registers[args.first_register_index], self.registers[args.second_register_index])[0];
+                self.registers[args.third_register_index] = self.registers[args.first_register_index] *% self.registers[args.second_register_index];
             },
             .mul_upper_s_s => {
                 const args = i.args.three_registers;
@@ -305,7 +304,12 @@ pub const PVM = struct {
                 {
                     self.registers[args.third_register_index] = 0x80000000;
                 } else {
-                    self.registers[args.third_register_index] = @as(u32, @bitCast(@divTrunc(@as(i32, @bitCast(self.registers[args.first_register_index])), @as(i32, @bitCast(self.registers[args.second_register_index])))));
+                    self.registers[args.third_register_index] = @as(u32, @bitCast(
+                        @divTrunc(
+                            @as(i32, @bitCast(self.registers[args.first_register_index])),
+                            @as(i32, @bitCast(self.registers[args.second_register_index])),
+                        ),
+                    ));
                 }
             },
             .rem_u => {
@@ -328,16 +332,18 @@ pub const PVM = struct {
                 } else {
                     self.registers[args.third_register_index] = @as(
                         u32,
-                        @bitCast(@rem(
-                            @as(
-                                i32,
-                                @bitCast(self.registers[args.first_register_index]),
+                        @bitCast(
+                            @rem(
+                                @as(
+                                    i32,
+                                    @bitCast(self.registers[args.first_register_index]),
+                                ),
+                                @as(
+                                    i32,
+                                    @bitCast(self.registers[args.second_register_index]),
+                                ),
                             ),
-                            @as(
-                                i32,
-                                @bitCast(self.registers[args.second_register_index]),
-                            ),
-                        )),
+                        ),
                     );
                 }
             },
@@ -411,7 +417,16 @@ pub const PVM = struct {
             .load_i16 => {
                 const args = i.args.one_register_one_immediate;
                 const value = try self.loadMemory(args.immediate, 2);
-                self.registers[args.register_index] = @as(u32, @bitCast(@as(i32, @intCast(@as(i16, @bitCast(@as(u16, @truncate(value))))))));
+                self.registers[args.register_index] = @as(
+                    u32,
+                    @bitCast(
+                        @as(i32, @intCast(
+                            @as(i16, @bitCast(
+                                @as(u16, @truncate(value)),
+                            )),
+                        )),
+                    ),
+                );
             },
             .load_u32 => {
                 const args = i.args.one_register_one_immediate;
@@ -443,7 +458,7 @@ pub const PVM = struct {
             },
             .load_imm_jump => {
                 const args = i.args.one_register_one_immediate_one_offset;
-                self.registers[args.register_index] = @bitCast(args.immediate);
+                self.registers[args.register_index] = args.immediate;
                 return try self.branch(args.next_pc);
             },
             .branch_eq_imm => {
@@ -514,38 +529,83 @@ pub const PVM = struct {
             },
             .store_ind_u8 => {
                 const args = i.args.two_registers_one_immediate;
-                try self.storeMemory(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)), @truncate(self.registers[args.first_register_index]), 1);
+                try self.storeMemory(
+                    self.registers[args.second_register_index] +% args.immediate,
+                    @truncate(self.registers[args.first_register_index]),
+                    1,
+                );
             },
             .store_ind_u16 => {
                 const args = i.args.two_registers_one_immediate;
-                try self.storeMemory(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)), @truncate(self.registers[args.first_register_index]), 2);
+                try self.storeMemory(
+                    self.registers[args.second_register_index] +% args.immediate,
+                    @truncate(self.registers[args.first_register_index]),
+                    2,
+                );
             },
             .store_ind_u32 => {
                 const args = i.args.two_registers_one_immediate;
-                try self.storeMemory(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)), self.registers[args.first_register_index], 4);
+                try self.storeMemory(
+                    self.registers[args.second_register_index] +% args.immediate,
+                    self.registers[args.first_register_index],
+                    4,
+                );
             },
             .load_ind_u8 => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = try self.loadMemory(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)), 1);
+                self.registers[args.first_register_index] = try self.loadMemory(
+                    self.registers[args.second_register_index] +% args.immediate,
+                    1,
+                );
             },
             .load_ind_i8 => {
                 const args = i.args.two_registers_one_immediate;
-                const value = try self.loadMemory(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)), 1);
-                self.registers[args.first_register_index] = @as(u32, @bitCast(@as(i32, @intCast(@as(i8, @bitCast(@as(u8, @truncate(value))))))));
+                const value = try self.loadMemory(
+                    self.registers[args.second_register_index] +% args.immediate,
+                    1,
+                );
+                self.registers[args.first_register_index] = @as(
+                    u32,
+                    @bitCast(
+                        @as(
+                            i32,
+                            @intCast(
+                                @as(
+                                    i8,
+                                    @bitCast(@as(u8, @truncate(value))),
+                                ),
+                            ),
+                        ),
+                    ),
+                );
             },
             .load_ind_u16 => {
                 const args = i.args.two_registers_one_immediate;
-                self.registers[args.first_register_index] = try self.loadMemory(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)), 2);
+                self.registers[args.first_register_index] = try self.loadMemory(
+                    self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)),
+                    2,
+                );
             },
             .load_ind_i16 => {
                 const args = i.args.two_registers_one_immediate;
                 const value = try self.loadMemory(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)), 2);
-                self.registers[args.first_register_index] = @as(u32, @bitCast(@as(i32, @intCast(@as(i16, @bitCast(@as(u16, @truncate(value))))))));
+                self.registers[args.first_register_index] = @as(
+                    u32,
+                    @bitCast(@as(
+                        i32,
+                        @intCast(
+                            @as(i16, @bitCast(
+                                @as(u16, @truncate(value)),
+                            )),
+                        ),
+                    )),
+                );
             },
             .load_ind_u32 => {
                 const args = i.args.two_registers_one_immediate;
                 self.registers[args.first_register_index] = try self.loadMemory(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.immediate)), 4);
             },
+
             .branch_eq => {
                 const args = i.args.two_registers_one_offset;
                 if (self.registers[args.first_register_index] == self.registers[args.second_register_index]) {
@@ -566,10 +626,17 @@ pub const PVM = struct {
             },
             .branch_lt_s => {
                 const args = i.args.two_registers_one_offset;
-                if (@as(i32, @bitCast(self.registers[args.first_register_index])) < @as(i32, @bitCast(self.registers[args.second_register_index]))) {
+                if (@as(
+                    i32,
+                    @bitCast(self.registers[args.first_register_index]),
+                ) < @as(
+                    i32,
+                    @bitCast(self.registers[args.second_register_index]),
+                )) {
                     return try self.branch(args.next_pc);
                 }
             },
+
             .branch_ge_u => {
                 const args = i.args.two_registers_one_offset;
                 if (self.registers[args.first_register_index] >= self.registers[args.second_register_index]) {
@@ -578,14 +645,24 @@ pub const PVM = struct {
             },
             .branch_ge_s => {
                 const args = i.args.two_registers_one_offset;
-                if (@as(i32, @bitCast(self.registers[args.first_register_index])) >= @as(i32, @bitCast(self.registers[args.second_register_index]))) {
+                if (@as(
+                    i32,
+                    @bitCast(self.registers[args.first_register_index]),
+                ) >= @as(
+                    i32,
+                    @bitCast(self.registers[args.second_register_index]),
+                )) {
                     return try self.branch(args.next_pc);
                 }
             },
+
             .load_imm_jump_ind => {
                 const args = i.args.two_registers_two_immediates;
-                self.registers[args.first_register_index] = @bitCast(args.first_immediate);
-                return @intCast(self.registers[args.second_register_index] +% @as(u32, @bitCast(args.second_immediate)));
+                self.registers[args.first_register_index] = args.first_immediate;
+                return @intCast(self.registers[args.second_register_index] +% @as(
+                    u32,
+                    @bitCast(args.second_immediate),
+                ));
             },
         }
 
