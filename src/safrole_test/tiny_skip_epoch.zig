@@ -24,7 +24,7 @@ test "safrole/tiny/skip-epochs-1.json" {
     );
     defer result.deinit(allocator);
 
-    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
     try fixtures.expectOutput(result.output);
 }
@@ -49,7 +49,7 @@ test "safrole/tiny/skip-epoch-tail-1.json" {
     );
     defer result.deinit(allocator);
 
-    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
     try fixtures.expectOutput(result.output);
 }

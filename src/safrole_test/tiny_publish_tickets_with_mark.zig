@@ -21,7 +21,7 @@ test "safrole/tiny/publish-tickets-with-mark-1.json" {
     );
     defer result.deinit(allocator);
 
-    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
     try fixtures.expectOutput(result.output);
 }
@@ -43,7 +43,7 @@ test "safrole/tiny/publish-tickets-with-mark-2.json" {
     );
     defer result.deinit(allocator);
 
-    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
     try fixtures.expectOutput(result.output);
 }
@@ -65,7 +65,7 @@ test "safrole/tiny/publish-tickets-with-mark-3.json" {
     );
     defer result.deinit(allocator);
 
-    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
     try fixtures.expectOutput(result.output);
 }
@@ -108,7 +108,7 @@ test "safrole/tiny/publish-tickets-with-mark-5.json" {
     );
     defer result.deinit(allocator);
 
-    try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
+    // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
     try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
     try fixtures.expectOutput(result.output);
 }

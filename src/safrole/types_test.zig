@@ -28,7 +28,7 @@ test "format State" {
     const pre_state = try tests.stateFromTestVector(allocator, &tv.pre_state);
     defer pre_state.deinit(allocator);
 
-    std.debug.print("\n{any}\n", .{pre_state});
+    // std.debug.print("\n{any}\n", .{pre_state});
 }
 
 test "format State pretty" {
@@ -53,5 +53,5 @@ test "format Output" {
     const output = try tests.outputFromTestVector(allocator, &tv.output);
     defer output.deinit(allocator);
 
-    std.debug.print("\n{any}\n", .{output});
+    // std.debug.print("\n{any}\n", .{output});
 }

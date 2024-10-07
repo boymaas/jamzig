@@ -117,6 +117,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
+        .test_runner = b.path("src/tests/runner.zig"),
         .filters = test_filters,
     });
 
@@ -135,6 +136,12 @@ pub fn build(b: *std.Build) !void {
     unit_tests.linkLibCpp();
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
+
+    // This allows the user to pass arguments to the application in the build
+    // command itself, like this: `zig build test -- arg1 arg2 etc`
+    if (b.args) |args| {
+        run_unit_tests.addArgs(args);
+    }
 
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request

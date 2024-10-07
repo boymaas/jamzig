@@ -288,8 +288,8 @@ test "crypto: ring signature and VRF" {
     const prover_seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_key_index));
     const prover_key_pair = try createKeyPairFromSeed(prover_seed);
 
-    std.debug.print("Secret key length: {} bytes\n", .{prover_key_pair.private_key.len});
-    std.debug.print("Public key length: {} bytes\n", .{prover_key_pair.public_key.len});
+    // std.debug.print("Secret key length: {} bytes\n", .{prover_key_pair.private_key.len});
+    // std.debug.print("Public key length: {} bytes\n", .{prover_key_pair.public_key.len});
 
     // Replace some keys with padding points
     const padding_point = try getPaddingPoint(RING_SIZE);
@@ -308,26 +308,26 @@ test "crypto: ring signature and VRF" {
         prover_key_index,
         prover_key_pair.private_key,
     });
-    std.debug.print("Ring signature length: {} bytes\n", .{ring_signature.len});
-    std.debug.print("Ring signature: ", .{});
-    for (ring_signature) |byte| {
-        std.debug.print("{x:0>2}", .{byte});
-    }
-    std.debug.print("\n", .{});
+    // std.debug.print("Ring signature length: {} bytes\n", .{ring_signature.len});
+    // std.debug.print("Ring signature: ", .{});
+    // for (ring_signature) |byte| {
+    //     std.debug.print("{x:0>2}", .{byte});
+    // }
+    // std.debug.print("\n", .{});
 
     // Verify ring signature
-    const ring_vrf_output = try timeFunction("verifyRingSig", verifyRingSignature, .{
+    _ = try timeFunction("verifyRingSig", verifyRingSignature, .{
         &ring,
         &vrf_input_data,
         &aux_data,
         &ring_signature,
     });
-    std.debug.print("Ring VRF output length: {} bytes\n", .{ring_vrf_output.len});
-    std.debug.print("Ring VRF output: ", .{});
-    for (ring_vrf_output) |byte| {
-        std.debug.print("{x:0>2}", .{byte});
-    }
-    std.debug.print("\n", .{});
+    // std.debug.print("Ring VRF output length: {} bytes\n", .{ring_vrf_output.len});
+    // std.debug.print("Ring VRF output: ", .{});
+    // for (ring_vrf_output) |byte| {
+    //     std.debug.print("{x:0>2}", .{byte});
+    // }
+    // std.debug.print("\n", .{});
 }
 
 test "crypto: fuzz | takes 10s" {
