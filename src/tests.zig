@@ -11,6 +11,9 @@ comptime {
 
     _ = @import("pvm_test.zig");
     _ = @import("pvm/decoder/immediate.zig");
+
+    _ = @import("merkle.zig");
+    _ = @import("merkle_test.zig");
 }
 
 pub const tv_types = @import("tests/vectors/libs/types.zig");
