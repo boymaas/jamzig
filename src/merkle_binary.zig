@@ -119,7 +119,25 @@ pub fn P_s(s: bool, blobs: Blobs, index: usize) Blobs {
     }
 }
 
-//
+// This is suitable for creating proofs on data which is not much greater than
+// 32 octets in length since it avoids hashingeach item in the sequence. For
+// sequences with larger data items, it is better to hash them beforehand to
+// ensure proof-sizeis minimal since each proof will generally contain a data
+// item
+pub fn M_b(blobs: Blobs, comptime hasher: type) Hash {
+    std.debug.assert(all_blobs_same_size(blobs));
+
+    if (blobs.len == 1) {
+        var hash_buffer: [32]u8 = undefined;
+        var h = hasher.init(.{});
+        h.update(blobs[0]);
+        h.final(&hash_buffer);
+
+        return hash_buffer;
+    } else {
+        return N(blobs, hasher).Hash;
+    }
+}
 
 const std = @import("std");
 const testing = std.testing;
@@ -176,4 +194,31 @@ test "T function - multiple blobs" {
     var buffer: [32]u8 = undefined;
     const expected = try std.fmt.hexToBytes(&buffer, "addcbd7aee4b1baab8fc648daece466d8801fb0ffb8f03ed3f055dd206e7a5ce");
     try testing.expectEqualSlices(u8, expected, result.BlobAlloc);
+}
+
+test "M_b function - empty input" {
+    const blobs = [_][]const u8{};
+    const result = M_b(&blobs, testHasher);
+
+    // The result should be the same as N function for empty input
+    const expected = [_]u8{0} ** 32;
+    try testing.expectEqualSlices(u8, &expected, &result);
+}
+
+test "M_b function - single blob" {
+    const blob = [_][]const u8{"hello"};
+    const result = M_b(&blob, testHasher);
+
+    var buffer: [32]u8 = undefined;
+    const expected = try std.fmt.hexToBytes(&buffer, "324dcf027dd4a30a932c441f365a25e86b173defa4b8e58948253471b81b72cf");
+    try testing.expectEqualSlices(u8, expected, &result);
+}
+
+test "M_b function - multiple blobs" {
+    const blobs = [_][]const u8{ "hello", "world", "zig  " };
+    const result = M_b(&blobs, testHasher);
+
+    var buffer: [32]u8 = undefined;
+    const expected = try std.fmt.hexToBytes(&buffer, "41505441F20EE9AEE79098A48A868C77F625DF1AFFD4F66A84A58158B8CF026F");
+    try testing.expectEqualSlices(u8, expected, &result);
 }
