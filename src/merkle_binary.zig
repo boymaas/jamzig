@@ -86,30 +86,112 @@ pub fn N(blobs: Blobs, comptime hasher: type) Result {
     }
 }
 
+/// Specialized function as N, only for hashes
+pub fn N_hash(hashes: []const Hash, comptime hasher: type) Hash {
+    if (hashes.len == 0) {
+        return ZERO_HASH;
+    } else if (hashes.len == 1) {
+        return hashes[0];
+    } else {
+        const mid = (hashes.len + 1) / 2; // Round up division
+        const left = N_hash(hashes[0..mid], hasher);
+        const right = N_hash(hashes[mid..], hasher);
+
+        var h = hasher.init(.{});
+        h.update(&NODE_PREFIX);
+        h.update(&left);
+        h.update(&right);
+
+        var hash_buffer: [32]u8 = undefined;
+        h.final(&hash_buffer);
+
+        return hash_buffer;
+    }
+}
+
+const TraceResult = struct {
+    results: []Result,
+
+    pub fn empty() TraceResult {
+        return .{ .results = &[_]Result{} };
+    }
+    pub fn len(self: *const TraceResult) usize {
+        return self.results.len;
+    }
+
+    pub fn deinit(self: *const TraceResult, allocator: std.mem.Allocator) void {
+        for (self.results) |result| {
+            result.deinit(allocator);
+        }
+        allocator.free(self.results);
+    }
+};
+
 // (297)
 // We also define the trace function T , which returns each opposite node
 // from top to bottom as the tree is navigated toarrive at some leaf
 // corresponding to the item of a given index into the sequence. It is
 // useful in creating justifications of data inclusion
-pub fn T(allocator: std.mem.Allocator, blobs: Blobs, index: usize, comptime hasher: type) Result {
+pub fn T(
+    allocator: std.mem.Allocator,
+    blobs: Blobs,
+    index: usize,
+    comptime hasher: type,
+) !TraceResult {
     std.debug.assert(all_blobs_same_size(blobs));
 
     if (blobs.len == 0 or blobs.len == 1) {
-        return Result{ .Blob = EMPTY_BLOB };
+        return TraceResult.empty();
     }
     const a = N(P_s(false, blobs, index), hasher);
-    const b = T(allocator, P_s(true, blobs, index), index - P_i(blobs, index), hasher);
+    const b = try T(allocator, P_s(true, blobs, index), index - P_i(blobs, index), hasher);
+    defer b.deinit(allocator);
 
-    // alocate a blob with the size of a and b
-    var blob: []u8 = allocator.alloc(u8, a.getSlice().len + b.getSlice().len) catch unreachable;
-    // copy in a and b
-    @memcpy(blob[0..a.len()], a.getSlice());
-    @memcpy(blob[a.len()..], b.getSlice());
+    // Allocate a new slice with results which can hold both a and b
+    // TODO: optimize this
+    var results = try allocator.alloc(Result, b.len() + 1);
+    results[0] = a;
+    @memcpy(results[1..], b.results);
 
-    a.deinit(allocator);
-    b.deinit(allocator);
+    return .{ .results = results };
+}
 
-    return .{ .BlobAlloc = blob };
+pub fn T_hash(
+    allocator: std.mem.Allocator,
+    hashes: []const Hash,
+    index: usize,
+    comptime hasher: type,
+) ![]Hash {
+    if (hashes.len == 0 or hashes.len == 1) {
+        return &[_]Hash{};
+    }
+    const a = N_hash(P_s_hash(false, hashes, index), hasher);
+    const b = try T_hash(allocator, P_s_hash(true, hashes, index), index - P_i_hash(hashes, index), hasher);
+    defer allocator.free(b);
+
+    var results = try allocator.alloc(Hash, b.len + 1);
+    results[0] = a;
+    @memcpy(results[1..], b);
+
+    return results;
+}
+
+fn P_i_hash(hashes: []const Hash, index: usize) usize {
+    const mid = (hashes.len + 1) / 2; // Round up division
+    if (index < mid) {
+        return 0;
+    } else {
+        return mid;
+    }
+}
+
+fn P_s_hash(s: bool, hashes: []const Hash, index: usize) []const Hash {
+    const mid = (hashes.len + 1) / 2; // Round up division
+    if ((index < mid) == s) {
+        return hashes[0..mid];
+    } else {
+        return hashes[mid..];
+    }
 }
 
 pub fn P_i(blobs: Blobs, index: usize) usize {
@@ -183,32 +265,30 @@ test "N_function_multiple_blobs" {
 test "T_function_empty_input" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{};
-    const result = T(allocator, &blobs, 0, testHasher);
+    const result = try T(allocator, &blobs, 0, testHasher);
     defer result.deinit(allocator);
 
-    try testing.expect(result == .Blob);
-    try testing.expectEqualSlices(u8, EMPTY_BLOB, result.Blob);
+    try testing.expectEqualSlices(Result, result.results, &[_]Result{});
 }
 
 test "T_function_single_blob" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{"hello"};
-    const result = T(allocator, &blobs, 0, testHasher);
+    const result = try T(allocator, &blobs, 0, testHasher);
     defer result.deinit(allocator);
 
-    try testing.expect(result == .Blob);
-    try testing.expectEqualSlices(u8, EMPTY_BLOB, result.Blob);
+    try testing.expect(result.results.len == 0);
 }
 
 test "T_function_multiple_blobs" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{ "hello", "world", "zig  " };
-    const result = T(allocator, &blobs, 2, testHasher);
+    const result = try T(allocator, &blobs, 2, testHasher);
     defer result.deinit(allocator);
 
     var buffer: [32]u8 = undefined;
     const expected = try std.fmt.hexToBytes(&buffer, "addcbd7aee4b1baab8fc648daece466d8801fb0ffb8f03ed3f055dd206e7a5ce");
-    try testing.expectEqualSlices(u8, expected, result.BlobAlloc);
+    try testing.expectEqualSlices(u8, expected, &result.results[0].Hash);
 }
 
 test "M_b_function_empty_input" {
@@ -246,8 +326,8 @@ test "M_b_function_multiple_blobs" {
 /// \return Array of hashed and padded data items of length equal to the next power of two.
 fn constancyPreprocessor(allocator: std.mem.Allocator, v: []const Blob, hasher: type) ![]Hash {
     const len = v.len;
-    const nextPowerOfTwo = @as(usize, 1) <<
-        std.math.log2_int_ceil(usize, @max(1, len));
+    const nextPowerOfTwo =
+        try std.math.ceilPowerOfTwo(usize, @max(1, len));
 
     // Allocate the resulting array with the required length
     var v_prime = try allocator.alloc(Hash, nextPowerOfTwo);
@@ -323,7 +403,7 @@ test "constancyPreprocessor" {
 pub fn M(allocator: std.mem.Allocator, v: []const Blob, H: type) !Hash {
     const preprocessed = try constancyPreprocessor(allocator, v, H);
     defer allocator.free(preprocessed);
-    return try N(allocator, preprocessed, H);
+    return N_hash(preprocessed, H);
 }
 
 /// Generates a Merkle proof (justification) for a specific item in the tree.
@@ -345,7 +425,7 @@ pub fn M(allocator: std.mem.Allocator, v: []const Blob, H: type) !Hash {
 pub fn J(allocator: std.mem.Allocator, v: []const Blob, i: usize, H: type) ![]Hash {
     const preprocessed = try constancyPreprocessor(allocator, v, H);
     defer allocator.free(preprocessed);
-    return try T(allocator, preprocessed, i, H);
+    return try T_hash(allocator, preprocessed, i, H);
 }
 
 /// Generates a partial Merkle proof for a well-aligned subtree.
@@ -368,13 +448,13 @@ pub fn J(allocator: std.mem.Allocator, v: []const Blob, i: usize, H: type) ![]Ha
 /// Error: Returns any allocation errors that may occur
 pub fn J_x(allocator: std.mem.Allocator, v: []const Blob, i: usize, x: usize, H: type) ![]Hash {
     var proof = try J(allocator, v, i, H);
-    const max_depth: usize = @max(
-        0,
+    const max_depth: usize = @intFromFloat(@max(
+        0.0,
         std.math.ceil(
             // log2(max(1,|v|)) - x
-            std.math.log2(@max(1.0, @as(f32, @floatFromInt(v.len)))) - @as(f32, x),
+            std.math.log2(@max(1.0, @as(f32, @floatFromInt(v.len)))) - @as(f32, @floatFromInt(x)),
         ),
-    );
+    ));
 
     // Truncate prrof if it exceeds the maximum depth
     if (proof.len > max_depth) {
@@ -385,4 +465,58 @@ pub fn J_x(allocator: std.mem.Allocator, v: []const Blob, i: usize, x: usize, H:
     }
 
     return proof;
+}
+
+// Tests
+test "M_function" {
+    const allocator = std.testing.allocator;
+    const data = [_][]const u8{ "data1", "data2", "data3", "data4" };
+
+    const root = try M(allocator, &data, testHasher);
+
+    // The actual hash value will depend on the testHasher implementation
+    // Here we're just checking that we get a result of the correct length
+    try testing.expectEqual(@as(usize, 32), root.len);
+}
+
+test "J_function" {
+    const allocator = std.testing.allocator;
+    const data = [_][]const u8{ "data1", "data2", "data3", "data4" };
+
+    const proof = try J(allocator, &data, 2, testHasher);
+    defer allocator.free(proof);
+
+    // The proof should contain log2(n) hashes, where n is the next power of 2 >= data.len
+    try testing.expectEqual(@as(usize, 2), proof.len);
+
+    // Each hash in the proof should be 32 bytes long
+    for (proof) |hash| {
+        try testing.expectEqual(@as(usize, 32), hash.len);
+    }
+}
+
+test "J_x_function" {
+    const allocator = std.testing.allocator;
+    const data = [_][]const u8{
+        "data1",
+        "data2",
+        "data3",
+        "data4",
+        "data5",
+        "data6",
+        "data7",
+        "data8",
+    };
+
+    // Generate a proof for index 3 with x = 1 (subtree of size 2^1 = 2)
+    const proof = try J_x(allocator, &data, 3, 1, testHasher);
+    defer allocator.free(proof);
+
+    // The proof should be shorter than a full proof
+    try testing.expectEqual(@as(usize, 2), proof.len);
+
+    // Each hash in the proof should be 32 bytes long
+    for (proof) |hash| {
+        try testing.expectEqual(@as(usize, 32), hash.len);
+    }
 }
