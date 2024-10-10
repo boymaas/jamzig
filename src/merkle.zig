@@ -2,8 +2,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
 
-const Key = [32]u8;
-const Hash = [32]u8;
+const types = @import("merkle/types.zig");
+
+const Key = types.Key;
+const Hash = types.Hash;
 
 pub const Entry = struct {
     k: Key,

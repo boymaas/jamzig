@@ -2,7 +2,9 @@ const std = @import("std");
 
 const utils = @import("merkle/utils.zig");
 
-const Hash = [32]u8;
+const types = @import("merkle/types.zig");
+
+const Hash = types.Hash;
 const Entry = ?Hash;
 
 const MMR = std.ArrayList(Entry);

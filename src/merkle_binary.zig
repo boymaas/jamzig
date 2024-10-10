@@ -10,10 +10,11 @@ const LEAF_PREFIX: [4]u8 = [_]u8{ 'l', 'e', 'a', 'f' };
 /// Prefix used for Node hashes.
 const NODE_PREFIX = [_]u8{ 'n', 'o', 'd', 'e' };
 
-const Blob = []const u8;
-const Blobs = []const []const u8;
+const types = @import("merkle/types.zig");
 
-const Hash = [32]u8;
+const Blob = types.Blob;
+const Blobs = types.Blobs;
+const Hash = types.Hash;
 
 fn all_blobs_same_size(blobs: Blobs) bool {
     if (blobs.len <= 1) {
