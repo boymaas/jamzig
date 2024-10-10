@@ -1,3 +1,10 @@
+const std = @import("std");
+const crypto = @import("crypto");
+
+// Define a constant zero hash used for padding
+const ZERO_HASH: [32]u8 = [_]u8{0} ** 32;
+const EMPTY_BLOB: []const u8 = &[_]u8{};
+
 const Blob = []const u8;
 const Blobs = []const []const u8;
 
@@ -54,7 +61,7 @@ pub fn N(blobs: Blobs, comptime hasher: type) Result {
     std.debug.assert(all_blobs_same_size(blobs));
 
     if (blobs.len == 0) {
-        return .{ .Hash = [_]u8{0} ** 32 };
+        return .{ .Hash = ZERO_HASH };
     } else if (blobs.len == 1) {
         return .{ .Blob = blobs[0] };
     } else {
@@ -84,7 +91,7 @@ pub fn T(allocator: std.mem.Allocator, blobs: Blobs, index: usize, comptime hash
     std.debug.assert(all_blobs_same_size(blobs));
 
     if (blobs.len == 0 or blobs.len == 1) {
-        return Result{ .Blob = &[_]u8{} };
+        return Result{ .Blob = EMPTY_BLOB };
     }
     const a = N(P_s(false, blobs, index), hasher);
     const b = T(allocator, P_s(true, blobs, index), index - P_i(blobs, index), hasher);
@@ -119,27 +126,31 @@ pub fn P_s(s: bool, blobs: Blobs, index: usize) Blobs {
     }
 }
 
-// This is suitable for creating proofs on data which is not much greater than
-// 32 octets in length since it avoids hashingeach item in the sequence. For
-// sequences with larger data items, it is better to hash them beforehand to
-// ensure proof-sizeis minimal since each proof will generally contain a data
-// item
+/// This is suitable for creating proofs on data which is not much greater than
+/// 32 octets in length since it avoids hashingeach item in the sequence. For
+/// sequences with larger data items, it is better to hash them beforehand to
+/// ensure proof-sizeis minimal since each proof will generally contain a data
+/// item
 pub fn M_b(blobs: Blobs, comptime hasher: type) Hash {
     std.debug.assert(all_blobs_same_size(blobs));
 
     if (blobs.len == 1) {
-        var hash_buffer: [32]u8 = undefined;
-        var h = hasher.init(.{});
-        h.update(blobs[0]);
-        h.final(&hash_buffer);
-
-        return hash_buffer;
+        return hashUsingHasher(hasher, blobs[0]);
     } else {
         return N(blobs, hasher).Hash;
     }
 }
 
-const std = @import("std");
+/// Hashes the given data using the provided hasher.
+fn hashUsingHasher(hasher: type, data: []const u8) Hash {
+    var hash_buffer: [32]u8 = undefined;
+    var h = hasher.init(.{});
+    h.update(data);
+    h.final(&hash_buffer);
+
+    return hash_buffer;
+}
+
 const testing = std.testing;
 
 const testHasher = std.crypto.hash.blake2.Blake2b(256);
@@ -148,7 +159,7 @@ test "N function - empty input" {
     const blobs = [_][]const u8{};
     const result = N(&blobs, testHasher);
     try testing.expect(result == .Hash);
-    try testing.expectEqualSlices(u8, &[_]u8{0} ** 32, &result.Hash);
+    try testing.expectEqualSlices(u8, &ZERO_HASH, &result.Hash);
 }
 
 test "N function - single blob" {
@@ -172,7 +183,7 @@ test "T function - empty input" {
     defer result.deinit(allocator);
 
     try testing.expect(result == .Blob);
-    try testing.expectEqualSlices(u8, &[_]u8{}, result.Blob);
+    try testing.expectEqualSlices(u8, EMPTY_BLOB, result.Blob);
 }
 
 test "T function - single blob" {
@@ -182,7 +193,7 @@ test "T function - single blob" {
     defer result.deinit(allocator);
 
     try testing.expect(result == .Blob);
-    try testing.expectEqualSlices(u8, &[_]u8{}, result.Blob);
+    try testing.expectEqualSlices(u8, EMPTY_BLOB, result.Blob);
 }
 
 test "T function - multiple blobs" {
@@ -221,4 +232,78 @@ test "M_b function - multiple blobs" {
     var buffer: [32]u8 = undefined;
     const expected = try std.fmt.hexToBytes(&buffer, "41505441F20EE9AEE79098A48A868C77F625DF1AFFD4F66A84A58158B8CF026F");
     try testing.expectEqualSlices(u8, expected, &result);
+}
+
+/// Prefix used for leaf hashes.
+const LEAF_PREFIX: [4]u8 = [_]u8{ 'l', 'e', 'a', 'f' };
+
+/// Applies the constancy preprocessor `C` on a given sequence of items `v`.
+/// This function hashes all data items with a fixed prefix, and then pads
+/// the resulting hashes to the next power of two with a zero hash.
+///
+/// \param v: Array of data items to preprocess.
+/// \return Array of hashed and padded data items of length equal to the next power of two.
+fn constancyPreprocessor(allocator: std.mem.Allocator, v: []const Blob, hasher: type) ![]Hash {
+    const len = v.len;
+    const nextPowerOfTwo = @as(usize, 1) <<
+        @as(
+        u6,
+        @intFromFloat(@ceil(std.math.log2(@as(f32, @floatFromInt(@max(1, len)))))),
+    );
+
+    // Allocate the resulting array with the required length
+    var v_prime = try allocator.alloc(Hash, nextPowerOfTwo);
+
+    // Hash each item in the input sequence with the leaf prefix
+    var i: usize = 0;
+    while (i < len) : (i += 1) {
+        var h = hasher.init(.{});
+        h.update(&LEAF_PREFIX);
+        h.update(v[i]);
+        h.final(&v_prime[i]);
+    }
+
+    // Fill the remaining items in the sequence with the zero hash value
+    while (i < nextPowerOfTwo) : (i += 1) {
+        v_prime[i] = ZERO_HASH;
+    }
+
+    return v_prime;
+}
+
+// Example usage of constancyPreprocessor in a Merkle tree function
+test "constancyPreprocessor" {
+    const allocator = std.testing.allocator;
+
+    const original_data = [_][]const u8{
+        "data1",
+        "data2",
+        "data3",
+    };
+
+    // Apply the constancy preprocessor to ensure a consistent input format.
+    const processed_data = try constancyPreprocessor(
+        allocator,
+        &original_data,
+        testHasher,
+    );
+    defer allocator.free(processed_data);
+
+    // Check if the length is 4 (nearest power of two)
+    try testing.expectEqual(@as(usize, 4), processed_data.len);
+
+    // Expected hashes for each input, we are prepending leaf
+    const expected_hashes = [_][32]u8{
+        hashUsingHasher(testHasher, "leafdata1"),
+        hashUsingHasher(testHasher, "leafdata2"),
+        hashUsingHasher(testHasher, "leafdata3"),
+    };
+
+    // Check if the first three hashes are correct
+    for (original_data, 0..) |_, i| {
+        try testing.expectEqualSlices(u8, &expected_hashes[i], &processed_data[i]);
+    }
+
+    // Check if the last hash is the zero hash
+    try testing.expectEqualSlices(u8, &ZERO_HASH, &processed_data[3]);
 }
