@@ -155,28 +155,28 @@ const testing = std.testing;
 
 const testHasher = std.crypto.hash.blake2.Blake2b(256);
 
-test "N function - empty input" {
+test "N_empty_input" {
     const blobs = [_][]const u8{};
     const result = N(&blobs, testHasher);
     try testing.expect(result == .Hash);
     try testing.expectEqualSlices(u8, &ZERO_HASH, &result.Hash);
 }
 
-test "N function - single blob" {
+test "N_single_blob" {
     const blobs = [_][]const u8{"hello"};
     const result = N(&blobs, testHasher);
     try testing.expect(result == .Blob);
     try testing.expectEqualSlices(u8, "hello", result.Blob);
 }
 
-test "N function - multiple blobs" {
+test "N_function_multiple_blobs" {
     const blobs = [_][]const u8{ "hello", "world" };
     const result = N(&blobs, testHasher);
     try testing.expect(result == .Hash);
     // The actual hash value will depend on the hashFn implementation
 }
 
-test "T function - empty input" {
+test "T_function_empty_input" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{};
     const result = T(allocator, &blobs, 0, testHasher);
@@ -186,7 +186,7 @@ test "T function - empty input" {
     try testing.expectEqualSlices(u8, EMPTY_BLOB, result.Blob);
 }
 
-test "T function - single blob" {
+test "T_function_single_blob" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{"hello"};
     const result = T(allocator, &blobs, 0, testHasher);
@@ -196,7 +196,7 @@ test "T function - single blob" {
     try testing.expectEqualSlices(u8, EMPTY_BLOB, result.Blob);
 }
 
-test "T function - multiple blobs" {
+test "T_function_multiple_blobs" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{ "hello", "world", "zig  " };
     const result = T(allocator, &blobs, 2, testHasher);
@@ -207,7 +207,7 @@ test "T function - multiple blobs" {
     try testing.expectEqualSlices(u8, expected, result.BlobAlloc);
 }
 
-test "M_b function - empty input" {
+test "M_b_function_empty_input" {
     const blobs = [_][]const u8{};
     const result = M_b(&blobs, testHasher);
 
@@ -216,7 +216,7 @@ test "M_b function - empty input" {
     try testing.expectEqualSlices(u8, &expected, &result);
 }
 
-test "M_b function - single blob" {
+test "M_b_function_single_blob" {
     const blob = [_][]const u8{"hello"};
     const result = M_b(&blob, testHasher);
 
@@ -225,7 +225,7 @@ test "M_b function - single blob" {
     try testing.expectEqualSlices(u8, expected, &result);
 }
 
-test "M_b function - multiple blobs" {
+test "M_b_function_multiple_blobs" {
     const blobs = [_][]const u8{ "hello", "world", "zig  " };
     const result = M_b(&blobs, testHasher);
 
