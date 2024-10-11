@@ -8,45 +8,59 @@ const safrole_types = @import("safrole/types.zig");
 
 pub const JamState = struct {
     /// α: Core authorization state and associated queues.
+    /// Manipulated in: src/authorization.zig
     alpha: Alpha,
 
     /// β: Metadata of the latest block, including block number, timestamps, and cryptographic references.
+    /// Manipulated in: src/block_metadata.zig
     beta: Beta,
 
     /// γ: List of current validators and their states, such as stakes and identities.
+    /// Manipulated in: src/safrole.zig
     gamma: Gamma,
 
     /// δ: Service accounts state, managing all service-related data (similar to smart contracts).
+    /// Manipulated in: src/services.zig
     delta: Delta,
 
     /// η: On-chain entropy pool used for randomization and consensus mechanisms.
+    /// Manipulated in: src/safrole.zig
     eta: Eta,
 
     /// ι: Validators enqueued for activation in the upcoming epoch.
+    /// Manipulated in: src/safrole.zig
     iota: Iota,
 
     /// κ: Active validator set currently responsible for validating blocks and maintaining the network.
+    /// Manipulated in: src/safrole.zig
     kappa: Kappa,
 
     /// λ: Archived validators who have been removed or rotated out of the active set.
+    /// Manipulated in: src/safrole.zig
     lambda: Lambda,
 
     /// ρ: State related to each core’s current assignment, including work packages and reports.
+    /// Manipulated in: src/core_assignments.zig
     rho: Rho,
 
     /// τ: Current time, represented in terms of epochs and slots.
+    /// Manipulated in: src/safrole.zig
     tau: Tau,
 
     /// φ: Authorization queue for tasks or processes awaiting authorization by the network.
+    /// Manipulated in: src/authorization.zig
     phi: Phi,
 
     /// χ: Privileged service identities, which may have special roles within the protocol.
+    /// Manipulated in: src/services.zig
     chi: Chi,
 
     /// ψ: Judgement state, tracking disputes or reports about validators or state transitions.
+    /// Manipulated in: src/disputes.zig
     psi: Psi,
 
     /// π: Validator performance statistics, tracking penalties, rewards, and other metrics.
+    /// Manipulated in: src/validator_stats.zig
     pi: Pi,
 };
 
