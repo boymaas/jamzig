@@ -1,10 +1,12 @@
 const std = @import("std");
+const types = @import("types.zig");
+const safrole_types = @import("safrole/types.zig");
 
 // This struct represents the full state (`σ`) of the Jam protocol.
 // It contains segments for core consensus, validator management, service state, and protocol-level metadata.
 // Each component of the state represents a specific functional segment, allowing partitioned state management.
 
-const JamState = struct {
+pub const JamState = struct {
     /// α: Core authorization state and associated queues.
     alpha: Alpha,
 
@@ -48,17 +50,22 @@ const JamState = struct {
     pi: Pi,
 };
 
-// Placeholder structs for each state component; to be filled with actual fields as required.
+// Structs for each state component, using types from safrole/types.zig where applicable
 const Alpha = struct {};
 const Beta = struct {};
-const Gamma = struct {};
+const Gamma = struct {
+    k: safrole_types.GammaK,
+    z: safrole_types.GammaZ,
+    s: safrole_types.GammaS,
+    a: safrole_types.GammaA,
+};
 const Delta = struct {};
-const Eta = struct {};
-const Iota = struct {};
-const Kappa = struct {};
-const Lambda = struct {};
+const Eta = safrole_types.Eta;
+const Iota = []safrole_types.ValidatorData;
+const Kappa = safrole_types.Kappa;
+const Lambda = safrole_types.Lambda;
 const Rho = struct {};
-const Tau = struct {};
+const Tau = types.TimeSlot;
 const Phi = struct {};
 const Chi = struct {};
 const Psi = struct {};

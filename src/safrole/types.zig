@@ -34,6 +34,8 @@ pub const Lambda = []ValidatorData;
 pub const Kappa = []ValidatorData;
 pub const GammaK = []ValidatorData;
 
+pub const Eta = [4]Entropy;
+
 // γₛ ∈ ⟦C⟧E ∪ ⟦HB⟧E
 // the current epoch’s slot-sealer series, which is either a
 // full complement of E tickets or, in the case of a fallback
@@ -72,7 +74,7 @@ pub const State = struct {
 
     /// η: The entropy accumulator, which contributes to the system's randomness
     /// and is updated with each block.
-    eta: [4]types.Entropy,
+    eta: Eta,
 
     /// λ: Validator keys and metadata from the previous epoch, essential for
     /// ensuring continuity and validating current operations.
