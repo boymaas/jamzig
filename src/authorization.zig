@@ -47,13 +47,12 @@ pub const Alpha = struct {
         for (E_g) |guarantee| {
             const core = guarantee.report.core_index;
             const auth_hash = guarantee.report.authorizer_hash;
-            if (self.isAuthorized(core, auth_hash)) {
-                // Remove the authorizer from the pool
-                for (self.pools[core].slice(), 0..) |*pool_auth, i| {
-                    if (std.mem.eql(u8, pool_auth, &auth_hash)) {
-                        _ = self.pools[core].orderedRemove(i);
-                        break;
-                    }
+
+            // Remove the authorizer from the pool if exists
+            for (self.pools[core].slice(), 0..) |*pool_auth, i| {
+                if (std.mem.eql(u8, pool_auth, &auth_hash)) {
+                    _ = self.pools[core].orderedRemove(i);
+                    break;
                 }
             }
 
