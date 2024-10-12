@@ -201,9 +201,9 @@ pub const Delta = struct {
     allocator: Allocator,
 
     // Service Privileges as described in 9.4
-    manager: ServiceIndex,
-    assign: ServiceIndex,
-    designate: ServiceIndex,
+    manager: ?ServiceIndex,
+    assign: ?ServiceIndex,
+    designate: ?ServiceIndex,
     always_accumulate: std.AutoHashMap(ServiceIndex, GasLimit),
 
     pub fn init(allocator: Allocator) Delta {
@@ -211,10 +211,10 @@ pub const Delta = struct {
             .accounts = std.AutoHashMap(ServiceIndex, ServiceAccount).init(allocator),
             .allocator = allocator,
 
-            // Initialize with a default value or pass it as a parameter
-            .manager = 0,
-            .assign = 0,
-            .designate = 0,
+            // Initialize with null values
+            .manager = null,
+            .assign = null,
+            .designate = null,
             .always_accumulate = std.AutoHashMap(ServiceIndex, GasLimit).init(allocator),
         };
     }
@@ -228,15 +228,15 @@ pub const Delta = struct {
         self.always_accumulate.deinit();
     }
 
-    pub fn setManager(self: *Delta, index: ServiceIndex) void {
+    pub fn setManager(self: *Delta, index: ?ServiceIndex) void {
         self.manager = index;
     }
 
-    pub fn setAssign(self: *Delta, index: ServiceIndex) void {
+    pub fn setAssign(self: *Delta, index: ?ServiceIndex) void {
         self.assign = index;
     }
 
-    pub fn setDesignate(self: *Delta, index: ServiceIndex) void {
+    pub fn setDesignate(self: *Delta, index: ?ServiceIndex) void {
         self.designate = index;
     }
 
@@ -253,7 +253,10 @@ pub const Delta = struct {
     }
 
     pub fn isPrivilegedService(self: *Delta, index: ServiceIndex) bool {
-        return index == self.manager or index == self.assign or index == self.designate or self.always_accumulate.contains(index);
+        return (self.manager != null and index == self.manager.?) or
+            (self.assign != null and index == self.assign.?) or
+            (self.designate != null and index == self.designate.?) or
+            self.always_accumulate.contains(index);
     }
 
     pub fn createAccount(self: *Delta, index: ServiceIndex) !void {
