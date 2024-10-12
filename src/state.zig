@@ -11,7 +11,7 @@ pub const JamState = struct {
     alpha: Alpha,
 
     /// β: Metadata of the latest block, including block number, timestamps, and cryptographic references.
-    /// Manipulated in: src/block_metadata.zig
+    /// Manipulated in: src/recent_blocks.zig
     beta: Beta,
 
     /// γ: List of current validators and their states, such as stakes and identities.
@@ -64,7 +64,7 @@ pub const JamState = struct {
 };
 
 const Alpha = struct {};
-const Beta = struct {};
+const Beta = @import("recent_blocks.zig").RecentHistory;
 const Gamma = struct {
     k: safrole_types.GammaK,
     z: safrole_types.GammaZ,
