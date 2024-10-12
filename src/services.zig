@@ -131,6 +131,16 @@ pub const ServiceAccount = struct {
         return self.preimages.get(hash);
     }
 
+    pub fn integratePreimageLookup(self: *ServiceAccount, hash: Hash, length: u32, timeslot: Timeslot) !void {
+        const key = PreimageLookupKey{ .hash = hash, .length = length };
+        const lookup = self.preimage_lookups.get(key) orelse PreimageLookup{
+            .status = .{ timeslot, null, null },
+            .length = length,
+        };
+
+        try self.preimage_lookups.put(key, lookup);
+    }
+
     // 9.2.2 Implement the historical lookup function
     pub fn historicalLookup(self: *ServiceAccount, time: Timeslot, hash: Hash) ?[]const u8 {
         // first get the preimage, if not return null
@@ -277,11 +287,11 @@ pub const Delta = struct {
         }
     }
 
-    pub fn postPreimageIntegration(self: *Delta, preimages: []const PreimageSubmission) !void {
+    pub fn integratePreimage(self: *Delta, preimages: []const PreimageSubmission, t: Timeslot) !void {
         for (preimages) |item| {
             if (self.getAccount(item.index)) |account| {
                 try account.addPreimage(item.hash, item.preimage);
-                try account.updatePreimageLookup(item.hash, @intCast(item.preimage.len), 0); // Using 0 as current timeslot, should be replaced with actual timeslot
+                try account.integratePreimageLookup(item.hash, @intCast(item.preimage.len), t);
             } else {
                 return error.AccountNotFound;
             }
