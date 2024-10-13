@@ -224,6 +224,7 @@ pub const ReportGuarantee = struct {
     signatures: []ValidatorSignature,
 };
 
+/// 0..cores_count of ReportGuarantees
 pub const GuaranteesExtrinsic = []ReportGuarantee; // cores_count
 
 pub const Extrinsic = struct {

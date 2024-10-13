@@ -63,7 +63,7 @@ pub const JamState = struct {
     pi: Pi,
 };
 
-const Alpha = struct {};
+const Alpha = @import("authorization.zig").Alpha;
 const Beta = @import("recent_blocks.zig").RecentHistory;
 const Gamma = struct {
     k: safrole_types.GammaK,
