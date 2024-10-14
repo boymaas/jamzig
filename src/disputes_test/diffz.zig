@@ -1,5 +1,5 @@
 const std = @import("std");
-const safrole = @import("../safrole.zig");
+const disputes = @import("../tests/vectors/libs/disputes.zig");
 
 const tmpfile = @import("tmpfile");
 
@@ -7,9 +7,10 @@ pub const Error = error{OutOfMemory};
 
 pub fn diffStates(
     allocator: std.mem.Allocator,
-    before: *const safrole.types.State,
-    after: *const safrole.types.State,
+    before: *const disputes.State,
+    after: *const disputes.State,
 ) ![]u8 {
+
     // Print both before and after states
     const before_str = try std.fmt.allocPrint(allocator, "{any}", .{before});
     defer allocator.free(before_str);
@@ -38,6 +39,12 @@ pub fn diffStates(
     });
     defer allocator.free(result.stderr);
 
-    // Return the owned slice, to be freed by calleer
+    // Check if the diff is empty
+    if (result.stdout.len == 0) {
+        // allocator.free(result.stdout); // Not needed as its empty
+        const empty_diff = try allocator.dupe(u8, "EMPTY_DIFF");
+        return empty_diff;
+    }
+    // Return the owned slice, to be freed by caller
     return result.stdout;
 }
