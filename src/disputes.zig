@@ -330,9 +330,9 @@ pub fn verifyDisputesExtrinsicPre(
             };
 
             const message = if (fault.vote)
-                "jam_valid" ++ verdict.target
+                "jam_valid" ++ fault.target
             else
-                "jam_invalid" ++ verdict.target;
+                "jam_invalid" ++ fault.target;
 
             const signature = crypto.sign.Ed25519.Signature.fromBytes(fault.signature);
 

@@ -368,6 +368,8 @@ test "tiny/progress_with_verdicts-4.json" {
     //     &test_vector.value.pre_state,
     //     &test_vector.value.post_state,
     // );
+
+    try runDisputeTest(allocator, TINY_PARAMS, test_vector.value);
 }
 
 test "tiny/progress_with_verdicts-5.json" {
