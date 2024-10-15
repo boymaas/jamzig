@@ -102,22 +102,18 @@ pub fn processDisputesExtrinsic(current_state: *const Psi, extrinsic: DisputesEx
         }
     }
 
+    // The offender markers must contain exactly the keys
+    // of all the new offenders.
+    state.punish_set.clearRetainingCapacity();
+
     // Process culprits
     for (extrinsic.culprits) |culprit| {
-        if (state.bad_set.contains(culprit.target)) {
-            try state.punish_set.put(culprit.key, {});
-        }
+        try state.punish_set.put(culprit.key, {});
     }
 
     // Process faults
     for (extrinsic.faults) |fault| {
-        const in_good_set = state.good_set.contains(fault.target);
-        const in_bad_set = state.bad_set.contains(fault.target);
-        if ((fault.vote and in_bad_set) or
-            (!fault.vote and in_good_set))
-        {
-            try state.punish_set.put(fault.key, {});
-        }
+        try state.punish_set.put(fault.key, {});
     }
 
     return state;

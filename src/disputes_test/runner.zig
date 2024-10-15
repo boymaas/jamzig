@@ -69,12 +69,12 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, params: Params, test_vector:
                     try expected_marks_map.put(mark.bytes, {});
                 }
 
-                try helpers.hashMapEqual(disputes.PublicKey, void, expected_marks_map, transitioned_psi.punish_set);
+                try helpers.expectHashMapEqual(disputes.PublicKey, void, expected_marks_map, transitioned_psi.punish_set);
 
                 // Compare the rest of the fields
-                try helpers.hashMapEqual(disputes.PublicKey, void, expected_psi.good_set, transitioned_psi.good_set);
-                try helpers.hashMapEqual(disputes.PublicKey, void, expected_psi.bad_set, transitioned_psi.bad_set);
-                try helpers.hashMapEqual(disputes.PublicKey, void, expected_psi.wonky_set, transitioned_psi.wonky_set);
+                try helpers.expectHashMapEqual(disputes.PublicKey, void, expected_psi.good_set, transitioned_psi.good_set);
+                try helpers.expectHashMapEqual(disputes.PublicKey, void, expected_psi.bad_set, transitioned_psi.bad_set);
+                try helpers.expectHashMapEqual(disputes.PublicKey, void, expected_psi.wonky_set, transitioned_psi.wonky_set);
             } else |err| {
                 std.debug.print("UnexpectedError: {any}\n", .{err});
                 return error.UnexpectedError;
