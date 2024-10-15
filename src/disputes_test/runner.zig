@@ -53,7 +53,7 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, params: Params, test_vector:
                     .bad_validator_index => error.BadValidatorIndex,
                     .bad_signature => error.BadSignature,
                 };
-                std.debug.print("\nExpected error: {any}\n", .{expected_error});
+                std.debug.print("\nExpected error: {any} => {any} got error {any}\n", .{ expected_error, mapped_expected_error, actual_error });
                 try std.testing.expectEqual(mapped_expected_error, actual_error);
             }
         },
