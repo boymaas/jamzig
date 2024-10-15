@@ -78,11 +78,11 @@ test "tiny/progress_with_culprits-1.json" {
     const test_vector = try tvector.TestVector.build_from(allocator, test_json);
     defer test_vector.deinit();
 
-    try printStateDiff(
-        allocator,
-        &test_vector.value.pre_state,
-        &test_vector.value.post_state,
-    );
+    // try printStateDiff(
+    //     allocator,
+    //     &test_vector.value.pre_state,
+    //     &test_vector.value.post_state,
+    // );
 
     try runDisputeTest(allocator, TINY_PARAMS, test_vector.value);
 }
@@ -98,6 +98,8 @@ test "tiny/progress_with_culprits-2.json" {
     //     &test_vector.value.pre_state,
     //     &test_vector.value.post_state,
     // );
+
+    try runDisputeTest(allocator, TINY_PARAMS, test_vector.value);
 }
 
 test "tiny/progress_with_culprits-3.json" {

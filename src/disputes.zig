@@ -353,8 +353,18 @@ pub fn verifyDisputesExtrinsic(
         VerificationError.FaultsNotSortedUnique,
     );
 
+    // Check for enough culprits and faults
+    for (extrinsic.verdicts) |verdict| {
+        const positive_votes = countPositiveJudgments(verdict);
+        if (positive_votes == 0 and extrinsic.culprits.len < 2) {
+            return VerificationError.NotEnoughCulprits;
+        }
+        if (positive_votes == validator_count * 2 / 3 + 1 and extrinsic.faults.len == 0) {
+            return VerificationError.NotEnoughFaults;
+        }
+    }
+
     // Verify culprits
-    var culprit_count: usize = 0;
     for (extrinsic.culprits) |culprit| {
         if (current_state.punish_set.contains(culprit.key)) {
             return VerificationError.OffenderAlreadyReported;
@@ -362,7 +372,6 @@ pub fn verifyDisputesExtrinsic(
         if (!current_state.bad_set.contains(culprit.target)) {
             return VerificationError.CulpritsVerdictNotBad;
         }
-        culprit_count += 1;
     }
 
     // Verify faults
@@ -377,17 +386,6 @@ pub fn verifyDisputesExtrinsic(
             return VerificationError.FaultVerdictWrong;
         }
         fault_count += 1;
-    }
-
-    // Check for enough culprits and faults
-    for (extrinsic.verdicts) |verdict| {
-        const positive_votes = countPositiveJudgments(verdict);
-        if (positive_votes == 0 and culprit_count < 2) {
-            return VerificationError.NotEnoughCulprits;
-        }
-        if (positive_votes == validator_count * 2 / 3 + 1 and fault_count == 0) {
-            return VerificationError.NotEnoughFaults;
-        }
     }
 }
 
