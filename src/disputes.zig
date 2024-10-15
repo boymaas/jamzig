@@ -267,36 +267,6 @@ pub fn verifyDisputesExtrinsic(
     validator_count: usize,
     current_epoch: u32,
 ) VerificationError!void {
-    // Check if verdicts are sorted and unique
-    try verifyOrderedUnique(
-        extrinsic.verdicts,
-        Verdict,
-        Hash,
-        verdictTargetHash,
-        lessThanHash,
-        VerificationError.VerdictsNotSortedUnique,
-    );
-
-    // Check if culprits are sorted and unique
-    try verifyOrderedUnique(
-        extrinsic.culprits,
-        Culprit,
-        types.Ed25519Key,
-        culpritsKey,
-        lessThanPublicKey,
-        VerificationError.CulpritsNotSortedUnique,
-    );
-
-    // Check if faults are sorted and unique
-    try verifyOrderedUnique(
-        extrinsic.faults,
-        Fault,
-        types.Ed25519Key,
-        faultKey,
-        lessThanPublicKey,
-        VerificationError.FaultsNotSortedUnique,
-    );
-
     for (extrinsic.verdicts) |verdict| {
         // Check if the verdict has already been judged
         if (current_state.good_set.contains(verdict.target) or
@@ -352,6 +322,36 @@ pub fn verifyDisputesExtrinsic(
             };
         }
     }
+
+    // Check if verdicts are sorted and unique
+    try verifyOrderedUnique(
+        extrinsic.verdicts,
+        Verdict,
+        Hash,
+        verdictTargetHash,
+        lessThanHash,
+        VerificationError.VerdictsNotSortedUnique,
+    );
+
+    // Check if culprits are sorted and unique
+    try verifyOrderedUnique(
+        extrinsic.culprits,
+        Culprit,
+        types.Ed25519Key,
+        culpritsKey,
+        lessThanPublicKey,
+        VerificationError.CulpritsNotSortedUnique,
+    );
+
+    // Check if faults are sorted and unique
+    try verifyOrderedUnique(
+        extrinsic.faults,
+        Fault,
+        types.Ed25519Key,
+        faultKey,
+        lessThanPublicKey,
+        VerificationError.FaultsNotSortedUnique,
+    );
 
     // Verify culprits
     var culprit_count: usize = 0;
