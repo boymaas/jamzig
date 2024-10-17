@@ -8,31 +8,39 @@ const mmr = @import("merkle_mountain_ranges.zig");
 pub const Hash = [32]u8;
 
 pub const BlockInfo = struct {
+    /// The hash of the block header
     header_hash: Hash,
+    /// The root hash of the state trie
     state_root: Hash,
+    /// The Merkle Mountain Range (MMR) of BEEFY commitments
     beefy_mmr: []?Hash,
-    work_report_hashes: []Hash,
+    /// The hashes of work reports included in this block
+    work_reports: []Hash,
 };
 
+/// Represents a recent block with information needed for importing
 pub const RecentBlock = struct {
-    /// Header of the block
+    /// The hash of the block header
     header_hash: Hash,
-    /// Parent state root H_r
+    /// The state root of the parent block (H_r)
     parent_state_root: Hash,
-    /// Derived from C as defined in section 12
-    /// using the basic merklization M_b => the merkle root of results
+    /// The root of the accumulate result tree, derived from C using basic merklization (M_b)
     accumulate_root: Hash,
-    /// The hashes of the work reports
-    work_report_hashes: []Hash,
+    /// The hashes of the work reports included in this block
+    work_reports: []Hash,
 };
 
+/// Manages the recent history of blocks
 pub const RecentHistory = struct {
     const Self = @This();
 
     allocator: Allocator,
+    /// The list of recent blocks
     blocks: std.ArrayList(BlockInfo),
+    /// The maximum number of blocks to keep in recent history
     max_blocks: usize,
 
+    /// Initializes a new RecentHistory with the given allocator and maximum number of blocks
     pub fn init(allocator: Allocator, max_blocks: usize) !Self {
         return Self{
             .allocator = allocator,
@@ -41,21 +49,23 @@ pub const RecentHistory = struct {
         };
     }
 
+    /// Frees all resources associated with the RecentHistory
     pub fn deinit(self: *Self) void {
         for (self.blocks.items) |*block| {
             self.allocator.free(block.beefy_mmr);
-            self.allocator.free(block.work_report_hashes);
+            self.allocator.free(block.work_reports);
         }
         self.blocks.deinit();
     }
 
+    /// Imports a new block into the recent history
     pub fn import(self: *Self, allocator: Allocator, input: RecentBlock) !void {
         // Create a new BlockStateInformation
         var block_info = BlockInfo{
             .header_hash = input.header_hash,
             .state_root = std.mem.zeroes(Hash), // This will be updated in the next block
             .beefy_mmr = undefined,
-            .work_report_hashes = try allocator.dupe(Hash, input.work_report_hashes),
+            .work_reports = try allocator.dupe(Hash, input.work_reports),
         };
 
         // Update the parent block's state root if it exists
@@ -82,16 +92,18 @@ pub const RecentHistory = struct {
         try self.addBlockInfo(block_info);
     }
 
+    /// Adds a new BlockInfo to the recent history, removing the oldest if at capacity
     pub fn addBlockInfo(self: *Self, new_block: BlockInfo) !void {
         if (self.blocks.items.len == self.max_blocks) {
             const oldest_block = self.blocks.orderedRemove(0);
             self.allocator.free(oldest_block.beefy_mmr);
-            self.allocator.free(oldest_block.work_report_hashes);
+            self.allocator.free(oldest_block.work_reports);
         }
 
         try self.blocks.append(new_block);
     }
 
+    /// Retrieves the BlockInfo at the specified index, or null if not found
     pub fn getBlockInfo(self: Self, index: usize) ?BlockInfo {
         if (index < self.blocks.items.len) {
             return self.blocks.items[index];
@@ -115,25 +127,25 @@ test RecentHistory {
         .header_hash = [_]u8{1} ** 32,
         .state_root = [_]u8{2} ** 32,
         .beefy_mmr = try allocator.dupe(?Hash, &.{[_]u8{3} ** 32}),
-        .work_report_hashes = try allocator.dupe(Hash, &.{[_]u8{4} ** 32}),
+        .work_reports = try allocator.dupe(Hash, &.{[_]u8{4} ** 32}),
     };
     const block2 = BlockInfo{
         .header_hash = [_]u8{5} ** 32,
         .state_root = [_]u8{6} ** 32,
         .beefy_mmr = try allocator.dupe(?Hash, &.{[_]u8{7} ** 32}),
-        .work_report_hashes = try allocator.dupe(Hash, &.{[_]u8{8} ** 32}),
+        .work_reports = try allocator.dupe(Hash, &.{[_]u8{8} ** 32}),
     };
     const block3 = BlockInfo{
         .header_hash = [_]u8{9} ** 32,
         .state_root = [_]u8{10} ** 32,
         .beefy_mmr = try allocator.dupe(?Hash, &.{[_]u8{11} ** 32}),
-        .work_report_hashes = try allocator.dupe(Hash, &.{[_]u8{12} ** 32}),
+        .work_reports = try allocator.dupe(Hash, &.{[_]u8{12} ** 32}),
     };
     const block4 = BlockInfo{
         .header_hash = [_]u8{13} ** 32,
         .state_root = [_]u8{14} ** 32,
         .beefy_mmr = try allocator.dupe(?Hash, &.{[_]u8{15} ** 32}),
-        .work_report_hashes = try allocator.dupe(Hash, &.{[_]u8{16} ** 32}),
+        .work_reports = try allocator.dupe(Hash, &.{[_]u8{16} ** 32}),
     };
 
     // Test adding blocks

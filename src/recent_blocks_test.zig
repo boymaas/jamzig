@@ -42,7 +42,7 @@ test "recent blocks: parsing all test cases" {
         // Process the new block
         const recent_block = try fromTestVectorInputToRecentBlock(allocator, vector.expected.value.input);
         defer {
-            allocator.free(recent_block.work_report_hashes);
+            allocator.free(recent_block.work_reports);
         }
 
         try recent_history.import(allocator, recent_block);
@@ -56,7 +56,7 @@ test "recent blocks: parsing all test cases" {
             const expected_recent_block = try fromTestVectorBlockInfo(allocator, expected_block);
             defer {
                 allocator.free(expected_recent_block.beefy_mmr);
-                allocator.free(expected_recent_block.work_report_hashes);
+                allocator.free(expected_recent_block.work_reports);
             }
             try compareBlocks(expected_recent_block, actual_block, i);
         }
@@ -74,7 +74,7 @@ fn fromTestVectorInputToRecentBlock(allocator: std.mem.Allocator, input: tvector
         .header_hash = input.header_hash.bytes,
         .parent_state_root = input.parent_state_root.bytes,
         .accumulate_root = input.accumulate_root.bytes,
-        .work_report_hashes = work_packages,
+        .work_reports = work_packages,
     };
 }
 
@@ -86,7 +86,7 @@ fn fromTestVectorBlockInfo(allocator: std.mem.Allocator, block_info: tvector.Blo
         .header_hash = block_info.header_hash.bytes,
         .state_root = block_info.state_root.bytes,
         .beefy_mmr = try allocator.alloc(?Hash, block_info.mmr.peaks.len),
-        .work_report_hashes = try allocator.alloc(Hash, block_info.reported.len),
+        .work_reports = try allocator.alloc(Hash, block_info.reported.len),
     };
     for (block_info.mmr.peaks, 0..) |peak, i| {
         if (peak) |p| {
@@ -96,7 +96,7 @@ fn fromTestVectorBlockInfo(allocator: std.mem.Allocator, block_info: tvector.Blo
         }
     }
     for (block_info.reported, 0..) |report, i| {
-        block.work_report_hashes[i] = report.bytes;
+        block.work_reports[i] = report.bytes;
     }
     return block;
 }
@@ -122,7 +122,7 @@ fn compareBlocks(expected: BlockInfo, actual: BlockInfo, block_idx: usize) !void
         return error.BeefyMmrMismatch;
     };
 
-    std.testing.expectEqualSlices(Hash, expected.work_report_hashes, actual.work_report_hashes) catch {
+    std.testing.expectEqualSlices(Hash, expected.work_reports, actual.work_reports) catch {
         return error.WorkReportHashesMismatch;
     };
 }
