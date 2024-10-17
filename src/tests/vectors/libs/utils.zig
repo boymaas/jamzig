@@ -44,3 +44,38 @@ pub fn TestVector(comptime T: type) type {
         }
     };
 }
+
+fn compareSlices(context: void, a: []const u8, b: []const u8) bool {
+    _ = context;
+    return std.mem.lessThan(u8, a, b);
+}
+
+pub const SortedListOfJsonFiles = struct {
+    items: [][]u8,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *SortedListOfJsonFiles) void {
+        for (self.items) |item| {
+            self.allocator.free(item);
+        }
+        self.allocator.free(self.items);
+    }
+};
+
+pub fn getSortedListOfJsonFilesInDir(allocator: std.mem.Allocator, target_dir: []const u8) !SortedListOfJsonFiles {
+    var dir = try std.fs.cwd().openDir(target_dir, .{ .iterate = true });
+    defer dir.close();
+
+    var entries = std.ArrayList([]u8).init(allocator);
+
+    var dir_iterator = dir.iterate();
+    while (try dir_iterator.next()) |entry| {
+        if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".json")) {
+            try entries.append(try allocator.dupe(u8, entry.name));
+        }
+    }
+
+    std.sort.insertion([]u8, entries.items, {}, compareSlices);
+
+    return .{ .items = try entries.toOwnedSlice(), .allocator = allocator };
+}
