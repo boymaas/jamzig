@@ -79,6 +79,6 @@ pub const Lambda = safrole_types.Lambda;
 pub const Rho = @import("pending_reports.zig").Rho;
 pub const Tau = types.TimeSlot;
 pub const Phi = @import("authorization_queue.zig").Phi;
-pub const Chi = struct {};
+pub const Chi = @import("services_priviledged.zig").Chi;
 pub const Psi = @import("disputes.zig").Psi;
 pub const Pi = struct {};
