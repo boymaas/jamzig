@@ -28,6 +28,7 @@ const types = @import("types.zig");
 const WorkReport = types.WorkReport;
 const TimeSlot = types.TimeSlot;
 const OpaqueHash = types.OpaqueHash;
+const WorkReportHash = types.WorkReportHash;
 const RefineContext = types.RefineContext;
 const WorkPackageSpec = types.WorkPackageSpec;
 const CoreIndex = types.CoreIndex;
@@ -36,6 +37,7 @@ const CoreIndex = types.CoreIndex;
 const C: usize = 341; // Number of cores
 
 const ReportEntry = struct {
+    hash: WorkReportHash,
     work_report: WorkReport,
     timeslot: TimeSlot,
 };
@@ -50,11 +52,11 @@ pub const Rho = struct {
         };
     }
 
-    pub fn setReport(self: *Rho, core: usize, report: WorkReport, timeslot: TimeSlot) void {
+    pub fn setReport(self: *Rho, core: usize, hash: WorkReportHash, report: WorkReport, timeslot: TimeSlot) void {
         if (core >= C) {
             @panic("Core index out of bounds");
         }
-        self.reports[core] = ReportEntry{ .work_report = report, .timeslot = timeslot };
+        self.reports[core] = ReportEntry{ .hash = hash, .work_report = report, .timeslot = timeslot };
     }
 
     pub fn getReport(self: *const Rho, core: usize) ?ReportEntry {
@@ -70,6 +72,18 @@ pub const Rho = struct {
         }
         self.reports[core] = null;
     }
+
+    pub fn clearFromCore(self: *Rho, work_report: WorkReportHash) bool {
+        for (&self.reports) |*report| {
+            if (report.*) |*entry| {
+                if (std.mem.eql(u8, &entry.hash, &work_report)) {
+                    report.* = null;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 };
 
 //  _____         _
@@ -81,29 +95,7 @@ pub const Rho = struct {
 
 const testing = std.testing;
 
-// TODO: move these test fixtures to a central place
-fn createEmptyWorkReport(id: [32]u8) WorkReport {
-    return WorkReport{
-        .package_spec = WorkPackageSpec{
-            .hash = id,
-            .len = 0,
-            .root = [_]u8{0} ** 32,
-            .segments = [_]u8{0} ** 32,
-        },
-        .context = RefineContext{
-            .anchor = [_]u8{0} ** 32,
-            .state_root = [_]u8{0} ** 32,
-            .beefy_root = [_]u8{0} ** 32,
-            .lookup_anchor = [_]u8{0} ** 32,
-            .lookup_anchor_slot = 0,
-            .prerequisite = null,
-        },
-        .core_index = 0,
-        .authorizer_hash = [_]u8{0} ** 32,
-        .auth_output = &[_]u8{},
-        .results = &[_]types.WorkResult{},
-    };
-}
+const createEmptyWorkReport = @import("tests/fixtures.zig").createEmptyWorkReport;
 
 const TEST_HASH = [_]u8{ 'T', 'E', 'S', 'T' } ++ [_]u8{0} ** 28;
 
@@ -121,7 +113,7 @@ test "Rho - Set and Get Report" {
     const timeslot = 100;
 
     // Test setting a report
-    rho.setReport(0, work_report, timeslot);
+    rho.setReport(0, TEST_HASH, work_report, timeslot);
     const report = rho.getReport(0);
     try testing.expect(report != null);
     if (report) |r| {
@@ -140,10 +132,35 @@ test "Rho - Clear Report" {
     const timeslot = 100;
 
     // Set a report
-    rho.setReport(0, work_report, timeslot);
+    rho.setReport(0, TEST_HASH, work_report, timeslot);
     try testing.expect(rho.getReport(0) != null);
 
     // Clear the report
     rho.clearReport(0);
     try testing.expectEqual(@as(?ReportEntry, null), rho.getReport(0));
+}
+
+test "Rho - Clear From Core" {
+    var rho = Rho.init();
+    const work_report1 = createEmptyWorkReport(TEST_HASH);
+    const test_hash2 = [_]u8{ 'T', 'E', 'S', 'T', '2' } ++ [_]u8{0} ** 27;
+    const work_report2 = createEmptyWorkReport(test_hash2);
+    const timeslot = 100;
+
+    // Set reports
+    rho.setReport(0, TEST_HASH, work_report1, timeslot);
+    rho.setReport(1, test_hash2, work_report2, timeslot);
+    try testing.expect(rho.getReport(0) != null);
+    try testing.expect(rho.getReport(1) != null);
+
+    // Clear report with TEST_HASH
+    const cleared = rho.clearFromCore(TEST_HASH);
+    try testing.expect(cleared);
+
+    // Check that the first report is cleared and the second is still present
+    try testing.expectEqual(@as(?ReportEntry, null), rho.getReport(0));
+    try testing.expect(rho.getReport(1) != null);
+    if (rho.getReport(1)) |report| {
+        try testing.expectEqualSlices(u8, &report.hash, &test_hash2);
+    }
 }

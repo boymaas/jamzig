@@ -245,6 +245,7 @@ pub fn transitionDisputes(
     current_psi: *const state.Psi,
     current_kappa: state.Kappa,
     current_lambda: state.Lambda,
+    current_rho: *state.Rho,
     current_epoch: types.Epoch,
     xtdisputes: types.DisputesExtrinsic,
 ) !state.Psi {
@@ -280,7 +281,7 @@ pub fn transitionDisputes(
     );
 
     // Transition ψ based on new disputes
-    var posterior_state = try disputes.processDisputesExtrinsic(current_psi, xtdisputes, validator_count);
+    var posterior_state = try disputes.processDisputesExtrinsic(current_psi, current_rho, xtdisputes, validator_count);
     errdefer posterior_state.deinit();
 
     // Verify correctness of the updated state after processing disputes

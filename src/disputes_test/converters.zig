@@ -102,3 +102,22 @@ pub fn convertDisputesExtrinsic(allocator: std.mem.Allocator, test_disputes: tve
         .faults = faults,
     };
 }
+
+const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
+
+pub fn convertRho(allocator: std.mem.Allocator, test_rho: tvector.AvailabilityAssignments) !state.Rho {
+    _ = allocator;
+
+    var rho = state.Rho.init();
+
+    for (test_rho, 0..) |assignment, core| {
+        if (assignment) |a| {
+            const work_report = createEmptyWorkReport(a.dummy_work_report.bytes[0..32].*);
+            var work_report_hash: [32]u8 = undefined;
+            std.crypto.hash.blake2.Blake2b(256).hash(&a.dummy_work_report.bytes, &work_report_hash, .{});
+            rho.setReport(core, work_report_hash, work_report, a.timeout);
+        }
+    }
+
+    return rho;
+}

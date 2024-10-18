@@ -173,8 +173,10 @@ pub const Judgement = struct {
     signature: Ed25519Signature,
 };
 
+pub const WorkReportHash = OpaqueHash;
+
 pub const Verdict = struct {
-    target: OpaqueHash,
+    target: WorkReportHash,
     age: U32,
     votes: []const Judgement, // validators_super_majority
 
@@ -185,13 +187,13 @@ pub const Verdict = struct {
 };
 
 pub const Culprit = struct {
-    target: OpaqueHash,
+    target: WorkReportHash,
     key: Ed25519Key,
     signature: Ed25519Signature,
 };
 
 pub const Fault = struct {
-    target: OpaqueHash,
+    target: WorkReportHash,
     vote: bool,
     key: Ed25519Key,
     signature: Ed25519Signature,

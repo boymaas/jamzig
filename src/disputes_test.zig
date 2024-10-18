@@ -416,9 +416,6 @@ test "tiny/progress_invalidates_avail_assignments-1.json" {
     //
 
     try runDisputeTest(allocator, TINY_PARAMS, test_vector.value);
-
-    // See: Gp0.4.1@111
-    return error.NotImplementedNeedRhoImplementationFirst;
 }
 
 //  _____      _ ___     __        _

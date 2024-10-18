@@ -15,6 +15,10 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, params: Params, test_vector:
     defer current_psi.deinit();
     var expected_psi = try converters.convertPsi(allocator, test_vector.post_state.psi);
     defer expected_psi.deinit();
+
+    var current_rho = try converters.convertRho(allocator, test_vector.pre_state.rho);
+    const expected_rho = try converters.convertRho(allocator, test_vector.post_state.rho);
+
     var extrinsic_disputes = try converters.convertDisputesExtrinsic(allocator, test_vector.input.disputes);
     defer extrinsic_disputes.deinit(allocator);
 
@@ -25,7 +29,7 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, params: Params, test_vector:
     defer allocator.free(lambda);
 
     const current_epoch = test_vector.pre_state.tau / params.epoch_length;
-    const transition_result = stf.transitionDisputes(allocator, params.validators_count, &current_psi, kappa, lambda, current_epoch, extrinsic_disputes);
+    const transition_result = stf.transitionDisputes(allocator, params.validators_count, &current_psi, kappa, lambda, &current_rho, current_epoch, extrinsic_disputes);
 
     defer {
         if (transition_result) |psi| {
@@ -75,6 +79,9 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, params: Params, test_vector:
                 try helpers.expectHashMapEqual(disputes.PublicKey, void, expected_psi.good_set, transitioned_psi.good_set);
                 try helpers.expectHashMapEqual(disputes.PublicKey, void, expected_psi.bad_set, transitioned_psi.bad_set);
                 try helpers.expectHashMapEqual(disputes.PublicKey, void, expected_psi.wonky_set, transitioned_psi.wonky_set);
+
+                // Compare the two Rho states
+                try std.testing.expectEqualDeep(expected_rho, current_rho);
             } else |err| {
                 std.debug.print("UnexpectedError: {any}\n", .{err});
                 return error.UnexpectedError;
