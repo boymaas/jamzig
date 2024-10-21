@@ -1,0 +1,83 @@
+const std = @import("std");
+const encoder = @import("../codec/encoder.zig");
+
+const recent_blocks = @import("../recent_blocks.zig");
+const RecentHistory = recent_blocks.RecentHistory;
+
+pub fn encode(self: *const RecentHistory, writer: anytype) !void {
+    // Encode the number of blocks
+    try writer.writeAll(encoder.encodeInteger(self.blocks.items.len).as_slice());
+
+    // Encode each block
+    for (self.blocks.items) |block| {
+        // Encode header hash
+        try writer.writeAll(&block.header_hash);
+
+        // Encode beefy MMR
+        const mmr_encoder = @import("../merkle_mountain_ranges.zig").encode;
+        try mmr_encoder(block.beefy_mmr, writer);
+
+        // Encode state root
+        try writer.writeAll(&block.state_root);
+
+        // Encode work reports
+        try writer.writeAll(encoder.encodeInteger(block.work_reports.len).as_slice());
+        for (block.work_reports) |report_hash| {
+            try writer.writeAll(&report_hash);
+        }
+    }
+}
+
+//  _____         _   _
+// |_   _|__  ___| |_(_)_ __   __ _
+//   | |/ _ \/ __| __| | '_ \ / _` |
+//   | |  __/\__ \ |_| | | | | (_| |
+//   |_|\___||___/\__|_|_| |_|\__, |
+//                            |___/
+
+const testing = std.testing;
+const BlockInfo = recent_blocks.BlockInfo;
+const Hash = recent_blocks.Hash;
+
+test "encode" {
+    const allocator = testing.allocator;
+    var recent_history = try RecentHistory.init(allocator, 2);
+    defer recent_history.deinit();
+
+    // Create a test block
+    const block = BlockInfo{
+        .header_hash = [_]u8{1} ** 32,
+        .state_root = [_]u8{2} ** 32,
+        .beefy_mmr = try allocator.dupe(?Hash, &.{[_]u8{3} ** 32}),
+        .work_reports = try allocator.dupe(Hash, &.{[_]u8{4} ** 32}),
+    };
+
+    try recent_history.addBlockInfo(block);
+
+    var buf: [1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+
+    try encode(&recent_history, fbs.writer());
+
+    const encoded = fbs.getWritten();
+
+    // Check the number of blocks (should be 1)
+    try testing.expectEqual(@as(u8, 1), encoded[0]);
+
+    // Check the header hash
+    try testing.expectEqualSlices(u8, &block.header_hash, encoded[1..33]);
+
+    // Check the beefy MMR
+    try testing.expect(encoded.len > 33);
+
+    // Check the state root
+    // 32 bytes for state root, 1 byte for work reports length, 32 bytes for work report hash
+    const state_root_start = encoded.len - 32 - 1 - 32;
+    try testing.expectEqualSlices(u8, &block.state_root, encoded[state_root_start .. state_root_start + 32]);
+
+    // Check the number of work reports (should be 1)
+    try testing.expectEqual(@as(u8, 1), encoded[encoded.len - 1 - 32]);
+
+    // Check the work report hash
+    try testing.expectEqualSlices(u8, &block.work_reports[0], encoded[encoded.len - 32 ..]);
+}

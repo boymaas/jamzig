@@ -116,11 +116,6 @@ pub const Gamma = struct {
         };
     }
 
-    const serialize = @import("codec.zig").serialize;
-    pub fn encode(self: *const Gamma, writer: anytype) !void {
-        try serialize(Gamma, .{}, writer, self.*);
-    }
-
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
         try jw.beginObject();
 
@@ -156,29 +151,6 @@ pub const Gamma = struct {
         allocator.free(self.a);
     }
 };
-
-test "Gamma serialization" {
-    const testing = std.testing;
-    const allocator = std.testing.allocator;
-
-    // Create a sample Gamma instance
-    var gamma = try Gamma.init(allocator);
-    defer gamma.deinit(allocator);
-
-    // Create a buffer to store the encoded data
-    var buffer = std.ArrayList(u8).init(allocator);
-    defer buffer.deinit();
-
-    // Encode the Gamma instance
-    try gamma.encode(buffer.writer());
-
-    // Verify the encoded output
-    // Here, we're just checking if the buffer is not empty.
-    try testing.expect(buffer.items.len > 0);
-
-    // TODO: add more detailed tests
-
-}
 
 pub const Delta = @import("services.zig").Delta;
 pub const Eta = safrole_types.Eta;

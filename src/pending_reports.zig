@@ -84,35 +84,6 @@ pub const Rho = struct {
         }
         return false;
     }
-
-    const encoder = @import("codec/encoder.zig");
-    const serialize = @import("codec.zig").serialize;
-
-    pub fn encode(self: *const Rho, writer: anytype) !void {
-        // The number of cores (C) is not encoded as it is a constant
-
-        // Encode each report entry
-        for (self.reports) |maybe_entry| {
-            if (maybe_entry) |entry| {
-                // Entry exists
-                try writer.writeByte(1);
-
-                // Encode hash
-                try writer.writeAll(&entry.hash);
-
-                // Encode work report
-                try serialize(WorkReport, .{}, writer, entry.work_report);
-
-                // Encode timeslot
-                var buf: [4]u8 = undefined;
-                std.mem.writeInt(u32, &buf, entry.timeslot, .little);
-                try writer.writeAll(&buf);
-            } else {
-                // No entry
-                try writer.writeByte(0);
-            }
-        }
-    }
 };
 
 //  _____         _
