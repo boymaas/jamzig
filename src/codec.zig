@@ -192,7 +192,11 @@ fn deserializeArray(comptime T: type, comptime len: usize, scanner: *Scanner) ![
 //  ___) |  __/ |  | | (_| | | |/ /  __/
 // |____/ \___|_|  |_|\__,_|_|_/___\___|
 
-pub fn serialize(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, value: T) ![]u8 {
+pub fn serialize(comptime T: type, comptime params: anytype, writer: anytype, value: T) !void {
+    try recursiveSerializeLeaky(T, params, writer, value);
+}
+
+pub fn serializeAlloc(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, value: T) ![]u8 {
     trace(@src(), "serialize: start", .{});
     defer trace(@src(), "serialize: end", .{});
 

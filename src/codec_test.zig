@@ -75,7 +75,7 @@ fn testDecodeAndCompare(comptime test_case: TestCase) !void {
     try std.testing.expectEqualDeep(expected, decoded.value);
 
     // Serialize the decoded value
-    const serialized = try codec.serialize(DomainType, TINY_PARAMS, allocator, decoded.value);
+    const serialized = try codec.serializeAlloc(DomainType, TINY_PARAMS, allocator, decoded.value);
     defer allocator.free(serialized);
 
     // Compare the serialized result with the original binary data
