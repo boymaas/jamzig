@@ -1,9 +1,13 @@
+// TODO: rename this file to recent_history.zig
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
 const merkle = @import("merkle_binary.zig");
 const mmr = @import("merkle_mountain_ranges.zig");
+
+const encoder = @import("codec/encoder.zig");
 
 pub const Hash = [32]u8;
 
@@ -47,6 +51,30 @@ pub const RecentHistory = struct {
             .blocks = try std.ArrayList(BlockInfo).initCapacity(allocator, max_blocks),
             .max_blocks = max_blocks,
         };
+    }
+
+    pub fn encode(self: *const RecentHistory, writer: anytype) !void {
+        // Encode the number of blocks
+        try writer.writeAll(encoder.encodeInteger(self.blocks.items.len).as_slice());
+
+        // Encode each block
+        for (self.blocks.items) |block| {
+            // Encode header hash
+            try writer.writeAll(&block.header_hash);
+
+            // Encode beefy MMR
+            const mmr_encoder = @import("merkle_mountain_ranges.zig").encode;
+            try mmr_encoder(block.beefy_mmr, writer);
+
+            // Encode state root
+            try writer.writeAll(&block.state_root);
+
+            // Encode work reports
+            try writer.writeAll(encoder.encodeInteger(block.work_reports.len).as_slice());
+            for (block.work_reports) |report_hash| {
+                try writer.writeAll(&report_hash);
+            }
+        }
     }
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
@@ -206,4 +234,46 @@ test RecentHistory {
     // Test getting non-existent block
     const non_existent_block = recent_history.getBlockInfo(3);
     try testing.expect(non_existent_block == null);
+}
+
+test "RecentHistory encode" {
+    const allocator = testing.allocator;
+    var recent_history = try RecentHistory.init(allocator, 2);
+    defer recent_history.deinit();
+
+    // Create a test block
+    const block = BlockInfo{
+        .header_hash = [_]u8{1} ** 32,
+        .state_root = [_]u8{2} ** 32,
+        .beefy_mmr = try allocator.dupe(?Hash, &.{[_]u8{3} ** 32}),
+        .work_reports = try allocator.dupe(Hash, &.{[_]u8{4} ** 32}),
+    };
+
+    try recent_history.addBlockInfo(block);
+
+    var buf: [1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try recent_history.encode(fbs.writer());
+
+    const encoded = fbs.getWritten();
+
+    // Check the number of blocks (should be 1)
+    try testing.expectEqual(@as(u8, 1), encoded[0]);
+
+    // Check the header hash
+    try testing.expectEqualSlices(u8, &block.header_hash, encoded[1..33]);
+
+    // Check the beefy MMR
+    try testing.expect(encoded.len > 33);
+
+    // Check the state root
+    // 32 bytes for state root, 1 byte for work reports length, 32 bytes for work report hash
+    const state_root_start = encoded.len - 32 - 1 - 32;
+    try testing.expectEqualSlices(u8, &block.state_root, encoded[state_root_start .. state_root_start + 32]);
+
+    // Check the number of work reports (should be 1)
+    try testing.expectEqual(@as(u8, 1), encoded[encoded.len - 1 - 32]);
+
+    // Check the work report hash
+    try testing.expectEqualSlices(u8, &block.work_reports[0], encoded[encoded.len - 32 ..]);
 }
