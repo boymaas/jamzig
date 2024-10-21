@@ -42,6 +42,27 @@ pub const Phi = struct {
         }
     }
 
+    const encoder = @import("codec/encoder.zig");
+
+    pub fn encode(self: *const Phi, writer: anytype) !void {
+        // The number of cores (C) is a constant no need to encode it
+        // Encode each queue
+        for (self.queue) |core_queue| {
+            // The length of the queue is not encoded as it is a Constants
+            // Encode each hash in the queue
+            for (core_queue.items) |hash| {
+                try writer.writeAll(&hash);
+            }
+            // Write 0 hashes to fill the queue until 80
+            const zero_hashes_to_write = Q - core_queue.items.len;
+            const zero_hash = [_]u8{0} ** H;
+            var i: usize = 0;
+            while (i < zero_hashes_to_write) : (i += 1) {
+                try writer.writeAll(&zero_hash);
+            }
+        }
+    }
+
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
         try jw.beginObject();
         try jw.objectField("queue");
@@ -184,4 +205,45 @@ test "AuthorizationQueue - FIFO order" {
     try testing.expectEqualSlices(u8, &test_hash1, &auth_queue.popAuthorization(0).?);
     try testing.expectEqualSlices(u8, &test_hash2, &auth_queue.popAuthorization(0).?);
     try testing.expectEqualSlices(u8, &test_hash3, &auth_queue.popAuthorization(0).?);
+}
+
+test "AuthorizationQueue - encode function" {
+    var auth_queue = try Phi.init(testing.allocator);
+    defer auth_queue.deinit();
+
+    const test_hash1 = [_]u8{1} ** H;
+    const test_hash2 = [_]u8{2} ** H;
+
+    try auth_queue.addAuthorization(0, test_hash1);
+    try auth_queue.addAuthorization(1, test_hash2);
+
+    var buf: [C * Q * H]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try auth_queue.encode(fbs.writer());
+
+    // Check the first core's hash
+    try testing.expectEqualSlices(u8, &test_hash1, buf[0..H]);
+
+    // Check the second core's hash
+    try testing.expectEqualSlices(u8, &test_hash2, buf[Q * H .. Q * H + H]);
+
+    // Check that the rest is zeroed
+    for (buf[H .. Q * H]) |byte| {
+        try testing.expectEqual(@as(u8, 0), byte);
+    }
+    for (buf[Q * H + H ..]) |byte| {
+        try testing.expectEqual(@as(u8, 0), byte);
+    }
+
+    // Check that all other entries in the map are zero
+    for (2..C) |core| {
+        const start = core * Q * H;
+        const end = start + Q * H;
+        for (buf[start..end]) |byte| {
+            try testing.expectEqual(@as(u8, 0), byte);
+        }
+    }
+
+    // Check the total size matches
+    try testing.expectEqual(@as(usize, C * Q * H), buf.len);
 }

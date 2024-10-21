@@ -27,6 +27,7 @@ comptime {
     _ = @import("recent_blocks.zig");
 
     _ = @import("authorization.zig");
+    _ = @import("authorization_queue.zig");
 
     _ = @import("disputes.zig");
     _ = @import("disputes_test.zig");
