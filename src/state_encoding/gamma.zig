@@ -6,6 +6,13 @@ pub fn encode(gamma: *const state.Gamma, writer: anytype) !void {
     try serialize(state.Gamma, .{}, writer, gamma.*);
 }
 
+//  _____         _   _
+// |_   _|__  ___| |_(_)_ __   __ _
+//   | |/ _ \/ __| __| | '_ \ / _` |
+//   | |  __/\__ \ |_| | | | | (_| |
+//   |_|\___||___/\__|_|_| |_|\__, |
+//                            |___/
+
 test "encode" {
     const testing = std.testing;
     const allocator = std.testing.allocator;

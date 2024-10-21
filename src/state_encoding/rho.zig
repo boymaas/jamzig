@@ -35,6 +35,13 @@ pub fn encode(self: *const Rho, writer: anytype) !void {
     }
 }
 
+//  _____         _   _
+// |_   _|__  ___| |_(_)_ __   __ _
+//   | |/ _ \/ __| __| | '_ \ / _` |
+//   | |  __/\__ \ |_| | | | | (_| |
+//   |_|\___||___/\__|_|_| |_|\__, |
+//                            |___/
+
 const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
 
 const TEST_HASH = [_]u8{ 'T', 'E', 'S', 'T' } ++ [_]u8{0} ** 28;

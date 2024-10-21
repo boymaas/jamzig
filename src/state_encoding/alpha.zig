@@ -15,6 +15,13 @@ pub fn encode(self: *const Alpha, writer: anytype) !void {
     }
 }
 
+//  _____         _   _
+// |_   _|__  ___| |_(_)_ __   __ _
+//   | |/ _ \/ __| __| | '_ \ / _` |
+//   | |  __/\__ \ |_| | | | | (_| |
+//   |_|\___||___/\__|_|_| |_|\__, |
+//                            |___/
+
 const testing = std.testing;
 
 test "Alpha encode" {

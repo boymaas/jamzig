@@ -28,6 +28,13 @@ pub fn encode(self: *const RecentHistory, writer: anytype) !void {
     }
 }
 
+//  _____         _   _
+// |_   _|__  ___| |_(_)_ __   __ _
+//   | |/ _ \/ __| __| | '_ \ / _` |
+//   | |  __/\__ \ |_| | | | | (_| |
+//   |_|\___||___/\__|_|_| |_|\__, |
+//                            |___/
+
 const testing = std.testing;
 const BlockInfo = recent_blocks.BlockInfo;
 const Hash = recent_blocks.Hash;
