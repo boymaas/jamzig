@@ -10,6 +10,8 @@ const phi = @import("state_encoding/phi.zig");
 const pi = @import("state_encoding/pi.zig");
 const psi = @import("state_encoding/psi.zig");
 const rho = @import("state_encoding/rho.zig");
+const tau = @import("state_encoding/tau.zig");
+const theta = @import("state_encoding/theta.zig");
 const xi = @import("state_encoding/xi.zig");
 
 const iota = @import("state_encoding/validator_datas.zig");
@@ -24,6 +26,8 @@ pub const encodeGamma = gamma.encode;
 pub const encodePhi = phi.encode;
 pub const encodePi = phi.encode;
 pub const encodePsi = psi.encode;
+pub const encodeTau = rho.encode;
+pub const encodeTheta = theta.encode;
 pub const encodeRho = rho.encode;
 pub const encodeIota = iota.encode;
 pub const encodeKappa = kappa.encode;
@@ -41,6 +45,7 @@ comptime {
     _ = @import("state_encoding/psi.zig");
     _ = @import("state_encoding/rho.zig");
     _ = @import("state_encoding/tau.zig");
+    _ = @import("state_encoding/theta.zig");
     _ = @import("state_encoding/validator_datas.zig");
     _ = @import("state_encoding/xi.zig");
 }

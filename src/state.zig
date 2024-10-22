@@ -85,8 +85,9 @@ pub const JamState = struct {
             .phi = try Phi.init(allocator),
             .chi = Chi.init(allocator),
             .psi = Psi.init(allocator),
-            .pi = Pi.init(allocator),
-            .xi = Xi.init(allocator),
+            // TODO: make validator count a parameter
+            .pi = try Pi.init(allocator, 6),
+            .xi = try Xi.init(allocator),
             .theta = Theta.init(allocator),
         };
     }
@@ -110,8 +111,37 @@ pub const JamState = struct {
 
 pub const Alpha = @import("authorization.zig").Alpha;
 pub const Beta = @import("recent_blocks.zig").RecentHistory;
-pub const Xi = std.AutoHashMap(types.Hash, types.Hash);
-pub const Theta = std.ArrayList(types.WorkReport);
+pub const Xi = struct {
+    entries: std.AutoHashMap(types.Hash, types.Hash),
+
+    pub fn init(allocator: std.mem.Allocator) !Xi {
+        return Xi{
+            .entries = std.AutoHashMap(types.Hash, types.Hash).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *Xi) void {
+        self.entries.deinit();
+    }
+
+    pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
+        try jw.beginObject();
+        try jw.objectField("entries");
+        try jw.beginObject();
+
+        var iterator = self.entries.iterator();
+        while (iterator.next()) |_| {
+            // var buffer: [128]u8 = undefined;
+            // const hexStr = try std.fmt.bufPrint(&buffer, "0x{s}", .{std.fmt.fmtSliceHexLower(&e.key_ptr.*)});
+            // try jw.objectField(hexStr);
+            // try jw.write(std.fmt.fmtSliceHexLower(&e.value_ptr.*));
+        }
+        try jw.endObject();
+        try jw.endObject();
+    }
+};
+
+pub const Theta = @import("available_reports.zig").Theta;
 
 // TODO: move this to a seperate file
 pub const Gamma = struct {

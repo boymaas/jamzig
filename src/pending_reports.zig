@@ -140,43 +140,6 @@ test "Rho - Clear Report" {
     try testing.expectEqual(@as(?ReportEntry, null), rho.getReport(0));
 }
 
-test "Rho - Encode" {
-    var rho = Rho.init();
-    const work_report1 = createEmptyWorkReport(TEST_HASH);
-    const test_hash2 = [_]u8{ 'T', 'E', 'S', 'T', '2' } ++ [_]u8{0} ** 27;
-    const work_report2 = createEmptyWorkReport(test_hash2);
-    const timeslot = 100;
-
-    // Set reports
-    rho.setReport(0, TEST_HASH, work_report1, timeslot);
-    rho.setReport(1, test_hash2, work_report2, timeslot);
-
-    // Mock writer
-    var buffer = std.ArrayList(u8).init(std.testing.allocator);
-    defer buffer.deinit();
-    var writer = buffer.writer();
-
-    // Encode the Rho state
-    try rho.encode(&writer);
-
-    // TODO: test the encode output in more detail
-    // // Verify the encoded output
-    // const expected_output = &[_]u8{
-    //     1, // Entry exists
-    //     'T', 'E', 'S', 'T', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Hash
-    //     // WorkReport serialization would go here
-    //     100, 0, 0, 0, // Timeslot in little-endian
-    //     1, // Entry exists
-    //     'T', 'E', 'S', 'T', '2', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Hash
-    //     // WorkReport serialization would go here
-    //     100, 0, 0, 0, // Timeslot in little-endian
-    //     0, // No entry
-    //     // Remaining entries would be 0
-    // };
-    //
-    // try testing.expectEqualSlices(u8, expected_output, buffer.items);
-}
-
 test "Rho - Clear From Core" {
     var rho = Rho.init();
     const work_report1 = createEmptyWorkReport(TEST_HASH);

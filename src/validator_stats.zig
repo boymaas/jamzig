@@ -231,12 +231,12 @@ test "Pi ensure_validator" {
     defer pi.deinit();
 
     const validator_id: ValidatorIndex = 1;
-    const stats = try pi.ensureValidator(validator_id);
+    const stats = try pi.getValidatorStats(validator_id);
 
     try testing.expectEqual(@as(u32, 0), stats.blocks_produced);
 
     // Ensure getting the same validator doesn't create a new entry
-    const same_stats = try pi.ensureValidator(validator_id);
+    const same_stats = try pi.getValidatorStats(validator_id);
     try testing.expectEqual(stats, same_stats);
 
     // Update stats and check if it's reflected
@@ -244,7 +244,7 @@ test "Pi ensure_validator" {
     try testing.expectEqual(@as(u32, 5), same_stats.blocks_produced);
 
     // Re-ensure the validator and check if it shows the updated blocks
-    const re_ensured_stats = try pi.ensureValidator(validator_id);
+    const re_ensured_stats = try pi.getValidatorStats(validator_id);
     try testing.expectEqual(@as(u32, 5), re_ensured_stats.blocks_produced);
     try testing.expectEqual(stats, re_ensured_stats);
 }
@@ -258,8 +258,8 @@ test "Pi transition_to_next_epoch" {
     // Add some data to current epoch
     const validator1: ValidatorIndex = 1;
     const validator2: ValidatorIndex = 2;
-    var stats1 = try pi.ensureValidator(validator1);
-    var stats2 = try pi.ensureValidator(validator2);
+    var stats1 = try pi.getValidatorStats(validator1);
+    var stats2 = try pi.getValidatorStats(validator2);
     stats1.updateBlocksProduced(5);
     stats2.updateTicketsIntroduced(3);
 
