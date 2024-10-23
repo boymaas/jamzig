@@ -110,6 +110,7 @@ test "encode" {
     ;
 
     try testing.expectEqualSlices(u8, &expected, written[0..expected.len]);
+
     // Check that the rest of the written memory is all zeros
     for (written[expected.len..]) |byte| {
         try testing.expectEqual(@as(u8, 0), byte);

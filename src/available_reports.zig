@@ -30,7 +30,7 @@ pub fn Theta(comptime epoch_size: usize) type {
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
             try jw.beginArray();
-            for (self.entries.items) |slot_entries| {
+            for (self.entries) |slot_entries| {
                 for (slot_entries.items) |entry| {
                     try jw.beginObject();
                     try jw.objectField("work_report");

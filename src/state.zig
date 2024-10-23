@@ -63,11 +63,11 @@ pub const JamState = struct {
     pi: Pi,
 
     /// ξ: Epochs worth history of accumulated work reports
-    xi: Xi,
+    xi: Xi(12),
 
     /// θ: List of available and/or audited but not yet accumulated work
     /// reports
-    theta: Theta,
+    theta: Theta(12),
 
     /// Initialize a new JamState
     pub fn init(allocator: std.mem.Allocator) !JamState {
@@ -87,8 +87,8 @@ pub const JamState = struct {
             .psi = Psi.init(allocator),
             // TODO: make validator count a parameter
             .pi = try Pi.init(allocator, 6),
-            .xi = try Xi.init(allocator),
-            .theta = Theta.init(allocator),
+            .xi = Xi(12).init(allocator),
+            .theta = Theta(12).init(allocator),
         };
     }
 
@@ -111,90 +111,13 @@ pub const JamState = struct {
 
 pub const Alpha = @import("authorization.zig").Alpha;
 pub const Beta = @import("recent_blocks.zig").RecentHistory;
-pub const Xi = struct {
-    entries: std.AutoHashMap(types.Hash, types.Hash),
 
-    pub fn init(allocator: std.mem.Allocator) !Xi {
-        return Xi{
-            .entries = std.AutoHashMap(types.Hash, types.Hash).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Xi) void {
-        self.entries.deinit();
-    }
-
-    pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-        try jw.beginObject();
-        try jw.objectField("entries");
-        try jw.beginObject();
-
-        var iterator = self.entries.iterator();
-        while (iterator.next()) |_| {
-            // var buffer: [128]u8 = undefined;
-            // const hexStr = try std.fmt.bufPrint(&buffer, "0x{s}", .{std.fmt.fmtSliceHexLower(&e.key_ptr.*)});
-            // try jw.objectField(hexStr);
-            // try jw.write(std.fmt.fmtSliceHexLower(&e.value_ptr.*));
-        }
-        try jw.endObject();
-        try jw.endObject();
-    }
-};
-
+// History and Queuing or work reports
+pub const Xi = @import("accumulated_reports.zig").Xi;
 pub const Theta = @import("available_reports.zig").Theta;
 
 // TODO: move this to a seperate file
-pub const Gamma = struct {
-    k: safrole_types.GammaK,
-    z: safrole_types.GammaZ,
-    s: safrole_types.GammaS,
-    a: safrole_types.GammaA,
-
-    pub fn init(allocator: std.mem.Allocator) !Gamma {
-        return Gamma{
-            .k = try allocator.alloc(safrole_types.ValidatorData, 0),
-            .z = std.mem.zeroes(safrole_types.BandersnatchVrfRoot),
-            .s = .{ .tickets = try allocator.alloc(safrole_types.TicketBody, 0) },
-            .a = try allocator.alloc(safrole_types.TicketBody, 0),
-        };
-    }
-
-    pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-        try jw.beginObject();
-
-        try jw.objectField("k");
-        try jw.write(self.k);
-
-        try jw.objectField("z");
-        try jw.write(self.z);
-
-        try jw.objectField("s");
-        try jw.beginObject();
-        switch (self.s) {
-            .tickets => |tickets| {
-                try jw.objectField("tickets");
-                try jw.write(tickets);
-            },
-            .keys => |keys| {
-                try jw.objectField("keys");
-                try jw.write(keys);
-            },
-        }
-        try jw.endObject();
-
-        try jw.objectField("a");
-        try jw.write(self.a);
-
-        try jw.endObject();
-    }
-
-    pub fn deinit(self: *Gamma, allocator: std.mem.Allocator) void {
-        allocator.free(self.k);
-        allocator.free(self.s.tickets);
-        allocator.free(self.a);
-    }
-};
-
+pub const Gamma = @import("safrole_state.zig").Gamma;
 pub const Delta = @import("services.zig").Delta;
 pub const Eta = safrole_types.Eta;
 pub const Iota = safrole_types.Iota;

@@ -40,6 +40,7 @@ comptime {
 
     _ = @import("pending_reports.zig");
     _ = @import("available_reports.zig");
+    _ = @import("accumulated_reports.zig");
 
     _ = @import("validator_stats.zig");
 }
