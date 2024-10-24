@@ -402,21 +402,21 @@ test "ServiceAccount historicalLookup" {
     const key = PreimageLookupKey{ .hash = hash, .length = @intCast(preimage.len) };
 
     // Test case 1: Empty status
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ null, null, null }, .length = @intCast(preimage.len) });
+    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ null, null, null } });
     try testing.expectEqual(null, account.historicalLookup(5, hash));
 
     // Test case 2: Status with 1 entry
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, null, null }, .length = @intCast(preimage.len) });
+    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, null, null } });
     try testing.expectEqual(null, account.historicalLookup(5, hash));
     try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
 
     // Test case 3: Status with 2 entries
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, null }, .length = @intCast(preimage.len) });
+    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, null } });
     try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
     try testing.expectEqual(null, account.historicalLookup(25, hash));
 
     // Test case 4: Status with 3 entries
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, 30 }, .length = @intCast(preimage.len) });
+    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, 30 } });
     try testing.expectEqual(null, account.historicalLookup(5, hash));
     try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
     try testing.expectEqual(null, account.historicalLookup(25, hash));
@@ -430,7 +430,7 @@ test "ServiceAccount historicalLookup" {
     const hash_without_preimage = [_]u8{3} ** 32;
     try account.preimage_lookups.put(
         PreimageLookupKey{ .hash = hash_without_preimage, .length = 10 },
-        PreimageLookup{ .status = .{ 10, 0, 0 }, .length = 10 },
+        PreimageLookup{ .status = .{ 10, 0, 0 } },
     );
     try testing.expect(account.historicalLookup(15, hash_without_preimage) == null);
 }

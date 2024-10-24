@@ -9,11 +9,11 @@ const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
 /// where H represents 32-byte hashes
 pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *const [epoch_size]std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
     for (xi) |*epoch| {
-        try encodeEpochEntry(allocator, epoch, writer);
+        try encodeTimeslotEntry(allocator, epoch, writer);
     }
 }
 
-pub fn encodeEpochEntry(allocator: std.mem.Allocator, xi: *const std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
+pub fn encodeTimeslotEntry(allocator: std.mem.Allocator, xi: *const std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
     // First encode the number of mappings
     try writer.writeAll(encoder.encodeInteger(xi.count()).as_slice());
 
@@ -43,8 +43,8 @@ test "Xi encode" {
     const allocator = testing.allocator;
 
     // Create test xi mapping
-    var xi = std.AutoHashMap([32]u8, [32]u8).init(allocator);
-    defer xi.deinit();
+    var xi: std.AutoHashMapUnmanaged([32]u8, [32]u8) = .{};
+    defer xi.deinit(allocator);
 
     // Create some test hashes
     const key1 = [_]u8{3} ** 32;
@@ -52,14 +52,14 @@ test "Xi encode" {
     const key2 = [_]u8{1} ** 32;
     const val2 = [_]u8{4} ** 32;
 
-    try xi.put(key1, val1);
-    try xi.put(key2, val2);
+    try xi.put(allocator, key1, val1);
+    try xi.put(allocator, key2, val2);
 
     // Create buffer for output
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
-    try encode(&xi, buffer.writer());
+    try encodeTimeslotEntry(allocator, &xi, buffer.writer());
 
     // Validate encoding
     // First byte should be the length (2)
