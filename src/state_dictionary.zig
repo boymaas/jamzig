@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const types = @import("types.zig");
 const jamstate = @import("state.zig");
 const state_encoder = @import("state_encoding.zig");
@@ -56,11 +57,55 @@ fn constructServiceIndexHashKey(s: u32, h: [32]u8) [32]u8 {
     return result;
 }
 
-/// Maps a state component to its encoding using the appropriate state key
+/// Encodes data using the provided writer function and returns an owned slice.
+fn encodeAndOwnSlice(
+    allocator: std.mem.Allocator,
+    encodeFn: anytype,
+    encodeFnArgs: anytype,
+) ![]const u8 {
+    var buffer = std.ArrayList(u8).init(allocator);
+    const args = encodeFnArgs ++ .{buffer.writer()};
+    try @call(.auto, encodeFn, args);
+    return buffer.toOwnedSlice();
+}
+
+/// Function that takes a slice and converts it to
+/// a fixed array of size
+fn sliceToFixedArray(comptime size: usize, slice: []const u8) [size]u8 {
+    std.debug.assert(slice.len == size);
+    var result: [size]u8 = undefined;
+    std.mem.copyForwards(u8, result[0..], slice[0..size]);
+    return result;
+}
+
+/// Maps a state component to its encoding using the appropriate state key.
+///
+/// This function constructs a dictionary (hash map) where each key is a 32-byte array
+/// representing a unique identifier for a state component, and each value is a byte slice
+/// representing the encoded state component. The function uses different key construction
+/// strategies depending on the type of state component being encoded.
+///
+/// @param allocator - The memory allocator to use for dynamic memory allocations
+/// @param state - A pointer to the JamState structure containing the state components
+/// @return A hash map where keys are 32-byte arrays and values are byte slices representing
+///         the encoded state components. The function may return an error if memory allocation
+///         fails or if encoding any state component fails.
+const MerklizationDictionary = struct {
+    entries: std.AutoHashMap([32]u8, []const u8),
+
+    pub fn deinit(self: *MerklizationDictionary) void {
+        var it = self.entries.valueIterator();
+        while (it.next()) |entry| {
+            self.entries.allocator.free(entry.*);
+        }
+        self.entries.deinit();
+    }
+};
+
 pub fn buildStateMerklizationDictionary(
     allocator: std.mem.Allocator,
     state: *const jamstate.JamState,
-) !std.AutoHashMap([32]u8, []const u8) {
+) !MerklizationDictionary {
     var map = std.AutoHashMap([32]u8, []const u8).init(allocator);
     errdefer map.deinit();
 
@@ -68,93 +113,85 @@ pub fn buildStateMerklizationDictionary(
     {
         // Alpha (1)
         const alpha_key = constructSimpleByteKey(1);
-        var alpha_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeAlpha(&state.alpha, alpha_value.writer());
-        try map.put(alpha_key, try alpha_value.toOwnedSlice());
+        const alpha_value = try encodeAndOwnSlice(allocator, //
+            state_encoder.encodeAlpha, .{&state.alpha});
+        try map.put(alpha_key, alpha_value);
 
         // Phi (2)
         const phi_key = constructSimpleByteKey(2);
-        var phi_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodePhi(&state.phi, phi_value.writer());
-        try map.put(phi_key, try phi_value.toOwnedSlice());
+        const phi_value = try encodeAndOwnSlice(allocator, state_encoder.encodePhi, .{&state.phi});
+        try map.put(phi_key, phi_value);
 
         // Beta (3)
         const beta_key = constructSimpleByteKey(3);
-        var beta_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeBeta(&state.beta, beta_value.writer());
-        try map.put(beta_key, try beta_value.toOwnedSlice());
+        const beta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeBeta, .{&state.beta});
+        try map.put(beta_key, beta_value);
 
         // Gamma (4)
         const gamma_key = constructSimpleByteKey(4);
-        var gamma_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeGamma(&state.gamma, gamma_value.writer());
-        try map.put(gamma_key, try gamma_value.toOwnedSlice());
+        const gamma_value = try encodeAndOwnSlice(allocator, //
+            state_encoder.encodeGamma, .{&state.gamma});
+        try map.put(gamma_key, gamma_value);
 
         // Psi (5)
         const psi_key = constructSimpleByteKey(5);
-        var psi_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodePsi(&state.psi, psi_value.writer());
-        try map.put(psi_key, try psi_value.toOwnedSlice());
+        const psi_value = try encodeAndOwnSlice(allocator, state_encoder.encodePsi, .{&state.psi});
+        try map.put(psi_key, psi_value);
 
         // Eta (6)
         const eta_key = constructSimpleByteKey(6);
-        var eta_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeEta(&state.eta, eta_value.writer());
-        try map.put(eta_key, try eta_value.toOwnedSlice());
+        const eta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeEta, .{&state.eta});
+        try map.put(eta_key, eta_value);
 
         // Iota (7)
         const iota_key = constructSimpleByteKey(7);
-        var iota_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeIota(state.iota, iota_value.writer());
-        try map.put(iota_key, try iota_value.toOwnedSlice());
+        const iota_value = try encodeAndOwnSlice(allocator, state_encoder.encodeIota, .{state.iota});
+        try map.put(iota_key, iota_value);
 
         // Kappa (8)
         const kappa_key = constructSimpleByteKey(8);
-        var kappa_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeKappa(state.kappa, kappa_value.writer());
-        try map.put(kappa_key, try kappa_value.toOwnedSlice());
+        const kappa_value = try encodeAndOwnSlice(allocator, //
+            state_encoder.encodeKappa, .{state.kappa});
+        try map.put(kappa_key, kappa_value);
 
         // Lambda (9)
         const lambda_key = constructSimpleByteKey(9);
-        var lambda_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeLambda(state.lambda, lambda_value.writer());
-        try map.put(lambda_key, try lambda_value.toOwnedSlice());
+        const lambda_value = try encodeAndOwnSlice(allocator, //
+            state_encoder.encodeLambda, .{state.lambda});
+        try map.put(lambda_key, lambda_value);
 
         // Rho (10)
         const rho_key = constructSimpleByteKey(10);
-        var rho_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeRho(&state.rho, rho_value.writer());
-        try map.put(rho_key, try rho_value.toOwnedSlice());
+        const rho_value = try encodeAndOwnSlice(allocator, state_encoder.encodeRho, .{&state.rho});
+        try map.put(rho_key, rho_value);
 
         // Tau (11)
         const tau_key = constructSimpleByteKey(11);
-        var tau_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeTau(state.tau, tau_value.writer());
-        try map.put(tau_key, try tau_value.toOwnedSlice());
+        const tau_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTau, .{state.tau});
+        try map.put(tau_key, tau_value);
 
         // Chi (12)
         const chi_key = constructSimpleByteKey(12);
-        var chi_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeChi(&state.chi, chi_value.writer());
-        try map.put(chi_key, try chi_value.toOwnedSlice());
+        const chi_value = try encodeAndOwnSlice(allocator, state_encoder.encodeChi, .{&state.chi});
+        try map.put(chi_key, chi_value);
 
         // Pi (13)
         const pi_key = constructSimpleByteKey(13);
-        var pi_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodePi(&state.pi, pi_value.writer());
-        try map.put(pi_key, try pi_value.toOwnedSlice());
+        const pi_value = try encodeAndOwnSlice(allocator, state_encoder.encodePi, .{&state.pi});
+        try map.put(pi_key, pi_value);
 
         // Theta (14)
         const theta_key = constructSimpleByteKey(14);
-        var theta_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeTheta(&state.theta, theta_value.writer());
-        try map.put(theta_key, try theta_value.toOwnedSlice());
+        const theta_value = try encodeAndOwnSlice(allocator, //
+            state_encoder.encodeTheta, .{&state.theta});
+        try map.put(theta_key, theta_value);
 
         // Xi (15)
         const xi_key = constructSimpleByteKey(15);
-        var xi_value = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeXi(&state.xi.entries, xi_value.writer());
-        try map.put(xi_key, try xi_value.toOwnedSlice());
+        // FIXME: now hard coded epoch size
+        const xi_value = try encodeAndOwnSlice(allocator, //
+            state_encoder.encodeXi, .{ 12, allocator, &state.xi.entries });
+        try map.put(xi_key, xi_value);
     }
 
     // Handle delta component (service accounts) specially
@@ -167,7 +204,8 @@ pub fn buildStateMerklizationDictionary(
             // Base account data
             const base_key = constructByteServiceIndexKey(255, service_idx);
             var base_value = std.ArrayList(u8).init(allocator);
-            try state_encoder.encodeServiceAccountBase(account, base_value.writer());
+            try state_encoder.delta.encodeServiceAccountBase(account, base_value.writer());
+
             try map.put(base_key, try base_value.toOwnedSlice());
 
             // Storage entries
@@ -189,19 +227,20 @@ pub fn buildStateMerklizationDictionary(
             while (lookup_iter.next()) |lookup_entry| {
                 const delta_encoder = state_encoder.delta;
 
-                var modified_hash = std.ArrayList(u8).init(allocator);
-                delta_encoder.encodePreimageKey(lookup_entry.key_ptr.*, modified_hash.writer());
+                // FIXME: use initCapacity
+                var preimage_key = try std.ArrayList(u8).initCapacity(allocator, 32);
+                try delta_encoder.encodePreimageKey(lookup_entry.key_ptr.*, preimage_key.writer());
 
-                var timestamp_value = std.ArrayList(u8).init(allocator);
-                try delta_encoder.encodePreimageLookup(lookup_entry.value_ptr.*, timestamp_value.writer());
+                var preimage_lookup = try std.ArrayList(u8).initCapacity(allocator, 24);
+                try delta_encoder.encodePreimageLookup(lookup_entry.value_ptr.*, preimage_lookup.writer());
 
-                const lookup_key = constructServiceIndexHashKey(service_idx, modified_hash.toOwnedSlice());
-                try map.put(lookup_key, try timestamp_value.toOwnedSlice());
+                const lookup_key = constructServiceIndexHashKey(service_idx, sliceToFixedArray(32, try preimage_key.toOwnedSlice()));
+                try map.put(lookup_key, try preimage_lookup.toOwnedSlice());
             }
         }
     }
 
-    return map;
+    return .{ .entries = map };
 }
 
 //  _   _       _ _  _____         _
@@ -214,11 +253,11 @@ const testing = std.testing;
 
 test "buildStateMerklizationDictionary" {
     const allocator = std.testing.allocator;
-    const state = try jamstate.JamState.init(allocator);
+    var state = try jamstate.JamState.init(allocator);
+    defer state.deinit(allocator);
 
-    const map = try buildStateMerklizationDictionary(allocator, &state);
-
-    _ = map;
+    var map = try buildStateMerklizationDictionary(allocator, &state);
+    defer map.deinit();
 }
 
 test "constructSimpleByteKey" {

@@ -5,9 +5,9 @@ const encoder = @import("../codec/encoder.zig");
 
 pub fn encode(chi: *const state.Chi, writer: anytype) !void {
     // Encode the simple fields
-    try writer.writeInt(u32, chi.manager.?, .little);
-    try writer.writeInt(u32, chi.assign.?, .little);
-    try writer.writeInt(u32, chi.designate.?, .little);
+    try writer.writeInt(u32, chi.manager orelse 0, .little);
+    try writer.writeInt(u32, chi.assign orelse 0, .little);
+    try writer.writeInt(u32, chi.designate orelse 0, .little);
 
     // Encode X_g with ordered keys
     // TODO: this could be a method in encoder, map encoder which orders

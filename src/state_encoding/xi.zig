@@ -7,12 +7,18 @@ const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
 
 /// Xi (ξ) is defined as a dictionary mapping hashes to hashes: D⟨H → H⟩E
 /// where H represents 32-byte hashes
-pub fn encode(xi: *const std.AutoHashMap([32]u8, [32]u8), writer: anytype) !void {
+pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *const [epoch_size]std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
+    for (xi) |*epoch| {
+        try encodeEpochEntry(allocator, epoch, writer);
+    }
+}
+
+pub fn encodeEpochEntry(allocator: std.mem.Allocator, xi: *const std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
     // First encode the number of mappings
     try writer.writeAll(encoder.encodeInteger(xi.count()).as_slice());
 
     // Sort the keys to ensure deterministic encoding
-    var keys = std.ArrayList([32]u8).init(xi.allocator);
+    var keys = try std.ArrayList([32]u8).initCapacity(allocator, xi.count());
     defer keys.deinit();
 
     var iter = xi.keyIterator();

@@ -1,23 +1,23 @@
 const std = @import("std");
 const state = @import("state.zig");
 
-const alpha = @import("state_encoding/alpha.zig");
-const beta = @import("state_encoding/beta.zig");
-const chi = @import("state_encoding/chi.zig");
-const delta = @import("state_encoding/delta.zig");
-const eta = @import("state_encoding/eta.zig");
-const gamma = @import("state_encoding/gamma.zig");
-const phi = @import("state_encoding/phi.zig");
-const pi = @import("state_encoding/pi.zig");
-const psi = @import("state_encoding/psi.zig");
-const rho = @import("state_encoding/rho.zig");
-const tau = @import("state_encoding/tau.zig");
-const theta = @import("state_encoding/theta.zig");
-const xi = @import("state_encoding/xi.zig");
+pub const alpha = @import("state_encoding/alpha.zig");
+pub const beta = @import("state_encoding/beta.zig");
+pub const chi = @import("state_encoding/chi.zig");
+pub const delta = @import("state_encoding/delta.zig");
+pub const eta = @import("state_encoding/eta.zig");
+pub const gamma = @import("state_encoding/gamma.zig");
+pub const phi = @import("state_encoding/phi.zig");
+pub const pi = @import("state_encoding/pi.zig");
+pub const psi = @import("state_encoding/psi.zig");
+pub const rho = @import("state_encoding/rho.zig");
+pub const tau = @import("state_encoding/tau.zig");
+pub const theta = @import("state_encoding/theta.zig");
+pub const xi = @import("state_encoding/xi.zig");
 
-const iota = @import("state_encoding/validator_datas.zig");
-const kappa = @import("state_encoding/validator_datas.zig");
-const lambda = @import("state_encoding/validator_datas.zig");
+pub const iota = @import("state_encoding/validator_datas.zig");
+pub const kappa = @import("state_encoding/validator_datas.zig");
+pub const lambda = @import("state_encoding/validator_datas.zig");
 
 pub const encodeAlpha = alpha.encode;
 pub const encodeBeta = beta.encode;
