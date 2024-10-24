@@ -14,7 +14,7 @@ const std = @import("std");
 const ValidatorIndex = @import("types.zig").ValidatorIndex; // Identifier for each validator
 
 // ValidatorStats tracks the six key metrics as described in the graypaper
-const ValidatorStats = struct {
+pub const ValidatorStats = struct {
     blocks_produced: u32, // b: Number of blocks produced
     tickets_introduced: u32, // t: Number of validator tickets introduced
     preimages_introduced: u32, // p: Number of preimages introduced
@@ -35,32 +35,32 @@ const ValidatorStats = struct {
     }
 
     /// Increment blocks produced count
-    pub fn update_blocks_produced(self: *ValidatorStats, count: u32) void {
+    pub fn updateBlocksProduced(self: *ValidatorStats, count: u32) void {
         self.blocks_produced += count;
     }
 
     /// Increment tickets introduced count
-    pub fn update_tickets_introduced(self: *ValidatorStats, count: u32) void {
+    pub fn updateTicketsIntroduced(self: *ValidatorStats, count: u32) void {
         self.tickets_introduced += count;
     }
 
     /// Increment preimages introduced count
-    pub fn update_preimages_introduced(self: *ValidatorStats, count: u32) void {
+    pub fn updatePreimagesIntroduced(self: *ValidatorStats, count: u32) void {
         self.preimages_introduced += count;
     }
 
     /// Increment octets across preimages count
-    pub fn update_octets_across_preimages(self: *ValidatorStats, count: u32) void {
+    pub fn updateOctetsAcrossPreimages(self: *ValidatorStats, count: u32) void {
         self.octets_across_preimages += count;
     }
 
     /// Increment reports guaranteed count
-    pub fn update_reports_guaranteed(self: *ValidatorStats, count: u32) void {
+    pub fn updateReportsGuaranteed(self: *ValidatorStats, count: u32) void {
         self.reports_guaranteed += count;
     }
 
     /// Increment availability assurances count
-    pub fn update_availability_assurances(self: *ValidatorStats, count: u32) void {
+    pub fn updateAvailabilityAssurances(self: *ValidatorStats, count: u32) void {
         self.availability_assurances += count;
     }
 
@@ -84,69 +84,73 @@ const ValidatorStats = struct {
 
 /// PiComponent holds the stats for all validators across two epochs
 pub const Pi = struct {
-    currentEpochStats: std.AutoArrayHashMap(ValidatorIndex, ValidatorStats), // Stats for the current epoch
-    previousEpochStats: std.AutoArrayHashMap(ValidatorIndex, ValidatorStats), // Stats for the previous epoch
+    current_epoch_stats: std.ArrayList(ValidatorStats), // Stats for the current epoch
+    previous_epoch_stats: std.ArrayList(ValidatorStats), // Stats for the previous epoch
     allocator: std.mem.Allocator,
+    validator_count: usize,
 
-    /// Initialize a new Pi component with empty stats for current and previous epochs
-    pub fn init(allocator: std.mem.Allocator) Pi {
+    fn initValidatorStats(allocator: std.mem.Allocator, validator_count: usize) !std.ArrayList(ValidatorStats) {
+        var stats = try std.ArrayList(ValidatorStats).initCapacity(allocator, validator_count);
+        var i: usize = 0;
+        while (i < validator_count) : (i += 1) {
+            try stats.append(ValidatorStats.init());
+        }
+        return stats;
+    }
+
+    /// Initialize a new Pi component with zeroed-out stats for current and previous epochs
+    pub fn init(allocator: std.mem.Allocator, validator_count: usize) !Pi {
         return Pi{
-            .currentEpochStats = std.AutoArrayHashMap(ValidatorIndex, ValidatorStats).init(allocator),
-            .previousEpochStats = std.AutoArrayHashMap(ValidatorIndex, ValidatorStats).init(allocator),
+            .current_epoch_stats = try Pi.initValidatorStats(allocator, validator_count),
+            .previous_epoch_stats = try Pi.initValidatorStats(allocator, validator_count),
             .allocator = allocator,
+            .validator_count = validator_count,
         };
     }
 
-    /// Get or create ValidatorStats for a given validator ID
-    pub fn ensureValidator(self: *Pi, id: ValidatorIndex) !*ValidatorStats {
-        const result = try self.currentEpochStats.getOrPut(id);
-        if (!result.found_existing) {
-            result.value_ptr.* = ValidatorStats.init();
+    /// Get ValidatorStats for a given validator ID in the current epoch
+    pub fn getValidatorStats(self: *Pi, id: ValidatorIndex) !*ValidatorStats {
+        if (id >= self.validator_count) {
+            return error.ValidatorIndexOutOfBounds;
         }
-        return result.value_ptr;
+        return &self.current_epoch_stats.items[id];
     }
 
     /// Move current epoch stats to previous epoch and reset current stats
     pub fn transitionToNextEpoch(self: *Pi) !void {
-        self.previousEpochStats = self.currentEpochStats;
-        self.currentEpochStats = std.AutoArrayHashMap(ValidatorIndex, ValidatorStats).init(self.allocator);
+        self.previous_epoch_stats.deinit();
+        self.previous_epoch_stats = self.current_epoch_stats;
+        self.current_epoch_stats = try Pi.initValidatorStats(self.allocator, self.validator_count);
     }
 
     /// Clean up allocated resources
     pub fn deinit(self: *Pi) void {
-        self.currentEpochStats.deinit();
-        self.previousEpochStats.deinit();
+        self.current_epoch_stats.deinit();
+        self.previous_epoch_stats.deinit();
     }
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
         try jw.beginObject();
 
-        try jw.objectField("currentEpochStats");
-        try jw.beginObject();
-        var current_it = self.currentEpochStats.iterator();
-        while (current_it.next()) |entry| {
-            const key = try std.fmt.allocPrint(self.allocator, "{d}", .{entry.key_ptr.*});
-            defer self.allocator.free(key);
-            try jw.objectField(key);
-            try entry.value_ptr.jsonStringify(jw);
+        try jw.objectField("current_epoch_stats");
+        try jw.beginArray();
+        for (self.current_epoch_stats.items) |*stats| {
+            try stats.jsonStringify(jw);
         }
-        try jw.endObject();
+        try jw.endArray();
 
-        try jw.objectField("previousEpochStats");
-        try jw.beginObject();
-        var previous_it = self.previousEpochStats.iterator();
-        while (previous_it.next()) |entry| {
-            const key = try std.fmt.allocPrint(self.allocator, "{d}", .{entry.key_ptr.*});
-            defer self.allocator.free(key);
-            try jw.objectField(key);
-            try entry.value_ptr.jsonStringify(jw);
+        try jw.objectField("previous_epoch_stats");
+        try jw.beginArray();
+        for (self.previous_epoch_stats.items) |*stats| {
+            try stats.jsonStringify(jw);
         }
-        try jw.endObject();
+        try jw.endArray();
 
         try jw.endObject();
     }
 };
 
+//  _   _       _ _  _____         _
 // | | | |_ __ (_) ||_   _|__  ___| |_ ___
 // | | | | '_ \| | __|| |/ _ \/ __| __/ __|
 // | |_| | | | | | |_ | |  __/\__ \ |_\__ \
@@ -167,99 +171,113 @@ test "ValidatorStats initialization" {
 test "ValidatorStats update methods" {
     var stats = ValidatorStats.init();
 
-    stats.update_blocks_produced(5);
+    stats.updateBlocksProduced(5);
     try testing.expectEqual(@as(u32, 5), stats.blocks_produced);
 
-    stats.update_tickets_introduced(3);
+    stats.updateTicketsIntroduced(3);
     try testing.expectEqual(@as(u32, 3), stats.tickets_introduced);
 
-    stats.update_preimages_introduced(2);
+    stats.updatePreimagesIntroduced(2);
     try testing.expectEqual(@as(u32, 2), stats.preimages_introduced);
 
-    stats.update_octets_across_preimages(100);
+    stats.updateOctetsAcrossPreimages(100);
     try testing.expectEqual(@as(u32, 100), stats.octets_across_preimages);
 
-    stats.update_reports_guaranteed(1);
+    stats.updateReportsGuaranteed(1);
     try testing.expectEqual(@as(u32, 1), stats.reports_guaranteed);
 
-    stats.update_availability_assurances(4);
+    stats.updateAvailabilityAssurances(4);
     try testing.expectEqual(@as(u32, 4), stats.availability_assurances);
 
     // Test multiple updates
-    stats.update_blocks_produced(3);
+    stats.updateBlocksProduced(3);
     try testing.expectEqual(@as(u32, 8), stats.blocks_produced);
 }
 
 test "Pi initialization" {
     const allocator = std.testing.allocator;
+    const validator_count: usize = 5;
 
-    var pi = Pi.init(allocator);
+    var pi = try Pi.init(allocator, validator_count);
     defer pi.deinit();
 
-    try testing.expectEqual(@as(usize, 0), pi.currentEpochStats.count());
-    try testing.expectEqual(@as(usize, 0), pi.previousEpochStats.count());
+    try testing.expectEqual(validator_count, pi.current_epoch_stats.items.len);
+    try testing.expectEqual(validator_count, pi.previous_epoch_stats.items.len);
+
+    // Check if all stats are zeroed out
+    for (pi.current_epoch_stats.items) |stats| {
+        try testing.expectEqual(@as(u32, 0), stats.blocks_produced);
+        try testing.expectEqual(@as(u32, 0), stats.tickets_introduced);
+        try testing.expectEqual(@as(u32, 0), stats.preimages_introduced);
+        try testing.expectEqual(@as(u32, 0), stats.octets_across_preimages);
+        try testing.expectEqual(@as(u32, 0), stats.reports_guaranteed);
+        try testing.expectEqual(@as(u32, 0), stats.availability_assurances);
+    }
+
+    for (pi.previous_epoch_stats.items) |stats| {
+        try testing.expectEqual(@as(u32, 0), stats.blocks_produced);
+        try testing.expectEqual(@as(u32, 0), stats.tickets_introduced);
+        try testing.expectEqual(@as(u32, 0), stats.preimages_introduced);
+        try testing.expectEqual(@as(u32, 0), stats.octets_across_preimages);
+        try testing.expectEqual(@as(u32, 0), stats.reports_guaranteed);
+        try testing.expectEqual(@as(u32, 0), stats.availability_assurances);
+    }
 }
 
-test "Pi ensureValidator" {
+test "Pi ensure_validator" {
     const allocator = std.testing.allocator;
 
-    var pi = Pi.init(allocator);
+    var pi = try Pi.init(allocator, 6);
     defer pi.deinit();
 
     const validator_id: ValidatorIndex = 1;
-    const stats = try pi.ensureValidator(validator_id);
+    const stats = try pi.getValidatorStats(validator_id);
 
-    try testing.expectEqual(@as(usize, 1), pi.currentEpochStats.count());
     try testing.expectEqual(@as(u32, 0), stats.blocks_produced);
 
     // Ensure getting the same validator doesn't create a new entry
-    const same_stats = try pi.ensureValidator(validator_id);
-    try testing.expectEqual(@as(usize, 1), pi.currentEpochStats.count());
+    const same_stats = try pi.getValidatorStats(validator_id);
     try testing.expectEqual(stats, same_stats);
 
     // Update stats and check if it's reflected
-    stats.update_blocks_produced(5);
+    stats.updateBlocksProduced(5);
     try testing.expectEqual(@as(u32, 5), same_stats.blocks_produced);
 
     // Re-ensure the validator and check if it shows the updated blocks
-    const re_ensured_stats = try pi.ensureValidator(validator_id);
+    const re_ensured_stats = try pi.getValidatorStats(validator_id);
     try testing.expectEqual(@as(u32, 5), re_ensured_stats.blocks_produced);
     try testing.expectEqual(stats, re_ensured_stats);
 }
 
-test "Pi transitionToNextEpoch" {
+test "Pi transition_to_next_epoch" {
     const allocator = std.testing.allocator;
 
-    var pi = Pi.init(allocator);
+    var pi = try Pi.init(allocator, 6);
     defer pi.deinit();
 
     // Add some data to current epoch
     const validator1: ValidatorIndex = 1;
     const validator2: ValidatorIndex = 2;
-    var stats1 = try pi.ensureValidator(validator1);
-    var stats2 = try pi.ensureValidator(validator2);
-    stats1.update_blocks_produced(5);
-    stats2.update_tickets_introduced(3);
-
-    try testing.expectEqual(@as(usize, 2), pi.currentEpochStats.count());
-    try testing.expectEqual(@as(usize, 0), pi.previousEpochStats.count());
+    var stats1 = try pi.getValidatorStats(validator1);
+    var stats2 = try pi.getValidatorStats(validator2);
+    stats1.updateBlocksProduced(5);
+    stats2.updateTicketsIntroduced(3);
 
     // Transition to next epoch
     try pi.transitionToNextEpoch();
 
-    // Check if data moved to previous epoch and current epoch is reset
-    try testing.expectEqual(@as(usize, 0), pi.currentEpochStats.count());
-    try testing.expectEqual(@as(usize, 2), pi.previousEpochStats.count());
+    // Check if previous epoch stats are correct
+    try testing.expectEqual(@as(u32, 5), pi.previous_epoch_stats.items[validator1].blocks_produced);
+    try testing.expectEqual(@as(u32, 3), pi.previous_epoch_stats.items[validator2].tickets_introduced);
 
-    if (pi.previousEpochStats.get(validator1)) |prev_stats1| {
-        try testing.expectEqual(@as(u32, 5), prev_stats1.blocks_produced);
-    } else {
-        try testing.expect(false);
-    }
-
-    if (pi.previousEpochStats.get(validator2)) |prev_stats2| {
-        try testing.expectEqual(@as(u32, 3), prev_stats2.tickets_introduced);
-    } else {
-        try testing.expect(false);
+    // Check if current epoch stats are zeroed out
+    // Check if all stats are zeroed out
+    for (pi.current_epoch_stats.items) |stats| {
+        try testing.expectEqual(@as(u32, 0), stats.blocks_produced);
+        try testing.expectEqual(@as(u32, 0), stats.tickets_introduced);
+        try testing.expectEqual(@as(u32, 0), stats.preimages_introduced);
+        try testing.expectEqual(@as(u32, 0), stats.octets_across_preimages);
+        try testing.expectEqual(@as(u32, 0), stats.reports_guaranteed);
+        try testing.expectEqual(@as(u32, 0), stats.availability_assurances);
     }
 }

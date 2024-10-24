@@ -19,7 +19,11 @@ comptime {
     _ = @import("merkle_mountain_ranges.zig");
 
     _ = @import("state.zig");
+    _ = @import("state_dictionary.zig");
+    _ = @import("state_merklization.zig");
     _ = @import("state_test.zig");
+
+    _ = @import("state_encoding.zig");
 
     _ = @import("services.zig");
     _ = @import("services_priviledged.zig");
@@ -27,6 +31,7 @@ comptime {
     _ = @import("recent_blocks.zig");
 
     _ = @import("authorization.zig");
+    _ = @import("authorization_queue.zig");
 
     _ = @import("disputes.zig");
     _ = @import("disputes_test.zig");
@@ -36,6 +41,8 @@ comptime {
     _ = @import("recent_blocks_test.zig");
 
     _ = @import("pending_reports.zig");
+    _ = @import("available_reports.zig");
+    _ = @import("accumulated_reports.zig");
 
     _ = @import("validator_stats.zig");
 }

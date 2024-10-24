@@ -17,6 +17,7 @@ pub const DisputesExtrinsic = types.DisputesExtrinsic;
 
 pub const Rho = @import("state.zig").Rho;
 
+// TODO: check if zig has ordered sets, this will make encoding faster
 pub const Psi = struct {
     good_set: std.AutoHashMap(Hash, void),
     bad_set: std.AutoHashMap(Hash, void),
@@ -488,5 +489,3 @@ fn lessThanPublicKey(a: PublicKey, b: PublicKey) std.math.Order {
 fn lessThanU16(a: u16, b: u16) std.math.Order {
     return std.math.order(a, b);
 }
-
-// ... (rest of the code remains the same)

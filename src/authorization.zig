@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 
 // Constants
-const C: usize = 341; // Number of cores
+pub const C: usize = 341; // Number of cores
 const O: usize = 8; // Maximum number of items in the authorizations pool
 const Q: usize = 80; // Maximum number of items in the authorizations queue
 

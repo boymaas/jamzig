@@ -43,6 +43,21 @@ pub fn R(s: *MMR, i: usize, v: Entry) !*MMR {
     return s;
 }
 
+const encoder = @import("codec/encoder.zig");
+
+pub fn encode(mrange: []?Hash, writer: anytype) !void {
+    try writer.writeAll(encoder.encodeInteger(mrange.len).as_slice());
+
+    for (mrange) |maybe_hash| {
+        if (maybe_hash) |leaf| {
+            try writer.writeByte(1);
+            try writer.writeAll(&leaf);
+        } else {
+            try writer.writeByte(0);
+        }
+    }
+}
+
 const testing = std.testing;
 
 test "mmr_append" {

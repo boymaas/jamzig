@@ -9,6 +9,7 @@ pub const ByteSequence = []u8;
 pub const ByteArray32 = [32]u8;
 
 pub const OpaqueHash = ByteArray32;
+pub const Hash = ByteArray32;
 pub const TimeSlot = U32;
 pub const ServiceId = U32;
 pub const Gas = U64;

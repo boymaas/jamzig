@@ -1,3 +1,5 @@
+// TODO: rename this file to recent_history.zig
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);

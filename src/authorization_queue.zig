@@ -13,9 +13,9 @@
 const std = @import("std");
 
 // Constants
-const C: usize = 341; // Number of cores
-const Q: usize = 80; // Maximum number of items in the authorizations queue
-const H: usize = 32; // Hash size
+pub const C: usize = 341; // Number of cores
+pub const Q: usize = 80; // Maximum number of items in the authorizations queue
+pub const H: usize = 32; // Hash size
 
 const AuthorizerHash = [32]u8;
 

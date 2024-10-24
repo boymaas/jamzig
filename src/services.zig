@@ -40,7 +40,6 @@ pub const PreimageLookup = struct {
     // 3. h ∈ ⟦NT⟧2: The preimage was available from h[0] until h[1], now unavailable.
     // 4. h ∈ ⟦NT⟧3: The preimage is available since h[2], was previously available
     status: [3]?Timeslot,
-    length: u32,
 };
 
 pub const PreimageLookupKey = struct {
@@ -99,45 +98,6 @@ pub const ServiceAccount = struct {
         };
     }
 
-    pub fn serialize(self: *const ServiceAccount, allocator: Allocator) ![]const u8 {
-        var list = std.ArrayList(u8).init(allocator);
-        errdefer list.deinit();
-
-        try list.appendSlice(&self.code_hash);
-        try list.appendSlice(try std.fmt.allocPrint(allocator, "{d},{d},{d},", .{ self.balance, self.min_gas_accumulate, self.min_gas_on_transfer }));
-
-        var storage_it = self.storage.iterator();
-        while (storage_it.next()) |entry| {
-            try list.appendSlice(entry.key_ptr);
-            try list.appendSlice(entry.value_ptr);
-        }
-        try list.append(';');
-
-        var preimages_it = self.preimages.iterator();
-        while (preimages_it.next()) |entry| {
-            try list.appendSlice(entry.key_ptr);
-            try list.appendSlice(entry.value_ptr);
-        }
-        try list.append(';');
-
-        var lookups_it = self.preimage_lookups.iterator();
-        while (lookups_it.next()) |entry| {
-            const key = entry.key_ptr.*;
-            const value = entry.value_ptr.*;
-            try list.appendSlice(&key.hash);
-            try list.appendSlice(try std.fmt.allocPrint(allocator, "{d}", .{key.length}));
-            for (value.status) |maybe_timeslot| {
-                if (maybe_timeslot) |timeslot| {
-                    try list.appendSlice(try std.fmt.allocPrint(allocator, "{d}", .{timeslot}));
-                } else {
-                    try list.append(0);
-                }
-            }
-        }
-
-        return list.toOwnedSlice();
-    }
-
     pub fn deinit(self: *ServiceAccount) void {
         self.storage.deinit();
 
@@ -174,7 +134,6 @@ pub const ServiceAccount = struct {
         const key = PreimageLookupKey{ .hash = hash, .length = length };
         const lookup = self.preimage_lookups.get(key) orelse PreimageLookup{
             .status = .{ timeslot, null, null },
-            .length = length,
         };
 
         try self.preimage_lookups.put(key, lookup);
@@ -221,7 +180,7 @@ pub const ServiceAccount = struct {
         self.min_gas_on_transfer = new_min_limit;
     }
 
-    pub fn storageFootprint(self: *ServiceAccount) StorageFootprint {
+    pub fn storageFootprint(self: *const ServiceAccount) StorageFootprint {
         // a_i
         const a_i: u32 = 2 * self.preimage_lookups.count() + self.storage.count();
         // a_l
@@ -233,13 +192,13 @@ pub const ServiceAccount = struct {
 
         var svals = self.storage.valueIterator();
         while (svals.next()) |value| {
-            a_l += 32 + @as(u4, @intCast(value.len));
+            a_l += 32 + @as(u64, @intCast(value.len));
         }
 
         // a_t
         const a_t: Balance = B_S + B_I * a_i + B_L * a_l;
 
-        return .{ a_i, a_l, a_t };
+        return .{ .a_i = a_i, .a_l = a_l, .a_t = a_t };
     }
 };
 
@@ -443,21 +402,21 @@ test "ServiceAccount historicalLookup" {
     const key = PreimageLookupKey{ .hash = hash, .length = @intCast(preimage.len) };
 
     // Test case 1: Empty status
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ null, null, null }, .length = @intCast(preimage.len) });
+    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ null, null, null } });
     try testing.expectEqual(null, account.historicalLookup(5, hash));
 
     // Test case 2: Status with 1 entry
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, null, null }, .length = @intCast(preimage.len) });
+    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, null, null } });
     try testing.expectEqual(null, account.historicalLookup(5, hash));
     try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
 
     // Test case 3: Status with 2 entries
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, null }, .length = @intCast(preimage.len) });
+    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, null } });
     try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
     try testing.expectEqual(null, account.historicalLookup(25, hash));
 
     // Test case 4: Status with 3 entries
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, 30 }, .length = @intCast(preimage.len) });
+    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, 30 } });
     try testing.expectEqual(null, account.historicalLookup(5, hash));
     try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
     try testing.expectEqual(null, account.historicalLookup(25, hash));
@@ -471,7 +430,7 @@ test "ServiceAccount historicalLookup" {
     const hash_without_preimage = [_]u8{3} ** 32;
     try account.preimage_lookups.put(
         PreimageLookupKey{ .hash = hash_without_preimage, .length = 10 },
-        PreimageLookup{ .status = .{ 10, 0, 0 }, .length = 10 },
+        PreimageLookup{ .status = .{ 10, 0, 0 } },
     );
     try testing.expect(account.historicalLookup(15, hash_without_preimage) == null);
 }
