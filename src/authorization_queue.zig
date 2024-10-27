@@ -43,20 +43,7 @@ pub const Phi = struct {
     }
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-        try jw.beginObject();
-        try jw.objectField("queue");
-        try jw.beginArray();
-        for (self.queue) |core_queue| {
-            try jw.beginArray();
-            for (core_queue.items) |hash| {
-                var hex_buf: [H * 2]u8 = undefined;
-                const queue = std.fmt.bufPrint(&hex_buf, "{s}", .{std.fmt.fmtSliceHexLower(&hash)}) catch unreachable;
-                try jw.write(queue);
-            }
-            try jw.endArray();
-        }
-        try jw.endArray();
-        try jw.endObject();
+        try @import("state_json/authorization_queue.zig").jsonStringify(self, jw);
     }
 
     // Add an authorization to the queue for a specific core

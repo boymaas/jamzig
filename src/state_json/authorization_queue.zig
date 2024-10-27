@@ -1,7 +1,10 @@
 const std = @import("std");
-const H = @import("authorization_queue.zig").H;
 
-pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
+const auth_queue = @import("../authorization_queue.zig");
+const H = auth_queue.H;
+const Phi = auth_queue.Phi;
+
+pub fn jsonStringify(self: *const Phi, jw: anytype) !void {
     try jw.beginObject();
     try jw.objectField("queue");
     try jw.beginArray();
