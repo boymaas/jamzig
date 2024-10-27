@@ -4,11 +4,14 @@ const merkle = @import("merkle.zig");
 const jamstate = @import("state.zig");
 const state_dictionary = @import("state_dictionary.zig");
 
+const Params = @import("jam_params.zig").Params;
+
 pub fn merklizeState(
+    comptime params: Params,
     allocator: std.mem.Allocator,
-    state: *const jamstate.JamState,
+    state: *const jamstate.JamState(params),
 ) !types.Hash {
-    var map = try state_dictionary.buildStateMerklizationDictionary(allocator, state);
+    var map = try state_dictionary.buildStateMerklizationDictionary(params, allocator, state);
     defer map.deinit();
 
     return try merklizeStateDictionary(allocator, &map);
@@ -33,22 +36,24 @@ pub fn merklizeStateDictionary(
 
 test "merklizeState" {
     const allocator = std.testing.allocator;
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
 
-    var state = try jamstate.JamState.init(allocator);
+    var state = try jamstate.JamState(TINY).init(allocator);
     defer state.deinit(allocator);
 
-    const hash = try merklizeState(allocator, &state);
+    const hash = try merklizeState(TINY, allocator, &state);
 
     std.debug.print("Hash: {s}\n", .{std.fmt.fmtSliceHexLower(&hash)});
 }
 
 test "merklizeStateDictionary" {
     const allocator = std.testing.allocator;
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
 
-    var state = try jamstate.JamState.init(allocator);
+    var state = try jamstate.JamState(TINY).init(allocator);
     defer state.deinit(allocator);
 
-    var map = try state_dictionary.buildStateMerklizationDictionary(allocator, &state);
+    var map = try state_dictionary.buildStateMerklizationDictionary(TINY, allocator, &state);
     defer map.deinit();
 
     const hash = try merklizeStateDictionary(allocator, &map);

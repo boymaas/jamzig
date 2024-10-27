@@ -6,8 +6,9 @@ const JamState = @import("state.zig").JamState;
 
 test "JamStateJSON" {
     const allocator = testing.allocator;
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
 
-    var state = try JamState.init(allocator);
+    var state = try JamState(TINY).init(allocator);
     defer state.deinit(allocator);
 
     const string = try json.stringifyAlloc(

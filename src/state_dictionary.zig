@@ -4,6 +4,8 @@ const types = @import("types.zig");
 const jamstate = @import("state.zig");
 const state_encoder = @import("state_encoding.zig");
 
+const Params = @import("jam_params.zig").Params;
+
 /// Constructs a 32-byte key with the input byte as the first element and zeros for the rest.
 ///
 /// @param input - The byte to use as the first element of the key
@@ -117,8 +119,9 @@ pub const MerklizationDictionary = struct {
 };
 
 pub fn buildStateMerklizationDictionary(
+    comptime params: Params,
     allocator: std.mem.Allocator,
-    state: *const jamstate.JamState,
+    state: *const jamstate.JamState(params),
 ) !MerklizationDictionary {
     var map = std.AutoHashMap([32]u8, []const u8).init(allocator);
     errdefer map.deinit();
@@ -267,10 +270,12 @@ const testing = std.testing;
 
 test "buildStateMerklizationDictionary" {
     const allocator = std.testing.allocator;
-    var state = try jamstate.JamState.init(allocator);
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
+
+    var state = try jamstate.JamState(TINY).init(allocator);
     defer state.deinit(allocator);
 
-    var map = try buildStateMerklizationDictionary(allocator, &state);
+    var map = try buildStateMerklizationDictionary(TINY, allocator, &state);
     defer map.deinit();
 }
 
