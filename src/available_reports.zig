@@ -29,24 +29,7 @@ pub fn Theta(comptime epoch_size: usize) type {
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-            try jw.beginArray();
-            for (self.entries) |slot_entries| {
-                for (slot_entries.items) |entry| {
-                    try jw.beginObject();
-                    try jw.objectField("work_report");
-                    try jw.write(entry.work_report);
-                    try jw.objectField("dependencies");
-                    try jw.beginArray();
-                    var iterator = entry.dependencies.iterator();
-                    while (iterator.next()) |_| {
-                        // TODO:  fix this
-                        // try jw.writeString(std.fmt.fmtSliceHexLower(key));
-                    }
-                    try jw.endArray();
-                    try jw.endObject();
-                }
-            }
-            try jw.endArray();
+            try @import("state_json/available_reports.zig").jsonStringify(epoch_size, self, jw);
         }
 
         /// Add a new work report with its dependencies
