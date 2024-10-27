@@ -37,6 +37,15 @@ pub const Psi = struct {
         try @import("state_json/disputes.zig").jsonStringify(self, jw);
     }
 
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/psi.zig").format(self, fmt, options, writer);
+    }
+
     pub fn clone(self: *const Psi) !Psi {
         return Psi{
             .good_set = try self.good_set.clone(),
