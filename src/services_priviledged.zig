@@ -49,6 +49,15 @@ pub const Chi = struct {
         try @import("state_json/services_priviledged.zig").jsonStringify(self, jw);
     }
 
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/chi.zig").format(self, fmt, options, writer);
+    }
+
     pub fn setManager(self: *Chi, index: ?ServiceIndex) void {
         self.manager = index;
     }

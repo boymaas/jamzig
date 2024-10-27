@@ -67,6 +67,15 @@ pub const ValidatorStats = struct {
     pub fn jsonStringify(stats: *const @This(), jw: anytype) !void {
         try @import("state_json/validator_stats.zig").jsonStringifyValidatorStats(stats, jw);
     }
+
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/validator_stats.zig").formatValidatorStats(self, fmt, options, writer);
+    }
 };
 
 /// PiComponent holds the stats for all validators across two epochs
@@ -118,6 +127,15 @@ pub const Pi = struct {
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
         try @import("state_json/validator_stats.zig").jsonStringifyPi(self, jw);
+    }
+
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/validator_stats.zig").formatPi(self, fmt, options, writer);
     }
 };
 

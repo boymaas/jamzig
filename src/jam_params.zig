@@ -1,3 +1,5 @@
+const std = @import("std");
+
 /// This struct defines the protocol parameters used throughout the system.
 /// Each field represents a specific constant derived from the protocol's
 /// specification. The constants are annotated with their corresponding symbols
@@ -78,6 +80,16 @@ pub const Params = struct {
     pvm_program_init_page_size: u16 = 2 ^ 14, // ZP
     // ZQ: The standard pvm program initialization segment size
     pvm_program_init_segment_size: u32 = 2 ^ 16, // ZQ
+
+    // Default format parameters
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/jam_params.zig").format(self, fmt, options, writer);
+    }
 };
 
 pub const TINY_PARAMS = Params{

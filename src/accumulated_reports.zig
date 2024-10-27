@@ -26,6 +26,15 @@ pub fn Xi(comptime epoch_size: usize) type {
             try @import("state_json/accumulated_reports.zig").jsonStringify(epoch_size, self, jw);
         }
 
+        pub fn format(
+            self: *const @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            try @import("state_format/accumulated_reports.zig").format(epoch_size, self, fmt, options, writer);
+        }
+
         pub fn addEntryToTimeSlot(
             self: *@This(),
             time_slot: types.TimeSlot,

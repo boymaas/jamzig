@@ -46,6 +46,15 @@ const ReportEntry = struct {
 pub const Rho = struct {
     reports: [C]?ReportEntry,
 
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/rho.zig").format(self, fmt, options, writer);
+    }
+
     pub fn init() Rho {
         return Rho{
             .reports = [_]?ReportEntry{null} ** C,

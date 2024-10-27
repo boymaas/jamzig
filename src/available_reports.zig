@@ -32,6 +32,15 @@ pub fn Theta(comptime epoch_size: usize) type {
             try @import("state_json/available_reports.zig").jsonStringify(epoch_size, self, jw);
         }
 
+        pub fn format(
+            self: *const @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            try @import("state_format/available_reports.zig").format(epoch_size, self, fmt, options, writer);
+        }
+
         /// Add a new work report with its dependencies
         pub fn addEntryToTimeSlot(
             self: *@This(),

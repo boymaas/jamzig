@@ -55,6 +55,15 @@ pub const RecentHistory = struct {
         try @import("state_json/recent_blocks.zig").jsonStringify(self, jw);
     }
 
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/recent_blocks.zig").format(self, fmt, options, writer);
+    }
+
     /// Frees all resources associated with the RecentHistory
     pub fn deinit(self: *Self) void {
         for (self.blocks.items) |*block| {

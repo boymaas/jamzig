@@ -113,6 +113,16 @@ pub fn JamState(comptime params: Params) type {
             self.xi.deinit();
             self.theta.deinit();
         }
+
+        /// Format
+        pub fn format(
+            self: *const @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            try @import("state_format/jam_state.zig").format(params, self, fmt, options, writer);
+        }
     };
 }
 

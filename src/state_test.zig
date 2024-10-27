@@ -22,3 +22,14 @@ test "JamStateJSON" {
     // Print the JSON string (you can comment this out if you don't want to print)
     std.debug.print("JSON: {s}\n", .{string});
 }
+
+test "JamStateFormat" {
+    const allocator = testing.allocator;
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
+
+    var state = try JamState(TINY).init(allocator);
+    defer state.deinit(allocator);
+
+    // Print the JSON string (you can comment this out if you don't want to print)
+    std.debug.print("FORMAT: \n\n{any}\n", .{state});
+}

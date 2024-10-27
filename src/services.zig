@@ -209,6 +209,15 @@ pub const Delta = struct {
     accounts: std.AutoHashMap(ServiceIndex, ServiceAccount),
     allocator: Allocator,
 
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/delta.zig").format(self, fmt, options, writer);
+    }
+
     pub fn init(allocator: Allocator) Delta {
         return .{
             .accounts = std.AutoHashMap(ServiceIndex, ServiceAccount).init(allocator),

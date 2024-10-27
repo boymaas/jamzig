@@ -24,8 +24,6 @@ pub const Phi = struct {
     queue: [C]std.ArrayList(AuthorizerHash),
     allocator: std.mem.Allocator,
 
-    // Hash type (32 bytes)
-
     // Initialize the AuthorizationQueue
     pub fn init(allocator: std.mem.Allocator) !Phi {
         var queue: [C]std.ArrayList(AuthorizerHash) = undefined;
@@ -44,6 +42,15 @@ pub const Phi = struct {
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
         try @import("state_json/authorization_queue.zig").jsonStringify(self, jw);
+    }
+
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/phi.zig").format(self, fmt, options, writer);
     }
 
     // Add an authorization to the queue for a specific core

@@ -22,6 +22,15 @@ pub const Gamma = struct {
         try @import("state_json/safrole_state.zig").jsonStringify(self, jw);
     }
 
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("state_format/safrole_state.zig").format(self, fmt, options, writer);
+    }
+
     pub fn deinit(self: *Gamma, allocator: std.mem.Allocator) void {
         allocator.free(self.k);
         allocator.free(self.s.tickets);
