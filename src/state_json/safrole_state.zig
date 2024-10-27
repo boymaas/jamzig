@@ -1,6 +1,7 @@
 const std = @import("std");
+const Gamma = @import("../safrole_state.zig").Gamma;
 
-pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
+pub fn jsonStringify(self: *const Gamma, jw: anytype) !void {
     try jw.beginObject();
 
     try jw.objectField("k");

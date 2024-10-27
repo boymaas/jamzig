@@ -1,6 +1,7 @@
 const std = @import("std");
+const Chi = @import("../services_priviledged.zig").Chi;
 
-pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
+pub fn jsonStringify(self: *const Chi, jw: anytype) !void {
     try jw.beginObject();
 
     try jw.objectField("manager");

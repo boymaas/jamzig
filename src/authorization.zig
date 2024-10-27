@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 
-// Constants
+// Constants TODO: Move to configuration
 pub const C: usize = 341; // Number of cores
 const O: usize = 8; // Maximum number of items in the authorizations pool
 const Q: usize = 80; // Maximum number of items in the authorizations queue
@@ -17,7 +17,7 @@ pub const Alpha = struct {
     pools: [C]AuthorizationPool,
     // φ[c] may be altered only through an exogenous call made from the
     // accumulate logic of an appropriately privileged service
-    queues: [C]AuthorizationQueue,
+    queues: [C]AuthorizationQueue, // FIX: remove its now in seperate file
 
     pub fn init() Alpha {
         var alpha = Alpha{
@@ -45,6 +45,7 @@ pub const Alpha = struct {
     // NOTE: that we utilize the guarantees extrinsic EG to remove the oldest
     // authorizer which has been used to justify a guaranteed work-package in the
     // current block. This is further defined in equation (137)
+    // FIX: place this on transisiton level, as it seems to use queue and core
     pub fn transitionState(self: *Alpha, E_g: types.GuaranteesExtrinsic, H_t: types.TimeSlot) !void {
         // Remove used authorizers from the pool
         for (E_g) |guarantee| {
