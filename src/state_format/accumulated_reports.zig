@@ -11,7 +11,13 @@ pub fn format(
     _ = fmt;
     _ = options;
 
-    try writer.writeAll("Xi{\n");
+    var total_entries: usize = 0;
+    for (self.entries) |slot_entries| {
+        total_entries += slot_entries.count();
+    }
+
+    try writer.print("Xi{{ total entries: {d}\n", .{total_entries});
+
     for (self.entries, 0..) |slot_entries, i| {
         if (slot_entries.count() > 0) {
             try writer.print("  slot {d}: {d} reports\n", .{ i, slot_entries.count() });
