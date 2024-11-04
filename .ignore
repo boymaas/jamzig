@@ -1,0 +1,7 @@
+src/tests/vectors/safrole
+src/tests/vectors/codec
+src/tests/vectors/disputes
+src/tests/vectors/history
+src/tests/vectors/pvm
+src/tests/vectors/safrole
+src/tests/vectors/trie
