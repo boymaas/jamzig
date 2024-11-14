@@ -50,7 +50,7 @@ fn mainTerminal(progress: bool, nocapture: bool) !void {
         testing.log_level = .warn;
 
         if (progress) {
-            std.debug.print("\x1b[1;36m{d}/{d}\x1b[0m \x1b[1;37m{s}\x1b[0m...", .{ i + 1, test_fn_list.len, test_fn.name });
+            std.debug.print("\x1b[1;36m{d}/{d}\x1b[0m {s}...", .{ i + 1, test_fn_list.len, test_fn.name });
         }
 
         _ = nocapture;
