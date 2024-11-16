@@ -1,99 +1,78 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 
-pub const types = @import("safrole/types.zig");
+pub const types = @import("types.zig");
+pub const safrole_types = @import("safrole/types.zig");
 pub const entropy = @import("safrole/entropy.zig");
 
 const crypto = @import("crypto.zig");
 
 pub const Params = @import("jam_params.zig").Params;
 
-const Safrole = struct {
-    allocator: std.mem.Allocator,
-    state: types.State,
+pub const SafroleError = error{
+    /// Bad slot value.
+    bad_slot,
+    /// Received a ticket while in epoch's tail.
+    unexpected_ticket,
+    /// Tickets must be sorted.
+    bad_ticket_order,
+    /// Invalid ticket ring proof.
+    bad_ticket_proof,
+    /// Invalid ticket attempt value.
+    bad_ticket_attempt,
+    /// Reserved
+    reserved,
+    /// Found a ticket duplicate.
+    duplicate_ticket,
 
-    epoch_length: u32,
-
-    pub fn init(allocator: std.mem.Allocator, state: types.State, params: Params) Safrole {
-        return .{
-            .allocator = allocator,
-            .state = state,
-            .params = params,
-        };
-    }
-
-    pub fn Y(self: *@This(), input: types.Input) !TransitionResult {
-        const result = try transition(self.allocator, self.params, self.state, input);
-        if (result.state) |new_state| {
-            self.state.deinit(self.allocator);
-            self.state = new_state;
-        }
-        return result;
-    }
-
-    pub fn deinit(self: Safrole) void {
-        self.state.deinit(self.allocator);
-    }
+    /// Too_many_tickets_in_extrinsic
+    too_many_tickets_in_extrinsic,
 };
 
-// Constant
-pub const TransitionResult = struct {
-    output: types.Output,
-    state: ?types.State,
-
-    pub fn deinit(self: TransitionResult, allocator: std.mem.Allocator) void {
-        if (self.state != null) {
-            self.state.?.deinit(allocator);
-        }
-        self.output.deinit(allocator);
-    }
+pub const Result = struct {
+    post_state: safrole_types.State,
+    epoch_marker: ?types.EpochMark,
+    ticket_marker: ?types.TicketsMark,
 };
 
 pub fn transition(
     allocator: std.mem.Allocator,
     params: Params,
-    pre_state: types.State,
-    input: types.Input,
-) !TransitionResult {
+    pre_state: safrole_types.State,
+    // Current slot.
+    slot: u32,
+    // Per block entropy (originated from block entropy source VRF).
+    eta_entropy: types.OpaqueHash,
+    // Ticket extrinsic.
+    ticket_extrinsic: []types.TicketEnvelope,
+) !Result {
     // Equation 41: H_t ∈ N_T, P(H)_t < H_t ∧ H_t · P ≤ T
-    if (input.slot <= pre_state.tau) {
-        return .{
-            .output = .{ .err = .bad_slot },
-            .state = null,
-        };
+    if (slot <= pre_state.tau) {
+        return SafroleError.bad_slot;
     }
 
     // The slot inside this epoch
     const prev_epoch_slot = pre_state.tau % params.epoch_length;
-    const epoch_slot = input.slot % params.epoch_length;
+    const epoch_slot = slot % params.epoch_length;
 
     // Chapter 6.7 Ticketing and extrensics
     // Check the number of ticket attempts in the input when more
     // than N we have a bad ticket attempt
-    for (input.extrinsic) |extrinsic| {
+    for (ticket_extrinsic) |extrinsic| {
         if (extrinsic.attempt >= params.max_ticket_entries_per_validator) {
-            return .{
-                .output = .{ .err = .bad_ticket_attempt },
-                .state = null,
-            };
+            return SafroleError.bad_ticket_attempt;
         }
     }
 
     // We should not have more than K tickets in the input
-    if (input.extrinsic.len > params.epoch_length) {
-        return .{
-            .output = .{ .err = .too_many_tickets_in_extrinsic },
-            .state = null,
-        };
+    if (ticket_extrinsic.len > params.epoch_length) {
+        return SafroleError.too_many_tickets_in_extrinsic;
     }
 
     // We shuold not have any tickets when the epoch slot < Y
     if (epoch_slot >= params.ticket_submission_end_epoch_slot) {
-        if (input.extrinsic.len > 0) {
-            return .{
-                .output = .{ .err = .unexpected_ticket },
-                .state = null,
-            };
+        if (ticket_extrinsic.len > 0) {
+            return SafroleError.unexpected_ticket;
         }
     }
 
@@ -103,13 +82,10 @@ pub fn transition(
         params.validators_count,
         pre_state.gamma_z,
         pre_state.eta[2],
-        input.extrinsic,
+        ticket_extrinsic,
     ) catch |e| {
         if (e == error.SignatureVerificationFailed) {
-            return .{
-                .output = .{ .err = .bad_ticket_proof },
-                .state = null,
-            };
+            return SafroleError.bad_ticket_proof;
         } else return e;
     };
     defer allocator.free(verified_extrinsic);
@@ -124,10 +100,7 @@ pub fn transition(
         var i: usize = 0;
         while (i < index) : (i += 1) {
             if (std.mem.eql(u8, &verified_extrinsic[i].id, &current_ticket.id)) {
-                return .{
-                    .output = .{ .err = .duplicate_ticket },
-                    .state = null,
-                };
+                return SafroleError.duplicate_ticket;
             }
         }
 
@@ -139,20 +112,14 @@ pub fn transition(
             }
         }.order);
         if (position != null) {
-            return .{
-                .output = .{ .err = .duplicate_ticket },
-                .state = null,
-            };
+            return SafroleError.duplicate_ticket;
         }
 
         // Check the order of tickets
         if (index > 0) {
             const prev_ticket = verified_extrinsic[index - 1];
             if (std.mem.order(u8, &current_ticket.id, &prev_ticket.id) == .lt) {
-                return .{
-                    .output = .{ .err = .bad_ticket_order },
-                    .state = null,
-                };
+                return SafroleError.bad_ticket_order;
             }
         }
     }
@@ -161,12 +128,12 @@ pub fn transition(
     errdefer post_state.deinit(allocator);
 
     // Update the tau
-    post_state.tau = input.slot;
+    post_state.tau = slot;
 
     // Calculate epoch and slot phase
     const prev_epoch = pre_state.tau / params.epoch_length;
     // const prev_slot_phase = pre_state.tau % EPOCH_LENGTH;
-    const current_epoch = input.slot / params.epoch_length;
+    const current_epoch = slot / params.epoch_length;
     // const current_slot_phase = input.slot % EPOCH_LENGTH;
 
     // Check for epoch transition
@@ -240,7 +207,7 @@ pub fn transition(
 
     // GP0.3.6@(66) Combine previous entropy accumulator (η0) with new entropy
     // input η′0 ≡H(η0 ⌢ Y(Hv))
-    post_state.eta[0] = entropy.update(post_state.eta[0], input.entropy);
+    post_state.eta[0] = entropy.update(post_state.eta[0], eta_entropy);
 
     // Section 6.7 Ticketing
     // GP0.3.6@(78) Merge the gamma_a and extrinsic tickets into a new ticket
@@ -260,7 +227,7 @@ pub fn transition(
 
     // Determine the output
     var epoch_marker: ?types.EpochMark = null;
-    var winning_ticket_marker: ?types.TicketMark = null;
+    var winning_ticket_marker: ?types.TicketsMark = null;
 
     if (current_epoch > prev_epoch) {
         epoch_marker = .{
@@ -287,14 +254,10 @@ pub fn transition(
         };
     }
 
-    return .{
-        .output = .{
-            .ok = types.OutputMarks{
-                .epoch_mark = epoch_marker,
-                .tickets_mark = winning_ticket_marker,
-            },
-        },
-        .state = post_state,
+    return Result{
+        .post_state = post_state,
+        .epoch_marker = epoch_marker,
+        .ticket_marker = winning_ticket_marker,
     };
 }
 

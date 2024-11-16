@@ -1,5 +1,6 @@
 const std = @import("std");
 const safrole = @import("../safrole.zig");
+const safrole_types = @import("../safrole/types.zig");
 
 const tmpfile = @import("tmpfile");
 
@@ -7,8 +8,8 @@ pub const Error = error{OutOfMemory};
 
 pub fn diffStates(
     allocator: std.mem.Allocator,
-    before: *const safrole.types.State,
-    after: *const safrole.types.State,
+    before: *const safrole_types.State,
+    after: *const safrole_types.State,
 ) ![]u8 {
     // Print both before and after states
     const before_str = try std.fmt.allocPrint(allocator, "{any}", .{before});

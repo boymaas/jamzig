@@ -1,6 +1,5 @@
 const std = @import("std");
 const types = @import("types.zig");
-const safrole_types = @import("safrole/types.zig");
 
 const Params = @import("jam_params.zig").Params;
 
@@ -82,10 +81,10 @@ pub fn JamState(comptime params: Params) type {
                 .beta = try Beta.init(allocator, 10),
                 .gamma = try Gamma.init(allocator),
                 .delta = Delta.init(allocator),
-                .eta = std.mem.zeroes(safrole_types.Eta),
-                .iota = &[_]safrole_types.ValidatorData{},
-                .kappa = &[_]safrole_types.ValidatorData{},
-                .lambda = &[_]safrole_types.ValidatorData{},
+                .eta = std.mem.zeroes(types.Eta),
+                .iota = &[_]types.ValidatorData{},
+                .kappa = &[_]types.ValidatorData{},
+                .lambda = &[_]types.ValidatorData{},
                 .rho = Rho.init(),
                 .tau = 0,
                 .phi = try Phi.init(allocator),
@@ -136,10 +135,10 @@ pub const Theta = @import("available_reports.zig").Theta;
 // TODO: move this to a seperate file
 pub const Gamma = @import("safrole_state.zig").Gamma;
 pub const Delta = @import("services.zig").Delta;
-pub const Eta = safrole_types.Eta;
-pub const Iota = safrole_types.Iota;
-pub const Kappa = safrole_types.Kappa;
-pub const Lambda = safrole_types.Lambda;
+pub const Eta = types.Eta;
+pub const Iota = types.Iota;
+pub const Kappa = types.Kappa;
+pub const Lambda = types.Lambda;
 pub const Rho = @import("pending_reports.zig").Rho;
 pub const Tau = types.TimeSlot;
 pub const Phi = @import("authorization_queue.zig").Phi;

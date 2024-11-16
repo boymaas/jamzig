@@ -1,5 +1,5 @@
 const std = @import("std");
-const safrole = @import("../safrole.zig");
+const safrole = @import("adaptor.zig");
 const fixtures = @import("fixtures.zig");
 const assert = std.debug.assert;
 

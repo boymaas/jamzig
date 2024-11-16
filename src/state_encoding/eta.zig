@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const Eta = @import("../safrole/types.zig").Eta;
+const Eta = @import("../types.zig").Eta;
 
 pub fn encode(self: *const Eta, writer: anytype) !void {
     for (self) |entropy_item| {

@@ -1,6 +1,6 @@
 const std = @import("std");
 const tests = @import("../tests.zig");
-const safrole = @import("../safrole.zig");
+const safrole = @import("adaptor.zig");
 const safrole_fixtures = @import("fixtures.zig");
 const tiny_params = @import("tiny.zig").TINY_PARAMS;
 

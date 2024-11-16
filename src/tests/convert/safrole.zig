@@ -2,14 +2,16 @@ const std = @import("std");
 const tv_types = @import("../vectors/libs/types.zig");
 const tv_lib_safrole = @import("../vectors/libs/safrole.zig");
 
+const adaptor = @import("../../safrole_test/adaptor.zig");
 const lib_safrole = @import("../../safrole/types.zig");
+const types = @import("../../types.zig");
 
 const Error = error{ FromError, OutOfMemory };
 const Allocator = std.mem.Allocator;
 
 /// Maps the type from the testVector to a safrole implementation type
 pub fn stateFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.State) Error!lib_safrole.State {
-    return lib_safrole.State{
+    return .{
         .tau = from.tau,
         .eta = convertEta(from.eta),
         .lambda = try convertValidatorDataSlice(allocator, from.lambda),
@@ -22,14 +24,14 @@ pub fn stateFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Sta
     };
 }
 
-pub fn inputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Input) Error!lib_safrole.Input {
-    var to = lib_safrole.Input{
+pub fn inputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Input) Error!adaptor.Input {
+    var to = adaptor.Input{
         .slot = from.slot,
         .entropy = convertOpaqueHash(from.entropy),
         .extrinsic = undefined,
     };
 
-    to.extrinsic = try allocator.alloc(lib_safrole.TicketEnvelope, from.extrinsic.len);
+    to.extrinsic = try allocator.alloc(types.TicketEnvelope, from.extrinsic.len);
     for (from.extrinsic, to.extrinsic) |from_envelope, *to_envelope| {
         to_envelope.attempt = from_envelope.attempt;
         convertHexBytesToArray(784, from_envelope.signature, &to_envelope.signature);
@@ -38,11 +40,11 @@ pub fn inputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Inp
     return to;
 }
 
-pub fn outputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Output) Error!lib_safrole.Output {
+pub fn outputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Output) Error!adaptor.Output {
     return switch (from.*) {
-        .err => |err| lib_safrole.Output{ .err = try convertOutputError(err) },
-        .ok => |marks| lib_safrole.Output{
-            .ok = lib_safrole.OutputMarks{
+        .err => |err| adaptor.Output{ .err = try convertOutputError(err) },
+        .ok => |marks| adaptor.Output{
+            .ok = adaptor.OutputMarks{
                 .epoch_mark = if (marks.epoch_mark) |epoch_mark|
                     try convertEpochMark(allocator, epoch_mark)
                 else
@@ -56,25 +58,25 @@ pub fn outputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Ou
     };
 }
 
-fn convertOutputError(from: ?[]const u8) Error!lib_safrole.OutputError {
+fn convertOutputError(from: ?[]const u8) Error!adaptor.OutputError {
     if (from) |err_str| {
-        inline for (@typeInfo(lib_safrole.OutputError).@"enum".fields) |field| {
+        inline for (@typeInfo(adaptor.OutputError).@"enum".fields) |field| {
             if (std.mem.eql(u8, err_str, field.name)) {
-                return @field(lib_safrole.OutputError, field.name);
+                return @field(adaptor.OutputError, field.name);
             }
         }
     }
     return error.FromError;
 }
 
-fn convertEpochMark(allocator: Allocator, from: tv_lib_safrole.EpochMark) Error!lib_safrole.EpochMark {
-    return lib_safrole.EpochMark{
+fn convertEpochMark(allocator: Allocator, from: tv_lib_safrole.EpochMark) Error!types.EpochMark {
+    return types.EpochMark{
         .entropy = convertOpaqueHash(from.entropy),
         .validators = try convertBandersnatchKeysSlice(allocator, from.validators),
     };
 }
 
-fn convertEta(from: [4]tv_lib_safrole.OpaqueHash) [4]lib_safrole.OpaqueHash {
+fn convertEta(from: [4]tv_lib_safrole.OpaqueHash) [4]types.OpaqueHash {
     return .{
         convertOpaqueHash(from[0]),
         convertOpaqueHash(from[1]),
@@ -83,7 +85,7 @@ fn convertEta(from: [4]tv_lib_safrole.OpaqueHash) [4]lib_safrole.OpaqueHash {
     };
 }
 
-fn convertOpaqueHash(from: tv_lib_safrole.OpaqueHash) lib_safrole.OpaqueHash {
+fn convertOpaqueHash(from: tv_lib_safrole.OpaqueHash) types.OpaqueHash {
     return convertHexBytesFixedToArray(32, from);
 }
 
@@ -103,55 +105,55 @@ fn convertHexBytesToArray(comptime size: u32, from: tv_types.hex.HexBytes, to: *
     }
 }
 
-fn convertValidatorDataSlice(allocator: Allocator, from: []tv_lib_safrole.ValidatorData) Error![]lib_safrole.ValidatorData {
-    const to = try allocator.alloc(lib_safrole.ValidatorData, from.len);
+fn convertValidatorDataSlice(allocator: Allocator, from: []tv_lib_safrole.ValidatorData) Error![]types.ValidatorData {
+    const to = try allocator.alloc(types.ValidatorData, from.len);
     for (from, to) |*from_validator, *to_validator| {
         convertValidatorData(from_validator, to_validator);
     }
     return to;
 }
 
-fn convertValidatorData(from: *tv_lib_safrole.ValidatorData, to: *lib_safrole.ValidatorData) void {
+fn convertValidatorData(from: *tv_lib_safrole.ValidatorData, to: *types.ValidatorData) void {
     convertHexBytesToArray(32, from.bandersnatch, &to.bandersnatch);
     convertHexBytesToArray(32, from.ed25519, &to.ed25519);
     convertHexBytesToArray(144, from.bls, &to.bls);
     convertHexBytesToArray(128, from.metadata, &to.metadata);
 }
 
-fn convertTicketBodySlice(allocator: Allocator, from: []tv_lib_safrole.TicketBody) Error![]lib_safrole.TicketBody {
-    const to = try allocator.alloc(lib_safrole.TicketBody, from.len);
+fn convertTicketBodySlice(allocator: Allocator, from: []tv_lib_safrole.TicketBody) Error![]types.TicketBody {
+    const to = try allocator.alloc(types.TicketBody, from.len);
     for (from, to) |from_ticket, *to_ticket| {
         to_ticket.* = convertTicketBody(from_ticket);
     }
     return to;
 }
 
-fn convertTicketBody(from: tv_lib_safrole.TicketBody) lib_safrole.TicketBody {
-    return lib_safrole.TicketBody{
+fn convertTicketBody(from: tv_lib_safrole.TicketBody) types.TicketBody {
+    return types.TicketBody{
         .id = convertOpaqueHash(from.id),
         .attempt = from.attempt,
     };
 }
 
-fn convertGammaS(allocator: Allocator, from: tv_lib_safrole.GammaS) Error!lib_safrole.GammaS {
+fn convertGammaS(allocator: Allocator, from: tv_lib_safrole.GammaS) Error!types.GammaS {
     switch (from) {
         .tickets => {
-            return lib_safrole.GammaS{ .tickets = try convertTicketBodySlice(allocator, from.tickets) };
+            return types.GammaS{ .tickets = try convertTicketBodySlice(allocator, from.tickets) };
         },
         .keys => {
-            return lib_safrole.GammaS{ .keys = try convertBandersnatchKeysSlice(allocator, from.keys) };
+            return types.GammaS{ .keys = try convertBandersnatchKeysSlice(allocator, from.keys) };
         },
     }
 }
 
-fn convertBandersnatchKeysSlice(allocator: Allocator, from: []tv_lib_safrole.BandersnatchKey) Error![]lib_safrole.BandersnatchKey {
-    const to = try allocator.alloc(lib_safrole.BandersnatchKey, from.len);
+fn convertBandersnatchKeysSlice(allocator: Allocator, from: []tv_lib_safrole.BandersnatchKey) Error![]types.BandersnatchKey {
+    const to = try allocator.alloc(types.BandersnatchKey, from.len);
     for (from, to) |from_key, *to_key| {
         to_key.* = convertHexBytesFixedToArray(32, from_key);
     }
     return to;
 }
 
-fn convertGammaZ(from: tv_lib_safrole.GammaZ) lib_safrole.GammaZ {
+fn convertGammaZ(from: tv_lib_safrole.GammaZ) types.GammaZ {
     return convertHexBytesFixedToArray(144, from);
 }

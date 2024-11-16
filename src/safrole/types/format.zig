@@ -1,5 +1,6 @@
 const std = @import("std");
-const types = @import("../types.zig");
+const types = @import("../../types.zig");
+const safrole_types = @import("../types.zig");
 
 pub fn formatInput(input: types.Input, writer: anytype) !void {
     try writer.writeAll("Input {\n");
@@ -19,7 +20,7 @@ pub fn formatInput(input: types.Input, writer: anytype) !void {
     try writer.writeAll("}\n");
 }
 
-pub fn formatState(state: types.State, writer: anytype) !void {
+pub fn formatState(state: safrole_types.State, writer: anytype) !void {
     try writer.writeAll("State {\n");
 
     try writer.writeAll("\n---- Timeslot (τ) ----\n");

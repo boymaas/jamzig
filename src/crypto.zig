@@ -1,5 +1,5 @@
 const std = @import("std");
-const types = @import("safrole/types.zig");
+const types = @import("types.zig");
 
 // Extern declarations for Rust functions
 extern fn generate_ring_signature(
