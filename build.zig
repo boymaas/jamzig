@@ -187,20 +187,36 @@ const RustDep = struct {
     fullpath: []const u8,
 };
 
-pub fn buildRustDependencies(b: *std.Build) !RustDeps {
-    var deps = RustDeps.init(b);
-    errdefer deps.deinit();
+fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8) !void {
+    const manifest_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/Cargo.toml", .{name});
+    defer b.allocator.free(manifest_path);
 
-    // Build the rust library, always
-    var crypto = b.addSystemCommand(&[_][]const u8{
+    var cmd = b.addSystemCommand(&[_][]const u8{
         "cargo",
         "build",
         "--release",
         "--manifest-path",
-        "ffi/rust/crypto/Cargo.toml",
+        manifest_path,
     });
 
-    try deps.register("ffi/rust/crypto/target/release", "jamzig_crypto", &crypto.step);
+    const target_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/target/release", .{name});
+    defer b.allocator.free(target_path);
+
+    const lib_name = if (std.mem.eql(u8, name, "crypto"))
+        "jamzig_crypto"
+    else
+        name;
+
+    try deps.register(target_path, lib_name, &cmd.step);
+}
+
+pub fn buildRustDependencies(b: *std.Build) !RustDeps {
+    var deps = RustDeps.init(b);
+    errdefer deps.deinit();
+
+    // Build the rust libraries
+    try buildRustDep(b, &deps, "crypto");
+    try buildRustDep(b, &deps, "reed_solomon");
 
     return deps;
 }

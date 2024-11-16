@@ -2,7 +2,7 @@
   description = "JamZig";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
 
     # Overlays
@@ -34,9 +34,14 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             rustpkgs.rust-beta
+            rustpkgs.rust-beta
 
             zigpkgs.master
             zls.packages.${system}.zls # Adding ZLS from the master branch
+          ];
+
+          packages = with pkgs; [
+            rust-analyzer
           ];
 
           # shellHook = "exec zsh";
