@@ -278,12 +278,13 @@ pub fn transition(
         // And we have a full epoch worth of tickets accumulated
         post_state.gamma_a.len == params.epoch_length)
     {
-        winning_ticket_marker =
-            try Z_outsideInOrdering(
-            types.TicketBody,
-            allocator,
-            pre_state.gamma_a,
-        );
+        winning_ticket_marker = .{
+            .tickets = try Z_outsideInOrdering(
+                types.TicketBody,
+                allocator,
+                pre_state.gamma_a,
+            ),
+        };
     }
 
     return .{

@@ -18,7 +18,7 @@ pub const BandersnatchVrfRoot = types.BandersnatchVrfRoot;
 pub const BandersnatchKeyPair = types.BandersnatchKeyPair;
 
 pub const EpochMark = types.EpochMark;
-pub const TicketMark = []types.TicketBody;
+pub const TicketMark = types.TicketsMark;
 
 pub const TicketBody = types.TicketBody;
 pub const TicketEnvelope = types.TicketEnvelope;
@@ -163,7 +163,7 @@ pub const Output = union(enum) {
                     allocator.free(epoch_mark.validators);
                 }
                 if (marks.tickets_mark) |tickets_mark| {
-                    allocator.free(tickets_mark);
+                    allocator.free(tickets_mark.tickets);
                 }
             },
         }

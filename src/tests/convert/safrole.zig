@@ -48,7 +48,7 @@ pub fn outputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Ou
                 else
                     null,
                 .tickets_mark = if (marks.tickets_mark) |tickets_mark|
-                    try convertTicketBodySlice(allocator, tickets_mark)
+                    .{ .tickets = try convertTicketBodySlice(allocator, tickets_mark) }
                 else
                     null,
             },

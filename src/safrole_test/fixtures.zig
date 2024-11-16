@@ -111,8 +111,8 @@ pub const Fixtures = struct {
                     const actual_tickets_mark = actual_ok.tickets_mark orelse return error.MissingTicketsMark;
                     try std.testing.expectEqualSlices(
                         safrole.types.TicketBody,
-                        expected_tickets_mark,
-                        actual_tickets_mark,
+                        expected_tickets_mark.tickets,
+                        actual_tickets_mark.tickets,
                     );
                 } else {
                     try std.testing.expectEqual(
