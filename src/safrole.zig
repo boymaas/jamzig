@@ -38,12 +38,9 @@ pub fn transition(
     allocator: std.mem.Allocator,
     params: Params,
     pre_state: safrole_types.State,
-    // Current slot.
-    slot: u32,
-    // Per block entropy (originated from block entropy source VRF).
-    eta_entropy: types.OpaqueHash,
-    // Ticket extrinsic.
-    ticket_extrinsic: []types.TicketEnvelope,
+    slot: types.TimeSlot,
+    bandersnatch_vrf_output: types.BandersnatchVrfOutput,
+    ticket_extrinsic: types.TicketsExtrinsic,
 ) Error!Result {
     // Equation 41: H_t ∈ N_T, P(H)_t < H_t ∧ H_t · P ≤ T
     if (slot <= pre_state.tau) {
@@ -206,7 +203,7 @@ pub fn transition(
 
     // GP0.3.6@(66) Combine previous entropy accumulator (η0) with new entropy
     // input η′0 ≡H(η0 ⌢ Y(Hv))
-    post_state.eta[0] = entropy.update(post_state.eta[0], eta_entropy);
+    post_state.eta[0] = entropy.update(post_state.eta[0], bandersnatch_vrf_output);
 
     // Section 6.7 Ticketing
     // GP0.3.6@(78) Merge the gamma_a and extrinsic tickets into a new ticket
