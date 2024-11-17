@@ -224,15 +224,42 @@ pub fn transitionSafrole(
     current_tau: *const state.Tau,
     new_block: Block,
 ) !struct { gamma: state.Gamma, eta: state.Eta, iota: state.Iota, kappa: state.Kappa, lambda: state.Lambda } {
-    _ = allocator;
-    _ = current_gamma;
-    _ = current_eta;
-    _ = current_iota;
-    _ = current_kappa;
-    _ = current_lambda;
-    _ = current_tau;
-    _ = new_block;
-    // Transition γ, η, ι, κ, and λ based on Safrole consensus rules
+    // Prepare safrole input from block
+    const input = .{
+        .slot = new_block.header.slot,
+        .entropy = new_block.header.entropy_source,
+        .extrinsic = new_block.extrinsic.tickets,
+    };
+
+    // Prepare current safrole state
+    const safrole_state = .{
+        .tau = current_tau.*,
+        .eta = current_eta.*,
+        .lambda = current_lambda.*,
+        .kappa = current_kappa.*,
+        .gamma_k = current_gamma.k,
+        .iota = current_iota.*,
+        .gamma_a = current_gamma.a,
+        .gamma_s = current_gamma.s,
+        .gamma_z = current_gamma.z,
+    };
+
+    // Call safrole transition
+    const result = try @import("safrole.zig").transition(allocator, safrole_state, input);
+
+    // Return updated state components
+    return .{
+        .gamma = .{
+            .k = result.post_state.gamma_k,
+            .a = result.post_state.gamma_a,
+            .s = result.post_state.gamma_s,
+            .z = result.post_state.gamma_z,
+        },
+        .eta = result.post_state.eta,
+        .iota = result.post_state.iota,
+        .kappa = result.post_state.kappa,
+        .lambda = result.post_state.lambda,
+    };
 }
 
 fn validator_key(validator: types.ValidatorData) types.Ed25519Key {

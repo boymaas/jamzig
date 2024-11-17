@@ -80,6 +80,11 @@ pub const Params = struct {
     pvm_program_init_page_size: u16 = 2 ^ 14, // ZP
     // ZQ: The standard pvm program initialization segment size
     pvm_program_init_segment_size: u32 = 2 ^ 16, // ZQ
+    //
+
+    // NOTE: this has to be here for the codec,
+    // -- (cores-count + 7) / 8
+    avail_bitfield_bytes: usize = 341 + 7 / 8,
 
     // Default format parameters
     pub fn format(
@@ -99,6 +104,7 @@ pub const TINY_PARAMS = Params{
     .validators_count = 6,
     .validators_super_majority = 5,
     .core_count = 2,
+    .avail_bitfield_bytes = 2 + 7 / 8,
 };
 
 pub const FULL_PARAMS = Params{};

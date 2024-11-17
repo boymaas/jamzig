@@ -45,6 +45,8 @@ comptime {
     _ = @import("accumulated_reports.zig");
 
     _ = @import("validator_stats.zig");
+
+    _ = @import("stf_test.zig");
 }
 
 pub const tv_types = @import("tests/vectors/libs/types.zig");

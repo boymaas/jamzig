@@ -24,7 +24,7 @@ pub fn Deserialized(T: anytype) type {
 // | |_| |  __/\__ \  __/ |  | | (_| | | |/ /  __/
 // |____/ \___||___/\___|_|  |_|\__,_|_|_/___\___|
 
-pub fn deserialize(comptime T: type, comptime params: anytype, parent_allocator: std.mem.Allocator, data: []u8) !Deserialized(T) {
+pub fn deserialize(comptime T: type, comptime params: anytype, parent_allocator: std.mem.Allocator, data: []const u8) !Deserialized(T) {
     trace(@src(), "deserialize: start", .{});
     defer trace(@src(), "deserialize: end", .{});
 
