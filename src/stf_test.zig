@@ -6,6 +6,8 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const codec = @import("codec.zig");
 
+const Params = @import("jam_params.zig").Params;
+
 const ordered_files = @import("tests/ordered_files.zig");
 
 const TINY_PARAMS = @import("jam_params.zig").TINY_PARAMS;
@@ -31,11 +33,45 @@ fn slurpBin(allocator: std.mem.Allocator, path: []const u8) !SlurpedFile {
     };
 }
 
+// Re-Using test vectors JSON parsing to get GenesisJson state
+const safrole_tv_types = @import("tests/vectors/libs/safrole.zig");
+
+const Gamma = struct {
+    gamma_k: []safrole_tv_types.ValidatorData,
+    gamma_a: []safrole_tv_types.TicketBody,
+    gamma_s: safrole_tv_types.GammaS,
+    gamma_z: safrole_tv_types.GammaZ,
+};
+
+const GenesisJson = struct {
+    gamma: Gamma,
+    eta: [4]safrole_tv_types.OpaqueHash,
+    iota: []safrole_tv_types.ValidatorData,
+    kappa: []safrole_tv_types.ValidatorData,
+    lambda: []safrole_tv_types.ValidatorData,
+};
+
+fn buildGenesisState(comptime params: Params, allocator: std.mem.Allocator, json_str: []const u8) !state.JamState(params) {
+    // Initialize empty state
+    var jam_state = try state.JamState(params).init(allocator);
+    errdefer jam_state.deinit(allocator);
+
+    var parsed = std.json.parseFromSlice(GenesisJson, allocator, json_str, .{ .ignore_unknown_fields = true, .parse_numbers = false }) catch |err| {
+        std.debug.print("Could not parse GenesisJson", .{});
+        return err;
+    };
+    defer parsed.deinit();
+
+    return jam_state;
+}
+
 test "jamtestnet: block import" {
     // Get test allocator
     const allocator = testing.allocator;
 
     // Get ordered block files
+    var genesis = try buildGenesisState(TINY_PARAMS, allocator, @embedFile("stf_test/genesis.json"));
+    defer genesis.deinit(allocator);
 
     // src/stf_test/jamtestnet/traces/safrole/
     // src/stf_test/jamtestnet/traces/safrole/jam_duna
@@ -65,8 +101,7 @@ test "jamtestnet: block import" {
             }, allocator, slurped.buffer);
             defer block.deinit();
 
-            std.debug.print("block {}", .{block});
-            break;
+            std.debug.print("block {}\n", .{block.value.header.slot});
         }
         break;
     }
