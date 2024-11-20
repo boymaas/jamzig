@@ -1,5 +1,10 @@
 const std = @import("std");
 
+/// Deep cloning function with optional allocation tradeoffs. If it encounters a pointer or slice
+/// Currently returns T directly which is:
+/// + More ergonomic for small types
+/// + Has clear ownership semantics
+/// - Could be slow for large structs.
 pub inline fn deepClone(comptime T: type, this: *const T, allocator: std.mem.Allocator) !T {
     const tyinfo = comptime @typeInfo(T);
     if (comptime tyinfo == .pointer) {
@@ -21,6 +26,14 @@ pub inline fn deepClone(comptime T: type, this: *const T, allocator: std.mem.All
         if (this.* != null) return try deepClone(TT, &this.*.?, allocator);
         return null;
     }
+    if (comptime tyinfo == .@"struct") {
+        var result: T = undefined;
+        inline for (tyinfo.@"struct".fields) |field| {
+            const field_ptr = &@field(this.*, field.name);
+            @field(result, field.name) = try deepClone(field.type, field_ptr, allocator);
+        }
+        return result;
+    }
 
     // Handle primitive types directly
     switch (comptime tyinfo) {
@@ -28,9 +41,5 @@ pub inline fn deepClone(comptime T: type, this: *const T, allocator: std.mem.All
         else => {},
     }
 
-    if (!@hasDecl(T, "deepClone")) {
-        @compileError(@typeName(T) ++ " does not have a deepClone() function");
-    }
-
-    return T.deepClone(this, allocator);
+    @compileError(@typeName(T) ++ " is not handled by deepClone");
 }
