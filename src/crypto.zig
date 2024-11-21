@@ -116,7 +116,7 @@ pub fn generateRingSignature(
 }
 
 pub fn verifyRingSignature(
-    public_keys: []types.BandersnatchKey,
+    public_keys: []const types.BandersnatchKey,
     vrf_input: []const u8,
     aux_data: []const u8,
     signature: *const types.BandersnatchRingSignature,

@@ -7,6 +7,8 @@ const Keccak256 = std.crypto.hash.sha3.Keccak256;
 const merkle = @import("merkle_binary.zig");
 const mmr = @import("merkle_mountain_ranges.zig");
 
+const types = @import("types.zig");
+
 pub const Hash = [32]u8;
 
 pub const BlockInfo = struct {
@@ -18,6 +20,16 @@ pub const BlockInfo = struct {
     beefy_mmr: []?Hash,
     /// The hashes of work reports included in this block
     work_reports: []Hash,
+
+    /// Creates a deep copy of the BlockInfo with newly allocated memory
+    pub fn deepClone(self: *const BlockInfo, allocator: Allocator) !BlockInfo {
+        return BlockInfo{
+            .header_hash = self.header_hash,
+            .state_root = self.state_root,
+            .beefy_mmr = try allocator.dupe(?Hash, self.beefy_mmr),
+            .work_reports = try allocator.dupe(Hash, self.work_reports),
+        };
+    }
 };
 
 /// Represents a recent block with information needed for importing
@@ -30,6 +42,26 @@ pub const RecentBlock = struct {
     accumulate_root: Hash,
     /// The hashes of the work reports included in this block
     work_reports: []Hash,
+
+    pub fn fromBlock(allocator: std.mem.Allocator, block: *const types.Block) !@This() {
+        return RecentBlock{
+            .header_hash = undefined, // TODO: block.header.header_hash,
+            .parent_state_root = block.header.parent_state_root,
+            .accumulate_root = undefined, // TODO block.header.extrinsic_hash,
+            .work_reports = blk: {
+                // Extract work report hashes from guarantees
+                // TODO: move this to block level, more clean
+                var reports = std.ArrayList(Hash).init(allocator);
+                errdefer reports.deinit();
+
+                for (block.extrinsic.guarantees) |guarantee| {
+                    try reports.append(guarantee.report.package_spec.hash);
+                }
+
+                break :blk try reports.toOwnedSlice();
+            },
+        };
+    }
 };
 
 /// Manages the recent history of blocks
@@ -124,6 +156,18 @@ pub const RecentHistory = struct {
             return self.blocks.items[index];
         }
         return null;
+    }
+
+    /// Performs a deep clone of the RecentHistory as efficiently as possible
+    pub fn deepClone(self: *const Self, allocator: Allocator) !Self {
+        var new_history = try Self.init(allocator, self.max_blocks);
+        errdefer new_history.deinit();
+
+        for (self.blocks.items) |block| {
+            const cloned_block = try block.deepClone(allocator);
+            try new_history.addBlockInfo(cloned_block);
+        }
+        return new_history;
     }
 };
 

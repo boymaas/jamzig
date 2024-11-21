@@ -42,8 +42,29 @@ const Header = types.Header;
 
 const Params = @import("jam_params.zig").Params;
 
-pub fn stateTransition(allocator: Allocator, params: Params, current_state: *const JamState, new_block: Block) !JamState {
-    var new_state: JamState = undefined;
+/// State Transition Function Implementation
+///
+/// This is a naive, sequential implementation of JAM's state transition function
+/// that processes blocks in a straightforward manner, directly updating state
+/// without optimizations for branching, reversals, or concurrent access.
+///
+/// Performance is not a primary concern in this initial implementation as it
+/// assumes a clean, linear import of blocks without any forks or reorganizations.
+/// The focus is on correctness and direct mapping to the protocol specification.
+///
+/// Future iterations will introduce more sophisticated data structures and
+/// algorithms to handle:
+/// - Chain reorganizations and forks
+/// - Efficient state storage and retrieval
+/// - Concurrent block processing
+/// - Memory-efficient state updates
+/// - Rollback capabilities
+///
+/// These optimizations will emerge naturally as the implementation progresses
+/// and the specific performance requirements become clearer through real-world
+/// usage patterns.
+pub fn stateTransition(comptime params: Params, allocator: Allocator, current_state: *const JamState(params), new_block: *const Block) !JamState(params) {
+    var new_state: JamState(params) = undefined;
 
     // Step 1: Time Transition (τ')
     // Purpose: Update the blockchain's internal time based on the new block's header.
@@ -78,6 +99,7 @@ pub fn stateTransition(allocator: Allocator, params: Params, current_state: *con
     // These updates ensure the proper rotation and management of validators,
     // maintain the chain's randomness, and prepare for future epochs.
     const safrole_transition = try transitionSafrole(
+        params,
         allocator,
         &current_state.gamma,
         &current_state.eta,
@@ -199,22 +221,33 @@ pub fn transitionTime(
 ) !state.Tau {
     _ = allocator;
     _ = current_tau;
-    _ = header;
     // Transition τ based on the new block's header
+    // TODO: do some checking
+    return header.slot;
 }
 
 pub fn transitionRecentHistory(
     allocator: Allocator,
     current_beta: *const state.Beta,
-    new_block: Block,
+    new_block: *const Block,
 ) !state.Beta {
-    _ = allocator;
-    _ = current_beta;
-    _ = new_block;
+    const RecentBlock = @import("recent_blocks.zig").RecentBlock;
     // Transition β with information from the new block
+    var new_beta = try current_beta.deepClone(allocator);
+    try new_beta.import(allocator, try RecentBlock.fromBlock(allocator, new_block));
+    return new_beta;
+}
+
+// TODO: now worth to be a function
+pub fn getBlockEntropy(
+    header: *const types.Header,
+) types.BandersnatchVrfOutput {
+    const vrf = @import("vrf.zig");
+    return vrf.getVrfOutput(&header.entropy_source);
 }
 
 pub fn transitionSafrole(
+    comptime params: Params,
     allocator: Allocator,
     current_gamma: *const state.Gamma,
     current_eta: *const state.Eta,
@@ -222,12 +255,17 @@ pub fn transitionSafrole(
     current_kappa: *const state.Kappa,
     current_lambda: *const state.Lambda,
     current_tau: *const state.Tau,
-    new_block: Block,
+    new_block: *const Block,
 ) !struct { gamma: state.Gamma, eta: state.Eta, iota: state.Iota, kappa: state.Kappa, lambda: state.Lambda } {
+
+    // Verify the entropy source signature from the block header
+    const entropy = getBlockEntropy(
+        &new_block.header,
+    );
     // Prepare safrole input from block
     const input = .{
         .slot = new_block.header.slot,
-        .entropy = new_block.header.entropy_source,
+        .entropy = entropy,
         .extrinsic = new_block.extrinsic.tickets,
     };
 
@@ -245,7 +283,15 @@ pub fn transitionSafrole(
     };
 
     // Call safrole transition
-    const result = try @import("safrole.zig").transition(allocator, safrole_state, input);
+    const result = try @import("safrole.zig").transition(
+        allocator,
+        params,
+        safrole_state,
+        input.slot,
+        // TODO: get the entropy out of the entropy source
+        input.entropy,
+        input.extrinsic,
+    );
 
     // Return updated state components
     return .{

@@ -30,6 +30,9 @@ pub const BandersnatchVrfRoot = [144]u8;
 pub const BandersnatchRingSignature = [784]u8;
 pub const Ed25519Signature = [64]u8;
 
+// We define the time in terms of seconds passed since the beginning of the Jam
+// Common Era, 1200 UTC on January 1, 2024. Tau is the number of 6 second periods since
+// the start of the Jam Common Era.
 pub const Tau = u32;
 pub const Epoch = u32;
 
@@ -123,6 +126,17 @@ pub const WorkReport = struct {
     auth_output: []u8,
     // TODO: check this
     results: []WorkResult, // max 4 allowed
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .package_spec = self.package_spec,
+            .context = self.context,
+            .core_index = self.core_index,
+            .authorizer_hash = self.authorizer_hash,
+            .auth_output = try allocator.dupe(u8, self.auth_output),
+            .results = try allocator.dupe(WorkResult, self.results),
+        };
+    }
 };
 
 pub const EpochMark = struct {
@@ -132,6 +146,13 @@ pub const EpochMark = struct {
     // validator size is defined at runtime
     pub fn validators_size(params: CodecParams) usize {
         return params.validators;
+    }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .entropy = self.entropy,
+            .validators = try allocator.dupe(BandersnatchKey, self.validators),
+        };
     }
 };
 
@@ -146,6 +167,12 @@ pub const TicketsMark = struct {
     // epoch length is defined at runtime
     pub fn tickets_size(params: CodecParams) usize {
         return params.epoch_length;
+    }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .tickets = try allocator.dupe(TicketBody, self.tickets),
+        };
     }
 };
 
@@ -197,6 +224,24 @@ pub const Header = struct {
     entropy_source: BandersnatchVrfSignature,
     seal: BandersnatchVrfSignature,
 
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        const epoch_mark = if (self.epoch_mark) |mark| try mark.deepClone(allocator) else null;
+        const tickets_mark = if (self.tickets_mark) |mark| try mark.deepClone(allocator) else null;
+
+        return @This(){
+            .parent = self.parent,
+            .parent_state_root = self.parent_state_root,
+            .extrinsic_hash = self.extrinsic_hash,
+            .slot = self.slot,
+            .epoch_mark = epoch_mark,
+            .tickets_mark = tickets_mark,
+            .offenders_mark = try allocator.dupe(Ed25519Key, self.offenders_mark),
+            .author_index = self.author_index,
+            .entropy_source = self.entropy_source,
+            .seal = self.seal,
+        };
+    }
+
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try @import("types/format.zig").formatHeader(self, writer);
     }
@@ -226,6 +271,14 @@ pub const Verdict = struct {
     pub fn votes_size(params: CodecParams) usize {
         return params.validators_super_majority;
     }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .target = self.target,
+            .age = self.age,
+            .votes = try allocator.dupe(Judgement, self.votes),
+        };
+    }
 };
 
 pub const Culprit = struct {
@@ -245,6 +298,19 @@ pub const DisputesExtrinsic = struct {
     verdicts: []const Verdict,
     culprits: []const Culprit,
     faults: []const Fault,
+
+    pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !@This() {
+        var verdicts = try allocator.alloc(Verdict, self.verdicts.len);
+        for (self.verdicts, 0..) |verdict, i| {
+            verdicts[i] = try verdict.deepClone(allocator);
+        }
+
+        return @This(){
+            .verdicts = verdicts,
+            .culprits = try allocator.dupe(Culprit, self.culprits),
+            .faults = try allocator.dupe(Fault, self.faults),
+        };
+    }
 
     pub fn deinit(
         self: *DisputesExtrinsic,
@@ -272,6 +338,15 @@ pub const AvailAssurance = struct {
     validator_index: ValidatorIndex,
     signature: Ed25519Signature,
 
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .anchor = self.anchor,
+            .bitfield = try allocator.dupe(u8, self.bitfield),
+            .validator_index = self.validator_index,
+            .signature = self.signature,
+        };
+    }
+
     pub fn bitfield_size(params: CodecParams) usize {
         return params.avail_bitfield_bytes;
     }
@@ -288,6 +363,14 @@ pub const ReportGuarantee = struct {
     report: WorkReport,
     slot: TimeSlot,
     signatures: []ValidatorSignature,
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .report = try self.report.deepClone(allocator),
+            .slot = self.slot,
+            .signatures = try allocator.dupe(ValidatorSignature, self.signatures),
+        };
+    }
 };
 
 /// 0..cores_count of ReportGuarantees
@@ -303,11 +386,34 @@ pub const Extrinsic = struct {
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try @import("types/format.zig").formatExtrinsic(self, writer);
     }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .tickets = try allocator.dupe(TicketEnvelope, self.tickets),
+            .disputes = try self.disputes.deepClone(allocator),
+            .preimages = try allocator.dupe(Preimage, self.preimages),
+            .assurances = blk: {
+                var assurances = try allocator.alloc(AvailAssurance, self.assurances.len);
+                for (self.assurances, 0..) |assurance, i| {
+                    assurances[i] = try assurance.deepClone(allocator);
+                }
+                break :blk assurances;
+            },
+            .guarantees = try allocator.dupe(ReportGuarantee, self.guarantees),
+        };
+    }
 };
 
 pub const Block = struct {
     header: Header,
     extrinsic: Extrinsic,
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .header = try self.header.deepClone(allocator),
+            .extrinsic = try self.extrinsic.deepClone(allocator),
+        };
+    }
 };
 
 pub const CodecParams = struct {

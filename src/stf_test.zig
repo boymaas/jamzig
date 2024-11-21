@@ -47,12 +47,15 @@ const GenesisJson = struct {
     lambda: []safrole_tv_types.ValidatorData,
 };
 
-fn buildGenesisState(allocator: std.mem.Allocator, jam_state: *state.JamState(jam_params.TINY_PARAMS), json_str: []const u8) !void {
+fn buildGenesisState(comptime params: jam_params.Params, allocator: std.mem.Allocator, json_str: []const u8) !state.JamState(params) {
     var parsed = std.json.parseFromSlice(GenesisJson, allocator, json_str, .{ .ignore_unknown_fields = true, .parse_numbers = false }) catch |err| {
         std.debug.print("Could not parse GenesisJson", .{});
         return err;
     };
     defer parsed.deinit();
+
+    var jam_state = try state.JamState(params).init(allocator);
+    defer jam_state.deinit(allocator);
 
     // Copy eta values
     for (parsed.value.eta, 0..) |eta_hash, i| {
@@ -121,17 +124,17 @@ fn buildGenesisState(allocator: std.mem.Allocator, jam_state: *state.JamState(ja
         },
     };
     std.mem.copyForwards(u8, &jam_state.gamma.z, &parsed.value.gamma.gamma_z.bytes);
+
+    return jam_state;
 }
 
 test "jamtestnet: block import" {
     // Get test allocator
     const allocator = testing.allocator;
 
-    var jam_state = try state.JamState(jam_params.TINY_PARAMS).init(allocator);
-    defer jam_state.deinit(allocator);
-
     // Get ordered block files
-    try buildGenesisState(allocator, &jam_state, @embedFile("stf_test/genesis.json"));
+    const jam_state = try buildGenesisState(jam_params.TINY_PARAMS, allocator, @embedFile("stf_test/genesis.json"));
+    // _ = jam_state;
 
     // src/stf_test/jamtestnet/traces/safrole/
     // src/stf_test/jamtestnet/traces/safrole/jam_duna
@@ -162,6 +165,10 @@ test "jamtestnet: block import" {
             defer block.deinit();
 
             std.debug.print("block {}\n", .{block.value.header.slot});
+
+            const new_state = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, &jam_state, &block.value);
+            _ = new_state;
+            break;
         }
         break;
     }

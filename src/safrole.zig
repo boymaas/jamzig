@@ -34,6 +34,7 @@ pub const Result = struct {
     ticket_marker: ?types.TicketsMark,
 };
 
+// TODO: swap params and allocator, use params first
 pub fn transition(
     allocator: std.mem.Allocator,
     params: Params,
