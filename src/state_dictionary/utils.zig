@@ -1,3 +1,15 @@
+//! This module provides utilities for efficiently handling null/optional values in the state dictionary.
+//! When generating Merkle proofs for the state, we need to handle cases where parts of the state are
+//! missing or null. Rather than storing null values directly in the state dictionary, we use this
+//! managed pointer approach to:
+//!
+//! 1. Lazily initialize values only when needed
+//! 2. Avoid allocating memory for null values that won't be included in proofs
+//! 3. Properly clean up allocated memory when values are no longer needed
+//!
+//! This allows us to generate valid Merkle proofs even with an incomplete state, while maintaining
+//! memory efficiency by only allocating what's necessary for the proof being generated.
+
 const std = @import("std");
 
 fn ManagedPtr(comptime T: type) type {
