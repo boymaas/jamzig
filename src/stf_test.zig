@@ -150,7 +150,9 @@ test "jamtestnet: block import" {
     // generate the block file from epoch 373496..=373500 and and for each of
     // those number 0..12 epochs
     const base_path = "src/stf_test/jamtestnet/traces/safrole/jam_duna/blocks";
+    // iterate the epochs
     for (373496..373500) |epoch| {
+        // iterate the slots within one epoch
         for (0..12) |number| {
             const block_path = try std.fmt.allocPrint(allocator, "{s}/{d}_{d}.bin", .{ base_path, epoch, number });
             defer allocator.free(block_path);
@@ -161,13 +163,7 @@ test "jamtestnet: block import" {
             defer slurped.deinit();
 
             // Now decode the block
-            const block = try codec.deserialize(types.Block, .{
-                .validators = jam_params.TINY_PARAMS.validators_count,
-                .epoch_length = jam_params.TINY_PARAMS.epoch_length,
-                .cores_count = jam_params.TINY_PARAMS.core_count, // TODO: consistent naming
-                .validators_super_majority = jam_params.TINY_PARAMS.validators_super_majority,
-                .avail_bitfield_bytes = jam_params.TINY_PARAMS.avail_bitfield_bytes,
-            }, allocator, slurped.buffer);
+            const block = try codec.deserialize(types.Block, jam_params.TINY_PARAMS, allocator, slurped.buffer);
             defer block.deinit();
 
             std.debug.print("block {}\n", .{block.value.header.slot});

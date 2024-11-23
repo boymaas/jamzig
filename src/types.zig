@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
+const jam_params = @import("jam_params.zig");
 
 pub const U8 = u8;
 pub const U16 = u16;
@@ -144,8 +145,8 @@ pub const EpochMark = struct {
     validators: []BandersnatchKey, // validators-count size
 
     // validator size is defined at runtime
-    pub fn validators_size(params: CodecParams) usize {
-        return params.validators;
+    pub fn validators_size(params: jam_params.Params) usize {
+        return params.validators_count;
     }
 
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
@@ -169,7 +170,7 @@ pub const TicketsMark = struct {
     tickets: []TicketBody, // epoch-length
 
     // epoch length is defined at runtime
-    pub fn tickets_size(params: CodecParams) usize {
+    pub fn tickets_size(params: jam_params.Params) usize {
         return params.epoch_length;
     }
 
@@ -315,7 +316,7 @@ pub const Verdict = struct {
     votes: []const Judgement, // validators_super_majority
 
     // validators_super_majority size is defined at runtime
-    pub fn votes_size(params: CodecParams) usize {
+    pub fn votes_size(params: jam_params.Params) usize {
         return params.validators_super_majority;
     }
 
@@ -394,7 +395,7 @@ pub const AvailAssurance = struct {
         };
     }
 
-    pub fn bitfield_size(params: CodecParams) usize {
+    pub fn bitfield_size(params: jam_params.Params) usize {
         return params.avail_bitfield_bytes;
     }
 };
@@ -461,15 +462,4 @@ pub const Block = struct {
             .extrinsic = try self.extrinsic.deepClone(allocator),
         };
     }
-};
-
-pub const CodecParams = struct {
-    validators: usize,
-    epoch_length: usize,
-    cores_count: usize,
-
-    // -- (validators-count * 2/3 + 1)
-    validators_super_majority: usize,
-    // -- (cores-count + 7) / 8
-    avail_bitfield_bytes: usize,
 };

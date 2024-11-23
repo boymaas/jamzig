@@ -7,15 +7,10 @@ const codec_test = @import("tests/vectors/codec.zig");
 const convert = @import("tests/convert/codec.zig");
 
 const types = @import("types.zig");
+const jam_params = @import("jam_params.zig");
 
 /// The Tiny PARAMS as they are defined in the ASN
-const TINY_PARAMS = types.CodecParams{
-    .validators = 6,
-    .epoch_length = 12,
-    .cores_count = 2,
-    .validators_super_majority = 5,
-    .avail_bitfield_bytes = 1,
-};
+const TINY_PARAMS = jam_params.TINY_PARAMS;
 
 const TestCase = struct {
     name: []const u8,
