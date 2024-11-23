@@ -63,8 +63,12 @@ const Params = @import("jam_params.zig").Params;
 /// These optimizations will emerge naturally as the implementation progresses
 /// and the specific performance requirements become clearer through real-world
 /// usage patterns.
-pub fn stateTransition(comptime params: Params, allocator: Allocator, current_state: *const JamState(params), new_block: *const Block) !JamState(params) {
-
+pub fn stateTransition(
+    comptime params: Params,
+    allocator: Allocator,
+    current_state: *const JamState(params),
+    new_block: *const Block,
+) !JamState(params) {
     // NOTE: challenge with this state transition is to be able to update fields and make sure appropiate
     // memory is freed when doing so. As such, maybe its better to work with updates or deltas which will also
     // communicate what has changed. These deltas can then be applied to a JamState, and we can get a summary of what
@@ -76,11 +80,15 @@ pub fn stateTransition(comptime params: Params, allocator: Allocator, current_st
     // Purpose: Update the blockchain's internal time based on the new block's header.
     // This step ensures that the blockchain's concept of time progresses with each new block.
     // It's crucial for maintaining the temporal order of events and for time-based protocol rules.
-    new_state.tau = try transitionTime(
-        allocator,
-        &current_state.tau,
-        new_block.header,
-    );
+    if (current_state.tau) |tau| {
+        new_state.tau = try transitionTime(
+            allocator,
+            tau,
+            new_block.header,
+        );
+    } else {
+        return error.UninitializedTau;
+    }
 
     // Step 2: Recent History Transition (β')
     // Purpose: Update the recent history of blocks with information from the new block.
@@ -108,11 +116,11 @@ pub fn stateTransition(comptime params: Params, allocator: Allocator, current_st
         params,
         allocator,
         &current_state.gamma.?,
-        &current_state.eta,
+        &current_state.eta.?,
         &current_state.iota.?,
         &current_state.kappa.?,
         &current_state.lambda.?,
-        &current_state.tau,
+        &current_state.tau.?,
         new_block,
     );
     // NOTE: only deinit the markers as we are using rest of allocated
@@ -243,7 +251,7 @@ pub fn stateTransition(comptime params: Params, allocator: Allocator, current_st
 
 pub fn transitionTime(
     allocator: Allocator,
-    current_tau: *const state.Tau,
+    current_tau: state.Tau,
     header: Header,
 ) !state.Tau {
     _ = allocator;

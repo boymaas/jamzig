@@ -184,7 +184,8 @@ pub fn buildStateMerklizationDictionary(
 
         // Eta (6) does not contain allocations
         const eta_key = constructSimpleByteKey(6);
-        const eta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeEta, .{&state.eta});
+        const eta_managed = if (state.eta) |eta| eta else [_]types.Entropy{[_]u8{0} ** 32} ** 4;
+        const eta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeEta, .{&eta_managed});
         try map.put(eta_key, eta_value);
 
         // Iota (7)
@@ -217,7 +218,8 @@ pub fn buildStateMerklizationDictionary(
 
         // Tau (11)
         const tau_key = constructSimpleByteKey(11);
-        const tau_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTau, .{state.tau});
+        const tau_managed = if (state.tau) |tau| tau else 0; // stack managed
+        const tau_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTau, .{tau_managed});
         try map.put(tau_key, tau_value);
 
         // Chi (12)

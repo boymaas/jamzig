@@ -27,7 +27,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// η: On-chain entropy pool used for randomization and consensus mechanisms.
         /// Manipulated in: src/safrole.zig
-        eta: Eta,
+        eta: ?Eta,
 
         /// ι: Validators enqueued for activation in the upcoming epoch.
         /// Manipulated in: src/safrole.zig
@@ -47,7 +47,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// τ: Current time, represented in terms of epochs and slots.
         /// Manipulated in: src/safrole.zig
-        tau: Tau,
+        tau: ?Tau,
 
         /// φ: Authorization queue for tasks or processes awaiting authorization by the network.
         /// Manipulated in: src/authorization.zig
@@ -195,6 +195,27 @@ pub fn JamState(comptime params: Params) type {
             writer: anytype,
         ) !void {
             try @import("state_format/jam_state.zig").format(params, self, fmt, options, writer);
+        }
+
+        /// Merge another state into this one
+        /// If a field is non-null in the source state, it will override the corresponding field in this state
+        pub fn merge(self: *JamState(params), source: JamState(params)) void {
+            if (source.alpha) |alpha| self.alpha = alpha;
+            if (source.beta) |beta| self.beta = beta;
+            if (source.gamma) |gamma| self.gamma = gamma;
+            if (source.delta) |delta| self.delta = delta;
+            if (source.eta) |eta| self.eta = eta;
+            if (source.iota) |iota| self.iota = iota;
+            if (source.kappa) |kappa| self.kappa = kappa;
+            if (source.lambda) |lambda| self.lambda = lambda;
+            if (source.rho) |rho| self.rho = rho;
+            if (source.tau) |tau| self.tau = tau;
+            if (source.phi) |phi| self.phi = phi;
+            if (source.chi) |chi| self.chi = chi;
+            if (source.psi) |psi| self.psi = psi;
+            if (source.pi) |pi| self.pi = pi;
+            if (source.xi) |xi| self.xi = xi;
+            if (source.theta) |theta| self.theta = theta;
         }
     };
 }

@@ -40,6 +40,7 @@ const Gamma = struct {
 };
 
 const GenesisJson = struct {
+    tau: u32,
     gamma: Gamma,
     eta: [4]safrole_tv_types.OpaqueHash,
     iota: []safrole_tv_types.ValidatorData,
@@ -57,13 +58,16 @@ fn buildGenesisState(comptime params: jam_params.Params, allocator: std.mem.Allo
     var jam_state = try state.JamState(params).init(allocator);
     errdefer jam_state.deinit(allocator);
 
-    // Copy eta values
-    for (parsed.value.eta, 0..) |eta_hash, i| {
-        std.mem.copyForwards(u8, &jam_state.eta[i], &eta_hash.bytes);
-    }
-
     // Copy validator data arrays
     try jam_state.initSafrole(allocator);
+
+    jam_state.tau = parsed.value.tau;
+
+    // Copy eta values
+    var eta_items = &jam_state.eta.?;
+    for (parsed.value.eta, 0..) |eta_hash, i| {
+        eta_items[i] = eta_hash.bytes;
+    }
 
     var gamma_k_items = jam_state.gamma.?.k.items();
     for (parsed.value.gamma.gamma_k, 0..) |validator, i| {
@@ -170,7 +174,6 @@ test "jamtestnet: block import" {
 
             var new_state = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, &jam_state, &block.value);
             defer new_state.deinit(allocator);
-            break;
         }
         break;
     }
