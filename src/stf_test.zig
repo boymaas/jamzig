@@ -64,32 +64,37 @@ fn buildGenesisState(comptime params: jam_params.Params, allocator: std.mem.Allo
 
     // Copy validator data arrays
     try jam_state.initSafrole(allocator);
+
+    var gamma_k_items = jam_state.gamma.?.k.items();
     for (parsed.value.gamma.gamma_k, 0..) |validator, i| {
-        jam_state.gamma.?.k[i].bandersnatch = validator.bandersnatch.bytes;
-        jam_state.gamma.?.k[i].ed25519 = validator.ed25519.bytes;
-        jam_state.gamma.?.k[i].bls = validator.bls.bytes;
-        jam_state.gamma.?.k[i].metadata = validator.metadata.bytes;
+        gamma_k_items[i].bandersnatch = validator.bandersnatch.bytes;
+        gamma_k_items[i].ed25519 = validator.ed25519.bytes;
+        gamma_k_items[i].bls = validator.bls.bytes;
+        gamma_k_items[i].metadata = validator.metadata.bytes;
     }
 
+    var iota_items = jam_state.iota.?.items();
     for (parsed.value.iota, 0..) |validator, i| {
-        jam_state.iota.?[i].bandersnatch = validator.bandersnatch.bytes;
-        jam_state.iota.?[i].ed25519 = validator.ed25519.bytes;
-        jam_state.iota.?[i].bls = validator.bls.bytes;
-        jam_state.iota.?[i].metadata = validator.metadata.bytes;
+        iota_items[i].bandersnatch = validator.bandersnatch.bytes;
+        iota_items[i].ed25519 = validator.ed25519.bytes;
+        iota_items[i].bls = validator.bls.bytes;
+        iota_items[i].metadata = validator.metadata.bytes;
     }
 
+    var kappa_items = jam_state.kappa.?.items();
     for (parsed.value.kappa, 0..) |validator, i| {
-        jam_state.kappa.?[i].bandersnatch = validator.bandersnatch.bytes;
-        jam_state.kappa.?[i].ed25519 = validator.ed25519.bytes;
-        jam_state.kappa.?[i].bls = validator.bls.bytes;
-        jam_state.kappa.?[i].metadata = validator.metadata.bytes;
+        kappa_items[i].bandersnatch = validator.bandersnatch.bytes;
+        kappa_items[i].ed25519 = validator.ed25519.bytes;
+        kappa_items[i].bls = validator.bls.bytes;
+        kappa_items[i].metadata = validator.metadata.bytes;
     }
 
+    var lambda_items = jam_state.lambda.?.items();
     for (parsed.value.lambda, 0..) |validator, i| {
-        jam_state.lambda.?[i].bandersnatch = validator.bandersnatch.bytes;
-        jam_state.lambda.?[i].ed25519 = validator.ed25519.bytes;
-        jam_state.lambda.?[i].bls = validator.bls.bytes;
-        jam_state.lambda.?[i].metadata = validator.metadata.bytes;
+        lambda_items[i].bandersnatch = validator.bandersnatch.bytes;
+        lambda_items[i].ed25519 = validator.ed25519.bytes;
+        lambda_items[i].bls = validator.bls.bytes;
+        lambda_items[i].metadata = validator.metadata.bytes;
     }
 
     // copyForwards gamma_a ticket bodies

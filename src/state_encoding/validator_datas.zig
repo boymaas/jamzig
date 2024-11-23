@@ -33,6 +33,7 @@ test "encode" {
         .bls = [_]u8{7} ** 144,
         .metadata = [_]u8{8} ** 128,
     };
+    defer validator_set.deinit(allocator);
 
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
