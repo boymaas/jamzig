@@ -16,39 +16,50 @@ pub const ServiceId = U32;
 pub const Gas = U64;
 pub const ValidatorIndex = U16;
 pub const CoreIndex = U16;
-pub const TicketAttempt = u8; // as the range is 0..1
+pub const TicketAttempt = u8;
+
+// Specific hash types
+pub const HeaderHash = OpaqueHash;
+pub const StateRoot = OpaqueHash;
+pub const BeefyRoot = OpaqueHash;
+pub const WorkPackageHash = OpaqueHash;
+pub const WorkReportHash = OpaqueHash;
+pub const ExportsRoot = OpaqueHash;
+pub const ErasureRoot = OpaqueHash;
 
 pub const Entropy = OpaqueHash;
-pub const Eta = [4]Entropy;
+pub const EntropyBuffer = [4]Entropy;
 
-pub const BlsKey = [144]u8;
-pub const BandersnatchPrivateKey = ByteArray32;
-pub const BandersnatchKey = ByteArray32;
-pub const Ed25519Key = ByteArray32;
-pub const BandersnatchVrfOutput = [32]u8;
+pub const BlsPublic = [144]u8;
+pub const BandersnatchPublic = ByteArray32;
+pub const Ed25519Public = ByteArray32;
 pub const BandersnatchVrfSignature = [96]u8;
-pub const BandersnatchVrfRoot = [144]u8;
-pub const BandersnatchRingSignature = [784]u8;
+pub const BandersnatchRingVrfSignature = [784]u8;
 pub const Ed25519Signature = [64]u8;
 
-// We define the time in terms of seconds passed since the beginning of the Jam
-// Common Era, 1200 UTC on January 1, 2024. Tau is the number of 6 second periods since
-// the start of the Jam Common Era.
-pub const Tau = u32;
-pub const Epoch = u32;
-
 pub const BandersnatchKeyPair = struct {
-    private_key: BandersnatchPrivateKey,
-    public_key: BandersnatchKey,
+    private_key: ByteArray32,
+    public_key: BandersnatchPublic,
+};
+
+pub const ValidatorMetadata = [128]u8;
+
+pub const ServiceInfo = struct {
+    code_hash: OpaqueHash,
+    balance: U64,
+    min_item_gas: Gas,
+    min_memo_gas: Gas,
+    bytes: U64,
+    items: U32,
 };
 
 pub const RefineContext = struct {
-    anchor: OpaqueHash,
-    state_root: OpaqueHash,
-    beefy_root: OpaqueHash,
-    lookup_anchor: OpaqueHash,
+    anchor: HeaderHash,
+    state_root: StateRoot,
+    beefy_root: BeefyRoot,
+    lookup_anchor: HeaderHash,
     lookup_anchor_slot: TimeSlot,
-    prerequisite: ?OpaqueHash = null,
+    prerequisites: []OpaqueHash,
 };
 
 pub const ImportSpec = struct {
@@ -67,10 +78,10 @@ pub const Authorizer = struct {
 };
 
 pub const ValidatorData = struct {
-    bandersnatch: BandersnatchKey,
-    ed25519: Ed25519Key,
-    bls: BlsKey,
-    metadata: [128]u8,
+    bandersnatch: BandersnatchPublic,
+    ed25519: Ed25519Public,
+    bls: BlsPublic,
+    metadata: ValidatorMetadata,
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
         try @import("state_json/types.zig").jsonStringify(self, jw);
@@ -92,8 +103,7 @@ pub const WorkPackage = struct {
     auth_code_host: ServiceId,
     authorizer: Authorizer,
     context: RefineContext,
-    // TODO: check this
-    items: []WorkItem, // max 4 workitems allowed
+    items: []WorkItem, // SIZE(1..4)
 };
 
 pub const WorkExecResult = union(enum(u8)) {
@@ -105,19 +115,27 @@ pub const WorkExecResult = union(enum(u8)) {
 };
 
 pub const WorkResult = struct {
-    service: ServiceId,
+    service_id: ServiceId,
     code_hash: OpaqueHash,
     payload_hash: OpaqueHash,
-    gas_ratio: Gas,
+    gas: Gas,
     result: WorkExecResult,
 };
 
 pub const WorkPackageSpec = struct {
-    hash: OpaqueHash,
-    len: U32,
-    root: OpaqueHash,
-    segments: OpaqueHash,
+    hash: WorkPackageHash,
+    length: U32,
+    erasure_root: ErasureRoot,
+    exports_root: ExportsRoot,
+    exports_count: U16,
 };
+
+pub const SegmentRootLookupItem = struct {
+    work_package_hash: WorkPackageHash,
+    segment_tree_root: OpaqueHash,
+};
+
+pub const SegmentRootLookup = []SegmentRootLookupItem;
 
 pub const WorkReport = struct {
     package_spec: WorkPackageSpec,
@@ -125,8 +143,8 @@ pub const WorkReport = struct {
     core_index: CoreIndex,
     authorizer_hash: OpaqueHash,
     auth_output: []u8,
-    // TODO: check this
-    results: []WorkResult, // max 4 allowed
+    segment_root_lookup: SegmentRootLookup,
+    results: []WorkResult, // SIZE(1..4)
 
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
@@ -135,16 +153,37 @@ pub const WorkReport = struct {
             .core_index = self.core_index,
             .authorizer_hash = self.authorizer_hash,
             .auth_output = try allocator.dupe(u8, self.auth_output),
+            .segment_root_lookup = try allocator.dupe(SegmentRootLookupItem, self.segment_root_lookup),
             .results = try allocator.dupe(WorkResult, self.results),
         };
     }
 };
 
+pub const MmrPeak = ?OpaqueHash;
+
+pub const Mmr = struct {
+    peaks: []MmrPeak,
+};
+
+pub const ReportedWorkPackage = struct {
+    hash: WorkReportHash,
+    exports_root: ExportsRoot,
+};
+
+pub const BlockInfo = struct {
+    header_hash: HeaderHash,
+    mmr: Mmr,
+    state_root: StateRoot,
+    reported: []ReportedWorkPackage,
+};
+
+pub const BlocksHistory = []BlockInfo; // SIZE(0..max_blocks_history)
+
 pub const EpochMark = struct {
     entropy: Entropy,
-    validators: []BandersnatchKey, // validators-count size
+    tickets_entropy: Entropy,
+    validators: []BandersnatchPublic, // SIZE(validators_count)
 
-    // validator size is defined at runtime
     pub fn validators_size(params: jam_params.Params) usize {
         return params.validators_count;
     }
@@ -156,7 +195,8 @@ pub const EpochMark = struct {
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
             .entropy = self.entropy,
-            .validators = try allocator.dupe(BandersnatchKey, self.validators),
+            .tickets_entropy = self.tickets_entropy,
+            .validators = try allocator.dupe(BandersnatchPublic, self.validators),
         };
     }
 };
@@ -167,9 +207,8 @@ pub const TicketBody = struct {
 };
 
 pub const TicketsMark = struct {
-    tickets: []TicketBody, // epoch-length
+    tickets: []TicketBody, // SIZE(epoch_length)
 
-    // epoch length is defined at runtime
     pub fn tickets_size(params: jam_params.Params) usize {
         return params.epoch_length;
     }
@@ -216,7 +255,6 @@ pub const ValidatorSet = struct {
         if (self.validators.len != other.validators.len) {
             return error.LengthMismatch;
         }
-
         @memcpy(self.validators, other.validators);
     }
 };
@@ -227,25 +265,14 @@ pub const Kappa = ValidatorSet;
 pub const GammaK = ValidatorSet;
 pub const Iota = ValidatorSet;
 
-// γₛ ∈ ⟦C⟧E ∪ ⟦HB⟧E
-// the current epoch’s slot-sealer series, which is either a
-// full complement of E tickets or, in the case of a fallback
-// mode, a series of E Bandersnatch keys
 pub const GammaS = union(enum) {
     tickets: []TicketBody,
-    keys: []BandersnatchKey,
+    keys: []BandersnatchPublic,
 
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         switch (self.*) {
-            .tickets => |tickets| {
-                // We can use the Z_outsideInOrdering algorithm on tickets
-                allocator.free(tickets);
-            },
-            // fallback
-            .keys => |keys| {
-                // We are in fallback mode
-                allocator.free(keys);
-            },
+            .tickets => |tickets| allocator.free(tickets),
+            .keys => |keys| allocator.free(keys),
         }
     }
 
@@ -255,27 +282,23 @@ pub const GammaS = union(enum) {
                 .tickets = try allocator.dupe(TicketBody, tickets),
             },
             .keys => |keys| @This(){
-                .keys = try allocator.dupe(BandersnatchKey, keys),
+                .keys = try allocator.dupe(BandersnatchPublic, keys),
             },
         };
     }
 };
 
-// γₐ ∈ ⟦C⟧∶E
-// is the ticket accumulator, a series of highestscoring ticket identifiers to
-// be used for the next epoch
 pub const GammaA = []TicketBody;
-pub const GammaZ = BandersnatchVrfRoot;
+pub const GammaZ = BandersnatchVrfSignature;
 
-// Header
 pub const Header = struct {
-    parent: OpaqueHash,
-    parent_state_root: OpaqueHash,
+    parent: HeaderHash,
+    parent_state_root: StateRoot,
     extrinsic_hash: OpaqueHash,
     slot: TimeSlot,
     epoch_mark: ?EpochMark = null,
     tickets_mark: ?TicketsMark = null,
-    offenders_mark: []Ed25519Key,
+    offenders_mark: []Ed25519Public,
     author_index: ValidatorIndex,
     entropy_source: BandersnatchVrfSignature,
     seal: BandersnatchVrfSignature,
@@ -291,7 +314,7 @@ pub const Header = struct {
             .slot = self.slot,
             .epoch_mark = epoch_mark,
             .tickets_mark = tickets_mark,
-            .offenders_mark = try allocator.dupe(Ed25519Key, self.offenders_mark),
+            .offenders_mark = try allocator.dupe(Ed25519Public, self.offenders_mark),
             .author_index = self.author_index,
             .entropy_source = self.entropy_source,
             .seal = self.seal,
@@ -305,10 +328,10 @@ pub const Header = struct {
 
 pub const TicketEnvelope = struct {
     attempt: TicketAttempt,
-    signature: BandersnatchRingSignature,
+    signature: BandersnatchRingVrfSignature,
 };
 
-pub const TicketsExtrinsic = []TicketEnvelope;
+pub const TicketsExtrinsic = []TicketEnvelope; // SIZE(0..16)
 
 pub const Judgement = struct {
     vote: bool,
@@ -316,14 +339,11 @@ pub const Judgement = struct {
     signature: Ed25519Signature,
 };
 
-pub const WorkReportHash = OpaqueHash;
-
 pub const Verdict = struct {
-    target: WorkReportHash,
+    target: OpaqueHash,
     age: U32,
-    votes: []const Judgement, // validators_super_majority
+    votes: []const Judgement, // SIZE(validators_super_majority)
 
-    // validators_super_majority size is defined at runtime
     pub fn votes_size(params: jam_params.Params) usize {
         return params.validators_super_majority;
     }
@@ -339,14 +359,14 @@ pub const Verdict = struct {
 
 pub const Culprit = struct {
     target: WorkReportHash,
-    key: Ed25519Key,
+    key: Ed25519Public,
     signature: Ed25519Signature,
 };
 
 pub const Fault = struct {
     target: WorkReportHash,
     vote: bool,
-    key: Ed25519Key,
+    key: Ed25519Public,
     signature: Ed25519Signature,
 };
 
@@ -368,10 +388,7 @@ pub const DisputesExtrinsic = struct {
         };
     }
 
-    pub fn deinit(
-        self: *DisputesExtrinsic,
-        allocator: std.mem.Allocator,
-    ) void {
+    pub fn deinit(self: *DisputesExtrinsic, allocator: std.mem.Allocator) void {
         for (self.verdicts) |verdict| {
             allocator.free(verdict.votes);
         }
@@ -390,7 +407,7 @@ pub const PreimagesExtrinsic = []Preimage;
 
 pub const AvailAssurance = struct {
     anchor: OpaqueHash,
-    bitfield: []u8, // avail_bitfield_bytes
+    bitfield: []u8, // SIZE(avail_bitfield_bytes)
     validator_index: ValidatorIndex,
     signature: Ed25519Signature,
 
@@ -408,7 +425,7 @@ pub const AvailAssurance = struct {
     }
 };
 
-pub const AssurancesExtrinsic = []AvailAssurance; // validators_count
+pub const AssurancesExtrinsic = []AvailAssurance; // SIZE(0..validators_count)
 
 pub const ValidatorSignature = struct {
     validator_index: ValidatorIndex,
@@ -429,15 +446,14 @@ pub const ReportGuarantee = struct {
     }
 };
 
-/// 0..cores_count of ReportGuarantees
-pub const GuaranteesExtrinsic = []ReportGuarantee; // cores_count
+pub const GuaranteesExtrinsic = []ReportGuarantee; // SIZE(0..cores_count)
 
 pub const Extrinsic = struct {
     tickets: TicketsExtrinsic,
-    disputes: DisputesExtrinsic,
     preimages: PreimagesExtrinsic,
-    assurances: AssurancesExtrinsic,
     guarantees: GuaranteesExtrinsic,
+    assurances: AssurancesExtrinsic,
+    disputes: DisputesExtrinsic,
 
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try @import("types/format.zig").formatExtrinsic(self, writer);

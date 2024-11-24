@@ -85,5 +85,5 @@ test "codec: parsing the block" {
     );
 
     // Test if the vector contains the binary type
-    try std.testing.expectEqual(4872, vector.binary.len);
+    try std.testing.expectEqual(4907, vector.binary.len);
 }

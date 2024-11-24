@@ -11,7 +11,16 @@ pub const U64 = u64;
 pub const ByteSequence = HexBytes;
 pub const ByteArray32 = HexBytesFixed(32);
 
+// Core hash types
 pub const OpaqueHash = ByteArray32;
+pub const HeaderHash = OpaqueHash;
+pub const StateRoot = OpaqueHash;
+pub const BeefyRoot = OpaqueHash;
+pub const WorkPackageHash = OpaqueHash;
+pub const WorkReportHash = OpaqueHash;
+pub const ExportsRoot = OpaqueHash;
+pub const ErasureRoot = OpaqueHash;
+
 pub const TimeSlot = U32;
 pub const ServiceId = U32;
 pub const Gas = U64;
@@ -19,19 +28,35 @@ pub const ValidatorIndex = U16;
 pub const CoreIndex = U16;
 pub const TicketAttempt = u1; // as the range is 0..1
 
-pub const BandersnatchKey = ByteArray32;
-pub const Ed25519Key = ByteArray32;
+// Crypto types matching ASN
+pub const BlsPublic = HexBytesFixed(144);
+pub const BandersnatchPublic = ByteArray32;
+pub const Ed25519Public = ByteArray32;
 pub const BandersnatchVrfSignature = HexBytesFixed(96);
-pub const BandersnatchRingSignature = HexBytesFixed(784);
+pub const BandersnatchRingVrfSignature = HexBytesFixed(784);
 pub const Ed25519Signature = HexBytesFixed(64);
 
+pub const Entropy = OpaqueHash;
+pub const EntropyBuffer = [4]Entropy;
+
+pub const ValidatorMetadata = HexBytesFixed(128);
+
+pub const ServiceInfo = struct {
+    code_hash: OpaqueHash,
+    balance: U64,
+    min_item_gas: Gas,
+    min_memo_gas: Gas,
+    bytes: U64,
+    items: U32,
+};
+
 pub const RefineContext = struct {
-    anchor: OpaqueHash,
-    state_root: OpaqueHash,
-    beefy_root: OpaqueHash,
-    lookup_anchor: OpaqueHash,
+    anchor: HeaderHash,
+    state_root: StateRoot,
+    beefy_root: BeefyRoot,
+    lookup_anchor: HeaderHash,
     lookup_anchor_slot: TimeSlot,
-    prerequisite: ?OpaqueHash = null,
+    prerequisites: []OpaqueHash,
 };
 
 pub const ImportSpec = struct {
@@ -49,6 +74,13 @@ pub const Authorizer = struct {
     params: HexBytes,
 };
 
+pub const ValidatorData = struct {
+    bandersnatch: BandersnatchPublic,
+    ed25519: Ed25519Public,
+    bls: BlsPublic,
+    metadata: ValidatorMetadata,
+};
+
 pub const WorkItem = struct {
     service: ServiceId,
     code_hash: OpaqueHash,
@@ -64,7 +96,7 @@ pub const WorkPackage = struct {
     auth_code_host: ServiceId,
     authorizer: Authorizer,
     context: RefineContext,
-    items: []WorkItem, // max 4 workitems allowed
+    items: []WorkItem, // SIZE(1..4)
 };
 
 pub const WorkExecResult = union(enum(u8)) {
@@ -109,12 +141,8 @@ pub const WorkExecResult = union(enum(u8)) {
                         @panic("Unexpected field name");
                     }
                 },
-                .object_end => { // No more fields.
-                    break;
-                },
-                else => {
-                    return error.UnexpectedToken;
-                },
+                .object_end => break,
+                else => return error.UnexpectedToken,
             };
         }
         unreachable;
@@ -122,19 +150,27 @@ pub const WorkExecResult = union(enum(u8)) {
 };
 
 pub const WorkResult = struct {
-    service: ServiceId,
+    service_id: ServiceId,
     code_hash: OpaqueHash,
     payload_hash: OpaqueHash,
-    gas_ratio: Gas,
+    gas: Gas,
     result: WorkExecResult,
 };
 
 pub const WorkPackageSpec = struct {
-    hash: OpaqueHash,
-    len: U32,
-    root: OpaqueHash,
-    segments: OpaqueHash,
+    hash: WorkPackageHash,
+    length: U32,
+    erasure_root: ErasureRoot,
+    exports_root: ExportsRoot,
+    exports_count: U16,
 };
+
+pub const SegmentRootLookupItem = struct {
+    work_package_hash: WorkPackageHash,
+    segment_tree_root: OpaqueHash,
+};
+
+pub const SegmentRootLookup = []SegmentRootLookupItem;
 
 pub const WorkReport = struct {
     package_spec: WorkPackageSpec,
@@ -142,12 +178,34 @@ pub const WorkReport = struct {
     core_index: CoreIndex,
     authorizer_hash: OpaqueHash,
     auth_output: HexBytes,
-    results: []WorkResult, // max 4 allowed
+    segment_root_lookup: SegmentRootLookup,
+    results: []WorkResult, // SIZE(1..4)
 };
 
+pub const MmrPeak = ?OpaqueHash;
+
+pub const Mmr = struct {
+    peaks: []MmrPeak,
+};
+
+pub const ReportedWorkPackage = struct {
+    hash: WorkReportHash,
+    exports_root: ExportsRoot,
+};
+
+pub const BlockInfo = struct {
+    header_hash: HeaderHash,
+    mmr: Mmr,
+    state_root: StateRoot,
+    reported: []ReportedWorkPackage,
+};
+
+pub const BlocksHistory = []BlockInfo; // SIZE(0..max_blocks_history)
+
 pub const EpochMark = struct {
-    entropy: OpaqueHash,
-    validators: []BandersnatchKey, // validators-count size
+    entropy: Entropy,
+    tickets_entropy: Entropy,
+    validators: []BandersnatchPublic, // SIZE(validators_count)
 };
 
 pub const TicketBody = struct {
@@ -155,16 +213,16 @@ pub const TicketBody = struct {
     attempt: TicketAttempt,
 };
 
-pub const TicketsMark = []TicketBody; // epoch-length
+pub const TicketsMark = []TicketBody; // SIZE(epoch_length)
 
 pub const Header = struct {
-    parent: OpaqueHash,
-    parent_state_root: OpaqueHash,
+    parent: HeaderHash,
+    parent_state_root: StateRoot,
     extrinsic_hash: OpaqueHash,
     slot: TimeSlot,
     epoch_mark: ?EpochMark = null,
     tickets_mark: ?TicketsMark = null,
-    offenders_mark: []Ed25519Key,
+    offenders_mark: []Ed25519Public,
     author_index: ValidatorIndex,
     entropy_source: BandersnatchVrfSignature,
     seal: BandersnatchVrfSignature,
@@ -172,10 +230,10 @@ pub const Header = struct {
 
 pub const TicketEnvelope = struct {
     attempt: TicketAttempt,
-    signature: BandersnatchRingSignature,
+    signature: BandersnatchRingVrfSignature,
 };
 
-pub const TicketsExtrinsic = []TicketEnvelope;
+pub const TicketsExtrinsic = []TicketEnvelope; // SIZE(0..16)
 
 pub const Judgement = struct {
     vote: bool,
@@ -184,21 +242,21 @@ pub const Judgement = struct {
 };
 
 pub const Verdict = struct {
-    target: OpaqueHash,
+    target: WorkReportHash,
     age: U32,
-    votes: []Judgement, // validators_super_majority
+    votes: []Judgement, // SIZE(validators_super_majority)
 };
 
 pub const Culprit = struct {
-    target: OpaqueHash,
-    key: Ed25519Key,
+    target: WorkReportHash,
+    key: Ed25519Public,
     signature: Ed25519Signature,
 };
 
 pub const Fault = struct {
-    target: OpaqueHash,
+    target: WorkReportHash,
     vote: bool,
-    key: Ed25519Key,
+    key: Ed25519Public,
     signature: Ed25519Signature,
 };
 
@@ -217,12 +275,12 @@ pub const PreimagesExtrinsic = []Preimage;
 
 pub const AvailAssurance = struct {
     anchor: OpaqueHash,
-    bitfield: HexBytes, // avail_bitfield_bytes
+    bitfield: HexBytes, // SIZE(avail_bitfield_bytes)
     validator_index: ValidatorIndex,
     signature: Ed25519Signature,
 };
 
-pub const AssurancesExtrinsic = []AvailAssurance; // validators_count
+pub const AssurancesExtrinsic = []AvailAssurance; // SIZE(0..validators_count)
 
 pub const ValidatorSignature = struct {
     validator_index: ValidatorIndex,
@@ -235,7 +293,7 @@ pub const ReportGuarantee = struct {
     signatures: []ValidatorSignature,
 };
 
-pub const GuaranteesExtrinsic = []ReportGuarantee; // cores_count
+pub const GuaranteesExtrinsic = []ReportGuarantee; // SIZE(0..cores_count)
 
 pub const Extrinsic = struct {
     tickets: TicketsExtrinsic,

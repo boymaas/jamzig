@@ -27,7 +27,8 @@ inline fn sourceLocationEnabled(comptime loc: std.builtin.SourceLocation) bool {
 }
 
 fn mapSourceLocation(loc: std.builtin.SourceLocation) []const u8 {
-    const relative_path = std.mem.trimLeft(u8, loc.file, "src/");
+    var parts = std.mem.splitBackwardsSequence(u8, loc.file, "src/");
+    const relative_path = if (parts.next()) |path| path else loc.file;
     return std.fmt.comptimePrint("{s}:{s}:{d}", .{
         relative_path,
         loc.fn_name,
