@@ -52,7 +52,7 @@ pub const Gamma = struct {
                 self.s = .{ .tickets = try allocator.dupe(types.TicketBody, tickets) };
             },
             .keys => |keys| {
-                self.s = .{ .keys = try allocator.dupe(types.BandersnatchKey, keys) };
+                self.s = .{ .keys = try allocator.dupe(types.BandersnatchPublic, keys) };
             },
         }
 

@@ -126,7 +126,7 @@ fn formatTicketSlice(writer: anytype, name: []const u8, tickets: []const types.T
     }
 }
 
-fn formatKeySlice(writer: anytype, name: []const u8, keys: []const types.BandersnatchKey) !void {
+fn formatKeySlice(writer: anytype, name: []const u8, keys: []const types.BandersnatchPublic) !void {
     try writer.print("  {s}: {} keys\n", .{ name, keys.len });
     for (keys, 0..) |key, i| {
         try writer.print("    Key {}: 0x{x}\n", .{ i, std.fmt.fmtSliceHexLower(&key) });

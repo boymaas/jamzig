@@ -8,9 +8,10 @@ pub fn createEmptyWorkReport(id: [32]u8) WorkReport {
     return WorkReport{
         .package_spec = WorkPackageSpec{
             .hash = id,
-            .len = 0,
-            .root = [_]u8{0} ** 32,
-            .segments = [_]u8{0} ** 32,
+            .length = 0,
+            .erasure_root = [_]u8{0} ** 32,
+            .exports_root = [_]u8{0} ** 32,
+            .exports_count = 0,
         },
         .context = RefineContext{
             .anchor = [_]u8{0} ** 32,
@@ -18,10 +19,11 @@ pub fn createEmptyWorkReport(id: [32]u8) WorkReport {
             .beefy_root = [_]u8{0} ** 32,
             .lookup_anchor = [_]u8{0} ** 32,
             .lookup_anchor_slot = 0,
-            .prerequisite = null,
+            .prerequisites = &[_]types.OpaqueHash{},
         },
         .core_index = 0,
         .authorizer_hash = [_]u8{0} ** 32,
+        .segment_root_lookup = &[_]types.SegmentRootLookupItem{},
         .auth_output = &[_]u8{},
         .results = &[_]types.WorkResult{},
     };

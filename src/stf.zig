@@ -330,7 +330,7 @@ pub fn transitionSafrole(
     );
 }
 
-fn validator_key(validator: types.ValidatorData) types.Ed25519Key {
+fn validator_key(validator: types.ValidatorData) types.Ed25519Public {
     return validator.ed25519;
 }
 
@@ -347,7 +347,7 @@ pub fn transitionDisputes(
     // Map current_kappa to extract Edwards public keys
     const current_kappa_keys = try utils.mapAlloc(
         types.ValidatorData,
-        types.Ed25519Key,
+        types.Ed25519Public,
         allocator,
         current_kappa.items(),
         validator_key,
@@ -356,7 +356,7 @@ pub fn transitionDisputes(
 
     const current_lambda_keys = try utils.mapAlloc(
         types.ValidatorData,
-        types.Ed25519Key,
+        types.Ed25519Public,
         allocator,
         current_lambda.items(),
         validator_key,

@@ -99,7 +99,7 @@ pub const Fixtures = struct {
                 if (expected_ok.epoch_mark) |expected_epoch_mark| {
                     const actual_epoch_mark = actual_ok.epoch_mark orelse return error.MissingEpochMark;
                     try std.testing.expectEqualSlices(
-                        safrole.types.BandersnatchKey,
+                        safrole.types.BandersnatchPublic,
                         expected_epoch_mark.validators,
                         actual_epoch_mark.validators,
                     );

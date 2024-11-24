@@ -70,7 +70,7 @@ pub fn transition(
     // Check the number of ticket attempts in the input when more
     // than N we have a bad ticket attempt
     for (ticket_extrinsic) |extrinsic| {
-        if (extrinsic.attempt > params.max_ticket_entries_per_validator) {
+        if (extrinsic.attempt >= params.max_ticket_entries_per_validator) {
             std.debug.print("attempt {d}\n", .{extrinsic.attempt});
             return Error.bad_ticket_attempt;
         }
@@ -244,6 +244,7 @@ pub fn transition(
     if (current_epoch > prev_epoch) {
         epoch_marker = .{
             .entropy = post_state.eta[1],
+            .tickets_entropy = post_state.eta[2], // TODO: check GP for what this is
             .validators = try extractBandersnatchKeys(allocator, post_state.gamma_k),
         };
     }
@@ -354,8 +355,8 @@ fn bandersnatchRingRoot(allocator: std.mem.Allocator, gamma_k: types.GammaK) !ty
 }
 
 // TODO: this can be placed on the ValidatorSet now
-fn extractBandersnatchKeys(allocator: std.mem.Allocator, gamma_k: types.GammaK) ![]types.BandersnatchKey {
-    const keys = try allocator.alloc(types.BandersnatchKey, gamma_k.len());
+fn extractBandersnatchKeys(allocator: std.mem.Allocator, gamma_k: types.GammaK) ![]types.BandersnatchPublic {
+    const keys = try allocator.alloc(types.BandersnatchPublic, gamma_k.len());
 
     for (gamma_k.items(), 0..) |validator, i| {
         keys[i] = validator.bandersnatch;
@@ -378,12 +379,12 @@ fn gammaS_Fallback(
     r: types.OpaqueHash,
     epoch_length: u32,
     kappa: types.Kappa,
-) ![]types.BandersnatchKey {
+) ![]types.BandersnatchPublic {
     const keys = try extractBandersnatchKeys(allocator, kappa);
     defer allocator.free(keys);
 
     // Allocate memory of the same length as keys to return
-    var result = try allocator.alloc(types.BandersnatchKey, epoch_length);
+    var result = try allocator.alloc(types.BandersnatchPublic, epoch_length);
     errdefer allocator.free(result);
 
     for (0..epoch_length) |i| {

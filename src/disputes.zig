@@ -229,11 +229,11 @@ fn verdictTargetHash(verdict: *const Verdict) Hash {
     return verdict.target;
 }
 
-fn culpritsKey(culprit: *const Culprit) types.Ed25519Key {
+fn culpritsKey(culprit: *const Culprit) types.Ed25519Public {
     return culprit.key;
 }
 
-fn faultKey(fault: *const Fault) types.Ed25519Key {
+fn faultKey(fault: *const Fault) types.Ed25519Public {
     return fault.key;
 }
 
@@ -354,7 +354,7 @@ pub fn verifyDisputesExtrinsicPre(
     try verifyOrderedUnique(
         extrinsic.culprits,
         Culprit,
-        types.Ed25519Key,
+        types.Ed25519Public,
         culpritsKey,
         lessThanPublicKey,
         VerificationError.CulpritsNotSortedUnique,
@@ -364,7 +364,7 @@ pub fn verifyDisputesExtrinsicPre(
     try verifyOrderedUnique(
         extrinsic.faults,
         Fault,
-        types.Ed25519Key,
+        types.Ed25519Public,
         faultKey,
         lessThanPublicKey,
         VerificationError.FaultsNotSortedUnique,

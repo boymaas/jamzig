@@ -162,9 +162,10 @@ test "Alpha transitionState" {
         .report = .{
             .package_spec = .{
                 .hash = [_]u8{0} ** 32,
-                .len = 0,
-                .root = [_]u8{0} ** 32,
-                .segments = [_]u8{0} ** 32,
+                .length = 0,
+                .erasure_root = [_]u8{0} ** 32,
+                .exports_root = [_]u8{0} ** 32,
+                .exports_count = 0,
             },
             .context = .{
                 .anchor = [_]u8{0} ** 32,
@@ -172,8 +173,9 @@ test "Alpha transitionState" {
                 .beefy_root = [_]u8{0} ** 32,
                 .lookup_anchor = [_]u8{0} ** 32,
                 .lookup_anchor_slot = 0,
-                .prerequisite = null,
+                .prerequisites = &[_]types.OpaqueHash{},
             },
+            .segment_root_lookup = &[_]types.SegmentRootLookupItem{},
             .core_index = core,
             .authorizer_hash = auth1,
             .auth_output = &[_]u8{},

@@ -11,6 +11,7 @@ pub const ByteArray32 = [32]u8;
 
 pub const OpaqueHash = ByteArray32;
 pub const Hash = ByteArray32;
+pub const Epoch = U32;
 pub const TimeSlot = U32;
 pub const ServiceId = U32;
 pub const Gas = U64;
@@ -29,10 +30,13 @@ pub const ErasureRoot = OpaqueHash;
 
 pub const Entropy = OpaqueHash;
 pub const EntropyBuffer = [4]Entropy;
+pub const Eta = EntropyBuffer;
 
 pub const BlsPublic = [144]u8;
 pub const BandersnatchPublic = ByteArray32;
 pub const Ed25519Public = ByteArray32;
+pub const BandersnatchVrfOutput = OpaqueHash;
+pub const BandersnatchVrfRoot = BlsPublic; // TODO: check if this is correct
 pub const BandersnatchVrfSignature = [96]u8;
 pub const BandersnatchRingVrfSignature = [784]u8;
 pub const Ed25519Signature = [64]u8;
@@ -289,7 +293,7 @@ pub const GammaS = union(enum) {
 };
 
 pub const GammaA = []TicketBody;
-pub const GammaZ = BandersnatchVrfSignature;
+pub const GammaZ = BlsPublic;
 
 pub const Header = struct {
     parent: HeaderHash,

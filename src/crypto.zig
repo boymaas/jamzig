@@ -66,7 +66,7 @@ pub extern fn get_verifier_commitment(
 ) callconv(.C) bool;
 
 pub fn getVerifierCommitment(
-    public_keys: []const types.BandersnatchKey,
+    public_keys: []const types.BandersnatchPublic,
 ) Error!types.GammaZ {
     var output: types.GammaZ = undefined;
     const result = get_verifier_commitment(
@@ -89,13 +89,13 @@ pub fn initializeRingContext(ring_size: usize) bool {
 
 // Zig wrapper functions
 pub fn generateRingSignature(
-    public_keys: []const types.BandersnatchKey,
+    public_keys: []const types.BandersnatchPublic,
     vrf_input: []const u8,
     aux_data: []const u8,
     prover_idx: usize,
-    prover_key: types.BandersnatchKey,
-) Error!types.BandersnatchRingSignature {
-    var output: types.BandersnatchRingSignature = undefined;
+    prover_key: types.BandersnatchPublic,
+) Error!types.BandersnatchRingVrfSignature {
+    var output: types.BandersnatchRingVrfSignature = undefined;
     const result = generate_ring_signature(
         @ptrCast(public_keys.ptr),
         public_keys.len,
@@ -116,10 +116,10 @@ pub fn generateRingSignature(
 }
 
 pub fn verifyRingSignature(
-    public_keys: []const types.BandersnatchKey,
+    public_keys: []const types.BandersnatchPublic,
     vrf_input: []const u8,
     aux_data: []const u8,
-    signature: *const types.BandersnatchRingSignature,
+    signature: *const types.BandersnatchRingVrfSignature,
 ) Error!types.BandersnatchVrfOutput {
     var vrf_output: types.BandersnatchVrfOutput = undefined;
 
@@ -146,7 +146,7 @@ pub fn verifyRingSignatureAgainstCommitment(
     ring_size: usize,
     vrf_input: []const u8,
     aux_data: []const u8,
-    signature: *const types.BandersnatchRingSignature,
+    signature: *const types.BandersnatchRingVrfSignature,
 ) Error!types.BandersnatchVrfOutput {
     var vrf_output: types.BandersnatchVrfOutput = undefined;
 
@@ -189,8 +189,8 @@ pub fn createKeyPairFromSeed(seed: []const u8) Error!types.BandersnatchKeyPair {
     return key_pair;
 }
 
-pub fn getPaddingPoint(ring_size: usize) Error!types.BandersnatchKey {
-    var output: types.BandersnatchKey = undefined;
+pub fn getPaddingPoint(ring_size: usize) Error!types.BandersnatchPublic {
+    var output: types.BandersnatchPublic = undefined;
     const result = get_padding_point(
         ring_size,
         &output,
@@ -231,7 +231,7 @@ test "crypto: createKeyPairFromSeed" {
 
 test "crypto: getVerifierCommitment" {
     const RING_SIZE: usize = 5;
-    var ring: [RING_SIZE]types.BandersnatchKey = undefined;
+    var ring: [RING_SIZE]types.BandersnatchPublic = undefined;
 
     // Generate public keys for the ring
     for (0..RING_SIZE) |i| {
@@ -270,7 +270,7 @@ fn timeFunction(comptime desc: []const u8, comptime func: anytype, args: anytype
 
 test "crypto: ring signature and VRF" {
     const RING_SIZE: usize = 10;
-    var ring: [RING_SIZE]types.BandersnatchKey = undefined;
+    var ring: [RING_SIZE]types.BandersnatchPublic = undefined;
 
     // Generate public keys for the ring
     for (0..RING_SIZE) |i| {
@@ -349,7 +349,7 @@ test "crypto: fuzz | takes 10s" {
 
     // Generate public keys for the ring
     var ring_keypairs: [RING_SIZE]types.BandersnatchKeyPair = undefined;
-    var ring: [RING_SIZE]types.BandersnatchKey = undefined;
+    var ring: [RING_SIZE]types.BandersnatchPublic = undefined;
     for (0..RING_SIZE) |i| {
         var seed: [32]u8 = undefined;
         random.bytes(&seed);

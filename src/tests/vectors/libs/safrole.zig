@@ -7,14 +7,14 @@ const types = @import("types.zig");
 pub const HexBytes = types.hex.HexBytes;
 pub const HexBytesFixed = types.hex.HexBytesFixed;
 pub const Ed25519Key = types.hex.HexBytesFixed(32);
-pub const BandersnatchKey = types.hex.HexBytesFixed(32);
+pub const BandersnatchPublic = types.hex.HexBytesFixed(32);
 pub const OpaqueHash = types.hex.HexBytesFixed(32);
 
-pub const TicketOrKey = union(enum) { tickets: []TicketBody, keys: []BandersnatchKey };
+pub const TicketOrKey = union(enum) { tickets: []TicketBody, keys: []BandersnatchPublic };
 
 pub const EpochMark = struct {
     entropy: OpaqueHash,
-    validators: []BandersnatchKey,
+    validators: []BandersnatchPublic,
 };
 
 pub const TicketMark = []TicketBody;

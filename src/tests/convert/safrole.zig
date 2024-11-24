@@ -72,6 +72,7 @@ fn convertOutputError(from: ?[]const u8) Error!adaptor.OutputError {
 fn convertEpochMark(allocator: Allocator, from: tv_lib_safrole.EpochMark) Error!types.EpochMark {
     return types.EpochMark{
         .entropy = convertOpaqueHash(from.entropy),
+        .tickets_entropy = convertOpaqueHash(from.entropy), // FIX: this must be fixed, testvectors out of alignment, new safrole tv should contain tickets_entropy
         .validators = try convertBandersnatchKeysSlice(allocator, from.validators),
     };
 }
@@ -146,8 +147,8 @@ fn convertGammaS(allocator: Allocator, from: tv_lib_safrole.GammaS) Error!types.
     }
 }
 
-fn convertBandersnatchKeysSlice(allocator: Allocator, from: []tv_lib_safrole.BandersnatchKey) Error![]types.BandersnatchKey {
-    const to = try allocator.alloc(types.BandersnatchKey, from.len);
+fn convertBandersnatchKeysSlice(allocator: Allocator, from: []tv_lib_safrole.BandersnatchPublic) Error![]types.BandersnatchPublic {
+    const to = try allocator.alloc(types.BandersnatchPublic, from.len);
     for (from, to) |from_key, *to_key| {
         to_key.* = convertHexBytesFixedToArray(32, from_key);
     }

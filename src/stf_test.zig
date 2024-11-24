@@ -131,7 +131,7 @@ fn buildGenesisState(comptime params: jam_params.Params, allocator: std.mem.Allo
             break :blk .{ .tickets = converted };
         },
         .keys => |keys| blk: {
-            var converted = try allocator.alloc(types.BandersnatchKey, keys.len);
+            var converted = try allocator.alloc(types.BandersnatchPublic, keys.len);
             for (keys, 0..) |key, i| {
                 converted[i] = key.bytes;
             }
