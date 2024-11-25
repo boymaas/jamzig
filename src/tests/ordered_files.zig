@@ -14,8 +14,7 @@ pub const OrderedFileList = struct {
 
     pub fn deinit(self: *OrderedFileList) void {
         for (self.files.items) |entry| {
-            self.allocator.free(entry.name);
-            self.allocator.free(entry.path);
+            entry.deinit(self.allocator);
         }
         self.files.deinit();
     }
@@ -24,6 +23,22 @@ pub const OrderedFileList = struct {
 pub const Entry = struct {
     name: []const u8,
     path: []const u8,
+
+    pub fn slurp(self: Entry, allocator: Allocator) !@import("slurp.zig").SlurpedFile {
+        return @import("slurp.zig").slurpFile(allocator, self.path);
+    }
+
+    pub fn deinit(self: *const Entry, allocator: Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.path);
+    }
+
+    pub fn deepClone(self: Entry, allocator: Allocator) !Entry {
+        return Entry{
+            .name = try allocator.dupe(u8, self.name),
+            .path = try allocator.dupe(u8, self.path),
+        };
+    }
 };
 
 pub fn getOrderedFiles(allocator: Allocator, dir_path: []const u8) !OrderedFileList {
