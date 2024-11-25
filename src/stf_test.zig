@@ -143,7 +143,7 @@ fn buildGenesisState(comptime params: jam_params.Params, allocator: std.mem.Allo
     return jam_state;
 }
 
-test "jamtestnet: block import" {
+test "jamtestnet: safrole import" {
     // Get test allocator
     const allocator = testing.allocator;
 
@@ -166,31 +166,27 @@ test "jamtestnet: block import" {
     std.debug.print("\n", .{});
     for (trace_files.items()) |trace_file| {
         // we are only insterested in the bin files
-        if (!std.mem.endsWith(u8, trace_file, ".bin")) {
+        if (!std.mem.endsWith(u8, trace_file.name, ".bin")) {
             continue;
         }
 
-        std.debug.print("deserializing {s}\n", .{trace_file});
+        std.debug.print("decode {s} => ", .{trace_file.name});
 
         // Slurp the binary file
-        var slurped = try slurpBin(allocator, trace_file);
+        var slurped = try slurpBin(allocator, trace_file.path);
         defer slurped.deinit();
 
         // Now decode the block
         const block = try codec.deserialize(types.Block, jam_params.TINY_PARAMS, allocator, slurped.buffer);
         defer block.deinit();
 
-        std.debug.print("block {}\n", .{block.value.header.slot});
+        std.debug.print("block {} ..", .{block.value.header.slot});
 
         var new_state = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, &jam_state, &block.value);
         defer new_state.deinit(allocator);
 
+        std.debug.print(" STF \x1b[32mOK\x1b[0m\n", .{});
+
         try jam_state.merge(&new_state, allocator);
     }
-    // NOTE: there is one more 373500_0.bin which we can do later
-
-    // Perform state transition
-    // var new_state = try stf.stateTransition(allocator, TINY_PARAMS, &initial_state, test_block);
-    // defer new_state.deinit();
-
 }
