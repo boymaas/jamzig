@@ -2,7 +2,7 @@ const std = @import("std");
 const Phi = @import("../authorization_queue.zig").Phi;
 
 pub fn format(
-    self: *const Phi,
+    self: anytype,
     comptime fmt: []const u8,
     options: std.fmt.FormatOptions,
     writer: anytype,

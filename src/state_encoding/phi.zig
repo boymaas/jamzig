@@ -10,9 +10,8 @@ const Phi = authorization_queue.Phi;
 
 const Q = authorization_queue.Q;
 const H = authorization_queue.H;
-const C = authorization_queue.C;
 
-pub fn encode(self: *const Phi, writer: anytype) !void {
+pub fn encode(self: anytype, writer: anytype) !void {
     // The number of cores (C) is a constant no need to encode it
     // Encode each queue
     for (self.queue) |core_queue| {
@@ -41,7 +40,8 @@ pub fn encode(self: *const Phi, writer: anytype) !void {
 const testing = std.testing;
 
 test "encode" {
-    var auth_queue = try Phi.init(testing.allocator);
+    const C = 4;
+    var auth_queue = try Phi(C).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash1 = [_]u8{1} ** H;

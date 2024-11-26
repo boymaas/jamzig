@@ -4,7 +4,7 @@ const auth_queue = @import("../authorization_queue.zig");
 const H = auth_queue.H;
 const Phi = auth_queue.Phi;
 
-pub fn jsonStringify(self: *const Phi, jw: anytype) !void {
+pub fn jsonStringify(self: anytype, jw: anytype) !void {
     try jw.beginObject();
     try jw.objectField("queue");
     try jw.beginArray();

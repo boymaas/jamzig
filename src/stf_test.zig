@@ -12,11 +12,23 @@ const buildGenesisState = @import("stf_test/jamtestnet_genesis.zig").buildGenesi
 const jamtestnet = @import("stf_test/jamtestnet.zig");
 
 test "jamtestnet: jamduna safrole import" {
+    // we derive from the normal settings
+    const JAMDUNA_PARAMS = jam_params.Params{
+        .epoch_length = 12,
+        .ticket_submission_end_epoch_slot = 10,
+        .validators_count = 6,
+        .validators_super_majority = 5,
+        .core_count = 2,
+        .avail_bitfield_bytes = (2 + 7) / 8,
+        // JAMDUNA changes
+        .max_ticket_entries_per_validator = 3, // N
+    };
+
     // Get test allocator
     const allocator = testing.allocator;
 
     // Get ordered block files
-    var jam_state = try buildGenesisState(jam_params.TINY_PARAMS, allocator, @embedFile("stf_test/genesis.json"));
+    var jam_state = try buildGenesisState(JAMDUNA_PARAMS, allocator, @embedFile("stf_test/genesis.json"));
     defer jam_state.deinit(allocator);
 
     var parent_state_dict = try jam_state.buildStateMerklizationDictionary(allocator);
@@ -51,7 +63,7 @@ test "jamtestnet: jamduna safrole import" {
         // Now decode the block
         const block = try codec.deserialize(
             types.Block,
-            jam_params.TINY_PARAMS,
+            JAMDUNA_PARAMS,
             allocator,
             block_bin.buffer,
         );
@@ -82,7 +94,7 @@ test "jamtestnet: jamduna safrole import" {
 
         std.debug.print("block {} ..", .{block.value.header.slot});
 
-        var new_state = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, &jam_state, &block.value);
+        var new_state = try stf.stateTransition(JAMDUNA_PARAMS, allocator, &jam_state, &block.value);
         defer new_state.deinit(allocator);
 
         const state_root = try new_state.buildStateRoot(allocator);

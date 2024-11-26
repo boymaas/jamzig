@@ -13,66 +13,67 @@
 const std = @import("std");
 
 // Constants
-pub const C: usize = 341; // Number of cores
 pub const Q: usize = 80; // Maximum number of items in the authorizations queue
 pub const H: usize = 32; // Hash size
 
 const AuthorizerHash = [32]u8;
 
 // Define the AuthorizationQueue type
-pub const Phi = struct {
-    queue: [C]std.ArrayList(AuthorizerHash),
-    allocator: std.mem.Allocator,
+pub fn Phi(comptime core_count: u16) type {
+    return struct {
+        queue: [core_count]std.ArrayList(AuthorizerHash),
+        allocator: std.mem.Allocator,
 
-    // Initialize the AuthorizationQueue
-    pub fn init(allocator: std.mem.Allocator) !Phi {
-        var queue: [C]std.ArrayList(AuthorizerHash) = undefined;
-        for (0..C) |i| {
-            queue[i] = std.ArrayList(AuthorizerHash).init(allocator);
+        // Initialize the AuthorizationQueue
+        pub fn init(allocator: std.mem.Allocator) !Phi(core_count) {
+            var queue: [core_count]std.ArrayList(AuthorizerHash) = undefined;
+            for (0..core_count) |i| {
+                queue[i] = std.ArrayList(AuthorizerHash).init(allocator);
+            }
+            return .{ .queue = queue, .allocator = allocator };
         }
-        return Phi{ .queue = queue, .allocator = allocator };
-    }
 
-    // Deinitialize the AuthorizationQueue
-    pub fn deinit(self: *Phi) void {
-        for (0..C) |i| {
-            self.queue[i].deinit();
+        // Deinitialize the AuthorizationQueue
+        pub fn deinit(self: *Phi(core_count)) void {
+            for (0..core_count) |i| {
+                self.queue[i].deinit();
+            }
         }
-    }
 
-    pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-        try @import("state_json/authorization_queue.zig").jsonStringify(self, jw);
-    }
+        pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
+            try @import("state_json/authorization_queue.zig").jsonStringify(self, jw);
+        }
 
-    pub fn format(
-        self: *const @This(),
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        try @import("state_format/phi.zig").format(self, fmt, options, writer);
-    }
+        pub fn format(
+            self: *const @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            try @import("state_format/phi.zig").format(self, fmt, options, writer);
+        }
 
-    // Add an authorization to the queue for a specific core
-    pub fn addAuthorization(self: *Phi, core: usize, hash: AuthorizerHash) !void {
-        if (core >= C) return error.InvalidCore;
-        if (self.queue[core].items.len >= Q) return error.QueueFull;
-        try self.queue[core].append(hash);
-    }
+        // Add an authorization to the queue for a specific core
+        pub fn addAuthorization(self: *@This(), core: usize, hash: AuthorizerHash) !void {
+            if (core >= core_count) return error.InvalidCore;
+            if (self.queue[core].items.len >= Q) return error.QueueFull;
+            try self.queue[core].append(hash);
+        }
 
-    // Remove and return the first authorization from the queue for a specific core
-    pub fn popAuthorization(self: *Phi, core: usize) ?AuthorizerHash {
-        if (core >= C) return null;
-        if (self.queue[core].items.len == 0) return null;
-        return self.queue[core].orderedRemove(0);
-    }
+        // Remove and return the first authorization from the queue for a specific core
+        pub fn popAuthorization(self: *@This(), core: usize) ?AuthorizerHash {
+            if (core >= core_count) return null;
+            if (self.queue[core].items.len == 0) return null;
+            return self.queue[core].orderedRemove(0);
+        }
 
-    // Get the number of authorizations in the queue for a specific core
-    pub fn getQueueLength(self: *Phi, core: usize) usize {
-        if (core >= C) return 0;
-        return self.queue[core].items.len;
-    }
-};
+        // Get the number of authorizations in the queue for a specific core
+        pub fn getQueueLength(self: *@This(), core: usize) usize {
+            if (core >= core_count) return 0;
+            return self.queue[core].items.len;
+        }
+    };
+}
 
 //  _   _       _ _  _____         _
 // | | | |_ __ (_) ||_   _|__  ___| |_ ___
@@ -84,17 +85,17 @@ pub const Phi = struct {
 const testing = std.testing;
 
 test "AuthorizationQueue - initialization and deinitialization" {
-    var auth_queue = try Phi.init(testing.allocator);
+    var auth_queue = try Phi(2).init(testing.allocator);
     defer auth_queue.deinit();
 
-    try testing.expectEqual(@as(usize, C), auth_queue.queue.len);
+    try testing.expectEqual(@as(usize, 2), auth_queue.queue.len);
     for (auth_queue.queue) |queue| {
         try testing.expectEqual(@as(usize, 0), queue.items.len);
     }
 }
 
 test "AuthorizationQueue - add and pop authorizations" {
-    var auth_queue = try Phi.init(testing.allocator);
+    var auth_queue = try Phi(2).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash = [_]u8{1} ** H;
@@ -111,7 +112,7 @@ test "AuthorizationQueue - add and pop authorizations" {
 }
 
 test "AuthorizationQueue - queue full error" {
-    var auth_queue = try Phi.init(testing.allocator);
+    var auth_queue = try Phi(2).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash = [_]u8{1} ** H;
@@ -126,18 +127,18 @@ test "AuthorizationQueue - queue full error" {
 }
 
 test "AuthorizationQueue - invalid core error" {
-    var auth_queue = try Phi.init(testing.allocator);
+    var auth_queue = try Phi(2).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash = [_]u8{1} ** H;
 
-    try testing.expectError(error.InvalidCore, auth_queue.addAuthorization(C, test_hash));
-    try testing.expect(auth_queue.popAuthorization(C) == null);
-    try testing.expectEqual(@as(usize, 0), auth_queue.getQueueLength(C));
+    try testing.expectError(error.InvalidCore, auth_queue.addAuthorization(2, test_hash));
+    try testing.expect(auth_queue.popAuthorization(2) == null);
+    try testing.expectEqual(@as(usize, 0), auth_queue.getQueueLength(2));
 }
 
 test "AuthorizationQueue - multiple cores" {
-    var auth_queue = try Phi.init(testing.allocator);
+    var auth_queue = try Phi(2).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash1 = [_]u8{1} ** H;
@@ -157,14 +158,14 @@ test "AuthorizationQueue - multiple cores" {
 }
 
 test "AuthorizationQueue - pop from empty queue" {
-    var auth_queue = try Phi.init(testing.allocator);
+    var auth_queue = try Phi(2).init(testing.allocator);
     defer auth_queue.deinit();
 
     try testing.expect(auth_queue.popAuthorization(0) == null);
 }
 
 test "AuthorizationQueue - FIFO order" {
-    var auth_queue = try Phi.init(testing.allocator);
+    var auth_queue = try Phi(2).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash1 = [_]u8{1} ** H;
