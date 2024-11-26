@@ -172,6 +172,17 @@ pub fn JamState(comptime params: Params) type {
             };
         }
 
+        const state_dict = @import("state_dictionary.zig");
+        pub fn buildStateMerklizationDictionary(self: *const JamState(params), allocator: std.mem.Allocator) !state_dict.MerklizationDictionary {
+            return try state_dict.buildStateMerklizationDictionary(params, allocator, self);
+        }
+
+        pub fn buildStateRoot(self: *const JamState(params), allocator: std.mem.Allocator) !types.StateRoot {
+            var map = try self.buildStateMerklizationDictionary(allocator);
+            defer map.deinit();
+            return try @import("state_merklization.zig").merklizeStateDictionary(allocator, &map);
+        }
+
         /// Deinitialize and free resources
         pub fn deinit(self: *JamState(params), allocator: std.mem.Allocator) void {
             // NOTE: alpha has no allocations, yet?

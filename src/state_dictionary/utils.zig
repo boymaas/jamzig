@@ -66,8 +66,8 @@ pub fn getOrInitManaged(
             @compileError("init_args must be a tuple");
         }
     }
-    if (maybe_value.*) |value| {
-        return .{ .ptr = &value, .needs_free = false };
+    if (maybe_value.*) |*value| {
+        return .{ .ptr = value, .needs_free = false };
     } else {
 
         // Get the type of T.init

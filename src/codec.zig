@@ -192,6 +192,7 @@ fn deserializeArray(comptime T: type, comptime len: usize, scanner: *Scanner) ![
 //  ___) |  __/ |  | | (_| | | |/ /  __/
 // |____/ \___|_|  |_|\__,_|_|_/___\___|
 
+// TODO; should value be passed by pointer here?
 pub fn serialize(comptime T: type, comptime params: anytype, writer: anytype, value: T) !void {
     try recursiveSerializeLeaky(T, params, writer, value);
 }
@@ -268,7 +269,7 @@ fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, writer: a
             trace(@src(), "handling pointer", .{});
             switch (pointerInfo.size) {
                 .Slice => {
-                    trace(@src(), "handling slice", .{});
+                    trace(@src(), "handling slice " ++ @typeName(T) ++ " len: {d}", .{value.len});
                     try writer.writeAll(encoder.encodeInteger(value.len).as_slice());
                     for (value) |item| {
                         try recursiveSerializeLeaky(pointerInfo.child, params, writer, item);

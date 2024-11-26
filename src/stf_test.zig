@@ -39,6 +39,9 @@ test "jamtestnet: jamduna safrole import" {
         var new_state = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, &jam_state, &block.value);
         defer new_state.deinit(allocator);
 
+        const state_root = try new_state.buildStateRoot(allocator);
+        std.debug.print("state root 0x{s}", .{std.fmt.fmtSliceHexLower(&state_root)});
+
         std.debug.print(" STF \x1b[32mOK\x1b[0m\n", .{});
 
         try jam_state.merge(&new_state, allocator);

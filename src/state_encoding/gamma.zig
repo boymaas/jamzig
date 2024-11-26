@@ -1,9 +1,30 @@
 const std = @import("std");
 const state = @import("../state.zig");
+const types = @import("../types.zig");
 const serialize = @import("../codec.zig").serialize;
 
+const EncodeSchema = struct {
+    validators: []types.ValidatorData,
+    z: types.BandersnatchVrfRoot,
+    x: u8,
+    s: types.GammaS,
+    a: types.GammaA,
+};
+
 pub fn encode(gamma: *const state.Gamma, writer: anytype) !void {
-    try serialize(state.Gamma, .{}, writer, gamma.*);
+    const x: u8 = switch (gamma.s) {
+        .keys => 1,
+        .tickets => 0,
+    };
+    const data = EncodeSchema{
+        .validators = gamma.k.validators, // TODO this should be a count validators array
+        .z = gamma.z,
+        .x = x,
+        .s = gamma.s,
+        .a = gamma.a,
+    };
+
+    try serialize(EncodeSchema, .{}, writer, data);
 }
 
 //  _____         _   _
