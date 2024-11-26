@@ -98,6 +98,12 @@ pub const MerklizationDictionary = struct {
     // FIX: move these entries to a shared type file
     const Entry = @import("merkle.zig").Entry;
 
+    pub fn init(allocator: std.mem.Allocator) MerklizationDictionary {
+        return .{
+            .entries = std.AutoHashMap([32]u8, []const u8).init(allocator),
+        };
+    }
+
     /// Slice is owned, the values are owned by the dictionary.
     pub fn toOwnedSlice(self: *const MerklizationDictionary) ![]Entry {
         var buffer = std.ArrayList(Entry).init(self.entries.allocator);
@@ -115,6 +121,24 @@ pub const MerklizationDictionary = struct {
             self.entries.allocator.free(entry.*);
         }
         self.entries.deinit();
+    }
+
+    pub fn format(
+        self: MerklizationDictionary,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        var it = self.entries.iterator();
+        while (it.next()) |entry| {
+            try writer.print("key: {any}, value: {any}\n", .{
+                std.fmt.fmtSliceHexLower(&entry.key_ptr.*),
+                std.fmt.fmtSliceHexLower(entry.value_ptr.*[0..@min(entry.value_ptr.*.len, 160)]),
+            });
+        }
     }
 };
 
