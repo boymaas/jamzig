@@ -328,11 +328,9 @@ pub fn buildStateMerklizationDictionary(
         const gamma_key = constructSimpleByteKey(4);
         var gamma_managed = try getOrInitManaged(allocator, &state.gamma, .{allocator});
         defer gamma_managed.deinit(allocator);
-        const gamma_value = try encodeAndOwnSlice(
-            allocator,
-            state_encoder.encodeGamma,
-            .{gamma_managed.ptr},
-        );
+        var buffer = std.ArrayList(u8).init(allocator);
+        try state_encoder.encodeGamma(params.validators_count, gamma_managed.ptr, buffer.writer());
+        const gamma_value = try buffer.toOwnedSlice();
         try map.put(gamma_key, gamma_value);
 
         // Psi (5)

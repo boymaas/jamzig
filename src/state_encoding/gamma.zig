@@ -9,9 +9,13 @@ const EncodeSchema = struct {
     x: u8,
     s: types.GammaS,
     a: types.GammaA,
+
+    pub fn validators_size(validators_count: u32) usize {
+        return @intCast(validators_count);
+    }
 };
 
-pub fn encode(gamma: anytype, writer: anytype) !void {
+pub fn encode(comptime validators_count: u32, gamma: anytype, writer: anytype) !void {
     const x: u8 = switch (gamma.s) {
         .keys => 1,
         .tickets => 0,
@@ -24,7 +28,7 @@ pub fn encode(gamma: anytype, writer: anytype) !void {
         .a = gamma.a,
     };
 
-    try serialize(EncodeSchema, .{}, writer, data);
+    try serialize(EncodeSchema, validators_count, writer, data);
 }
 
 //  _____         _   _
