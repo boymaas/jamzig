@@ -142,7 +142,38 @@ pub const DiffEntry = struct {
                     const old_chunk = if (i < old_hex.len) old_hex[i..@min(i + 40, old_hex.len)] else "";
                     const new_chunk = if (i < new_hex.len) new_hex[i..@min(i + 40, new_hex.len)] else "";
 
-                    try writer.print("{s: <40} {s: <40}\n", .{ old_chunk, new_chunk });
+                    // Print old chunk with potential highlighting
+                    var j: usize = 0;
+                    while (j < 40) : (j += 1) {
+                        const old_char = if (j < old_chunk.len) old_chunk[j] else ' ';
+                        const new_char = if (j < new_chunk.len) new_chunk[j] else ' ';
+
+                        if (old_char != new_char) {
+                            try writer.writeAll("\x1b[33m"); // Yellow
+                            try writer.writeByte(old_char);
+                            try writer.writeAll("\x1b[0m"); // Reset
+                        } else {
+                            try writer.writeByte(old_char);
+                        }
+                    }
+
+                    try writer.writeAll("  "); // Separator
+
+                    // Print new chunk with potential highlighting
+                    j = 0;
+                    while (j < 40) : (j += 1) {
+                        const old_char = if (j < old_chunk.len) old_chunk[j] else ' ';
+                        const new_char = if (j < new_chunk.len) new_chunk[j] else ' ';
+
+                        if (old_char != new_char) {
+                            try writer.writeAll("\x1b[33m"); // Yellow
+                            try writer.writeByte(new_char);
+                            try writer.writeAll("\x1b[0m"); // Reset
+                        } else {
+                            try writer.writeByte(new_char);
+                        }
+                    }
+                    try writer.writeByte('\n');
                 }
             },
         }
