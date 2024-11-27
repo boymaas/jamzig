@@ -359,9 +359,9 @@ pub fn buildStateMerklizationDictionary(
         const gamma_key = constructSimpleByteKey(4);
         var gamma_managed = try getOrInitManaged(allocator, &state.gamma, .{allocator});
         defer gamma_managed.deinit(allocator);
-        var buffer = std.ArrayList(u8).init(allocator);
-        try state_encoder.encodeGamma(params, gamma_managed.ptr, buffer.writer());
-        const gamma_value = try buffer.toOwnedSlice();
+        var gamma_buffer = std.ArrayList(u8).init(allocator);
+        try state_encoder.encodeGamma(params, gamma_managed.ptr, gamma_buffer.writer());
+        const gamma_value = try gamma_buffer.toOwnedSlice();
         try map.put(gamma_key, gamma_value);
 
         // Psi (5)
@@ -402,7 +402,10 @@ pub fn buildStateMerklizationDictionary(
         const rho_key = constructSimpleByteKey(10);
         var rho_managed = try getOrInitManaged(allocator, &state.rho, .{});
         defer rho_managed.deinit(allocator);
-        const rho_value = try encodeAndOwnSlice(allocator, state_encoder.encodeRho, .{rho_managed.ptr});
+
+        var rho_buffer = std.ArrayList(u8).init(allocator); // TODO: reuse buffers
+        try state_encoder.encodeRho(params, rho_managed.ptr, rho_buffer.writer());
+        const rho_value = try rho_buffer.toOwnedSlice();
         try map.put(rho_key, rho_value);
 
         // Tau (11)

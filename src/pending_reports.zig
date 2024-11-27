@@ -33,9 +33,6 @@ const RefineContext = types.RefineContext;
 const WorkPackageSpec = types.WorkPackageSpec;
 const CoreIndex = types.CoreIndex;
 
-// Constants
-const C: usize = 341; // Number of cores
-
 const ReportEntry = struct {
     hash: WorkReportHash,
     work_report: WorkReport,
@@ -43,57 +40,59 @@ const ReportEntry = struct {
 };
 
 // Rho state
-pub const Rho = struct {
-    reports: [C]?ReportEntry,
+pub fn Rho(comptime core_count: u16) type {
+    return struct {
+        reports: [core_count]?ReportEntry,
 
-    pub fn format(
-        self: *const @This(),
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        try @import("state_format/rho.zig").format(self, fmt, options, writer);
-    }
-
-    pub fn init() Rho {
-        return Rho{
-            .reports = [_]?ReportEntry{null} ** C,
-        };
-    }
-
-    pub fn setReport(self: *Rho, core: usize, hash: WorkReportHash, report: WorkReport, timeslot: TimeSlot) void {
-        if (core >= C) {
-            @panic("Core index out of bounds");
+        pub fn format(
+            self: *const @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            try @import("state_format/rho.zig").format(self, fmt, options, writer);
         }
-        self.reports[core] = ReportEntry{ .hash = hash, .work_report = report, .timeslot = timeslot };
-    }
 
-    pub fn getReport(self: *const Rho, core: usize) ?ReportEntry {
-        if (core >= C) {
-            @panic("Core index out of bounds");
+        pub fn init() @This() {
+            return @This(){
+                .reports = [_]?ReportEntry{null} ** core_count,
+            };
         }
-        return self.reports[core];
-    }
 
-    pub fn clearReport(self: *Rho, core: usize) void {
-        if (core >= C) {
-            @panic("Core index out of bounds");
+        pub fn setReport(self: *@This(), core: usize, hash: WorkReportHash, report: WorkReport, timeslot: TimeSlot) void {
+            if (core >= core_count) {
+                @panic("Core index out of bounds");
+            }
+            self.reports[core] = ReportEntry{ .hash = hash, .work_report = report, .timeslot = timeslot };
         }
-        self.reports[core] = null;
-    }
 
-    pub fn clearFromCore(self: *Rho, work_report: WorkReportHash) bool {
-        for (&self.reports) |*report| {
-            if (report.*) |*entry| {
-                if (std.mem.eql(u8, &entry.hash, &work_report)) {
-                    report.* = null;
-                    return true;
+        pub fn getReport(self: *const @This(), core: usize) ?ReportEntry {
+            if (core >= core_count) {
+                @panic("Core index out of bounds");
+            }
+            return self.reports[core];
+        }
+
+        pub fn clearReport(self: *@This(), core: usize) void {
+            if (core >= core_count) {
+                @panic("Core index out of bounds");
+            }
+            self.reports[core] = null;
+        }
+
+        pub fn clearFromCore(self: *@This(), work_report: WorkReportHash) bool {
+            for (&self.reports) |*report| {
+                if (report.*) |*entry| {
+                    if (std.mem.eql(u8, &entry.hash, &work_report)) {
+                        report.* = null;
+                        return true;
+                    }
                 }
             }
+            return false;
         }
-        return false;
-    }
-};
+    };
+}
 
 //  _____         _
 // |_   _|__  ___| |_ ___
@@ -106,18 +105,19 @@ const testing = std.testing;
 
 const createEmptyWorkReport = @import("tests/fixtures.zig").createEmptyWorkReport;
 
+const TEST_C: u16 = 341; // Standard number of cores for testing
 const TEST_HASH = [_]u8{ 'T', 'E', 'S', 'T' } ++ [_]u8{0} ** 28;
 
 test "Rho - Initialization" {
-    const rho = Rho.init();
-    try testing.expectEqual(@as(usize, C), rho.reports.len);
+    const rho = Rho(TEST_C).init();
+    try testing.expectEqual(@as(usize, TEST_C), rho.reports.len);
     for (rho.reports) |report| {
         try testing.expectEqual(@as(?ReportEntry, null), report);
     }
 }
 
 test "Rho - Set and Get Report" {
-    var rho = Rho.init();
+    var rho = Rho(TEST_C).init();
     const work_report = createEmptyWorkReport(TEST_HASH);
     const timeslot = 100;
 
@@ -136,7 +136,7 @@ test "Rho - Set and Get Report" {
 }
 
 test "Rho - Clear Report" {
-    var rho = Rho.init();
+    var rho = Rho(TEST_C).init();
     const work_report = createEmptyWorkReport(TEST_HASH);
     const timeslot = 100;
 
@@ -150,7 +150,7 @@ test "Rho - Clear Report" {
 }
 
 test "Rho - Clear From Core" {
-    var rho = Rho.init();
+    var rho = Rho(TEST_C).init();
     const work_report1 = createEmptyWorkReport(TEST_HASH);
     const test_hash2 = [_]u8{ 'T', 'E', 'S', 'T', '2' } ++ [_]u8{0} ** 27;
     const work_report2 = createEmptyWorkReport(test_hash2);

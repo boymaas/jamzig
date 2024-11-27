@@ -43,7 +43,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// ρ: State related to each core’s current assignment, including work packages and reports.
         /// Manipulated in: src/core_assignments.zig
-        rho: ?Rho,
+        rho: ?Rho(params.core_count),
 
         /// τ: Current time, represented in terms of epochs and slots.
         /// Manipulated in: src/safrole.zig

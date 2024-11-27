@@ -117,7 +117,7 @@ test "processDisputesExtrinsic - good set" {
     const allocator = std.testing.allocator;
     var current_state = Psi.init(allocator);
     defer current_state.deinit();
-    var current_rho = Rho.init();
+    var current_rho = Rho(341).init();
 
     const validator_count: usize = 3; // Simplified for testing
     const target_hash: Hash = [_]u8{1} ** 32;
@@ -148,7 +148,7 @@ test "processDisputesExtrinsic - bad set" {
     const allocator = std.testing.allocator;
     var current_state = Psi.init(allocator);
     defer current_state.deinit();
-    var current_rho = Rho.init();
+    var current_rho = Rho(341).init();
 
     const validator_count: usize = 3; // Simplified for testing
     const target_hash: Hash = [_]u8{2} ** 32;
@@ -179,7 +179,7 @@ test "processDisputesExtrinsic - wonky set" {
     const allocator = std.testing.allocator;
     var current_state = Psi.init(allocator);
     defer current_state.deinit();
-    var current_rho = Rho.init();
+    var current_rho = Rho(341).init();
 
     const validator_count: usize = 3; // Simplified for testing
     const target_hash: Hash = [_]u8{3} ** 32;
