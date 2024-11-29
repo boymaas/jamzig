@@ -105,10 +105,10 @@ pub fn convertDisputesExtrinsic(allocator: std.mem.Allocator, test_disputes: tve
 
 const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
 
-pub fn convertRho(allocator: std.mem.Allocator, test_rho: tvector.AvailabilityAssignments) !state.Rho {
+pub fn convertRho(comptime core_count: u16, allocator: std.mem.Allocator, test_rho: tvector.AvailabilityAssignments) !state.Rho(core_count) {
     _ = allocator;
 
-    var rho = state.Rho.init();
+    var rho = state.Rho(core_count).init();
 
     for (test_rho, 0..) |assignment, core| {
         if (assignment) |a| {

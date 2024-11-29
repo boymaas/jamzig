@@ -19,7 +19,12 @@ pub fn Gamma(comptime validators_count: u32, comptime epoch_length: u32) type {
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-            try @import("state_json/safrole_state.zig").jsonStringify(self, jw);
+            try @import("state_json/safrole_state.zig").jsonStringify(
+                validators_count,
+                epoch_length,
+                self,
+                jw,
+            );
         }
 
         pub fn format(

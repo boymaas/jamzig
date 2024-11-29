@@ -329,7 +329,7 @@ pub fn buildStateMerklizationDictionary(
         const alpha_value = try encodeAndOwnSlice(
             allocator,
             state_encoder.encodeAlpha,
-            .{alpha_managed.ptr},
+            .{ params.core_count, alpha_managed.ptr },
         );
         try map.put(alpha_key, alpha_value);
 

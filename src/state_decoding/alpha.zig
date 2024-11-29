@@ -111,7 +111,7 @@ test "decode alpha - roundtrip" {
     // Encode
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
-    try encoder.encode(&original, buffer.writer());
+    try encoder.encode(core_count, &original, buffer.writer());
 
     // Decode
     var fbs = std.io.fixedBufferStream(buffer.items);

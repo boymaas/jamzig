@@ -10,14 +10,14 @@ const helpers = @import("../tests/helpers.zig");
 
 const Params = @import("../jam_params.zig").Params;
 
-pub fn runDisputeTest(allocator: std.mem.Allocator, params: Params, test_vector: tvector.TestVector) !void {
+pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, test_vector: tvector.TestVector) !void {
     var current_psi = try converters.convertPsi(allocator, test_vector.pre_state.psi);
     defer current_psi.deinit();
     var expected_psi = try converters.convertPsi(allocator, test_vector.post_state.psi);
     defer expected_psi.deinit();
 
-    var current_rho = try converters.convertRho(allocator, test_vector.pre_state.rho);
-    const expected_rho = try converters.convertRho(allocator, test_vector.post_state.rho);
+    var current_rho = try converters.convertRho(params.core_count, allocator, test_vector.pre_state.rho);
+    const expected_rho = try converters.convertRho(params.core_count, allocator, test_vector.post_state.rho);
 
     var extrinsic_disputes = try converters.convertDisputesExtrinsic(allocator, test_vector.input.disputes);
     defer extrinsic_disputes.deinit(allocator);
@@ -29,7 +29,7 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, params: Params, test_vector:
     defer lambda.deinit(allocator);
 
     const current_epoch = test_vector.pre_state.tau / params.epoch_length;
-    const transition_result = stf.transitionDisputes(allocator, params.validators_count, &current_psi, kappa, lambda, &current_rho, current_epoch, extrinsic_disputes);
+    const transition_result = stf.transitionDisputes(params.validators_count, params.core_count, allocator, &current_psi, kappa, lambda, &current_rho, current_epoch, extrinsic_disputes);
 
     defer {
         if (transition_result) |psi| {

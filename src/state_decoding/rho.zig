@@ -147,7 +147,7 @@ test "decode rho - insufficient data" {
 test "decode rho - roundtrip" {
     const encoder = @import("../state_encoding/rho.zig");
     const core_count = 2;
-    const params = .{ .core_count = core_count };
+    const params = @import("../jam_params.zig").TINY_PARAMS;
 
     // Create original rho state
     var original = Rho(core_count).init();

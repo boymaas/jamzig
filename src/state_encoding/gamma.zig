@@ -59,7 +59,7 @@ test "encode" {
     const allocator = std.testing.allocator;
 
     // Create a sample Gamma instance
-    var gamma = try state.Gamma.init(allocator, 6);
+    var gamma = try state.Gamma(6, 12).init(allocator);
     defer gamma.deinit(allocator);
 
     // Create a buffer to store the encoded data
@@ -67,7 +67,7 @@ test "encode" {
     defer buffer.deinit();
 
     // Encode the Gamma instance
-    try encode(&gamma, buffer.writer());
+    try encode(jam_params.TINY_PARAMS, &gamma, buffer.writer());
 
     // Verify the encoded output
     // Here, we're just checking if the buffer is not empty.

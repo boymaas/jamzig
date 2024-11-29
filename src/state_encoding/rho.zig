@@ -53,7 +53,9 @@ const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkRe
 const TEST_HASH = [_]u8{ 'T', 'E', 'S', 'T' } ++ [_]u8{0} ** 28;
 
 test "encode" {
-    var rho = Rho.init();
+    const TINY = @import("../jam_params.zig").TINY_PARAMS;
+
+    var rho = Rho(TINY.core_count).init();
     const work_report1 = createEmptyWorkReport(TEST_HASH);
     const test_hash2 = [_]u8{ 'T', 'E', 'S', 'T', '2' } ++ [_]u8{0} ** 27;
     const work_report2 = createEmptyWorkReport(test_hash2);
@@ -69,7 +71,7 @@ test "encode" {
     var writer = buffer.writer();
 
     // Encode the Rho state
-    try encode(&rho, &writer);
+    try encode(TINY, &rho, &writer);
 
     // TODO: test the encode output in more detail
     // // Verify the encoded output

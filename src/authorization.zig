@@ -32,7 +32,7 @@ pub fn Alpha(comptime core_count: u16) type {
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-            try @import("state_json/authorization.zig").jsonStringify(self, jw);
+            try @import("state_json/authorization.zig").jsonStringify(core_count, self, jw);
         }
 
         // The state transition of a block involves placing a new authorization

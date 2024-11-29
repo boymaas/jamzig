@@ -67,7 +67,7 @@ pub const Psi = struct {
 // compilation of judgments coming from exactly two-thirds plus one of either
 // the active validator set or the previous epoch’s validator set, i.e. the
 // Ed25519 keys of κ or λ.
-pub fn processDisputesExtrinsic(current_state: *const Psi, current_rho: *Rho, extrinsic: DisputesExtrinsic, validator_count: usize) !Psi {
+pub fn processDisputesExtrinsic(comptime core_count: u32, current_state: *const Psi, current_rho: *Rho(core_count), extrinsic: DisputesExtrinsic, validator_count: usize) !Psi {
     var state = try current_state.clone();
 
     // Process verdicts: V Gp0.4.1 (107) (108)
@@ -136,7 +136,7 @@ test "processDisputesExtrinsic - good set" {
         .faults = &[_]types.Fault{},
     };
 
-    var state = try processDisputesExtrinsic(&current_state, &current_rho, extrinsic, validator_count);
+    var state = try processDisputesExtrinsic(341, &current_state, &current_rho, extrinsic, validator_count);
     defer state.deinit();
 
     try testing.expect(state.good_set.contains(target_hash));
@@ -167,7 +167,7 @@ test "processDisputesExtrinsic - bad set" {
         .faults = &[_]types.Fault{},
     };
 
-    var state = try processDisputesExtrinsic(&current_state, &current_rho, extrinsic, validator_count);
+    var state = try processDisputesExtrinsic(341, &current_state, &current_rho, extrinsic, validator_count);
     defer state.deinit();
 
     try testing.expect(!state.good_set.contains(target_hash));
@@ -198,7 +198,7 @@ test "processDisputesExtrinsic - wonky set" {
         .faults = &[_]types.Fault{},
     };
 
-    var state = try processDisputesExtrinsic(&current_state, &current_rho, extrinsic, validator_count);
+    var state = try processDisputesExtrinsic(341, &current_state, &current_rho, extrinsic, validator_count);
     defer state.deinit();
 
     try testing.expect(!state.good_set.contains(target_hash));

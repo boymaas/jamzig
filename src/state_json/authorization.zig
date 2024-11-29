@@ -1,7 +1,7 @@
 const std = @import("std");
 const Alpha = @import("../authorization.zig").Alpha;
 
-pub fn jsonStringify(self: *const Alpha, jw: anytype) !void {
+pub fn jsonStringify(comptime core_count: u16, self: *const Alpha(core_count), jw: anytype) !void {
     try jw.beginObject();
 
     try jw.objectField("pools");
