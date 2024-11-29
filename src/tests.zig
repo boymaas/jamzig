@@ -24,6 +24,7 @@ comptime {
     _ = @import("state_test.zig");
 
     _ = @import("state_encoding.zig");
+    _ = @import("state_decoding.zig");
 
     _ = @import("services.zig");
     _ = @import("services_priviledged.zig");

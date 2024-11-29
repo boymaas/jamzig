@@ -4,6 +4,9 @@ pub const decoder = @import("codec/decoder.zig");
 pub const encoder = @import("codec/encoder.zig");
 const Scanner = @import("codec/scanner.zig").Scanner;
 const trace = @import("tracing.zig").src;
+const GenericReader = std.io.GenericReader;
+
+const util = @import("codec/util.zig");
 
 pub fn Deserialized(T: anytype) type {
     return struct {
@@ -24,7 +27,12 @@ pub fn Deserialized(T: anytype) type {
 // | |_| |  __/\__ \  __/ |  | | (_| | | |/ /  __/
 // |____/ \___||___/\___|_|  |_|\__,_|_|_/___\___|
 
-pub fn deserialize(comptime T: type, comptime params: anytype, parent_allocator: std.mem.Allocator, data: []const u8) !Deserialized(T) {
+pub fn deserialize(
+    comptime T: type,
+    comptime params: anytype,
+    parent_allocator: std.mem.Allocator,
+    data: []const u8,
+) !Deserialized(T) {
     trace(@src(), "deserialize: start", .{});
     defer trace(@src(), "deserialize: end", .{});
 
@@ -36,30 +44,78 @@ pub fn deserialize(comptime T: type, comptime params: anytype, parent_allocator:
     result.arena.* = ArenaAllocator.init(parent_allocator);
     errdefer result.arena.deinit();
 
-    var scanner = Scanner.initCompleteInput(data);
-    result.value = try recursiveDeserializeLeaky(T, params, result.arena.allocator(), &scanner);
+    var fbs = std.io.fixedBufferStream(data);
+    const reader = fbs.reader();
+
+    //FIXME: this this really leaky or can we just use a normal allocator. As the whole generated structure
+    //should be able to be deinit.
+
+    result.value = try recursiveDeserializeLeaky(T, params, result.arena.allocator(), reader);
 
     return result;
+}
+
+pub fn deserializeAlloc(
+    comptime T: type,
+    comptime params: anytype,
+    allocator: std.mem.Allocator,
+    reader: anytype,
+) !T {
+    trace(@src(), "deserializeAlloc: start", .{});
+    defer trace(@src(), "deserializeAlloc: end", .{});
+
+    return try recursiveDeserializeLeaky(T, params, allocator, reader);
+}
+
+/// (272) Function to decode an integer (0 to 2^64) from a variable-length
+/// encoding as described in the gray paper.
+pub fn readInteger(reader: anytype) !u64 {
+    // Read first byte
+    const first_byte = try reader.readByte();
+
+    if (first_byte == 0) {
+        return 0;
+    }
+
+    if (first_byte < 0x80) {
+        return first_byte;
+    }
+
+    if (first_byte == 0xff) {
+        // Special case: 8-byte fixed-length integer
+        var buf: [8]u8 = undefined;
+        try reader.readNoEof(&buf);
+        return decoder.decodeFixedLengthInteger(u64, &buf);
+    }
+
+    const dl = util.decode_prefix(first_byte);
+
+    // Read the remaining bytes, l can never > 8
+    var buf: [8]u8 = undefined;
+    try reader.readNoEof(buf[0..dl.l]);
+    const remainder = decoder.decodeFixedLengthInteger(u64, buf[0..dl.l]);
+    return remainder + dl.integer_multiple;
 }
 
 /// `scanner_or_reader` must be either a `*std.json.Scanner` with complete input or a `*std.json.Reader`.
 /// Allocations made during this operation are not carefully tracked and may not be possible to individually clean up.
 /// It is recommended to use a `std.heap.ArenaAllocator` or similar.
-fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, scanner: *Scanner) !T {
+fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype) !T {
     trace(@src(), "start - type: {s}", .{@typeName(T)});
     defer trace(@src(), "recursiveDeserializeLeaky: end - type: {s}", .{@typeName(T)});
 
     switch (@typeInfo(T)) {
         .bool => {
             trace(@src(), "handling boolean", .{});
-            const byte = try scanner.readByte();
+            const byte = try reader.readByte();
             return byte != 0;
         },
         .int => |intInfo| {
             trace(@src(), "handling integer", .{});
             inline for (.{ u8, u16, u32, u64, u128 }) |t| {
                 if (intInfo.bits == @bitSizeOf(t)) {
-                    const integer = decoder.decodeFixedLengthInteger(t, try scanner.readBytes(intInfo.bits / 8));
+                    const buf = try reader.readBytesNoEof(intInfo.bits / 8);
+                    const integer = decoder.decodeFixedLengthInteger(t, &buf);
                     // trace(@src(), "handling integer: {} => {}", .{ @typeName(t), integer });
                     return integer;
                 }
@@ -67,14 +123,14 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
             @panic("unhandled integer type");
         },
         .optional => |optionalInfo| {
-            const present = try scanner.readByte();
+            const present = try reader.readByte();
             trace(@src(), "handling optional {d}", .{present});
             if (present == 0) {
                 trace(@src(), "handling optional: null", .{});
                 return null;
             } else if (present == 1) {
                 trace(@src(), "handling optional: present {any}", .{@typeName(optionalInfo.child)});
-                return try recursiveDeserializeLeaky(optionalInfo.child, params, allocator, scanner);
+                return try recursiveDeserializeLeaky(optionalInfo.child, params, allocator, reader);
             } else {
                 return error.InvalidValueForOptional;
             }
@@ -99,11 +155,11 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
                     const size = @call(.auto, size_fn, .{params});
                     const slice = try allocator.alloc(std.meta.Child(field_type), size);
                     for (slice) |*item| {
-                        item.* = try recursiveDeserializeLeaky(std.meta.Child(field_type), params, allocator, scanner);
+                        item.* = try recursiveDeserializeLeaky(std.meta.Child(field_type), params, allocator, reader);
                     }
                     @field(result, field.name) = slice;
                 } else {
-                    const field_value = try recursiveDeserializeLeaky(field_type, params, allocator, scanner);
+                    const field_value = try recursiveDeserializeLeaky(field_type, params, allocator, reader);
                     @field(result, field.name) = field_value;
                 }
             }
@@ -113,19 +169,18 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
             if (arrayInfo.sentinel != null) {
                 @compileError("Arrays with sentinels are not supported for deserialization");
             }
-            return try deserializeArray(arrayInfo.child, arrayInfo.len, scanner);
+            return try deserializeArray(arrayInfo.child, arrayInfo.len, allocator, reader);
         },
         .pointer => |pointerInfo| {
             trace(@src(), "handling pointer", .{});
             switch (pointerInfo.size) {
                 .Slice => {
                     trace(@src(), "handling slice", .{});
-                    const len = try decoder.decodeInteger(scanner.remainingBuffer());
-                    try scanner.advanceCursor(len.bytes_read);
-                    trace(@src(), "recursiveDeserializeLeaky: slice length: {}", .{len.value});
-                    const slice = try allocator.alloc(pointerInfo.child, @intCast(len.value));
+                    const len = try readInteger(reader);
+                    trace(@src(), "recursiveDeserializeLeaky: slice length: {}", .{len});
+                    const slice = try allocator.alloc(pointerInfo.child, @intCast(len));
                     for (slice) |*item| {
-                        item.* = try recursiveDeserializeLeaky(pointerInfo.child, params, allocator, scanner);
+                        item.* = try recursiveDeserializeLeaky(pointerInfo.child, params, allocator, reader);
                     }
                     return slice;
                 },
@@ -145,11 +200,10 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
             // };
 
             // Read the union tag (index) using variable-length encoding
-            const tag_value = try decoder.decodeInteger(scanner.remainingBuffer());
-            try scanner.advanceCursor(tag_value.bytes_read);
+            const tag_value = try readInteger(reader);
 
             inline for (unionInfo.fields, 0..) |field, idx| {
-                if (tag_value.value == idx) {
+                if (tag_value == idx) {
                     trace(@src(), "union field: {s}", .{field.name});
 
                     // Check if the active field's type is void
@@ -157,7 +211,7 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
                         return @unionInit(T, field.name, {});
                     } else {
                         // Recursively deserialize the active field
-                        const field_value: []u8 = try recursiveDeserializeLeaky(field.type, params, allocator, scanner);
+                        const field_value: []u8 = try recursiveDeserializeLeaky(field.type, params, allocator, reader);
                         return @unionInit(T, field.name, field_value);
                     }
                 }
@@ -172,16 +226,26 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
     }
 }
 
-fn deserializeArray(comptime T: type, comptime len: usize, scanner: *Scanner) ![len]T {
+fn deserializeArray(comptime T: type, comptime len: usize, allocator: std.mem.Allocator, reader: anytype) ![len]T {
     trace(@src(), "deserializeArray: start - type: {s}, length: {}", .{ @typeName(T), len });
     defer trace(@src(), "deserializeArray: end", .{});
 
     var result: [len]T = undefined;
-    const bytes_to_read = @sizeOf(T) * len;
-    const data = try scanner.readBytes(bytes_to_read);
 
-    // Copy the read bytes into the result array
-    @memcpy(&result, data.ptr);
+    // TODO: optimize, if we find that the tree of T never contains fields greater that u8 we can also do a direct
+    // read.
+    if (T == u8) {
+        // Optimize byte array reading by reading directly into the array
+        const bytes_read = try reader.readAll(&result);
+        if (bytes_read != len) {
+            return error.EndOfStream;
+        }
+    } else {
+        // For non-byte types, deserialize each element individually
+        for (&result) |*element| {
+            element.* = try recursiveDeserializeLeaky(T, .{}, allocator, reader);
+        }
+    }
 
     return result;
 }

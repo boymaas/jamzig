@@ -50,12 +50,12 @@ pub fn Rho(comptime core_count: u16) type {
             options: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
-            try @import("state_format/rho.zig").format(self, fmt, options, writer);
+            try @import("state_format/rho.zig").format(core_count, self, fmt, options, writer);
         }
 
         pub fn init() @This() {
             return @This(){
-                .reports = [_]?ReportEntry{null} ** core_count,
+                .reports = [_]?ReportEntry{null} ** core_count, // TODO: std.mem.zeroes
             };
         }
 

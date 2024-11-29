@@ -4,7 +4,11 @@ const types = @import("../types.zig");
 const codec = @import("../codec.zig");
 const jam_params = @import("../jam_params.zig");
 
-pub fn encode(comptime params: jam_params.Params, gamma: *const state.Gamma(params.validators_count, params.epoch_length), writer: anytype) !void {
+pub fn encode(
+    comptime params: jam_params.Params,
+    gamma: *const state.Gamma(params.validators_count, params.epoch_length),
+    writer: anytype,
+) !void {
     // Serialize validators array
 
     std.debug.assert(gamma.k.validators.len == params.validators_count);

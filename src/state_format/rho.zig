@@ -2,7 +2,8 @@ const std = @import("std");
 const Rho = @import("../pending_reports.zig").Rho;
 
 pub fn format(
-    self: *const Rho,
+    comptime core_count: u32,
+    self: *const Rho(core_count),
     comptime fmt: []const u8,
     options: std.fmt.FormatOptions,
     writer: anytype,
@@ -12,7 +13,7 @@ pub fn format(
 
     try writer.writeAll("Rho{\n");
     try writer.writeAll("  Reports:\n");
-    
+
     for (self.reports, 0..) |report, i| {
         if (report) |r| {
             try writer.print("    Core {d}: {{\n", .{i});
