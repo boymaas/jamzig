@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const authorization = @import("../authorization.zig");
 const decoder = @import("../codec/decoder.zig");
+const codec = @import("../codec.zig");
 const Alpha = authorization.Alpha;
 
 pub fn decode(comptime core_count: u16, reader: anytype) !Alpha(core_count) {
@@ -10,7 +11,7 @@ pub fn decode(comptime core_count: u16, reader: anytype) !Alpha(core_count) {
     // For each core's pool
     for (0..core_count) |core| {
         // Read pool length
-        const pool_len = try reader.readInt(u32, .little);
+        const pool_len = try codec.readInteger(reader);
 
         // Read pool authorizations
         var i: usize = 0;
@@ -53,14 +54,16 @@ test "decode alpha - with authorizations" {
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
+    var writer = buffer.writer();
+
     // Core 0: Write length 1 and one authorization
-    try buffer.writer().writeInt(u32, 1, .little);
-    try buffer.appendSlice(&[_]u8{1} ** 32);
+    try codec.writeInteger(1, writer);
+    try writer.writeAll(&[_]u8{1} ** 32);
 
     // Core 1: Write length 2 and two authorizations
-    try buffer.writer().writeInt(u32, 2, .little);
-    try buffer.appendSlice(&[_]u8{2} ** 32);
-    try buffer.appendSlice(&[_]u8{3} ** 32);
+    try codec.writeInteger(2, writer);
+    try writer.writeAll(&[_]u8{2} ** 32);
+    try writer.writeAll(&[_]u8{3} ** 32);
 
     var fbs = std.io.fixedBufferStream(buffer.items);
     const alpha = try decode(core_count, fbs.reader());

@@ -273,6 +273,10 @@ pub fn serializeAlloc(comptime T: type, comptime params: anytype, allocator: std
     return list.toOwnedSlice();
 }
 
+pub fn writeInteger(value: u64, writer: anytype) !void {
+    return try writer.writeAll(encoder.encodeInteger(value).as_slice());
+}
+
 pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, writer: anytype, value: T) !void {
     trace(@src(), "start - type: {s}", .{@typeName(T)});
     defer trace(@src(), "recursiveSerializeLeaky: end - type: {s}", .{@typeName(T)});
@@ -334,7 +338,7 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
             switch (pointerInfo.size) {
                 .Slice => {
                     trace(@src(), "handling slice " ++ @typeName(T) ++ " len: {d}", .{value.len});
-                    try writer.writeAll(encoder.encodeInteger(value.len).as_slice());
+                    try writeInteger(value.len, writer);
                     for (value) |item| {
                         try recursiveSerializeLeaky(pointerInfo.child, params, writer, item);
                     }

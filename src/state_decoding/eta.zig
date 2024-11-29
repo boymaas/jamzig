@@ -9,13 +9,12 @@ const Eta = types.Eta;
 /// Decodes eta (η) from raw bytes.
 /// Eta is an array of 4 entropy values, each 32 bytes long.
 pub fn decode(reader: anytype) !Eta {
-    const eta: Eta = undefined;
+    var eta: Eta = undefined;
 
-    // Read exactly 4 entropy values
-    for (&eta) |*entropy| {
-        const bytes = try reader.readBytesNoEof(32);
-        @constCast(entropy).* = bytes;
-    }
+    // NOTE: since this needs to be decoded by slice anyways
+    // we can just convert it to big []u8 and read all
+    const buffer = std.mem.sliceAsBytes(&eta);
+    try reader.readNoEof(buffer);
 
     return eta;
 }

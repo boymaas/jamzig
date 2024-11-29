@@ -18,7 +18,7 @@ pub fn readInteger(reader: anytype) !u64 {
         var buf: [8]u8 = undefined;
         const bytes_read = try reader.readAll(&buf);
         if (bytes_read != 8) {
-            return error.InsufficientData;
+            return error.EndOfStream;
         }
         return decoder.decodeFixedLengthInteger(u64, &buf);
     }

@@ -12,6 +12,7 @@ pub fn decode(
     allocator: std.mem.Allocator,
     reader: anytype,
 ) !state.Gamma(params.validators_count, params.epoch_length) {
+    // FIXME: as this allocates we can optimze this away
     var gamma = try state.Gamma(params.validators_count, params.epoch_length).init(allocator);
     errdefer gamma.deinit(allocator);
 
@@ -34,6 +35,7 @@ pub fn decode(
             const tbuffer: []u8 = std.mem.sliceAsBytes(tickets);
             try reader.readNoEof(tbuffer);
 
+            gamma.s.deinit(allocator); // Since we will allocate over all the pointers
             gamma.s = .{ .tickets = tickets };
         },
         1 => { // Keys state
@@ -43,6 +45,7 @@ pub fn decode(
             const kbuffer: []u8 = std.mem.sliceAsBytes(keys);
             try reader.readNoEof(kbuffer);
 
+            gamma.s.deinit(allocator); // Since we will allocate over all the pointers
             gamma.s = .{ .keys = keys };
         },
         else => return error.InvalidStateType,
@@ -69,18 +72,20 @@ test "decode gamma - empty state" {
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
+    var writer = buffer.writer();
+
     // Write empty validator data
     for (0..TINY.validators_count) |_| {
-        try buffer.appendSlice(&[_]u8{0} ** (32 + 32 + 144 + 128)); // bandersnatch + ed25519 + bls + metadata
+        try writer.writeAll(&[_]u8{0} ** @sizeOf(types.ValidatorData)); // bandersnatch + ed25519 + bls + metadata
     }
 
     // Write VRF root
-    try buffer.appendSlice(&[_]u8{0} ** 144); // BLS public key size
+    try writer.writeAll(&[_]u8{0} ** 144); // BLS public key size
 
     // Write tickets state
     try buffer.writer().writeByte(0); // tickets state type
     for (0..TINY.epoch_length) |_| {
-        try buffer.appendSlice(&[_]u8{0} ** (32 + 1)); // id + attempt
+        try writer.writeAll(&[_]u8{0} ** (32 + 1)); // id + attempt
     }
 
     // Write empty tickets array
@@ -176,7 +181,8 @@ test "decode gamma - invalid state type" {
     try buffer.writer().writeByte(2);
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    try testing.expectError(error.InvalidStateType, decode(TINY, allocator, fbs.reader()));
+    const gamma = decode(TINY, allocator, fbs.reader());
+    try testing.expectError(error.InvalidStateType, gamma);
 }
 
 test "decode gamma - roundtrip" {
@@ -196,13 +202,10 @@ test "decode gamma - roundtrip" {
 
     original.z = [_]u8{5} ** 144;
 
-    var tickets = try allocator.alloc(types.TicketBody, 2);
-    defer allocator.free(tickets);
-    tickets[0].id = [_]u8{6} ** 32;
-    tickets[0].attempt = 1;
-    tickets[1].id = [_]u8{7} ** 32;
-    tickets[1].attempt = 2;
-    original.s = .{ .tickets = tickets };
+    for (original.s.tickets, 0..) |*ticket, i| {
+        ticket.id = [_]u8{@intCast(i + 6)} ** 32;
+        ticket.attempt = @intCast(i % 2);
+    }
 
     // Encode
     var buffer = std.ArrayList(u8).init(allocator);
