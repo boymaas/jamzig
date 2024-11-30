@@ -13,7 +13,7 @@ const AuthorizationQueue = std.BoundedArray(Hash, Q);
 pub fn Alpha(comptime core_count: u16) type {
     return struct {
         //  α[c] The set of authorizers allowable for a particular core c as the
-        //  authorizer pool
+        //  authorizer pool TODO: this can become somewhat big, maybe better to allocate
         pools: [core_count]AuthorizationPool,
         // φ[c] may be altered only through an exogenous call made from the
         // accumulate logic of an appropriately privileged service

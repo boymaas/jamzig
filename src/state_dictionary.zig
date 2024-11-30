@@ -101,8 +101,8 @@ pub const DiffType = enum {
 pub const DiffEntry = struct {
     key: [32]u8,
     diff_type: DiffType,
-    old_value: ?[]const u8 = null,
-    new_value: ?[]const u8 = null,
+    me_value: ?[]const u8 = null,
+    other_value: ?[]const u8 = null,
 
     pub fn format(
         self: DiffEntry,
@@ -121,20 +121,20 @@ pub const DiffEntry = struct {
 
         switch (self.diff_type) {
             .added => try writer.print(", value(len={d}): {s}", .{
-                self.new_value.?.len,
-                std.fmt.fmtSliceHexLower(self.new_value.?[0..@min(self.new_value.?.len, 160)]),
+                self.other_value.?.len,
+                std.fmt.fmtSliceHexLower(self.other_value.?[0..@min(self.other_value.?.len, 160)]),
             }),
             .removed => try writer.print(", value(len={d}): {s}", .{
-                self.old_value.?.len,
-                std.fmt.fmtSliceHexLower(self.old_value.?[0..@min(self.old_value.?.len, 160)]),
+                self.me_value.?.len,
+                std.fmt.fmtSliceHexLower(self.me_value.?[0..@min(self.me_value.?.len, 160)]),
             }),
             .changed => {
                 try writer.print("\n", .{});
-                try writer.print("old(len={d}):     new(len={d}):\n", .{ self.old_value.?.len, self.new_value.?.len });
+                try writer.print("me(len={d}):     other(len={d}):\n", .{ self.me_value.?.len, self.other_value.?.len });
 
-                const old_hex = try std.fmt.allocPrint(allocator, "{s}", .{std.fmt.fmtSliceHexLower(self.old_value.?)});
+                const old_hex = try std.fmt.allocPrint(allocator, "{s}", .{std.fmt.fmtSliceHexLower(self.me_value.?)});
                 defer allocator.free(old_hex);
-                const new_hex = try std.fmt.allocPrint(allocator, "{s}", .{std.fmt.fmtSliceHexLower(self.new_value.?)});
+                const new_hex = try std.fmt.allocPrint(allocator, "{s}", .{std.fmt.fmtSliceHexLower(self.other_value.?)});
                 defer allocator.free(new_hex);
 
                 var i: usize = 0;
@@ -252,14 +252,14 @@ pub const MerklizationDictionary = struct {
             const key = other_entry.key_ptr.*;
             const new_value = other_entry.value_ptr.*;
 
-            if (self.entries.get(key)) |old_value| {
+            if (self.entries.get(key)) |me_value| {
                 // Entry exists in both - check if changed
-                if (!std.mem.eql(u8, old_value, new_value)) {
+                if (!std.mem.eql(u8, me_value, new_value)) {
                     try result.entries.append(.{
                         .key = key,
                         .diff_type = .changed,
-                        .old_value = old_value,
-                        .new_value = new_value,
+                        .me_value = me_value,
+                        .other_value = new_value,
                     });
                 }
             } else {
@@ -267,7 +267,7 @@ pub const MerklizationDictionary = struct {
                 try result.entries.append(.{
                     .key = key,
                     .diff_type = .added,
-                    .new_value = new_value,
+                    .other_value = new_value,
                 });
             }
         }
@@ -282,7 +282,7 @@ pub const MerklizationDictionary = struct {
                 try result.entries.append(.{
                     .key = key,
                     .diff_type = .removed,
-                    .old_value = old_value,
+                    .me_value = old_value,
                 });
             }
         }

@@ -1,5 +1,6 @@
 const std = @import("std");
 const encoder = @import("../codec/encoder.zig");
+const codec = @import("../codec.zig");
 
 const authorization = @import("../authorization.zig");
 const Alpha = authorization.Alpha;
@@ -8,9 +9,9 @@ const Alpha = authorization.Alpha;
 pub fn encode(comptime core_count: u16, self: *const Alpha(core_count), writer: anytype) !void {
     // Encode pools
     for (self.pools) |pool| {
-        try writer.writeAll(encoder.encodeInteger(pool.len).as_slice());
-        for (pool.constSlice()) |auth| {
-            try writer.writeAll(&auth);
+        try codec.writeInteger(pool.len, writer);
+        for (pool.slice()) |*auth| {
+            try writer.writeAll(auth);
         }
     }
 }

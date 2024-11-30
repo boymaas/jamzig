@@ -8,6 +8,12 @@ const GenericReader = std.io.GenericReader;
 
 const util = @import("codec/util.zig");
 
+//  ____                      _       _ _
+// |  _ \  ___  ___  ___ _ __(_) __ _| (_)_______
+// | | | |/ _ \/ __|/ _ \ '__| |/ _` | | |_  / _ \
+// | |_| |  __/\__ \  __/ |  | | (_| | | |/ /  __/
+// |____/ \___||___/\___|_|  |_|\__,_|_|_/___\___|
+
 pub fn Deserialized(T: anytype) type {
     return struct {
         value: T,
@@ -20,12 +26,6 @@ pub fn Deserialized(T: anytype) type {
         }
     };
 }
-
-//  ____                      _       _ _
-// |  _ \  ___  ___  ___ _ __(_) __ _| (_)_______
-// | | | |/ _ \/ __|/ _ \ '__| |/ _` | | |_  / _ \
-// | |_| |  __/\__ \  __/ |  | | (_| | | |/ /  __/
-// |____/ \___||___/\___|_|  |_|\__,_|_|_/___\___|
 
 pub fn deserialize(
     comptime T: type,

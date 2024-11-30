@@ -28,7 +28,7 @@ test "jamtestnet: jamduna safrole import" {
     const allocator = testing.allocator;
 
     // Get ordered block files
-    var jam_state = try buildGenesisState(JAMDUNA_PARAMS, allocator, @embedFile("stf_test/genesis.json"));
+    var jam_state = try buildGenesisState(JAMDUNA_PARAMS, allocator, @embedFile("stf_test/jamtestnet/traces/safrole/jam_duna/state_snapshots/genesis.json"));
     defer jam_state.deinit(allocator);
 
     var parent_state_dict = try jam_state.buildStateMerklizationDictionary(allocator);
@@ -40,10 +40,10 @@ test "jamtestnet: jamduna safrole import" {
         "src/stf_test/jamtestnet/traces/safrole/jam_duna/traces/genesis.json",
     );
 
-    var genesis_state_diff = try expected_genesis_state_dict.diff(&parent_state_dict);
+    var genesis_state_diff = try parent_state_dict.diff(&expected_genesis_state_dict);
     defer genesis_state_diff.deinit();
     if (genesis_state_diff.has_changes()) {
-        std.debug.print("\nGenesis State diff:\n\n{any}\n", .{genesis_state_diff});
+        std.debug.print("\nGenesis State diff other=expected:\n\n{any}\n", .{genesis_state_diff});
         return error.InvalidGenesisState;
     }
 
