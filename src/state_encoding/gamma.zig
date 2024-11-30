@@ -42,8 +42,6 @@ pub fn encode(
         },
     }
 
-    std.debug.print("gamma.a: {any}\n", .{gamma.a});
-
     try codec.serialize([]types.TicketBody, params, writer, gamma.a);
 }
 

@@ -95,7 +95,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize Phi component
         pub fn initPhi(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.phi = try Phi.init(allocator);
+            self.phi = try Phi(params.core_count).init(allocator);
         }
 
         /// Initialize Chi component
@@ -153,8 +153,8 @@ pub fn JamState(comptime params: Params) type {
             _: std.mem.Allocator,
         ) !JamState(params) {
             return JamState(params){
-                .tau = 0,
-                .eta = [_]types.Entropy{[_]u8{0} ** 32} ** 4,
+                .tau = null,
+                .eta = null,
 
                 .alpha = null,
                 .beta = null,

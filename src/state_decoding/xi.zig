@@ -1,13 +1,14 @@
 const std = @import("std");
 const sort = std.sort;
 const decoder = @import("../codec/decoder.zig");
+const state = @import("../state.zig");
 
-pub fn decode(comptime epoch_size: usize, allocator: std.mem.Allocator, reader: anytype) ![epoch_size]std.AutoHashMapUnmanaged([32]u8, [32]u8) {
+pub fn decode(comptime epoch_size: usize, allocator: std.mem.Allocator, reader: anytype) !state.Xi(epoch_size) {
     var result: [epoch_size]std.AutoHashMapUnmanaged([32]u8, [32]u8) = undefined;
     for (&result) |*epoch| {
         epoch.* = try decodeTimeslotEntry(allocator, reader);
     }
-    return result;
+    return .{ .entries = result, .allocator = allocator };
 }
 
 pub fn decodeTimeslotEntry(allocator: std.mem.Allocator, reader: anytype) !std.AutoHashMapUnmanaged([32]u8, [32]u8) {

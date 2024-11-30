@@ -8,6 +8,8 @@ const codec = @import("codec.zig");
 
 const jam_params = @import("jam_params.zig");
 
+const jamtestnet_traces = @import("stf_test/jamtestnet_traces.zig");
+
 const buildGenesisState = @import("stf_test/jamtestnet_genesis.zig").buildGenesisState;
 const jamtestnet = @import("stf_test/jamtestnet.zig");
 
@@ -26,6 +28,9 @@ test "jamtestnet: jamduna safrole import" {
 
     // Get test allocator
     const allocator = testing.allocator;
+
+    // Genesis state
+    // const genesis_state_dict = jamtestnet_traces.loadStateDictionaryBin(allocator, "src/stf_test/jamtestnet/traces/safrole/jam_duna/traces/genesis.bin");
 
     // Get ordered block files
     var jam_state = try buildGenesisState(JAMDUNA_PARAMS, allocator, @embedFile("stf_test/jamtestnet/traces/safrole/jam_duna/state_snapshots/genesis.json"));
