@@ -20,5 +20,5 @@
 	path = src/tests/vectors/erasure_coding
 	url = https://github.com/w3f/jamtestvectors.git
 [submodule "src/stf_test/jamtestnet"]
-	path = src/stf_test/jamtestnet
+	path = src/jamtestnet/data
 	url = https://github.com/jam-duna/jamtestnet.git

@@ -4,16 +4,12 @@ const testing = std.testing;
 const stf = @import("stf.zig");
 const types = @import("types.zig");
 const state = @import("state.zig");
+const state_dict = @import("state_dictionary.zig");
 const codec = @import("codec.zig");
 
 const jam_params = @import("jam_params.zig");
 
-const jamtestnet_traces = @import("stf_test/jamtestnet_traces.zig");
-
-const state_dict_reconstruct = @import("state_dictionary/reconstruct.zig");
-
-const buildGenesisState = @import("stf_test/jamtestnet_genesis.zig").buildGenesisState;
-const jamtestnet = @import("stf_test/jamtestnet.zig");
+const jamtestnet = @import("jamtestnet.zig");
 
 test "jamtestnet.jamduna: safrole import" {
     // we derive from the normal settings
@@ -32,28 +28,17 @@ test "jamtestnet.jamduna: safrole import" {
     const allocator = testing.allocator;
 
     // Deserialize the state dictionary bin
-    var genesis_state_dict = try jamtestnet_traces.loadStateDictionaryBin(allocator, "src/stf_test/jamtestnet/traces/safrole/jam_duna/traces/genesis.bin");
+    var genesis_state_dict = try jamtestnet.parsers.bin.traces.loadStateDictionaryBin(allocator, "src/jamtestnet/data/traces/safrole/jam_duna/traces/genesis.bin");
     defer genesis_state_dict.deinit();
 
     // Reonstruct state from state dict
-    var jam_state = try state_dict_reconstruct.reconstructState(JAMDUNA_PARAMS, allocator, &genesis_state_dict);
+    var jam_state = try state_dict.reconstruct.reconstructState(JAMDUNA_PARAMS, allocator, &genesis_state_dict);
     defer jam_state.deinit(allocator);
-
-    // Get ordered block files
-    // var jam_state = try buildGenesisState(JAMDUNA_PARAMS, allocator, @embedFile("stf_test/jamtestnet/traces/safrole/jam_duna/state_snapshots/genesis.json"));
-    // defer jam_state.deinit(allocator);
 
     var parent_state_dict = try jam_state.buildStateMerklizationDictionary(allocator);
     defer parent_state_dict.deinit();
 
-    // load the expecte genesis state
-    var expected_genesis_state_dict = try jamtestnet.loadStateDictionaryDump(
-        allocator,
-        "src/stf_test/jamtestnet/traces/safrole/jam_duna/traces/genesis.json",
-    );
-    defer expected_genesis_state_dict.deinit();
-
-    var genesis_state_diff = try parent_state_dict.diff(&expected_genesis_state_dict);
+    var genesis_state_diff = try parent_state_dict.diff(&genesis_state_dict);
     defer genesis_state_diff.deinit();
     if (genesis_state_diff.has_changes()) {
         std.debug.print("\nGenesis State diff other=expected:\n\n{any}\n", .{genesis_state_diff});
@@ -62,7 +47,7 @@ test "jamtestnet.jamduna: safrole import" {
 
     var parent_state_root = try jam_state.buildStateRoot(allocator);
 
-    var outputs = try jamtestnet.collectJamOutputs("src/stf_test/jamtestnet/traces/safrole/jam_duna/", allocator);
+    var outputs = try jamtestnet.collector.collectJamOutputs("src/jamtestnet/data/traces/safrole/jam_duna/", allocator);
     defer outputs.deinit(allocator);
 
     std.debug.print("\n", .{});

@@ -1,6 +1,6 @@
 const std = @import("std");
-const blob_dict = @import("../codec/blob_dict.zig");
-const state_dictionary = @import("../state_dictionary.zig");
+const blob_dict = @import("../../../codec/blob_dict.zig");
+const state_dictionary = @import("../../../state_dictionary.zig");
 
 const MerklizationDictionary = state_dictionary.MerklizationDictionary;
 

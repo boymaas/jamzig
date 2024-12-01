@@ -4,6 +4,8 @@ const types = @import("types.zig");
 const jamstate = @import("state.zig");
 const state_encoder = @import("state_encoding.zig");
 
+pub const reconstruct = @import("state_dictionary/reconstruct.zig");
+
 const Params = @import("jam_params.zig").Params;
 
 //  _  __             ____                _                   _   _
@@ -619,14 +621,14 @@ pub fn buildStateMerklizationDictionary(
             var storage_iter = account.storage.iterator();
             while (storage_iter.next()) |storage_entry| {
                 const storage_key = constructServiceIndexHashKey(service_idx, buildStorageKey(storage_entry.key_ptr.*));
-                try map.put(storage_key, storage_entry.value_ptr.*);
+                try map.put(storage_key, try allocator.dupe(u8, storage_entry.value_ptr.*));
             }
 
             // Preimage lookups
             var preimage_iter = account.preimages.iterator();
             while (preimage_iter.next()) |preimage_entry| {
                 const preimage_key = constructServiceIndexHashKey(service_idx, buildPreimageKey(preimage_entry.key_ptr.*));
-                try map.put(preimage_key, preimage_entry.value_ptr.*);
+                try map.put(preimage_key, try allocator.dupe(u8, preimage_entry.value_ptr.*));
             }
 
             // Preimage timestamps
