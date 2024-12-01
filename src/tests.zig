@@ -1,7 +1,13 @@
 comptime {
+    _ = @import("tests/vectors/codec.zig");
+    _ = @import("tests/vectors/disputes.zig");
+    _ = @import("tests/vectors/erasure_coding.zig");
+    _ = @import("tests/vectors/pvm.zig");
+    _ = @import("tests/vectors/safrole.zig");
+    _ = @import("tests/vectors/trie.zig");
+
     _ = @import("codec.zig");
     _ = @import("codec_test.zig");
-    _ = @import("tests/vectors/codec.zig");
     _ = @import("codec/blob_dict.zig");
 
     _ = @import("safrole_test.zig");
@@ -41,7 +47,6 @@ comptime {
 
     _ = @import("disputes.zig");
     _ = @import("disputes_test.zig");
-    _ = @import("tests/vectors/disputes.zig");
 
     _ = @import("recent_blocks.zig");
     _ = @import("recent_blocks_test.zig");
