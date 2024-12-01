@@ -49,6 +49,7 @@ test "jamtestnet.jamduna: safrole import" {
         allocator,
         "src/stf_test/jamtestnet/traces/safrole/jam_duna/traces/genesis.json",
     );
+    defer expected_genesis_state_dict.deinit();
 
     var genesis_state_diff = try parent_state_dict.diff(&expected_genesis_state_dict);
     defer genesis_state_diff.deinit();

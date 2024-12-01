@@ -101,10 +101,9 @@ pub fn loadStateDictionaryDump(allocator: Allocator, file_path: []const u8) !Mer
         const key = pair.array.items[0].string;
         const value = pair.array.items[1].string;
 
+        // TODO: could be optimized by using fixed
         const key_bytes = try hex_bytes.hexStringToBytes(allocator, key[2..]);
         errdefer allocator.free(key_bytes);
-        const value_bytes = try hex_bytes.hexStringToBytes(allocator, value[2..]);
-        errdefer allocator.free(value_bytes);
 
         if (key_bytes.len != 32) {
             std.debug.print("Invalid key length: got {d} bytes, expected 32. Key hex: {s}\n", .{
@@ -118,6 +117,8 @@ pub fn loadStateDictionaryDump(allocator: Allocator, file_path: []const u8) !Mer
         @memcpy(&key_array, key_bytes);
         allocator.free(key_bytes);
 
+        // Alloc the value which will be owned by the dict
+        const value_bytes = try hex_bytes.hexStringToBytes(allocator, value[2..]);
         try dict.entries.put(key_array, value_bytes);
     }
 

@@ -54,23 +54,23 @@ pub fn detectKeyType(key: [32]u8) DictKeyType {
         var is_delta_base = true;
         // Verify the interleaving pattern for service index
         const service_id = deInterleaveServiceId(key);
+        _ = service_id; // This can me any number
         // Check if service_id is non-zero and all other bytes after first 8 are zero
-        if (service_id != 0) {
-            // Verify remaining bytes are zero (skip first 8 bytes which contain service_id)
-            // Check if bytes 2,4,6 are 0
-            if (key[2] != 0 or key[4] != 0 or key[6] != 0) {
+
+        // Verify remaining bytes are zero (skip first 8 bytes which contain service_id)
+        // Check if bytes 2,4,6 are 0
+        if (key[2] != 0 or key[4] != 0 or key[6] != 0) {
+            is_delta_base = false;
+        }
+        // Check remaining bytes after service id
+        for (key[8..]) |byte| {
+            if (byte != 0) {
                 is_delta_base = false;
+                break;
             }
-            // Check remaining bytes after service id
-            for (key[8..]) |byte| {
-                if (byte != 0) {
-                    is_delta_base = false;
-                    break;
-                }
-            }
-            if (is_delta_base) {
-                return .delta_base;
-            }
+        }
+        if (is_delta_base) {
+            return .delta_base;
         }
     }
 
