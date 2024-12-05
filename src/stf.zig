@@ -102,6 +102,10 @@ pub fn stateTransition(
     //     new_block,
     // );
 
+    // NOTE: it seems safrole needs updated psi with offenders now
+    // putting it here to make it work
+    new_state.psi = try current_state.psi.?.deepClone();
+
     // Step 3-5: Safrole Consensus Mechanism Transition (γ', η', ι', κ', λ')
     // Purpose: Update the consensus-related state components based on the Safrole rules.
     // This step is crucial for maintaining the blockchain's consensus and includes:
@@ -121,6 +125,7 @@ pub fn stateTransition(
         &current_state.kappa.?,
         &current_state.lambda.?,
         &current_state.tau.?,
+        &new_state.psi.?,
         new_block,
     );
     // NOTE: only deinit the markers as we are using rest of allocated
@@ -291,6 +296,7 @@ pub fn transitionSafrole(
     current_kappa: *const state.Kappa,
     current_lambda: *const state.Lambda,
     current_tau: *const state.Tau,
+    post_psi: *const state.Psi,
     new_block: *const Block,
 ) !safrole.Result {
 
@@ -318,6 +324,9 @@ pub fn transitionSafrole(
         .gamma_z = current_gamma.z,
     };
 
+    const offenders = try post_psi.offenders(allocator);
+    defer allocator.free(offenders);
+
     // Call safrole transition
     return try safrole.transition(
         allocator,
@@ -327,6 +336,7 @@ pub fn transitionSafrole(
         // TODO: get the entropy out of the entropy source
         input.entropy,
         input.extrinsic,
+        offenders,
     );
 }
 

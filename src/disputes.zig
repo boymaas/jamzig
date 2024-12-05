@@ -22,15 +22,34 @@ pub const Psi = struct {
     good_set: std.AutoHashMap(Hash, void),
     bad_set: std.AutoHashMap(Hash, void),
     wonky_set: std.AutoHashMap(Hash, void),
-    punish_set: std.AutoHashMap(PublicKey, void),
+    punish_set: std.AutoHashMap(PublicKey, void), // NOTE: offenders
 
     pub fn init(allocator: Allocator) Psi {
+        // TODO: check if there are better ways of storing these
+        // which makes it easier to return keys
         return Psi{
             .good_set = std.AutoHashMap(Hash, void).init(allocator),
             .bad_set = std.AutoHashMap(Hash, void).init(allocator),
             .wonky_set = std.AutoHashMap(Hash, void).init(allocator),
             .punish_set = std.AutoHashMap(PublicKey, void).init(allocator),
         };
+    }
+
+    pub fn offendersIterator(self: *const @This()) std.HashMap.KeyIterator {
+        return self.punish_set.keyIterator();
+    }
+
+    // TODO: fix this, this iteration is ugly and slow
+    pub fn offenders(self: *const @This(), allocator: std.mem.Allocator) ![]PublicKey {
+        var off = try allocator.alloc(PublicKey, self.punish_set.count());
+
+        var iterator = self.punish_set.keyIterator();
+        var i: usize = 0;
+        while (iterator.next()) |offender| : (i += 1) {
+            off[i] = offender.*;
+        }
+
+        return off;
     }
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
@@ -46,7 +65,8 @@ pub const Psi = struct {
         try @import("state_format/psi.zig").format(self, fmt, options, writer);
     }
 
-    pub fn clone(self: *const Psi) !Psi {
+    // TODO: this should used unmanaged
+    pub fn deepClone(self: *const Psi) !Psi {
         return Psi{
             .good_set = try self.good_set.clone(),
             .bad_set = try self.bad_set.clone(),
@@ -68,7 +88,7 @@ pub const Psi = struct {
 // the active validator set or the previous epoch’s validator set, i.e. the
 // Ed25519 keys of κ or λ.
 pub fn processDisputesExtrinsic(comptime core_count: u32, current_state: *const Psi, current_rho: *Rho(core_count), extrinsic: DisputesExtrinsic, validator_count: usize) !Psi {
-    var state = try current_state.clone();
+    var state = try current_state.deepClone();
 
     // Process verdicts: V Gp0.4.1 (107) (108)
     for (extrinsic.verdicts) |verdict| {

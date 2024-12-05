@@ -29,7 +29,6 @@ pub fn inputFromTestVector(allocator: Allocator, from: *const tv_lib_safrole.Inp
         .slot = from.slot,
         .entropy = convertOpaqueHash(from.entropy),
         .extrinsic = undefined,
-        .post_offenders = undefined, // NOTE: has to be set seperately from pre_state
     };
 
     to.extrinsic = try allocator.alloc(types.TicketEnvelope, from.extrinsic.len);

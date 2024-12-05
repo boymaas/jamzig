@@ -77,6 +77,75 @@ test "ring_vrf: ring signature and VRF" {
     });
 }
 
+test "ring_vrf: verify against commitment" {
+    const RING_SIZE: usize = 10;
+    var ring: [RING_SIZE]types.BandersnatchPublic = undefined;
+
+    // Generate public keys for the ring
+    for (0..RING_SIZE) |i| {
+        const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
+        const key_pair = try crypto.createKeyPairFromSeed(seed);
+        ring[i] = key_pair.public_key;
+    }
+
+    // Create verifier to get commitment
+    var verifier = try ring_vrf.RingVerifier.init(&ring);
+    defer verifier.deinit();
+
+    // Get commitment before any signing
+    const commitment = try verifier.get_commitment();
+
+    const prover_key_index: usize = 3;
+
+    // Generate a key pair for the prover
+    const prover_seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_key_index));
+    const prover_key_pair = try crypto.createKeyPairFromSeed(prover_seed);
+
+    // Create prover
+    var prover = try ring_vrf.RingProver.init(
+        prover_key_pair.private_key,
+        &ring,
+        prover_key_index,
+    );
+    defer prover.deinit();
+
+    // Create test input data
+    const vrf_input_data = [_]u8{ 't', 'e', 's', 't' };
+    const aux_data = [_]u8{ 'd', 'a', 't', 'a' };
+
+    // Generate ring signature
+    const ring_signature = try timeFunction(
+        "genRingSig",
+        ring_vrf.RingProver.sign,
+        .{ &prover, &vrf_input_data, &aux_data },
+    );
+
+    // Verify ring signature against commitment
+    _ = try timeFunction(
+        "verifyAgainstCommitment",
+        ring_vrf.verifyRingSignatureAgainstCommitment,
+        .{
+            commitment,
+            RING_SIZE,
+            &vrf_input_data,
+            &aux_data,
+            &ring_signature,
+        },
+    );
+
+    // For comparison, also verify using the verifier
+    _ = try timeFunction(
+        "verifyWithVerifier",
+        ring_vrf.RingVerifier.verify,
+        .{
+            &verifier,
+            &vrf_input_data,
+            &aux_data,
+            &ring_signature,
+        },
+    );
+}
+
 test "ring_vrf: fuzz | takes 10s" {
     var prng = std.Random.DefaultPrng.init(0);
     const random = prng.random();

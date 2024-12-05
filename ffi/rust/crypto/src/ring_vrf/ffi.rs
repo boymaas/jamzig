@@ -1,3 +1,4 @@
+use super::commitment::Commitment;
 use super::context::ring_context;
 use super::prover::Prover;
 use super::types::*;
@@ -197,6 +198,73 @@ pub unsafe extern "C" fn vrf_verify(
     match result {
         Ok(output_hash) => {
             ptr::copy_nonoverlapping(output_hash.as_ptr(), output_hash_out, output_hash.len());
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers.
+/// The caller must ensure that:
+/// - `output` points to a memory region of at exactly 144 bytes.
+/// - The lifetime of the output data outlives the function call.
+#[no_mangle]
+pub unsafe extern "C" fn vrf_get_commitment(verifier: *const Verifier, output: *mut u8) -> bool {
+    let verifier = &*verifier;
+    let commitment = verifier.get_commitment();
+
+    // Serialize and print the commitment as a hexstring
+    let mut commitment_bytes = Vec::new();
+    if commitment
+        .serialize_compressed(&mut commitment_bytes)
+        .is_err()
+    {
+        return false;
+    }
+
+    std::ptr::copy_nonoverlapping(commitment_bytes.as_ptr(), output, 144);
+    true
+}
+
+/// Verify against commitment
+
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers.
+/// The caller must ensure that:
+/// - All input pointers are valid and point to memory regions of at least their respective lengths.
+/// - The memory regions do not overlap.
+/// - The lifetimes of the input data outlive the function call.
+#[no_mangle]
+pub unsafe extern "C" fn vrf_verify_ring_signature_against_commitment(
+    commitment: *const u8,
+    ring_size: usize,
+    vrf_input_data: *const u8,
+    vrf_input_len: usize,
+    aux_data: *const u8,
+    aux_data_len: usize,
+    signature: *const u8,
+    vrf_output: *mut u8,
+) -> bool {
+    let commitment_slice = std::slice::from_raw_parts(commitment, 144);
+
+    let vrf_input = std::slice::from_raw_parts(vrf_input_data, vrf_input_len);
+    let aux = std::slice::from_raw_parts(aux_data, aux_data_len);
+    let sig = std::slice::from_raw_parts(signature, 784);
+
+    let verifier = Commitment::new(
+        match RingCommitment::deserialize_compressed(commitment_slice) {
+            Ok(commitment) => commitment,
+            Err(_) => return false,
+        },
+        ring_size,
+    );
+
+    match verifier.ring_vrf_verify(vrf_input, aux, sig) {
+        Ok(output) => {
+            std::ptr::copy_nonoverlapping(output.as_ptr(), vrf_output, 32);
             true
         }
         Err(_) => false,

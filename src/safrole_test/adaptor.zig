@@ -28,11 +28,14 @@ pub const Input = struct {
     // Safrole extrinsic.
     extrinsic: []types.TicketEnvelope,
     // Post offenders
-    post_offenders: []types.Ed25519Public,
+    post_offenders: ?[]types.Ed25519Public = null,
 
     /// Frees all allocated memory in the Input struct.
     pub fn deinit(self: Input, allocator: Allocator) void {
         allocator.free(self.extrinsic);
+        if (self.post_offenders) |po| {
+            allocator.free(po);
+        }
     }
 
     /// Implement the default format function
@@ -115,7 +118,7 @@ pub fn transition(
         input.slot,
         input.entropy,
         input.extrinsic,
-        input.post_offenders,
+        input.post_offenders.?,
     ) catch |e| {
         const test_vector_error = switch (e) {
             error.bad_slot => OutputError.bad_slot,

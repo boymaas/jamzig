@@ -7,6 +7,7 @@ pub const entropy = @import("safrole/entropy.zig");
 pub const state = @import("state.zig");
 
 const crypto = @import("crypto.zig");
+const ring_vrf = @import("ring_vrf.zig");
 
 pub const Params = @import("jam_params.zig").Params;
 
@@ -27,7 +28,7 @@ pub const Error = error{
     duplicate_ticket,
     /// Too_many_tickets_in_extrinsic
     too_many_tickets_in_extrinsic,
-} || std.mem.Allocator.Error || crypto.Error;
+} || std.mem.Allocator.Error || ring_vrf.Error;
 
 pub const Result = struct {
     post_state: safrole_types.State,
@@ -287,7 +288,7 @@ fn verifyTicketEnvelope(allocator: std.mem.Allocator, ring_size: usize, gamma_z:
         const X_t = [_]u8{ 'j', 'a', 'm', '_', 't', 'i', 'c', 'k', 'e', 't', '_', 's', 'e', 'a', 'l' };
 
         const vrf_input = X_t ++ n2 ++ [_]u8{extr.attempt};
-        const output = try crypto.verifyRingSignatureAgainstCommitment(
+        const output = try ring_vrf.verifyRingSignatureAgainstCommitment(
             gamma_z,
             ring_size,
             &vrf_input,
@@ -348,11 +349,20 @@ fn mergeTicketsIntoTicketAccumulatorGammaA(
 
 // O: See section 3.8 and appendix G
 // O(⟦HB⟧) ∈ Yr ≡ KZG_commitment(⟦HB⟧)
-fn bandersnatchRingRoot(allocator: std.mem.Allocator, gamma_k: types.GammaK) !types.GammaZ {
+fn bandersnatchRingRoot(
+    allocator: std.mem.Allocator,
+    gamma_k: types.GammaK,
+) !types.GammaZ {
+    // Extract the Bandersnatch public keys
     const keys = try extractBandersnatchKeys(allocator, gamma_k);
     defer allocator.free(keys);
 
-    const commitment = try crypto.getVerifierCommitment(keys);
+    // Create a ring verifier instance
+    var verifier = try ring_vrf.RingVerifier.init(keys);
+    defer verifier.deinit();
+
+    // Get the commitment using the verifier
+    const commitment = try verifier.get_commitment();
     return commitment;
 }
 

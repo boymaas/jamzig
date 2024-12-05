@@ -178,7 +178,10 @@ pub const TestVector = struct {
         allocator: Allocator,
         file_path: []const u8,
     ) !json.Parsed(TestVector) {
-        const file = try std.fs.cwd().openFile(file_path, .{});
+        const file = std.fs.cwd().openFile(file_path, .{}) catch |e| {
+            std.debug.print("Failed to open file '{s}': {}\n", .{ file_path, e });
+            return e;
+        };
         defer file.close();
 
         const file_size = try file.getEndPos();
