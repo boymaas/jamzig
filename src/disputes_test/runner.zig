@@ -17,7 +17,9 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
     defer expected_psi.deinit();
 
     var current_rho = try converters.convertRho(params.core_count, allocator, test_vector.pre_state.rho);
-    const expected_rho = try converters.convertRho(params.core_count, allocator, test_vector.post_state.rho);
+    defer current_rho.deinit(allocator);
+    var expected_rho = try converters.convertRho(params.core_count, allocator, test_vector.post_state.rho);
+    defer expected_rho.deinit(allocator);
 
     var extrinsic_disputes = try converters.convertDisputesExtrinsic(allocator, test_vector.input.disputes);
     defer extrinsic_disputes.deinit(allocator);

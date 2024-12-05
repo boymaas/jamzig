@@ -91,6 +91,13 @@ pub fn Rho(comptime core_count: u16) type {
             }
             return false;
         }
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+            for (&self.reports) |*report| {
+                if (report.*) |*entry| {
+                    entry.work_report.deinit(allocator);
+                }
+            }
+        }
     };
 }
 

@@ -64,6 +64,10 @@ pub const RefineContext = struct {
     lookup_anchor: HeaderHash,
     lookup_anchor_slot: TimeSlot,
     prerequisites: []OpaqueHash,
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.prerequisites);
+    }
 };
 
 pub const ImportSpec = struct {
@@ -111,7 +115,7 @@ pub const WorkPackage = struct {
 };
 
 pub const WorkExecResult = union(enum(u8)) {
-    ok: []u8 = 0,
+    ok: []const u8 = 0,
     out_of_gas: void = 1,
     panic: void = 2,
     bad_code: void = 3,
@@ -124,6 +128,13 @@ pub const WorkResult = struct {
     payload_hash: OpaqueHash,
     gas: Gas,
     result: WorkExecResult,
+
+    pub fn deinit(self: *const WorkResult, allocator: std.mem.Allocator) void {
+        switch (self.result) {
+            .ok => |data| allocator.free(data),
+            else => {},
+        }
+    }
 };
 
 pub const WorkPackageSpec = struct {
@@ -133,6 +144,10 @@ pub const WorkPackageSpec = struct {
     exports_root: ExportsRoot,
     exports_count: U16,
 };
+
+pub const AvailabilityAssignment = struct { report: WorkReport, timeout: U32 };
+
+pub const AvailabilityAssignments = []?AvailabilityAssignment;
 
 pub const SegmentRootLookupItem = struct {
     work_package_hash: WorkPackageHash,
@@ -160,6 +175,18 @@ pub const WorkReport = struct {
             .segment_root_lookup = try allocator.dupe(SegmentRootLookupItem, self.segment_root_lookup),
             .results = try allocator.dupe(WorkResult, self.results),
         };
+    }
+
+    pub fn deinit(self: *const WorkReport, allocator: std.mem.Allocator) void {
+        allocator.free(self.auth_output);
+        allocator.free(self.segment_root_lookup);
+
+        for (self.results) |*result| {
+            result.deinit(allocator);
+        }
+        allocator.free(self.results);
+
+        self.context.deinit(allocator);
     }
 };
 

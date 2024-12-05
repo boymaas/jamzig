@@ -6,8 +6,69 @@ const mem = std.mem;
 
 const types = @import("types.zig");
 const HexBytesFixed = types.hex.HexBytesFixed;
+const HexBytes = types.hex.HexBytes;
 
 pub const WorkReportHash = HexBytesFixed(32);
+
+pub const WorkPackageSpec = struct {
+    hash: WorkPackageHash,
+    length: u32,
+    erasure_root: ErasureRoot,
+    exports_root: ExportsRoot,
+    exports_count: u16,
+};
+
+pub const SegmentRootLookupItem = struct {
+    work_package_hash: WorkPackageHash,
+    segment_tree_root: OpaqueHash,
+};
+
+pub const WorkExecResult = union(enum) {
+    ok: HexBytes,
+    out_of_gas: void,
+    panic: void,
+    bad_code: void,
+    code_oversize: void,
+};
+
+pub const WorkResult = struct {
+    service_id: ServiceId,
+    code_hash: OpaqueHash,
+    payload_hash: OpaqueHash,
+    gas: Gas,
+    result: WorkExecResult,
+};
+
+pub const RefineContext = struct {
+    anchor: HeaderHash,
+    state_root: StateRoot,
+    beefy_root: BeefyRoot,
+    lookup_anchor: HeaderHash,
+    lookup_anchor_slot: TimeSlot,
+    prerequisites: []OpaqueHash,
+};
+
+pub const WorkReport = struct {
+    package_spec: WorkPackageSpec,
+    context: RefineContext,
+    core_index: CoreIndex,
+    authorizer_hash: OpaqueHash,
+    auth_output: HexBytes,
+    segment_root_lookup: []SegmentRootLookupItem,
+    results: []WorkResult,
+};
+
+// Required type aliases
+pub const OpaqueHash = HexBytesFixed(32);
+pub const HeaderHash = OpaqueHash;
+pub const StateRoot = OpaqueHash;
+pub const BeefyRoot = OpaqueHash;
+pub const WorkPackageHash = OpaqueHash;
+pub const ExportsRoot = OpaqueHash;
+pub const ErasureRoot = OpaqueHash;
+pub const ServiceId = u32;
+pub const CoreIndex = u16;
+pub const Gas = u64;
 
 pub const EpochIndex = u32;
 pub const TimeSlot = u32;
@@ -43,7 +104,7 @@ pub fn formatBandersnatchKey(self: BandersnatchKey, comptime _: []const u8, _: f
 }
 
 pub const AvailabilityAssignment = struct {
-    dummy_work_report: HexBytesFixed(353),
+    report: WorkReport,
     timeout: u32,
 
     pub fn format(self: @This(), comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
@@ -150,10 +211,10 @@ pub const DisputesOutputMarks = struct {
 };
 
 pub const DisputesRecords = struct {
-    psi_g: []WorkReportHash,
-    psi_b: []WorkReportHash,
-    psi_w: []WorkReportHash,
-    psi_o: []Ed25519Key,
+    good: []WorkReportHash,
+    bad: []WorkReportHash,
+    wonky: []WorkReportHash,
+    offenders: []Ed25519Key,
 
     pub fn format(self: @This(), comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
         try writer.writeAll("{\n  psi_g: [");
