@@ -1,18 +1,17 @@
 use ark_ec_vrfs::suites::bandersnatch::edwards as bandersnatch;
 use ark_ec_vrfs::{prelude::ark_serialize, suites::bandersnatch::edwards::RingContext};
 use ark_serialize::CanonicalDeserialize;
-
-// Include the binary data directly in the compiled binary
-static ZCASH_SRS: &[u8] = include_bytes!("../../data/zcash-srs-2-11-uncompressed.bin");
-
 use lru::LruCache;
 use std::sync::OnceLock;
 use std::{num::NonZeroUsize, sync::Mutex};
 use thiserror::Error;
 
+// Include the binary data directly in the compiled binary
+static ZCASH_SRS: &[u8] = include_bytes!("../../data/zcash-srs-2-11-uncompressed.bin");
+
 static PCS_PARAMS: OnceLock<bandersnatch::PcsParams> = OnceLock::new();
 static RING_CONTEXT_CACHE: OnceLock<Mutex<LruCache<usize, RingContext>>> = OnceLock::new();
-const RING_CONTEXT_CACHE_CAPACITY: usize = 10; // Adjust this value as needed
+const RING_CONTEXT_CACHE_CAPACITY: usize = 10;
 
 #[derive(Error, Debug)]
 pub enum RingContextError {
@@ -27,7 +26,11 @@ fn init_pcs_params() -> bandersnatch::PcsParams {
         .expect("Failed to deserialize Zcash SRS")
 }
 
-// "Static" ring context data
+/// Creates or retrieves a cached RingContext for the specified ring size.
+///
+/// This function maintains a LRU cache of RingContexts to avoid expensive
+/// recomputation. If a context for the given ring size exists in the cache,
+/// it is returned. Otherwise, a new context is created, cached, and returned.
 pub fn ring_context(ring_size: usize) -> Result<RingContext, RingContextError> {
     let pcs_params = PCS_PARAMS.get_or_init(init_pcs_params);
 

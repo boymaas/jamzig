@@ -14,7 +14,7 @@ comptime {
     _ = @import("safrole/types_test.zig");
     _ = @import("safrole_test/diffz.zig");
 
-    _ = @import("crypto.zig");
+    _ = @import("ring_vrf_test.zig");
 
     _ = @import("pvm_test.zig");
     _ = @import("pvm/decoder/immediate.zig");

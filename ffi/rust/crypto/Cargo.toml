@@ -9,6 +9,7 @@ edition = "2021"
 [dependencies]
 ark-ec-vrfs ={ git = "https://github.com/davxy/ark-ec-vrfs", rev = "ea35e22", features = ["bandersnatch", "ring", "parallel"] }
 hex = "0.4.3"
+libc = "0.2.167"
 lru = "0.12.4"
 thiserror = "1.0.64"
 
