@@ -101,6 +101,11 @@ pub fn Rho(comptime core_count: u16) type {
             try @import("state_format/rho.zig").format(core_count, self, fmt, options, writer);
         }
 
+        // JSON stringify implementation
+        pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
+            try @import("state_json/pending_reports.zig").jsonStringify(core_count, self, jw);
+        }
+
         pub fn init(allocator: std.mem.Allocator) @This() {
             return @This(){
                 .reports = [_]?RhoEntry{null} ** core_count,
