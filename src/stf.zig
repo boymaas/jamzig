@@ -324,8 +324,7 @@ pub fn transitionSafrole(
         .gamma_z = current_gamma.z,
     };
 
-    const offenders = try post_psi.offenders(allocator);
-    defer allocator.free(offenders);
+    const offenders = post_psi.offendersSlice();
 
     // Call safrole transition
     return try safrole.transition(

@@ -16,9 +16,10 @@ pub fn format(
 
     for (self.reports, 0..) |report, i| {
         if (report) |r| {
+            const hash = r.cached_hash orelse try r.hash_uncached(self.allocator);
             try writer.print("    Core {d}: {{\n", .{i});
-            try writer.print("      hash: {s}\n", .{std.fmt.fmtSliceHexLower(&r.hash())});
-            try writer.print("      timeslot: {d}\n", .{r.timeslot});
+            try writer.print("      hash: {s}\n", .{std.fmt.fmtSliceHexLower(&hash)});
+            try writer.print("      timeout: {d}\n", .{r.assignment.timeout});
             try writer.writeAll("    }\n");
         }
     }

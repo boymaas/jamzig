@@ -557,7 +557,7 @@ pub fn buildStateMerklizationDictionary(
 
         // Rho (10)
         const rho_key = constructSimpleByteKey(10);
-        var rho_managed = try getOrInitManaged(allocator, &state.rho, .{});
+        var rho_managed = try getOrInitManaged(allocator, &state.rho, .{allocator});
         defer rho_managed.deinit(allocator);
 
         var rho_buffer = std.ArrayList(u8).init(allocator); // TODO: reuse buffers

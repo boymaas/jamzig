@@ -58,7 +58,7 @@ pub fn transition(
     slot: types.TimeSlot,
     bandersnatch_vrf_output: types.BandersnatchVrfOutput,
     ticket_extrinsic: types.TicketsExtrinsic,
-    offenders: []types.Ed25519Public,
+    offenders: []const types.Ed25519Public,
 ) Error!Result {
     // Equation 41: H_t ∈ N_T, P(H)_t < H_t ∧ H_t · P ≤ T
     if (slot <= pre_state.tau) {
@@ -378,7 +378,7 @@ fn extractBandersnatchKeys(allocator: std.mem.Allocator, gamma_k: types.GammaK) 
 }
 
 // 58. PHI: Zero out any offenders on post_state.iota
-fn phiZeroOutOffenders(data: types.ValidatorSet, offenders: []types.Ed25519Public) types.ValidatorSet {
+fn phiZeroOutOffenders(data: types.ValidatorSet, offenders: []const types.Ed25519Public) types.ValidatorSet {
     // TODO: (58) Zero out any offenders on post_state.iota, The origin of
     // the offenders is explained in section 10.
     for (data.items()) |*validator_data| {

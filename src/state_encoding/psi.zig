@@ -33,14 +33,11 @@ pub fn encode(self: *const Psi, writer: anytype) !void {
 const makeLessThanSliceOfFn = @import("../utils/sort.zig").makeLessThanSliceOfFn;
 const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
 
-fn encodeOrderedSet(set: *const std.AutoHashMap([32]u8, void), writer: anytype) !void {
+fn encodeOrderedSet(set: *const std.AutoArrayHashMap([32]u8, void), writer: anytype) !void {
     var list = std.ArrayList(Hash).init(set.allocator);
     defer list.deinit();
 
-    var it = set.keyIterator();
-    while (it.next()) |key| {
-        try list.append(key.*);
-    }
+    try list.appendSlice(set.keys());
 
     std.sort.insertion(Hash, list.items, {}, lessThanSliceOfHashes);
 

@@ -166,26 +166,23 @@ test "decode psi - roundtrip" {
     try testing.expectEqual(original.punish_set.count(), decoded.punish_set.count());
 
     // Verify good_set contents
-    var it = original.good_set.keyIterator();
-    while (it.next()) |key| {
-        try testing.expect(decoded.good_set.contains(key.*));
+    // Verify good_set contents
+    for (original.good_set.keys()) |key| {
+        try testing.expect(decoded.good_set.contains(key));
     }
 
     // Verify bad_set contents
-    it = original.bad_set.keyIterator();
-    while (it.next()) |key| {
-        try testing.expect(decoded.bad_set.contains(key.*));
+    for (original.bad_set.keys()) |key| {
+        try testing.expect(decoded.bad_set.contains(key));
     }
 
     // Verify wonky_set contents
-    it = original.wonky_set.keyIterator();
-    while (it.next()) |key| {
-        try testing.expect(decoded.wonky_set.contains(key.*));
+    for (original.wonky_set.keys()) |key| {
+        try testing.expect(decoded.wonky_set.contains(key));
     }
 
     // Verify punish_set contents
-    var pit = original.punish_set.keyIterator();
-    while (pit.next()) |key| {
-        try testing.expect(decoded.punish_set.contains(key.*));
+    for (original.punish_set.keys()) |key| {
+        try testing.expect(decoded.punish_set.contains(key));
     }
 }

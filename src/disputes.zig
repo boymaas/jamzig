@@ -32,7 +32,7 @@ pub const Psi = struct {
         };
     }
 
-    // Get offenders slice - no allocation, direct access to storage
+    // Get offenders slice - no allocation, slice is owned by Psi
     pub fn offendersSlice(self: *const Psi) []const PublicKey {
         return self.punish_set.keys();
     }
