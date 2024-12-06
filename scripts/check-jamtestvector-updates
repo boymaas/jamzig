@@ -42,7 +42,7 @@ cd "$REPO_PATH" || { echo "Invalid repository path"; exit 1; }
 # Get the main commit from remote repository
 get_main_commit() {
     local repo_url="$1"
-    git ls-remote "$repo_url" main | cut -f1
+    git ls-remote "$repo_url" master | cut -f1
 }
 
 MAIN_COMMIT=$(get_main_commit "https://github.com/w3f/jamtestvectors.git")
