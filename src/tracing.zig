@@ -67,6 +67,7 @@ pub const LogLevel = enum {
     }
 };
 
+// Thread-local indent tracking
 threadlocal var indent_level: usize = 0;
 
 pub const TracingScope = struct {
@@ -89,7 +90,7 @@ pub const Span = struct {
     scope: *const TracingScope,
     operation: []const u8,
     parent: ?*const Span,
-    depth: usize,
+    start_indent: usize, // Store the indent level when span starts
 
     const Self = @This();
 
@@ -98,10 +99,11 @@ pub const Span = struct {
             .scope = scope,
             .operation = @tagName(operation),
             .parent = parent,
-            .depth = if (parent) |p| p.depth + 1 else 0,
+            .start_indent = indent_level,
         };
 
-        span.log(.debug, "[ENTER]", .{});
+        span.log(.trace, "\x1b[1m[ENTER]\x1b[22m", .{});
+        indent_level += 1; // Increment indent level on span creation
         return span;
     }
 
@@ -110,7 +112,8 @@ pub const Span = struct {
     }
 
     pub fn deinit(self: *const Self) void {
-        self.log(.debug, "[EXIT]", .{});
+        indent_level = self.start_indent; // Restore indent level on span cleanup
+        self.log(.trace, "\x1b[1m[EXIT]\x1b[22m", .{});
     }
 
     pub inline fn trace(self: *const Self, comptime fmt: []const u8, args: anytype) void {
@@ -167,10 +170,9 @@ pub const Span = struct {
         const path = self.getFullPath(&path_buf);
 
         var indent_buf: [128]u8 = undefined;
-        const indent = indent_buf[0 .. self.depth * 2];
+        const indent = indent_buf[0 .. indent_level * 2];
         @memset(indent, ' ');
 
-        // Use format string instead of concatenation
         std.debug.print("{s}{s}[{s}] " ++ fmt ++ reset ++ "\n", .{ indent, color, path } ++ args);
     }
 };
@@ -210,23 +212,6 @@ test "Span path construction" {
         const path = child_span.getFullPath(&path_buf);
         try testing.expectEqualStrings("networking.connect.authenticate", path);
     }
-}
-
-test "Span nesting depth" {
-    const testing = std.testing;
-    const scope = scoped(.test_scope);
-
-    const span1 = scope.span(.operation1);
-    defer span1.deinit();
-    try testing.expectEqual(@as(usize, 0), span1.depth);
-
-    const span2 = span1.child(.operation2);
-    defer span2.deinit();
-    try testing.expectEqual(@as(usize, 1), span2.depth);
-
-    const span3 = span2.child(.operation3);
-    defer span3.deinit();
-    try testing.expectEqual(@as(usize, 2), span3.depth);
 }
 
 test "Span parent relationships" {
