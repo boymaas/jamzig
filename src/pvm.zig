@@ -113,6 +113,8 @@ pub const PVM = struct {
         const program = try Program.decode(allocator, raw_program);
         span.debug("Program decoded - code size: {d}, mask size: {d}", .{ program.code.len, program.mask.len });
 
+        span.trace("{s}", .{program});
+
         return PVM{
             .allocator = allocator,
             .program = program,
@@ -256,13 +258,12 @@ pub const PVM = struct {
         execution_span.debug("Updated PC to {X:0>4}", .{self.pc});
 
         if (execution_span.traceLogLevel()) {
+            const register_span = execution_span.child(.registers);
+            defer register_span.deinit();
             // Only construct register state string if trace is enabled
-            var register_buf: [256]u8 = undefined;
-            var fbs = std.io.fixedBufferStream(&register_buf);
             for (self.registers, 0..) |reg, idx| {
-                try fbs.writer().print("r{d}=0x{X:0>8} ", .{ idx, reg });
+                register_span.trace("r{d}=0x{X:0>8}", .{ idx, reg });
             }
-            execution_span.trace("Register state: {s}", .{fbs.getWritten()});
         }
     }
 
@@ -291,7 +292,7 @@ pub const PVM = struct {
                 error.JumpAddressNotInBasicBlock => Status.panic,
                 error.InvalidInstruction => Status.panic,
                 error.PcUnderflow => Status.panic,
-                else => @panic("Unknown eror"),
+                // else => @panic("Unknown error"),
             };
             span.info("Step resulted in status: {}", .{status});
             return status;
