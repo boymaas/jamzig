@@ -5,16 +5,58 @@
 const std = @import("std");
 const build_options = @import("build_options");
 
-// Get enabled scopes from build options
-pub const boption_enabled_scopes = if (@hasDecl(build_options, "enable_tracing_scopes"))
-    build_options.enable_tracing_scopes
-else
-    @as([]const []const u8, &[_][]const u8{});
+pub const ScopeConfig = struct {
+    name: []const u8,
+    level: ?LogLevel,
+};
 
-pub const boption_enabled_level = if (@hasDecl(build_options, "enable_tracing_level"))
-    LogLevel.fromString(build_options.enable_tracing_level) catch @panic("Invalid tracing_level value")
+// Get default level from build options - LogLevel.info if not specified
+pub const boption_default_level: ?LogLevel = if (@hasDecl(build_options, "enable_tracing_level"))
+    if (build_options.enable_tracing_level.len == 0)
+        null
+    else
+        LogLevel.fromString(build_options.enable_tracing_level) catch
+            @compileError("Invalid log level in enable_tracing_level: '" ++ build_options.enable_tracing_level ++ "'")
 else
-    LogLevel.info;
+    null;
+
+// Parse scope configs from build options
+pub const boption_scope_configs = if (@hasDecl(build_options, "enable_tracing_scopes"))
+blk: {
+    const scope_strs = build_options.enable_tracing_scopes;
+    var configs: []const ScopeConfig = &[_]ScopeConfig{};
+
+    for (scope_strs) |scope_str| {
+        if (scope_str.len == 0) continue;
+
+        // Check if string contains '='
+        if (std.mem.indexOf(u8, scope_str, "=")) |equals_pos| {
+            // Format is scope=level
+            const scope_name = scope_str[0..equals_pos];
+
+            // Skip if scope name is empty
+            if (scope_name.len == 0) continue;
+
+            const level_str = scope_str[equals_pos + 1 ..];
+
+            // Skip if invalid level, using comptime catch
+            const level = LogLevel.fromString(level_str) catch continue;
+
+            configs = configs ++ &[_]ScopeConfig{.{
+                .name = scope_name,
+                .level = level,
+            }};
+        } else {
+            // Just a scope name - use default level
+            configs = configs ++ &[_]ScopeConfig{.{
+                .name = scope_str,
+                .level = LogLevel.debug,
+            }};
+        }
+    }
+
+    break :blk configs;
+} else @as([]const ScopeConfig, &[_]ScopeConfig{});
 
 threadlocal var current_depth: usize = 0;
 threadlocal var current_span: ?*Span = null;
@@ -58,16 +100,30 @@ pub const TracingScope = struct {
     }
 
     pub fn span(comptime self: *const Self, operation: @Type(.enum_literal)) SpanUnion {
-        const is_enabled = comptime if (boption_enabled_scopes.len == 0) true else blk: {
-            for (boption_enabled_scopes) |enabled_scope| {
-                if (std.mem.eql(u8, enabled_scope, self.name)) break :blk true;
+        // First check if scope is enabled and get its configured level
+        const scope_config: ScopeConfig = comptime blk: {
+
+            // Look for matching scope config
+            for (boption_scope_configs) |config| {
+                if (std.mem.eql(u8, config.name, self.name)) {
+                    break :blk config;
+                }
             }
-            break :blk false;
+
+            break :blk ScopeConfig{
+                .name = self.name,
+                .level = boption_default_level,
+            };
         };
-        return if (is_enabled)
-            SpanUnion{ .Enabled = Span.init(self, operation, current_span, true, boption_enabled_level) }
-        else
-            SpanUnion{ .Disabled = DisabledSpan{} };
+
+        // Return disabled span if scope is not configured and we have not
+        // set a default log level
+        if (scope_config.level == null) {
+            return SpanUnion{ .Disabled = DisabledSpan{} };
+        }
+
+        // Create enabled span with proper level
+        return SpanUnion{ .Enabled = Span.init(self, operation, current_span, true, scope_config.level.?) };
     }
 };
 
