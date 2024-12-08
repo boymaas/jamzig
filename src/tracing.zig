@@ -255,6 +255,20 @@ pub const SpanUnion = union(enum) {
     Enabled: Span,
     Disabled: DisabledSpan,
 
+    pub fn logLevel(self: *const SpanUnion) ?LogLevel {
+        switch (self.*) {
+            .Enabled => |span| span.min_level,
+            .Disabled => null,
+        }
+    }
+
+    pub fn traceLogLevel(self: *const SpanUnion) bool {
+        return switch (self.*) {
+            .Enabled => |span| @intFromEnum(LogLevel.trace) >= @intFromEnum(span.min_level),
+            .Disabled => false,
+        };
+    }
+
     pub fn deinit(self: *const SpanUnion) void {
         switch (self.*) {
             .Enabled => |span| span.deinit(),

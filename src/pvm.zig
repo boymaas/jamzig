@@ -1,38 +1,10 @@
-// +------+------+---------+--------------------------------+
-// | Reg  | Size | Name    | Purpose                        |
-// +------+------+---------+--------------------------------+
-// | r0   | 64   | zero    | Invalid jump sentinel          |
-// |      |      |         | (2^32 - 2^16)                  |
-// +------+------+---------+--------------------------------+
-// | r1   | 64   | rodata  | Read-only section base         |
-// |      |      |         | (2^32 - 2Z_Q - Z_I)           |
-// +------+------+---------+--------------------------------+
-// | r7   | 64   | data    | - Writable data section base   |
-// |      |      |         | (2^32 - Z_Q - Z_I)            |
-// |      |      |         | - Host call return status      |
-// |      |      |         | - Host call first parameter    |
-// +------+------+---------+--------------------------------+
-// | r8   | 64   | args    | - Argument length             |
-// |      |      |         | - Host call parameter         |
-// +------+------+---------+--------------------------------+
-// | r9   | 64   |         | - Host call parameter         |
-// +------+------+---------+--------------------------------+
-// | r10  | 64   | ret_hi  | - Return data (upper portion)  |
-// |      |      |         | - Host call parameter         |
-// +------+------+---------+--------------------------------+
-// | r11  | 64   | ret_lo  | - Return data (lower portion)  |
-// |      |      |         | - Host call parameter         |
-// +------+------+---------+--------------------------------+
-
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Instruction = @import("./pvm/instruction.zig").Instruction;
 const Program = @import("./pvm/program.zig").Program;
 const Decoder = @import("./pvm/decoder.zig").Decoder;
 const InstructionWithArgs = @import("./pvm/decoder.zig").InstructionWithArgs;
-
 const updatePc = @import("./pvm/utils.zig").updatePc;
-
 const trace = @import("tracing.zig").scoped(.pvm);
 
 pub const PVMErrorData = union(enum) {
@@ -45,6 +17,7 @@ pub const PMVHostCallResult = union(enum) {
     play,
     page_fault: u32,
 };
+
 const PMVHostCallFn = fn (*i64, *[13]u32, []PVM.PageMap) PMVHostCallResult;
 
 pub const PVM = struct {
@@ -59,34 +32,48 @@ pub const PVM = struct {
     host_call_map: std.AutoHashMap(u32, *const PMVHostCallFn),
 
     pub fn hostCall(self: *PVM, host_call_idx: u32) !void {
+        const span = trace.span(.host_call);
+        defer span.deinit();
+        span.debug("Executing host call {d}", .{host_call_idx});
+
         if (self.host_call_map.get(host_call_idx)) |host_func| {
             var gas_c = self.gas;
             var registers_c = self.registers;
             const page_map_c = try self.clonePageMap();
 
+            span.trace("Host call state - Gas: {d}, Registers: {any}", .{ gas_c, registers_c });
+
             switch (host_func(&gas_c, &registers_c, page_map_c)) {
-                .play => {},
+                .play => {
+                    span.debug("Host call completed successfully", .{});
+                },
                 .page_fault => |address| {
+                    span.err("Host call resulted in page fault at address 0x{X:0>8}", .{address});
                     self.freePageMap(page_map_c);
                     self.error_data = .{ .page_fault = address };
                     return error.MemoryPageFault;
                 },
             }
 
-            // If the function returns successfully, update the original values
+            // Update state after successful host call
             self.gas = gas_c;
             self.registers = registers_c;
-
-            // Update our page map
             self.freePageMap(self.page_map);
             self.page_map = page_map_c;
+
+            span.trace("Updated state - Gas: {d}, Registers: {any}", .{ self.gas, self.registers });
         } else {
+            span.err("Non-existent host call index: {d}", .{host_call_idx});
             return error.NonExistentHostCall;
         }
     }
 
     pub fn registerHostCall(self: *PVM, host_call_idx: u32, host_func: PMVHostCallFn) !void {
+        const span = trace.span(.register_host_call);
+        defer span.deinit();
+
         try self.host_call_map.put(host_call_idx, host_func);
+        span.debug("Registered host call handler for index {d}", .{host_call_idx});
     }
 
     pub const PageMap = struct {
@@ -118,7 +105,13 @@ pub const PVM = struct {
     };
 
     pub fn init(allocator: Allocator, raw_program: []const u8, initial_gas: i64) !PVM {
+        const span = trace.span(.init);
+        defer span.deinit();
+
+        span.debug("Initializing PVM with {d} bytes of program data, {d} initial gas", .{ raw_program.len, initial_gas });
+
         const program = try Program.decode(allocator, raw_program);
+        span.debug("Program decoded - code size: {d}, mask size: {d}", .{ program.code.len, program.mask.len });
 
         return PVM{
             .allocator = allocator,
@@ -134,6 +127,11 @@ pub const PVM = struct {
     }
 
     pub fn deinit(self: *PVM) void {
+        const span = trace.span(.deinit);
+        defer span.deinit();
+
+        span.debug("Cleaning up PVM resources", .{});
+
         self.program.deinit(self.allocator);
         for (self.page_map) |page| {
             self.allocator.free(page.data);
@@ -143,14 +141,24 @@ pub const PVM = struct {
     }
 
     pub fn setPageMap(self: *PVM, new_page_map: []const PageMapConfig) !void {
+        const span = trace.span(.set_page_map);
+        defer span.deinit();
+
+        span.debug("Setting new page map with {d} pages", .{new_page_map.len});
+
+        // Free existing pages
         for (self.page_map) |page| {
             self.allocator.free(page.data);
         }
         self.allocator.free(self.page_map);
 
+        // Allocate new page map
         self.page_map = try self.allocator.alloc(PageMap, new_page_map.len);
 
+        // Initialize new pages
         for (new_page_map, 0..) |config, i| {
+            span.debug("Initializing page {d}: address=0x{X:0>8}, length={d}, writable={}", .{ i, config.address, config.length, config.is_writable });
+
             self.page_map[i] = PageMap{
                 .address = config.address,
                 .length = config.length,
@@ -161,6 +169,9 @@ pub const PVM = struct {
     }
 
     pub fn debugWriteDecompiled(self: *PVM, writer: anytype) !void {
+        const span = trace.span(.write_decompiled);
+        defer span.deinit();
+
         const decoder = Decoder.init(self.program.code, self.program.mask);
         var pc: u32 = 0;
 
@@ -173,27 +184,33 @@ pub const PVM = struct {
 
     // TODO: rename to debugPrintDecompiled
     pub fn decompilePrint(self: *PVM) void {
+        const span = trace.span(.decompile_print);
+        defer span.deinit();
+
         self.debugWriteDecompiled(std.io.getStdErr().writer()) catch |err| {
-            std.debug.print("Failed to print decompiled code: {}\n", .{err});
+            span.err("Failed to print decompiled code: {}", .{err});
         };
     }
 
     pub fn debugWriteRegisters(self: *const PVM, writer: anytype) !void {
+        const span = trace.span(.write_registers);
+        defer span.deinit();
+
         const reg_names = [_][]const u8{ "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0", "a1", "a2" };
         try writer.writeAll("\nRegister values:\n");
         for (self.registers, 0..) |reg, i| {
             try writer.print("r{d:<2} ({s:<4}): 0x{X:0>8} ({d})\n", .{
-                i,
-                reg_names[i],
-                reg,
-                reg,
+                i, reg_names[i], reg, reg,
             });
         }
     }
 
     pub fn debugPrintRegisters(self: *const PVM) void {
+        const span = trace.span(.print_registers);
+        defer span.deinit();
+
         self.debugWriteRegisters(std.io.getStdErr().writer()) catch |err| {
-            std.debug.print("Failed to print registers: {}\n", .{err});
+            span.err("Failed to print registers: {}", .{err});
         };
     }
 
@@ -206,15 +223,27 @@ pub const PVM = struct {
     }
 
     pub fn innerRunStep(self: *PVM) !void {
+        const span = trace.span(.execute_step);
+        defer span.deinit();
+
         const i = try self.decoder.decodeInstruction(self.pc);
+        span.debug("Executing instruction at PC={X:0>4}: {any}", .{ self.pc, i.instruction });
+        span.trace("Full instruction with args: {any}", .{i});
 
         const gas_cost = getGasCost(i);
         if (self.gas < gas_cost) {
+            span.err("Out of gas: required={d}, remaining={d}", .{ gas_cost, self.gas });
             return error.OutOfGas;
         }
 
         self.gas -= gas_cost;
+        span.debug("Gas remaining after cost: {d}", .{self.gas});
+
+        const execution_span = span.child(.instruction_execution);
+        defer execution_span.deinit();
+
         self.pc = try updatePc(self.pc, self.executeInstruction(i) catch |err| {
+            execution_span.err("Instruction execution failed: {any}", .{err});
             // Charge one extra gas for error handling
             self.gas -= switch (err) {
                 error.JumpAddressHalt => 0,
@@ -223,61 +252,69 @@ pub const PVM = struct {
             };
             return err;
         });
-    }
 
-    /// Run as single step
-    /// Regular halt (∎): The program terminated normally.
-    /// Panic (☇): An exceptional condition or error occurred, causing an immediate halt.
-    /// Out-of-gas (∞): The program consumed its allocated gas, and further execution is halted.
-    /// Host-call (h): The program made a request to interact with a host environment, such as making a call to an external service or interacting with the blockchain state.
-    /// Page-fault (F): The program tried to access a memory address that was not available or permitted.
-    pub fn runStep(self: *PVM) Status {
-        const result = self.innerRunStep();
+        execution_span.debug("Updated PC to {X:0>4}", .{self.pc});
 
-        if (result) {
-            return .play;
-        } else |err| {
-            return switch (err) {
-                error.Trap => .panic,
-                error.OutOfGas => .out_of_gas,
-
-                // Host call
-                error.NonExistentHostCall => .panic,
-
-                // Memory errors
-                error.OutOfMemory => .panic, // Allocator out of memory
-
-                error.MemoryWriteProtected => .page_fault,
-                error.MemoryPageFault => .page_fault,
-                error.MemoryAccessOutOfBounds => .page_fault,
-
-                // Jump Halt
-                error.JumpAddressHalt => .halt,
-                // Jump errors
-                error.JumpAddressZero => .panic,
-                error.JumpAddressOutOfRange => .panic,
-                error.JumpAddressNotAligned => .panic,
-                error.JumpAddressNotInBasicBlock => .panic,
-
-                // Other
-                error.InvalidInstruction => .panic,
-                error.PcUnderflow => .panic,
-            };
+        if (execution_span.traceLogLevel()) {
+            // Only construct register state string if trace is enabled
+            var register_buf: [256]u8 = undefined;
+            var fbs = std.io.fixedBufferStream(&register_buf);
+            for (self.registers, 0..) |reg, idx| {
+                try fbs.writer().print("r{d}=0x{X:0>8} ", .{ idx, reg });
+            }
+            execution_span.trace("Register state: {s}", .{fbs.getWritten()});
         }
     }
 
-    /// Run a program until it halts or an error state is reached
+    pub fn runStep(self: *PVM) Status {
+        const span = trace.span(.run_step);
+        defer span.deinit();
+
+        const result = self.innerRunStep();
+
+        if (result) {
+            span.debug("Step completed successfully", .{});
+            return .play;
+        } else |err| {
+            const status = switch (err) {
+                error.Trap => Status.panic,
+                error.OutOfGas => Status.out_of_gas,
+                error.NonExistentHostCall => Status.panic,
+                error.OutOfMemory => Status.panic,
+                error.MemoryWriteProtected => Status.page_fault,
+                error.MemoryPageFault => Status.page_fault,
+                error.MemoryAccessOutOfBounds => Status.page_fault,
+                error.JumpAddressHalt => Status.halt,
+                error.JumpAddressZero => Status.panic,
+                error.JumpAddressOutOfRange => Status.panic,
+                error.JumpAddressNotAligned => Status.panic,
+                error.JumpAddressNotInBasicBlock => Status.panic,
+                error.InvalidInstruction => Status.panic,
+                error.PcUnderflow => Status.panic,
+                else => @panic("Unknown eror"),
+            };
+            span.info("Step resulted in status: {}", .{status});
+            return status;
+        }
+    }
+
     pub fn run(self: *PVM) Status {
+        const span = trace.span(.run);
+        defer span.deinit();
+        span.debug("Starting program execution", .{});
+
         while (true) {
             const status = self.runStep();
             switch (status) {
                 .play => continue,
-                else => return status,
+                else => {
+                    span.info("Program finished with status: {}", .{status});
+                    return status;
+                },
             }
         }
     }
 
-    /// Offset to add to the program counter
     const PcOffset = i32;
     /// executes the instruction and returns the offset to add to the program counter
     fn executeInstruction(self: *PVM, i: InstructionWithArgs) !PcOffset {
@@ -819,139 +856,197 @@ pub const PVM = struct {
     }
 
     fn branch(self: *PVM, b: u32) !PcOffset {
+        const span = trace.span(.branch);
+        defer span.deinit();
+
+        span.debug("Attempting branch to address 0x{X:0>8}", .{b});
+
         // Check if the target address is the start of a basic block
         if (!self.isBasicBlockStart(b)) {
-            return error.JumpAddressNotInBasicBlock; // Panic if not jumping to a basic block start
+            span.err("Invalid branch target - not a basic block start: 0x{X:0>8}", .{b});
+            return error.JumpAddressNotInBasicBlock;
         }
 
         // Calculate the offset to the target address
         const offset: i32 = @as(i32, @intCast(b)) - @as(i32, @intCast(self.pc));
+        span.trace("Branch offset calculated: {d}", .{offset});
         return offset;
     }
 
-    pub fn djump(
-        self: *PVM,
-        a: u32,
-    ) !PcOffset {
-        // const halt_pc = 2 ** 32 - 2 ** 16;
+    pub fn djump(self: *PVM, a: u32) !PcOffset {
+        const span = trace.span(.dynamic_jump);
+        defer span.deinit();
+
+        span.debug("Dynamic jump to address 0x{X:0>8}", .{a});
+
         const halt_pc = 0xFFFF0000;
         const ZA = 2;
 
-        // 1. Check if a is equal to the special halt value
+        // Check halt condition
         if (a == halt_pc) {
+            span.info("Jump to halt address - terminating", .{});
             return error.JumpAddressHalt;
         }
 
-        // 2. Check if the value of `a` is invalid
+        // Validate jump address
         if (a == 0) {
+            span.err("Invalid jump to address 0", .{});
             return error.JumpAddressZero;
         }
         if (a > self.program.jump_table.len() * ZA) {
+            span.err("Jump address out of range: 0x{X:0>8}", .{a});
             return error.JumpAddressOutOfRange;
         }
         if (a % ZA != 0) {
+            span.err("Jump address not aligned: 0x{X:0>8}", .{a});
             return error.JumpAddressNotAligned;
         }
 
-        // 3. Compute the jump index and check if it is in the valid destinations set
+        // Compute jump destination
         const index = (a / ZA) - 1;
         const jump_dest = self.program.jump_table.getDestination(index);
+        span.trace("Jump table lookup - index: {d}, destination: 0x{X:0>8}", .{ index, jump_dest });
+
         if (std.mem.indexOfScalar(u32, self.program.basic_blocks, jump_dest) == null) {
+            span.err("Jump destination not in basic block: 0x{X:0>8}", .{jump_dest});
             return error.JumpAddressNotInBasicBlock;
         }
 
-        // 4. Jump to the destination by calculating the offset
-        return @as(i32, @intCast(@as(i32, @bitCast(jump_dest)) - @as(i32, @bitCast(self.pc))));
+        const offset = @as(i32, @intCast(@as(i32, @bitCast(jump_dest)) - @as(i32, @bitCast(self.pc))));
+        span.debug("Jump offset calculated: {d}", .{offset});
+        return offset;
     }
 
     fn isBasicBlockStart(self: *PVM, address: u32) bool {
-        // Check if the address is in the list of basic block starts
-        return std.mem.indexOfScalar(u32, self.program.basic_blocks, address) != null;
+        const span = trace.span(.check_basic_block);
+        defer span.deinit();
+
+        const is_start = std.mem.indexOfScalar(u32, self.program.basic_blocks, address) != null;
+        span.trace("Address 0x{X:0>8} basic block start: {}", .{ address, is_start });
+        return is_start;
     }
 
     fn loadMemory(self: *PVM, address: u32, size: u8) !u32 {
+        const span = trace.span(.load_memory);
+        defer span.deinit();
+
+        span.debug("Loading {d} bytes from address 0x{X:0>8}", .{ size, address });
+
         const data = try self.readMemory(address, size);
         var result: u32 = 0;
         var i: u8 = 0;
         while (i < size) : (i += 1) {
             result |= @as(u32, @intCast(data[i])) << @intCast(i * 8);
         }
+
+        span.trace("Loaded value: 0x{X:0>8}", .{result});
         return result;
     }
 
     pub fn readMemory(self: *PVM, address: u32, size: usize) ![]u8 {
+        const span = trace.span(.read_memory);
+        defer span.deinit();
+
+        span.debug("Reading {d} bytes from address 0x{X:0>8}", .{ size, address });
+
         for (self.page_map) |page| {
             if (address >= page.address and address < page.address + page.length) {
                 if (address + size > page.address + page.length) {
+                    span.err("Memory access out of bounds: address=0x{X:0>8}, size={d}, page_end=0x{X:0>8}", .{ address, size, page.address + page.length });
                     self.error_data = .{ .page_fault = page.address + page.length };
                     return error.MemoryAccessOutOfBounds;
                 }
 
                 const offset = address - page.address;
-                return page.data[offset .. offset + size];
+                const data = page.data[offset .. offset + size];
+                span.trace("Read successful - offset: {d}, data: {any}", .{ offset, data });
+                return data;
             }
         }
 
+        span.err("Page fault at address 0x{X:0>8}", .{address});
         self.error_data = .{ .page_fault = address };
         return error.MemoryPageFault;
     }
 
     pub fn writeMemory(self: *PVM, address: u32, data: []u8) !void {
+        const span = trace.span(.write_memory);
+        defer span.deinit();
+
+        span.debug("Writing {d} bytes to address 0x{X:0>8}", .{ data.len, address });
+
         for (self.page_map) |page| {
             if (address >= page.address and address < page.address + page.length) {
                 if (!page.is_writable) {
+                    span.err("Write protected memory at address 0x{X:0>8}", .{address});
                     self.error_data = .{ .page_fault = address };
                     return error.MemoryWriteProtected;
                 }
                 if (address + data.len > page.address + page.length) {
+                    span.err("Memory access out of bounds: address=0x{X:0>8}, size={d}, page_end=0x{X:0>8}", .{ address, data.len, page.address + page.length });
                     self.error_data = .{ .page_fault = page.address + page.length };
                     return error.MemoryAccessOutOfBounds;
                 }
 
                 const offset = address - page.address;
                 std.mem.copyForwards(u8, page.data[offset..], data);
+                span.trace("Write successful - offset: {d}, data: {any}", .{ offset, data });
                 return;
             }
         }
 
+        span.err("Page fault at address 0x{X:0>8}", .{address});
         self.error_data = .{ .page_fault = address };
         return error.MemoryPageFault;
     }
 
     fn storeMemory(self: *PVM, address: u32, value: u32, size: u8) !void {
+        const span = trace.span(.store_memory);
+        defer span.deinit();
+
+        span.debug("Storing value 0x{X:0>8} ({d} bytes) to address 0x{X:0>8}", .{ value, size, address });
+
         for (self.page_map) |page| {
             if (address >= page.address and address < page.address + page.length) {
                 if (!page.is_writable) {
+                    span.err("Write protected memory at address 0x{X:0>8}", .{address});
                     self.error_data = .{ .page_fault = address };
                     return error.MemoryWriteProtected;
                 }
                 if (address + size > page.address + page.length) {
+                    span.err("Memory access out of bounds: address=0x{X:0>8}, size={d}, page_end=0x{X:0>8}", .{ address, size, page.address + page.length });
                     self.error_data = .{ .page_fault = page.address + page.length };
                     return error.MemoryAccessOutOfBounds;
                 }
 
-                // position in the page.data is page starting address - page.address as such
-                // write size of bytes from the u32 to the page data
-                //    const offset = address - page.address;
                 const offset = address - page.address;
                 var i: u8 = 0;
                 while (i < size) : (i += 1) {
-                    // write to memory in little endian format
-                    page.data[offset + i] = @as(u8, @truncate(value >> @as(u5, @intCast(i * 8))));
+                    const byte = @as(u8, @truncate(value >> @as(u5, @intCast(i * 8))));
+                    page.data[offset + i] = byte;
+                    span.trace("Wrote byte {d}: 0x{X:0>2} at offset {d}", .{ i, byte, offset + i });
                 }
                 return;
             }
         }
 
+        span.err("Page fault at address 0x{X:0>8}", .{address});
         self.error_data = .{ .page_fault = address };
         return error.MemoryPageFault;
     }
 
     pub fn clonePageMap(self: *PVM) ![]PageMap {
+        const span = trace.span(.clone_page_map);
+        defer span.deinit();
+
+        span.debug("Cloning page map with {d} pages", .{self.page_map.len});
+
         var cloned_page_map = try self.allocator.alloc(PageMap, self.page_map.len);
         errdefer self.allocator.free(cloned_page_map);
 
         for (self.page_map, 0..) |page, i| {
+            span.trace("Cloning page {d}: address=0x{X:0>8}, length={d}", .{ i, page.address, page.length });
+
             cloned_page_map[i] = PageMap{
                 .address = page.address,
                 .length = page.length,
@@ -965,6 +1060,11 @@ pub const PVM = struct {
     }
 
     pub fn freePageMap(self: *PVM, page_map: []PageMap) void {
+        const span = trace.span(.free_page_map);
+        defer span.deinit();
+
+        span.debug("Freeing page map with {d} pages", .{page_map.len});
+
         for (page_map) |page| {
             self.allocator.free(page.data);
         }
