@@ -16,7 +16,7 @@ pub const boption_enabled_level = if (@hasDecl(build_options, "enable_tracing_le
 else
     LogLevel.info;
 
-// Allowed log levels
+threadlocal var current_depth: usize = 0;
 
 pub const LogLevel = enum {
     trace,
@@ -44,8 +44,6 @@ pub const LogLevel = enum {
         };
     }
 };
-
-threadlocal var indent_level: usize = 0;
 
 pub const TracingScope = struct {
     name: []const u8,
@@ -75,8 +73,9 @@ pub const TracingScope = struct {
 pub const Span = struct {
     scope: *const TracingScope,
     operation: []const u8,
-    parent: ?*const Span,
-    start_indent: usize,
+    parent: ?*Span,
+    depth: ?usize = null,
+    materialized: bool,
     enabled: bool,
     min_level: LogLevel,
 
@@ -85,81 +84,104 @@ pub const Span = struct {
     pub fn init(
         scope: *const TracingScope,
         operation: @Type(.enum_literal),
-        parent: ?*const Span,
+        parent: ?*Span,
         enabled: bool,
         min_level: LogLevel,
     ) Self {
-        const span = Self{
+        return Self{
             .scope = scope,
             .operation = @tagName(operation),
             .parent = parent,
-            .start_indent = indent_level,
+            .materialized = false,
             .enabled = enabled,
             .min_level = min_level,
+            .depth = current_depth,
         };
-
-        // Print enter marker with arrow
-        if (parent == null) {
-            span.debug("\x1b[1m{s} →\x1b[22m\n", .{span.operation});
-        }
-
-        indent_level += 1;
-        return span;
     }
 
-    pub fn child(self: *const Self, operation: @Type(.enum_literal)) Span {
+    pub fn child(self: *Self, operation: @Type(.enum_literal)) Span {
         return Span.init(self.scope, operation, self, self.enabled, self.min_level);
     }
 
     pub fn deinit(self: *const Self) void {
-        indent_level = self.start_indent;
-        // Only print exit marker for top-level spans
-        if (self.parent == null) {
-            self.debug("← {s}\n", .{self.operation});
+        if (self.depth) |depth| {
+            current_depth = depth;
         }
     }
 
-    pub inline fn trace(self: *const Self, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn trace(self: *Self, comptime fmt: []const u8, args: anytype) void {
         if (@intFromEnum(LogLevel.trace) >= @intFromEnum(self.min_level)) {
             self.log(.trace, fmt, args);
         }
     }
 
-    pub inline fn debug(self: *const Self, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn debug(self: *Self, comptime fmt: []const u8, args: anytype) void {
         if (@intFromEnum(LogLevel.debug) >= @intFromEnum(self.min_level)) {
             self.log(.debug, fmt, args);
         }
     }
 
-    pub inline fn info(self: *const Self, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn info(self: *Self, comptime fmt: []const u8, args: anytype) void {
         if (@intFromEnum(LogLevel.info) >= @intFromEnum(self.min_level)) {
             self.log(.info, fmt, args);
         }
     }
 
-    pub inline fn warn(self: *const Self, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn warn(self: *Self, comptime fmt: []const u8, args: anytype) void {
         if (@intFromEnum(LogLevel.warn) >= @intFromEnum(self.min_level)) {
             self.log(.warn, fmt, args);
         }
     }
 
-    pub inline fn err(self: *const Self, comptime fmt: []const u8, args: anytype) void {
+    pub inline fn err(self: *Self, comptime fmt: []const u8, args: anytype) void {
         if (@intFromEnum(LogLevel.err) >= @intFromEnum(self.min_level)) {
             self.log(.err, fmt, args);
         }
     }
 
-    fn printIndent(_: *const Self) void {
-        var i: usize = 0;
-        while (i < indent_level * 4) : (i += 1) {
-            std.debug.print(" ", .{});
+    fn printSpanPath(self: *Self) void {
+        if (self.parent) |parent| {
+            if (!parent.materialized) {
+                parent.printSpanPath();
+            }
+        }
+
+        if (!self.materialized) {
+            var cursor = self;
+            while (cursor.parent) |p| {
+                if (p.materialized) {
+                    current_depth += 1;
+                } else break;
+                cursor = p;
+            }
+
+            var i: usize = 0;
+            while (i < current_depth * 2) : (i += 1) {
+                std.debug.print(" ", .{});
+            }
+
+            std.debug.print("→ ", .{});
+            std.debug.print("{s}", .{self.operation});
+            @constCast(self).materialized = true;
         }
     }
 
-    inline fn log(self: *const Self, level: LogLevel, comptime fmt: []const u8, args: anytype) void {
+    inline fn log(self: *Self, level: LogLevel, comptime fmt: []const u8, args: anytype) void {
         if (!self.enabled or @intFromEnum(level) < @intFromEnum(self.min_level)) return;
 
-        self.printIndent();
+        // Print full path if this is first materialization at this level
+        if (!self.materialized) {
+            self.printSpanPath();
+            std.debug.print("\n", .{});
+        }
+
+        // Print indentation
+        var i: usize = 0;
+        while (i < current_depth * 2) : (i += 1) {
+            std.debug.print(" ", .{});
+        }
+
+        std.debug.print("  ", .{});
 
         std.debug.print("{s} ", .{level.format()});
         std.debug.print(fmt ++ "\x1b[0m\n", args);
@@ -179,50 +201,48 @@ pub const SpanUnion = union(enum) {
 
     pub fn child(self: *const SpanUnion, operation: @Type(.enum_literal)) SpanUnion {
         return switch (self.*) {
-            .Enabled => |span| SpanUnion{ .Enabled = span.child(operation) },
+            .Enabled => |*span| SpanUnion{ .Enabled = @constCast(span).child(operation) },
             .Disabled => SpanUnion{ .Disabled = DisabledSpan{} },
         };
     }
 
     pub inline fn trace(self: *const SpanUnion, comptime fmt: []const u8, args: anytype) void {
         switch (self.*) {
-            .Enabled => |span| span.trace(fmt, args),
+            .Enabled => |*span| @constCast(span).trace(fmt, args),
             .Disabled => {},
         }
     }
 
     pub inline fn debug(self: *const SpanUnion, comptime fmt: []const u8, args: anytype) void {
         switch (self.*) {
-            .Enabled => |span| span.debug(fmt, args),
+            .Enabled => |*span| @constCast(span).debug(fmt, args),
             .Disabled => {},
         }
     }
 
     pub inline fn info(self: *const SpanUnion, comptime fmt: []const u8, args: anytype) void {
         switch (self.*) {
-            .Enabled => |span| span.info(fmt, args),
+            .Enabled => |*span| @constCast(span).info(fmt, args),
             .Disabled => {},
         }
     }
 
     pub inline fn warn(self: *const SpanUnion, comptime fmt: []const u8, args: anytype) void {
         switch (self.*) {
-            .Enabled => |span| span.warn(fmt, args),
+            .Enabled => |*span| @constCast(span).warn(fmt, args),
             .Disabled => {},
         }
     }
 
     pub inline fn err(self: *const SpanUnion, comptime fmt: []const u8, args: anytype) void {
         switch (self.*) {
-            .Enabled => |span| span.err(fmt, args),
+            .Enabled => |*span| @constCast(span).err(fmt, args),
             .Disabled => {},
         }
     }
 };
 
 pub const DisabledSpan = struct {
-    // Empty struct since we don't need to store any state
-
     pub inline fn trace(_: *const DisabledSpan, comptime _: []const u8, _: anytype) void {}
     pub inline fn debug(_: *const DisabledSpan, comptime _: []const u8, _: anytype) void {}
     pub inline fn info(_: *const DisabledSpan, comptime _: []const u8, _: anytype) void {}
