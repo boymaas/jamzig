@@ -22,14 +22,14 @@ pub const Status = enum {
 
 pub const PVMTestVector = struct {
     name: []u8,
-    @"initial-regs": [13]u32,
+    @"initial-regs": [13]u64,
     @"initial-pc": u32,
     @"initial-page-map": []PageMap,
     @"initial-memory": []MemoryChunk,
     @"initial-gas": i64,
     program: []u8,
     @"expected-status": Status,
-    @"expected-regs": [13]u32,
+    @"expected-regs": [13]u64,
     @"expected-pc": u32,
     @"expected-memory": []MemoryChunk,
     @"expected-gas": i64,

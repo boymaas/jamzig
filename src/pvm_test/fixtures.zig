@@ -8,14 +8,14 @@ const PVM = @import("../pvm.zig").PVM;
 
 pub const PVMFixture = struct {
     name: []const u8,
-    initial_regs: [13]u32,
+    initial_regs: [13]u64,
     initial_pc: u32,
     initial_page_map: []PageMap,
     initial_memory: []MemoryChunk,
     initial_gas: i64,
     program: []u8,
     expected_status: Status,
-    expected_regs: [13]u32,
+    expected_regs: [13]u64,
     expected_pc: u32,
     expected_memory: []MemoryChunk,
     expected_gas: i64,
@@ -152,7 +152,7 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
     }
 
     // Check if registers match (General Purpose Registers R0-R12)
-    if (!std.mem.eql(u32, &pvm.registers, &test_vector.expected_regs)) {
+    if (!std.mem.eql(u64, &pvm.registers, &test_vector.expected_regs)) {
         std.debug.print("Register mismatch (General Purpose Registers R0-R12):\n", .{});
         std.debug.print("        Input   |    Actual  |   Expected | Diff?\n", .{});
         for (test_vector.initial_regs, pvm.registers, test_vector.expected_regs, 0..) |input, actual, expected, i| {

@@ -1,9 +1,14 @@
 const std = @import("std");
 
+const trace = @import("../../tracing.zig").scoped(.pvm);
+
 pub const JumpTable = struct {
     indices: []u32,
 
     pub fn init(allocator: std.mem.Allocator, item_length: usize, bytes: []const u8) !JumpTable {
+        const span = trace.span(.jump_table_init);
+        defer span.deinit();
+
         // Length of jump table should be a multiple of item length!"
         std.debug.assert(item_length == 0 or bytes.len % item_length == 0);
 
@@ -13,7 +18,10 @@ pub const JumpTable = struct {
 
         var i: usize = 0;
         while (i < bytes.len) : (i += item_length) {
-            indices[i / item_length] = readPackedU32(bytes[i..][0..item_length]);
+            const idx = i / item_length;
+            const value = readPackedU32(bytes[i..][0..item_length]);
+            span.debug("index {d}: {d}", .{ idx, value });
+            indices[idx] = value;
         }
 
         return JumpTable{
