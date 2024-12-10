@@ -172,6 +172,21 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
             span.err("Float deserialization not implemented", .{});
             @compileError("Float deserialization not implemented yet");
         },
+        .@"enum" => |enumInfo| {
+            const enum_span = span.child(.enum_deserialize);
+            defer enum_span.deinit();
+            enum_span.debug("Deserializing enum type: {s}", .{@typeName(T)});
+
+            const tag_value = try readInteger(reader);
+            enum_span.debug("Read enum tag value: {d}", .{tag_value});
+
+            if (tag_value >= enumInfo.fields.len) {
+                enum_span.err("Invalid enum tag value: {d}", .{tag_value});
+                return error.InvalidEnumTag;
+            }
+
+            return @enumFromInt(tag_value);
+        },
         .@"struct" => |structInfo| {
             const struct_span = span.child(.struct_deserialize);
             defer struct_span.deinit();
@@ -426,6 +441,15 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
         .float => {
             span.err("Float serialization not implemented", .{});
             @compileError("Float serialization not implemented yet");
+        },
+        .@"enum" => |_| {
+            const enum_span = span.child(.enum_serialize);
+            defer enum_span.deinit();
+            enum_span.debug("Serializing enum value: {s}", .{@tagName(value)});
+
+            const tag_value = @intFromEnum(value);
+            try writeInteger(tag_value, writer);
+            enum_span.debug("Wrote enum tag value: {d}", .{tag_value});
         },
         .@"struct" => |structInfo| {
             const struct_span = span.child(.struct_serialize);
