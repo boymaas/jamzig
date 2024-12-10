@@ -539,6 +539,27 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
                         field_span.debug("Void field, no additional data to write", .{});
                     } else {
                         const field_value = @field(value, field.name);
+                        const field_type = field.type;
+                        if (@hasDecl(T, field.name ++ "_size")) {
+                            field_span.debug("Field has size function", .{});
+                            const size_fn = @field(T, field.name ++ "_size");
+                            const size = @call(.auto, size_fn, .{params});
+                            field_span.debug("Size function returned: {d}", .{size});
+
+                            if (field_value.len != size) {
+                                field_span.err("Field slice length {d} does not match size function return value {d}", .{ field_value.len, size });
+                                return error.InvalidSliceLength;
+                            }
+
+                            for (field_value[0..size], 0..) |item, i| {
+                                const item_span = field_span.child(.slice_item);
+                                defer item_span.deinit();
+                                item_span.debug("Serializing item {d} of {d}", .{ i + 1, size });
+                                try recursiveSerializeLeaky(std.meta.Child(field_type), params, writer, item);
+                            }
+                            return;
+                        }
+
                         field_span.debug("Serializing field value of type: {s}", .{@typeName(field.type)});
                         try recursiveSerializeLeaky(field.type, params, writer, field_value);
                     }

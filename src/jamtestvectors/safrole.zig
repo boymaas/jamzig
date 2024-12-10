@@ -143,17 +143,12 @@ const TestCase = struct {
     }
 };
 
-test "parse.safrole" {
-    const parser = @import("parser.zig");
-    const testing = std.testing;
-
-    // Initialize allocator for test
-    const TINY = @import("../jam_params.zig").TINY_PARAMS;
-
-    // Create parser instance
-    var test_case = try parser.parseTestVector(TestCase, TINY, testing.allocator, "src/jamtestvectors/data/safrole/tiny/enact-epoch-change-with-no-tickets-1.bin");
-    defer test_case.deinit(testing.allocator);
-}
+//  _   _       _ _  _____         _
+// | | | |_ __ (_) ||_   _|__  ___| |_ ___
+// | | | | '_ \| | __|| |/ _ \/ __| __/ __|
+// | |_| | | | | | |_ | |  __/\__ \ |_\__ \
+//  \___/|_| |_|_|\__||_|\___||___/\__|___/
+//
 
 test "parse.safrole.tiny" {
     const dir = @import("dir.zig");
@@ -175,4 +170,55 @@ test "parse.safrole.full" {
 
     var test_cases = try dir.scan(TestCase, FULL, testing.allocator, "src/jamtestvectors/data/safrole/full");
     defer test_cases.deinit();
+}
+
+//   ____          _             _____         _
+//  / ___|___   __| | ___  ___  |_   _|__  ___| |_ ___
+// | |   / _ \ / _` |/ _ \/ __|   | |/ _ \/ __| __/ __|
+// | |__| (_) | (_| |  __/ (__    | |  __/\__ \ |_\__ \
+//  \____\___/ \__,_|\___|\___|   |_|\___||___/\__|___/
+
+const parser = @import("parser.zig");
+const OrderedFiles = @import("../tests/ordered_files.zig");
+const codec = @import("../codec.zig");
+const slurp = @import("../tests/slurp.zig");
+const Params = @import("../jam_params.zig").Params;
+
+fn testSafroleRoundtrip(comptime params: Params, test_dir: []const u8, allocator: std.mem.Allocator) !void {
+    // Get ordered list of files
+    var ordered_files = try OrderedFiles.getOrderedFiles(allocator, test_dir);
+    defer ordered_files.deinit();
+
+    // Process each binary file
+    for (ordered_files.items()) |entry| {
+        if (!std.mem.endsWith(u8, entry.name, ".bin")) {
+            continue;
+        }
+
+        // Load and parse binary file
+        var test_case = try parser.parseTestVector(TestCase, params, allocator, entry.path);
+        defer test_case.deinit(allocator);
+
+        // Serialize the test case
+        const binary_serialized = try codec.serializeAlloc(TestCase, params, allocator, test_case);
+        defer allocator.free(binary_serialized);
+
+        // Load original binary for comparison
+        var binary_loaded = try slurp.slurpFile(allocator, entry.path);
+        defer binary_loaded.deinit();
+
+        // Compare original with serialized version
+        try std.testing.expectEqualSlices(u8, binary_loaded.buffer, binary_serialized);
+        std.debug.print("Successfully validated {s}\n", .{entry.path});
+    }
+}
+
+test "parse.safrole.tiny.deserialize-serialize-roundtrip" {
+    const TINY = @import("../jam_params.zig").TINY_PARAMS;
+    try testSafroleRoundtrip(TINY, "src/jamtestvectors/data/safrole/tiny", std.testing.allocator);
+}
+
+test "parse.safrole.full.deserialize-serialize-roundtrip" {
+    const FULL = @import("../jam_params.zig").FULL_PARAMS;
+    try testSafroleRoundtrip(FULL, "src/jamtestvectors/data/safrole/full", std.testing.allocator);
 }
