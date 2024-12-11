@@ -112,7 +112,7 @@ pub const TrieTestVector = struct {
 
 test "test:vectors:trie: parsing the test vector" {
     const allocator = std.heap.page_allocator;
-    const vector = try TrieTestVector.build_from(allocator, "src/tests/vectors/trie/trie/trie.json");
+    const vector = try TrieTestVector.build_from(allocator, "src/jamtestvectors/data/trie/trie.json");
     defer vector.deinit();
 
     std.debug.print("Loaded test vector with {} tests\n", .{vector.tests.len});

@@ -1,5 +1,5 @@
 const std = @import("std");
-const TrieTestVector = @import("tests/vectors/trie.zig").TrieTestVector;
+const TrieTestVector = @import("jamtestvectors//trie.zig").TrieTestVector;
 const merkle = @import("merkle.zig");
 
 test "merkle:test_vectors" {
