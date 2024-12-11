@@ -1,9 +1,6 @@
 [submodule "src/tests/vectors/pvm/pvm"]
 	path = src/tests/vectors/pvm/pvm
 	url = https://github.com/w3f/jamtestvectors.git
-[submodule "src/tests/vectors/trie"]
-	path = src/tests/vectors/trie
-	url = https://github.com/w3f/jamtestvectors.git
 [submodule "src/tests/vectors/judgements"]
 	path = src/tests/vectors/disputes
 	url = https://github.com/w3f/jamtestvectors.git
