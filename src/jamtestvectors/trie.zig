@@ -107,6 +107,7 @@ pub const TrieTestVector = struct {
         for (self.tests) |*parsed_test| {
             parsed_test.deinit();
         }
+        self.allocator.free(self.tests);
     }
 };
 

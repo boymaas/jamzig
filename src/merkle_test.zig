@@ -1,10 +1,10 @@
 const std = @import("std");
-const TrieTestVector = @import("jamtestvectors//trie.zig").TrieTestVector;
+const TrieTestVector = @import("jamtestvectors/trie.zig").TrieTestVector;
 const merkle = @import("merkle.zig");
 
 test "merkle:test_vectors" {
-    const allocator = std.heap.page_allocator;
-    const vector = try TrieTestVector.build_from(allocator, "src/tests/vectors/trie/trie/trie.json");
+    const allocator = std.testing.allocator;
+    const vector = try TrieTestVector.build_from(allocator, "src/jamtestvectors/data/trie/trie.json");
     defer vector.deinit();
 
     for (vector.tests, 0..) |trie_test, idx| {

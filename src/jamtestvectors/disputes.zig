@@ -2,6 +2,8 @@ const std = @import("std");
 const types = @import("../types.zig");
 const jam_params = @import("../jam_params.zig");
 
+const BASE_PATH = "src/jamtestvectors/data/disputes/";
+
 pub const State = struct {
     psi: types.DisputesRecords,
     rho: types.AvailabilityAssignments,
@@ -93,7 +95,7 @@ test "Load and dump a tiny test vector, and check the outputs" {
     const allocator = std.testing.allocator;
 
     const test_jsons: [1][]const u8 = .{
-        "src/tests/vectors/disputes/disputes/tiny/progress_with_no_verdicts-1.bin",
+        BASE_PATH ++ "tiny/progress_with_no_verdicts-1.bin",
     };
 
     for (test_jsons) |test_json| {
@@ -116,7 +118,7 @@ test "Correct parsing of all tiny test vectors" {
         TestCase,
         jam_params.TINY_PARAMS,
         allocator,
-        "src/tests/vectors/disputes/disputes/tiny/",
+        BASE_PATH ++ "tiny/",
     );
     defer test_vectors.deinit();
 }
@@ -129,7 +131,7 @@ test "Correct parsing of all full test vectors" {
         TestCase,
         jam_params.FULL_PARAMS,
         allocator,
-        "src/tests/vectors/disputes/disputes/full/",
+        BASE_PATH ++ "full/",
     );
     defer test_vectors.deinit();
 }
