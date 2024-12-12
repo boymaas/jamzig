@@ -7,16 +7,16 @@ const RecentBlock = @import("recent_blocks.zig").RecentBlock;
 const ReportedWorkPackage = @import("recent_blocks.zig").ReportedWorkPackage;
 
 const Hash = @import("recent_blocks.zig").Hash;
-const HistoryTestVector = @import("tests/vectors/libs/history.zig").HistoryTestVector;
 
-const tvector = @import("tests/vectors/libs/history.zig");
+const tvector = @import("jamtestvectors/history.zig");
+const HistoryTestVector = tvector.HistoryTestVector;
 const TestCase = tvector.TestCase;
 
-const getSortedListOfJsonFilesInDir = @import("tests/vectors/libs/utils.zig").getSortedListOfJsonFilesInDir;
+const getSortedListOfJsonFilesInDir = @import("jamtestvectors/json_types/utils.zig").getSortedListOfJsonFilesInDir;
 
 test "recent blocks: parsing all test cases" {
     const allocator = testing.allocator;
-    const target_dir = "src/tests/vectors/history/history/data";
+    const target_dir = tvector.BASE_PATH;
 
     var entries = try getSortedListOfJsonFilesInDir(allocator, target_dir);
     defer entries.deinit();

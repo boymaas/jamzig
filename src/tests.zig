@@ -5,9 +5,9 @@ comptime {
     _ = @import("jamtestvectors/trie.zig");
     _ = @import("jamtestvectors/disputes.zig");
     _ = @import("jamtestvectors/pvm.zig");
+    _ = @import("jamtestvectors/history.zig");
 
     _ = @import("tests/vectors/erasure_coding.zig");
-    _ = @import("tests/vectors/libs/history.zig");
 
     _ = @import("codec.zig");
     _ = @import("codec_test.zig");

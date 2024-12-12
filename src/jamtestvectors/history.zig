@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const types = @import("types.zig");
+const types = @import("json_types/types.zig");
 
 pub const HexBytes = types.hex.HexBytes;
 pub const HexBytesFixed = types.hex.HexBytesFixed;
@@ -42,11 +42,13 @@ pub const TestCase = struct {
     post_state: State,
 };
 
-pub const HistoryTestVector = @import("utils.zig").TestVector;
+pub const HistoryTestVector = @import("json_types/utils.zig").TestVector;
+
+pub const BASE_PATH = "src/jamtestvectors/data/history/data";
 
 test "history: parsing the test case" {
     const allocator = std.testing.allocator;
-    const vector = try HistoryTestVector(TestCase).build_from(allocator, "src/tests/vectors/history/history/data/progress_blocks_history-1.json");
+    const vector = try HistoryTestVector(TestCase).build_from(allocator, BASE_PATH ++ "/progress_blocks_history-1.json");
     defer vector.deinit();
 
     // Test if the vector contains the expected data
@@ -67,9 +69,8 @@ test "history: parsing the test case" {
 
 test "history: parsing all test cases" {
     const allocator = std.testing.allocator;
-    const target_dir = "src/tests/vectors/history/history/data";
 
-    var dir = try std.fs.cwd().openDir(target_dir, .{ .iterate = true });
+    var dir = try std.fs.cwd().openDir(BASE_PATH, .{ .iterate = true });
     defer dir.close();
 
     var dir_iterator = dir.iterate();
@@ -77,7 +78,7 @@ test "history: parsing all test cases" {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
 
-        const file_path = try std.fs.path.join(allocator, &[_][]const u8{ target_dir, entry.name });
+        const file_path = try std.fs.path.join(allocator, &[_][]const u8{ BASE_PATH, entry.name });
         defer allocator.free(file_path);
 
         const vector = try HistoryTestVector(TestCase).build_from(allocator, file_path);
