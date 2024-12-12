@@ -6,8 +6,7 @@ comptime {
     _ = @import("jamtestvectors/disputes.zig");
     _ = @import("jamtestvectors/pvm.zig");
     _ = @import("jamtestvectors/history.zig");
-
-    _ = @import("tests/vectors/erasure_coding.zig");
+    _ = @import("jamtestvectors/erasure_coding.zig");
 
     _ = @import("codec.zig");
     _ = @import("codec_test.zig");
@@ -63,7 +62,3 @@ comptime {
 
     _ = @import("stf_test.zig");
 }
-
-pub const tv_types = @import("tests/vectors/libs/types.zig");
-
-pub const hexStringToBytes = tv_types.hex.hexStringToBytes;

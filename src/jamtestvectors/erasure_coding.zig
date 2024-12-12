@@ -2,6 +2,8 @@ const std = @import("std");
 const json = std.json;
 const Allocator = std.mem.Allocator;
 
+pub const BASE_PATH = "src/jamtestvectors/pulls/erasure_coding/erasure_coding/vectors/";
+
 /// Basic erasure coding test vector
 pub const ECTestVector = struct {
     data: []u8,
@@ -151,7 +153,7 @@ pub const SegmentRootVector = struct {
 
 test "ec: parsing basic ec test vector" {
     const allocator = std.testing.allocator;
-    const vector = try ECTestVector.build_from(allocator, "src/tests/vectors/erasure_coding/erasure_coding/vectors/ec_1.json");
+    const vector = try ECTestVector.build_from(allocator, BASE_PATH ++ "ec_1.json");
     defer vector.deinit();
 
     // Add specific test assertions based on your test vector contents
@@ -161,7 +163,7 @@ test "ec: parsing basic ec test vector" {
 
 test "ec: parsing page proof test vector" {
     const allocator = std.testing.allocator;
-    const vector = try PageProofTestVector.build_from(allocator, "src/tests/vectors/erasure_coding/erasure_coding/vectors/page_proof_32.json");
+    const vector = try PageProofTestVector.build_from(allocator, BASE_PATH ++ "/page_proof_32.json");
     defer vector.deinit();
 
     try std.testing.expect(vector.value.data.len > 0);
@@ -171,7 +173,7 @@ test "ec: parsing page proof test vector" {
 
 test "ec: parsing segment ec test vector" {
     const allocator = std.testing.allocator;
-    const vector = try SegmentECVector.build_from(allocator, "src/tests/vectors/erasure_coding/erasure_coding/vectors/segment_ec_1.json");
+    const vector = try SegmentECVector.build_from(allocator, BASE_PATH ++ "/segment_ec_1.json");
     defer vector.deinit();
 
     try std.testing.expect(vector.value.data.len > 0);
@@ -181,7 +183,7 @@ test "ec: parsing segment ec test vector" {
 
 test "ec: parsing segment root test vector" {
     const allocator = std.testing.allocator;
-    const vector = try SegmentRootVector.build_from(allocator, "src/tests/vectors/erasure_coding/erasure_coding/vectors/segment_root_21824.json");
+    const vector = try SegmentRootVector.build_from(allocator, BASE_PATH ++ "/segment_root_21824.json");
     defer vector.deinit();
 
     try std.testing.expect(vector.value.data.len > 0);

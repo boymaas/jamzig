@@ -4,7 +4,7 @@ const pvmlib = @import("pvm.zig");
 const fixtures = @import("pvm_test/fixtures.zig");
 
 // Get all files from the test directory
-const BASE_PATH = "src/jamtestvectors/pvm/pvm/programs/";
+const BASE_PATH = fixtures.BASE_PATH;
 
 test "pvm:simple" {
     const allocator = std.testing.allocator;

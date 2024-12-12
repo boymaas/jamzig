@@ -1,6 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const PMVLib = @import("../jamtestvectors/pvm.zig");
+const PVMLib = @import("../jamtestvectors/pvm.zig");
+
+pub const BASE_PATH = PVMLib.BASE_PATH;
 
 const PVM = @import("../pvm.zig").PVM;
 
@@ -34,7 +36,7 @@ pub const PVMFixture = struct {
         halt,
     };
 
-    pub fn from_vector(allocator: Allocator, vector: *const PMVLib.PVMTestVector) !PVMFixture {
+    pub fn from_vector(allocator: Allocator, vector: *const PVMLib.PVMTestVector) !PVMFixture {
         var fixture = PVMFixture{
             .name = try allocator.dupe(u8, vector.name),
             .initial_regs = vector.@"initial-regs",
@@ -214,7 +216,7 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
 }
 
 pub fn runTestFixtureFromPath(allocator: Allocator, path: []const u8) !bool {
-    const vector = try PMVLib.PVMTestVector.build_from(allocator, path);
+    const vector = try PVMLib.PVMTestVector.build_from(allocator, path);
     defer vector.deinit();
 
     const fixture = try PVMFixture.from_vector(allocator, &vector.value);

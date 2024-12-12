@@ -2,6 +2,8 @@ const std = @import("std");
 const json = std.json;
 const Allocator = std.mem.Allocator;
 
+pub const BASE_PATH = "src/jamtestvectors/pulls/pvm/pvm/programs/";
+
 pub const PageMap = struct {
     address: u32,
     length: u32,
@@ -68,7 +70,7 @@ pub const PVMTestVector = struct {
 
 test "pvm: parsing the inst_add test vector" {
     const allocator = std.testing.allocator;
-    const vector = try PVMTestVector.build_from(allocator, "src/jamtestvectors/pvm/pvm/programs/inst_add.json");
+    const vector = try PVMTestVector.build_from(allocator, BASE_PATH ++ "inst_add.json");
     defer vector.deinit();
 
     try std.testing.expectEqualStrings("inst_add", vector.value.name);

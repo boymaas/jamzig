@@ -1,6 +1,3 @@
-[submodule "src/tests/vectors/erasure_coding"]
-	path = src/tests/vectors/erasure_coding
-	url = https://github.com/w3f/jamtestvectors.git
 [submodule "src/stf_test/jamtestnet"]
 	path = src/jamtestnet/data
 	url = https://github.com/jam-duna/jamtestnet.git
@@ -9,4 +6,7 @@
 	url = https://github.com/w3f/jamtestvectors/
 [submodule "src/jamtestvectors/pvm"]
 	path = src/jamtestvectors/pvm
+	url = https://github.com/w3f/jamtestvectors/
+[submodule "src/jamtestvectors/pulls/erasure_coding"]
+	path = src/jamtestvectors/pulls/erasure_coding
 	url = https://github.com/w3f/jamtestvectors/
