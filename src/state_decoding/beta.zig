@@ -1,10 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
+const types = @import("../types.zig");
+const BlockInfo = types.BlockInfo;
+const ReportedWorkPackage = types.ReportedWorkPackage;
+const Hash = types.Hash;
+
 const recent_blocks = @import("../recent_blocks.zig");
 const RecentHistory = recent_blocks.RecentHistory;
-const BlockInfo = recent_blocks.BlockInfo;
-const ReportedWorkPackage = recent_blocks.ReportedWorkPackage;
-const Hash = recent_blocks.Hash;
+
 const decoder = @import("../codec/decoder.zig");
 const mmr = @import("../merkle_mountain_ranges.zig");
 

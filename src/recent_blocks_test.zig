@@ -1,12 +1,14 @@
 const std = @import("std");
 const testing = std.testing;
-const RecentHistory = @import("recent_blocks.zig").RecentHistory;
 
-const BlockInfo = @import("recent_blocks.zig").BlockInfo;
-const RecentBlock = @import("recent_blocks.zig").RecentBlock;
-const ReportedWorkPackage = @import("recent_blocks.zig").ReportedWorkPackage;
+const types = @import("types.zig");
+const BlockInfo = types.BlockInfo;
+const ReportedWorkPackage = types.ReportedWorkPackage;
+const Hash = types.Hash;
 
-const Hash = @import("recent_blocks.zig").Hash;
+const recent_blocks = @import("recent_blocks.zig");
+const RecentBlock = recent_blocks.RecentBlock;
+const RecentHistory = recent_blocks.RecentHistory;
 
 const tvector = @import("jamtestvectors/history.zig");
 const HistoryTestVector = tvector.HistoryTestVector;

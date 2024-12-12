@@ -1,9 +1,12 @@
 const std = @import("std");
+
+const types = @import("../types.zig");
+const ReportedWorkPackage = types.ReportedWorkPackage;
+
 const encoder = @import("../codec/encoder.zig");
 
 const recent_blocks = @import("../recent_blocks.zig");
 const RecentHistory = recent_blocks.RecentHistory;
-const ReportedWorkPackage = recent_blocks.ReportedWorkPackage;
 
 pub fn encode(self: *const RecentHistory, writer: anytype) !void {
     // Encode the number of blocks
@@ -38,8 +41,8 @@ pub fn encode(self: *const RecentHistory, writer: anytype) !void {
 //                            |___/
 
 const testing = std.testing;
-const BlockInfo = recent_blocks.BlockInfo;
-const Hash = recent_blocks.Hash;
+const BlockInfo = types.BlockInfo;
+const Hash = types.Hash;
 
 test "encode" {
     const allocator = testing.allocator;

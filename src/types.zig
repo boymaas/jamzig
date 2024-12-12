@@ -330,10 +330,24 @@ pub const ReportedWorkPackage = struct {
 };
 
 pub const BlockInfo = struct {
-    header_hash: HeaderHash,
-    mmr: Mmr,
-    state_root: StateRoot,
-    reported: []ReportedWorkPackage,
+    /// The hash of the block header
+    header_hash: Hash,
+    /// The root hash of the state trie
+    state_root: Hash,
+    /// The Merkle Mountain Range (MMR) of BEEFY commitments
+    beefy_mmr: []?Hash,
+    /// The hashes of work reports included in this block
+    work_reports: []ReportedWorkPackage,
+
+    /// Creates a deep copy of the BlockInfo with newly allocated memory
+    pub fn deepClone(self: *const BlockInfo, allocator: std.mem.Allocator) !BlockInfo {
+        return BlockInfo{
+            .header_hash = self.header_hash,
+            .state_root = self.state_root,
+            .beefy_mmr = try allocator.dupe(?Hash, self.beefy_mmr),
+            .work_reports = try allocator.dupe(ReportedWorkPackage, self.work_reports),
+        };
+    }
 };
 
 pub const BlocksHistory = []BlockInfo; // SIZE(0..max_blocks_history)
