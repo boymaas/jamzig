@@ -386,10 +386,14 @@ pub fn transitionDisputes(
     );
 
     // Transition ψ based on new disputes
+
+    // Rho dagger is an intermediate state as defined in the graypaper as.
+    //   => We clear any work-reports which we judged as uncertain or invalid from their core
+    // Assurances takes rho_dagger and produced rho_double_dagger. See there
     var posterior_state = try disputes.processDisputesExtrinsic(
         core_count,
         current_psi,
-        current_rho,
+        current_rho, // <= rho_dagger
         xtdisputes,
         validators_count,
     );
