@@ -5,10 +5,13 @@ const Allocator = std.mem.Allocator;
 pub const Params = @import("../jam_params.zig").Params;
 pub const types = @import("../types.zig");
 pub const safrole_types = @import("../safrole/types.zig");
+pub const safrole_test_vector = @import("../jamtestvectors/safrole.zig");
+
+pub const safrole = @import("../safrole.zig");
 
 // Constant
 pub const TransitionResult = struct {
-    output: Output,
+    output: safrole_test_vector.Output,
     state: ?safrole_types.State,
 
     pub fn deinit(self: TransitionResult, allocator: std.mem.Allocator) void {
@@ -19,115 +22,29 @@ pub const TransitionResult = struct {
     }
 };
 
-// Input for Safrole protocol.
-pub const Input = struct {
-    // Current slot.
-    slot: u32,
-    // Per block entropy (originated from block entropy source VRF).
-    entropy: types.OpaqueHash,
-    // Safrole extrinsic.
-    extrinsic: []types.TicketEnvelope,
-    // Post offenders
-    post_offenders: ?[]types.Ed25519Public = null,
-
-    /// Frees all allocated memory in the Input struct.
-    pub fn deinit(self: Input, allocator: Allocator) void {
-        allocator.free(self.extrinsic);
-        if (self.post_offenders) |po| {
-            allocator.free(po);
-        }
-    }
-
-    /// Implement the default format function
-    pub fn format(
-        self: Input,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        // TODO: move the format functions
-        try @import("../safrole/types/format.zig").formatInput(self, writer);
-    }
-};
-
-pub const Output = union(enum) {
-    err: OutputError,
-    ok: OutputMarks,
-
-    /// Frees all allocated memory in the Output struct.
-    pub fn deinit(self: Output, allocator: Allocator) void {
-        switch (self) {
-            .err => {},
-            .ok => |marks| {
-                if (marks.epoch_mark) |epoch_mark| {
-                    epoch_mark.deinit(allocator);
-                }
-                if (marks.tickets_mark) |tickets_mark| {
-                    tickets_mark.deinit(allocator);
-                }
-            },
-        }
-    }
-
-    /// Implement the default format function
-    pub fn format(
-        self: Output,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        try @import("../safrole/types/format.zig").formatOutput(self, writer);
-    }
-};
-
-pub const OutputError = enum(u8) {
-    /// Bad slot value.
-    bad_slot = 0,
-    /// Received a ticket while in epoch's tail.
-    unexpected_ticket = 1,
-    /// Tickets must be sorted.
-    bad_ticket_order = 2,
-    /// Invalid ticket ring proof.
-    bad_ticket_proof = 3,
-    /// Invalid ticket attempt value.
-    bad_ticket_attempt = 4,
-    /// Reserved
-    reserved = 5,
-    /// Found a ticket duplicate.
-    duplicate_ticket = 6,
-
-    /// MY OWN ERROR CODES
-    too_many_tickets_in_extrinsic = 100,
-};
-
-pub const OutputMarks = struct {
-    epoch_mark: ?types.EpochMark,
-    tickets_mark: ?types.TicketsMark,
-};
-
 pub fn transition(
     allocator: std.mem.Allocator,
     params: Params,
-    pre_state: safrole_types.State,
-    input: Input,
+    pre_state: safrole_test_vector.State,
+    input: safrole_test_vector.Input,
 ) !TransitionResult {
-    const result = @import("../safrole.zig").transition(
+    const result = safrole.transition(
         allocator,
         params,
-        pre_state,
+        pre_state.gamma,
         input.slot,
         input.entropy,
         input.extrinsic,
-        input.post_offenders.?,
+        pre_state.post_offenders,
     ) catch |e| {
         const test_vector_error = switch (e) {
-            error.bad_slot => OutputError.bad_slot,
-            error.unexpected_ticket => OutputError.unexpected_ticket,
-            error.bad_ticket_order => OutputError.bad_ticket_order,
-            error.bad_ticket_proof => OutputError.bad_ticket_proof,
-            error.bad_ticket_attempt => OutputError.bad_ticket_attempt,
-            error.duplicate_ticket => OutputError.duplicate_ticket,
-            error.too_many_tickets_in_extrinsic => OutputError.too_many_tickets_in_extrinsic,
+            error.bad_slot => safrole_test_vector.ErrorCode.bad_slot,
+            error.unexpected_ticket => safrole_test_vector.ErrorCode.unexpected_ticket,
+            error.bad_ticket_order => safrole_test_vector.ErrorCode.bad_ticket_order,
+            error.bad_ticket_proof => safrole_test_vector.ErrorCode.bad_ticket_proof,
+            error.bad_ticket_attempt => safrole_test_vector.ErrorCode.bad_ticket_attempt,
+            error.duplicate_ticket => safrole_test_vector.ErrorCode.duplicate_ticket,
+            error.too_many_tickets_in_extrinsic => @panic("Unmapped error"),
             else => @panic("unmapped error"),
         };
         return .{
@@ -138,7 +55,7 @@ pub fn transition(
 
     return .{
         .output = .{
-            .ok = OutputMarks{
+            .ok = safrole_test_vector.OutputMarks{
                 .epoch_mark = result.epoch_marker,
                 .tickets_mark = result.ticket_marker,
             },

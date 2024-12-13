@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const tvector = @import("../tests/vectors/libs/disputes.zig");
-const converters = @import("../disputes_test/converters.zig");
+const converters = @import("./converters.zig");
+const tvector = @import("../jamtestvectors/disputes.zig");
 
 const disputes = @import("../disputes.zig");
 const stf = @import("../stf.zig");
@@ -10,28 +10,29 @@ const helpers = @import("../tests/helpers.zig");
 
 const Params = @import("../jam_params.zig").Params;
 
-pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, test_vector: tvector.TestVector) !void {
-    var current_psi = try converters.convertPsi(allocator, test_vector.pre_state.psi);
+pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, test_case: tvector.TestCase) !void {
+    var current_psi = try converters.convertPsi(allocator, test_case.pre_state.psi);
     defer current_psi.deinit();
-    var expected_psi = try converters.convertPsi(allocator, test_vector.post_state.psi);
+    var expected_psi = try converters.convertPsi(allocator, test_case.post_state.psi);
     defer expected_psi.deinit();
 
-    var current_rho = try converters.convertRho(params.core_count, allocator, test_vector.pre_state.rho);
+    var current_rho = try converters.convertRho(params.core_count, allocator, test_case.pre_state.rho);
     defer current_rho.deinit();
-    var expected_rho = try converters.convertRho(params.core_count, allocator, test_vector.post_state.rho);
+    var expected_rho = try converters.convertRho(params.core_count, allocator, test_case.post_state.rho);
     defer expected_rho.deinit();
 
-    var extrinsic_disputes = try converters.convertDisputesExtrinsic(allocator, test_vector.input.disputes);
-    defer extrinsic_disputes.deinit(allocator);
-
-    const kappa = try converters.convertValidatorData(allocator, test_vector.pre_state.kappa);
-    defer kappa.deinit(allocator);
-
-    const lambda = try converters.convertValidatorData(allocator, test_vector.pre_state.lambda);
-    defer lambda.deinit(allocator);
-
-    const current_epoch = test_vector.pre_state.tau / params.epoch_length;
-    const transition_result = stf.transitionDisputes(params.validators_count, params.core_count, allocator, &current_psi, kappa, lambda, &current_rho, current_epoch, extrinsic_disputes);
+    const current_epoch = test_case.pre_state.tau / params.epoch_length;
+    const transition_result = stf.transitionDisputes(
+        params.validators_count,
+        params.core_count,
+        allocator,
+        &current_psi,
+        test_case.pre_state.kappa,
+        test_case.pre_state.lambda,
+        &current_rho,
+        current_epoch,
+        test_case.input.disputes,
+    );
 
     defer {
         if (transition_result) |psi| {
@@ -39,7 +40,7 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
         } else |_| {} // this needs to be here to satisfy the compiler
     }
 
-    switch (test_vector.output) {
+    switch (test_case.output) {
         .err => |expected_error| {
             if (transition_result) |_| {
                 std.debug.print("\nGot a success, expected error: {any}\n", .{expected_error});
@@ -71,8 +72,8 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
                 var expected_marks_map = std.AutoArrayHashMap(disputes.PublicKey, void).init(allocator);
                 defer expected_marks_map.deinit();
 
-                for (expected_marks.offenders_mark) |mark| {
-                    try expected_marks_map.put(mark.bytes, {});
+                for (expected_marks.offenders_mark.items) |mark| {
+                    try expected_marks_map.put(mark, {});
                 }
 
                 try helpers.expectHashMapEqual(@TypeOf(expected_marks_map), disputes.PublicKey, void, expected_marks_map, transitioned_psi.punish_set);

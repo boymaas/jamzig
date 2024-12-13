@@ -48,7 +48,7 @@ pub fn Alpha(comptime core_count: u16) type {
         // FIX: place this on transisiton level, as it seems to use queue and core
         pub fn transitionState(self: *@This(), E_g: types.GuaranteesExtrinsic, H_t: types.TimeSlot) !void {
             // Remove used authorizers from the pool
-            for (E_g) |guarantee| {
+            for (E_g.data) |guarantee| {
                 const core = guarantee.report.core_index;
                 const auth_hash = guarantee.report.authorizer_hash;
 
@@ -189,7 +189,7 @@ test "Alpha transitionState" {
         .signatures = &[_]types.ValidatorSignature{},
     }};
 
-    try alpha.transitionState(&guarantees, 0);
+    try alpha.transitionState(.{ .data = &guarantees }, 0);
 
     try testing.expectEqual(1, alpha.pools[core].len);
     try testing.expectEqual(2, alpha.queues[core].len);

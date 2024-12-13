@@ -8,8 +8,9 @@ test "safrole/tiny/enact-epoch-change-with-no-tickets-1" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/enact-epoch-change-with-no-tickets-1.json",
+        "tiny/enact-epoch-change-with-no-tickets-1.bin",
     );
     defer fixtures.deinit();
 
@@ -39,8 +40,9 @@ test "safrole/tiny/enact-epoch-change-with-no-tickets-2" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/enact-epoch-change-with-no-tickets-2.json",
+        "tiny/enact-epoch-change-with-no-tickets-2.bin",
     );
     defer fixtures.deinit();
 
@@ -62,8 +64,9 @@ test "safrole/tiny/enact-epoch-change-with-no-tickets-3" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/enact-epoch-change-with-no-tickets-3.json",
+        "tiny/enact-epoch-change-with-no-tickets-3.bin",
     );
     defer fixtures.deinit();
 
@@ -75,7 +78,7 @@ test "safrole/tiny/enact-epoch-change-with-no-tickets-3" {
     );
     defer result.deinit(allocator);
 
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOkOutputWithNullEpochAndTicketMarkers(result.output);
 }
 
@@ -83,8 +86,9 @@ test "safrole/tiny/enact-epoch-change-with-no-tickets-4" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/enact-epoch-change-with-no-tickets-4.json",
+        "tiny/enact-epoch-change-with-no-tickets-4.bin",
     );
     defer fixtures.deinit();
 
@@ -96,7 +100,7 @@ test "safrole/tiny/enact-epoch-change-with-no-tickets-4" {
     );
     defer result.deinit(allocator);
 
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOutput(result.output);
 }
 
@@ -104,8 +108,9 @@ test "safrole/tiny/enact-epoch-change-with-padding-1" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/enact-epoch-change-with-padding-1.json",
+        "tiny/enact-epoch-change-with-padding-1.bin",
     );
     defer fixtures.deinit();
 
@@ -117,6 +122,6 @@ test "safrole/tiny/enact-epoch-change-with-padding-1" {
     );
     defer result.deinit(allocator);
 
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOutput(result.output);
 }

@@ -1,10 +1,11 @@
 const std = @import("std");
-const disputes = @import("../tests/vectors/libs/disputes.zig");
+const disputes = @import("../jamtestvectors/disputes.zig");
 
 const tmpfile = @import("tmpfile");
 
 pub const Error = error{OutOfMemory};
 
+// TODO: make this generic efore and after with anytype
 pub fn diffStates(
     allocator: std.mem.Allocator,
     before: *const disputes.State,

@@ -72,7 +72,7 @@ pub fn transition(
     // Chapter 6.7 Ticketing and extrensics
     // Check the number of ticket attempts in the input when more
     // than N we have a bad ticket attempt
-    for (ticket_extrinsic) |extrinsic| {
+    for (ticket_extrinsic.data) |extrinsic| {
         if (extrinsic.attempt >= params.max_ticket_entries_per_validator) {
             std.debug.print("attempt {d}\n", .{extrinsic.attempt});
             return Error.bad_ticket_attempt;
@@ -80,13 +80,13 @@ pub fn transition(
     }
 
     // We should not have more than K tickets in the input
-    if (ticket_extrinsic.len > params.epoch_length) {
+    if (ticket_extrinsic.data.len > params.epoch_length) {
         return Error.too_many_tickets_in_extrinsic;
     }
 
     // We shuold not have any tickets when the epoch slot < Y
     if (epoch_slot >= params.ticket_submission_end_epoch_slot) {
-        if (ticket_extrinsic.len > 0) {
+        if (ticket_extrinsic.data.len > 0) {
             return Error.unexpected_ticket;
         }
     }
@@ -97,7 +97,7 @@ pub fn transition(
         params.validators_count,
         pre_state.gamma_z,
         pre_state.eta[2],
-        ticket_extrinsic,
+        ticket_extrinsic.data,
     ) catch |e| {
         if (e == error.SignatureVerificationFailed) {
             return Error.bad_ticket_proof;

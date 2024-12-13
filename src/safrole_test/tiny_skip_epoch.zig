@@ -4,12 +4,13 @@ const safrole = @import("adaptor.zig");
 const safrole_fixtures = @import("fixtures.zig");
 const tiny_params = @import("tiny.zig").TINY_PARAMS;
 
-test "safrole/tiny/skip-epochs-1.json" {
+test "safrole/tiny/skip-epochs-1.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/skip-epochs-1.json",
+        "tiny/skip-epochs-1.bin",
     );
     defer fixtures.deinit();
 
@@ -25,16 +26,17 @@ test "safrole/tiny/skip-epochs-1.json" {
     defer result.deinit(allocator);
 
     // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOutput(result.output);
 }
 
-test "safrole/tiny/skip-epoch-tail-1.json" {
+test "safrole/tiny/skip-epoch-tail-1.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/skip-epoch-tail-1.json",
+        "tiny/skip-epoch-tail-1.bin",
     );
     defer fixtures.deinit();
 
@@ -50,6 +52,6 @@ test "safrole/tiny/skip-epoch-tail-1.json" {
     defer result.deinit(allocator);
 
     // try fixtures.diffAgainstPostStateAndPrint(&result.state.?);
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOutput(result.output);
 }

@@ -6,3 +6,4 @@ src/tests/vectors/pvm
 src/tests/vectors/safrole
 src/tests/vectors/trie
 src/jamtestnet/data
+src/jamtestvectors/data

@@ -65,6 +65,17 @@ pub const RefineContext = struct {
     lookup_anchor_slot: TimeSlot,
     prerequisites: []OpaqueHash,
 
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .anchor = self.anchor,
+            .state_root = self.state_root,
+            .beefy_root = self.beefy_root,
+            .lookup_anchor = self.lookup_anchor,
+            .lookup_anchor_slot = self.lookup_anchor_slot,
+            .prerequisites = try allocator.dupe(OpaqueHash, self.prerequisites),
+        };
+    }
+
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         allocator.free(self.prerequisites);
     }
@@ -83,6 +94,10 @@ pub const ExtrinsicSpec = struct {
 pub const Authorizer = struct {
     code_hash: OpaqueHash,
     params: []u8,
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.params);
+    }
 };
 
 pub const ValidatorData = struct {
@@ -100,10 +115,17 @@ pub const WorkItem = struct {
     service: ServiceId,
     code_hash: OpaqueHash,
     payload: []u8,
-    gas_limit: Gas,
+    refine_gas_limit: Gas,
+    accumulate_gas_limit: Gas,
     import_segments: []ImportSpec,
     extrinsic: []ExtrinsicSpec,
     export_count: U16,
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.payload);
+        allocator.free(self.import_segments);
+        allocator.free(self.extrinsic);
+    }
 };
 
 pub const WorkPackage = struct {
@@ -112,6 +134,16 @@ pub const WorkPackage = struct {
     authorizer: Authorizer,
     context: RefineContext,
     items: []WorkItem, // SIZE(1..4)
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.authorization);
+        self.authorizer.deinit(allocator);
+        self.context.deinit(allocator);
+        for (self.items) |*item| {
+            item.deinit(allocator);
+        }
+        allocator.free(self.items);
+    }
 };
 
 pub const WorkExecResult = union(enum(u8)) {
@@ -120,6 +152,20 @@ pub const WorkExecResult = union(enum(u8)) {
     panic: void = 2,
     bad_code: void = 3,
     code_oversize: void = 4,
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return switch (self) {
+            .ok => |data| WorkExecResult{ .ok = try allocator.dupe(u8, data) },
+            else => self,
+        };
+    }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .ok => |value| allocator.free(value),
+            else => {},
+        }
+    }
 
     pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
         // First write the tag byte based on the union variant
@@ -167,14 +213,21 @@ pub const WorkResult = struct {
     service_id: ServiceId,
     code_hash: OpaqueHash,
     payload_hash: OpaqueHash,
-    gas: Gas,
+    accumulate_gas: Gas,
     result: WorkExecResult,
 
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .service_id = self.service_id,
+            .code_hash = self.code_hash,
+            .payload_hash = self.payload_hash,
+            .accumulate_gas = self.accumulate_gas,
+            .result = try self.result.deepClone(allocator),
+        };
+    }
+
     pub fn deinit(self: *const WorkResult, allocator: std.mem.Allocator) void {
-        switch (self.result) {
-            .ok => |data| allocator.free(data),
-            else => {},
-        }
+        self.result.deinit(allocator);
     }
 };
 
@@ -186,9 +239,38 @@ pub const WorkPackageSpec = struct {
     exports_count: U16,
 };
 
-pub const AvailabilityAssignment = struct { report: WorkReport, timeout: U32 };
+pub const AvailabilityAssignment = struct {
+    report: WorkReport,
+    timeout: U32,
 
-pub const AvailabilityAssignments = []?AvailabilityAssignment;
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        self.report.deinit(allocator);
+    }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .report = try self.report.deepClone(allocator),
+            .timeout = self.timeout,
+        };
+    }
+};
+
+pub const AvailabilityAssignments = struct {
+    items: []?AvailabilityAssignment,
+
+    pub fn items_size(params: jam_params.Params) usize {
+        return params.core_count;
+    }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        for (self.items) |assignment| {
+            if (assignment) |item| {
+                item.report.deinit(allocator);
+            }
+        }
+        allocator.free(self.items);
+    }
+};
 
 pub const SegmentRootLookupItem = struct {
     work_package_hash: WorkPackageHash,
@@ -209,16 +291,23 @@ pub const WorkReport = struct {
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
             .package_spec = self.package_spec,
-            .context = self.context,
+            .context = try self.context.deepClone(allocator),
             .core_index = self.core_index,
             .authorizer_hash = self.authorizer_hash,
             .auth_output = try allocator.dupe(u8, self.auth_output),
             .segment_root_lookup = try allocator.dupe(SegmentRootLookupItem, self.segment_root_lookup),
-            .results = try allocator.dupe(WorkResult, self.results),
+            .results = blk: {
+                const cloned_results = try allocator.alloc(WorkResult, self.results.len);
+                for (self.results, cloned_results) |result, *cloned| {
+                    cloned.* = try result.deepClone(allocator);
+                }
+                break :blk cloned_results;
+            },
         };
     }
 
     pub fn deinit(self: *const WorkReport, allocator: std.mem.Allocator) void {
+        self.context.deinit(allocator);
         allocator.free(self.auth_output);
         allocator.free(self.segment_root_lookup);
 
@@ -226,8 +315,6 @@ pub const WorkReport = struct {
             result.deinit(allocator);
         }
         allocator.free(self.results);
-
-        self.context.deinit(allocator);
     }
 };
 
@@ -243,10 +330,24 @@ pub const ReportedWorkPackage = struct {
 };
 
 pub const BlockInfo = struct {
-    header_hash: HeaderHash,
-    mmr: Mmr,
-    state_root: StateRoot,
-    reported: []ReportedWorkPackage,
+    /// The hash of the block header
+    header_hash: Hash,
+    /// The root hash of the state trie
+    state_root: Hash,
+    /// The Merkle Mountain Range (MMR) of BEEFY commitments
+    beefy_mmr: []?Hash,
+    /// The hashes of work reports included in this block
+    work_reports: []ReportedWorkPackage,
+
+    /// Creates a deep copy of the BlockInfo with newly allocated memory
+    pub fn deepClone(self: *const BlockInfo, allocator: std.mem.Allocator) !BlockInfo {
+        return BlockInfo{
+            .header_hash = self.header_hash,
+            .state_root = self.state_root,
+            .beefy_mmr = try allocator.dupe(?Hash, self.beefy_mmr),
+            .work_reports = try allocator.dupe(ReportedWorkPackage, self.work_reports),
+        };
+    }
 };
 
 pub const BlocksHistory = []BlockInfo; // SIZE(0..max_blocks_history)
@@ -299,10 +400,18 @@ pub const TicketsMark = struct {
 pub const ValidatorSet = struct {
     validators: []ValidatorData,
 
+    pub fn validators_size(params: jam_params.Params) usize {
+        return params.validators_count;
+    }
+
     pub fn init(allocator: std.mem.Allocator, validators_count: u32) !@This() {
         return @This(){
             .validators = try allocator.alloc(ValidatorData, validators_count),
         };
+    }
+
+    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.validators);
     }
 
     pub fn len(self: @This()) usize {
@@ -317,10 +426,6 @@ pub const ValidatorSet = struct {
         return @This(){
             .validators = try allocator.dupe(ValidatorData, self.validators),
         };
-    }
-
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.validators);
     }
 
     pub fn merge(self: *@This(), other: @This()) !void {
@@ -377,6 +482,14 @@ pub const GammaS = union(enum) {
     tickets: []TicketBody,
     keys: []BandersnatchPublic,
 
+    pub fn tickets_size(params: jam_params.Params) usize {
+        return params.epoch_length;
+    }
+
+    pub fn keys_size(params: jam_params.Params) usize {
+        return params.epoch_length;
+    }
+
     // TODO: make the const* to *
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         switch (self.*) {
@@ -399,6 +512,20 @@ pub const GammaS = union(enum) {
 
 pub const GammaA = []TicketBody;
 pub const GammaZ = BlsPublic;
+
+pub const OffendersMark = struct {
+    items: []Ed25519Public, // SIZE(0..validators_count)
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.items);
+    }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .items = try allocator.dupe(Ed25519Public, self.offenders),
+        };
+    }
+};
 
 pub const Header = struct {
     parent: HeaderHash,
@@ -433,6 +560,16 @@ pub const Header = struct {
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try @import("types/format.zig").formatHeader(self, writer);
     }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.offenders_mark);
+        if (self.epoch_mark) |*em| {
+            em.deinit(allocator);
+        }
+        if (self.tickets_mark) |*tm| {
+            tm.deinit(allocator);
+        }
+    }
 };
 
 pub const TicketEnvelope = struct {
@@ -440,7 +577,13 @@ pub const TicketEnvelope = struct {
     signature: BandersnatchRingVrfSignature,
 };
 
-pub const TicketsExtrinsic = []TicketEnvelope; // SIZE(0..16)
+pub const TicketsExtrinsic = struct {
+    data: []TicketEnvelope, // SIZE(0..16)
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+    }
+};
 
 pub const Judgement = struct {
     vote: bool,
@@ -452,6 +595,10 @@ pub const Verdict = struct {
     target: OpaqueHash,
     age: U32,
     votes: []const Judgement, // SIZE(validators_super_majority)
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.votes);
+    }
 
     pub fn votes_size(params: jam_params.Params) usize {
         return params.validators_super_majority;
@@ -479,10 +626,37 @@ pub const Fault = struct {
     signature: Ed25519Signature,
 };
 
+pub const DisputesRecords = struct {
+    // Good verdicts (psi_g)
+    good: []WorkReportHash,
+    // Bad verdicts (psi_b)
+    bad: []WorkReportHash,
+    // Wonky verdicts (psi_w)
+    wonky: []WorkReportHash,
+    // Offenders (psi_o)
+    offenders: []Ed25519Public,
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.good);
+        allocator.free(self.bad);
+        allocator.free(self.wonky);
+        allocator.free(self.offenders);
+    }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .good = try allocator.dupe(WorkReportHash, self.good),
+            .bad = try allocator.dupe(WorkReportHash, self.bad),
+            .wonky = try allocator.dupe(WorkReportHash, self.wonky),
+            .offenders = try allocator.dupe(Ed25519Public, self.offenders),
+        };
+    }
+};
+
 pub const DisputesExtrinsic = struct {
-    verdicts: []const Verdict,
-    culprits: []const Culprit,
-    faults: []const Fault,
+    verdicts: []Verdict,
+    culprits: []Culprit,
+    faults: []Fault,
 
     pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !@This() {
         var verdicts = try allocator.alloc(Verdict, self.verdicts.len);
@@ -497,9 +671,9 @@ pub const DisputesExtrinsic = struct {
         };
     }
 
-    pub fn deinit(self: *DisputesExtrinsic, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *const DisputesExtrinsic, allocator: std.mem.Allocator) void {
         for (self.verdicts) |verdict| {
-            allocator.free(verdict.votes);
+            verdict.deinit(allocator);
         }
         allocator.free(self.verdicts);
         allocator.free(self.culprits);
@@ -510,9 +684,22 @@ pub const DisputesExtrinsic = struct {
 pub const Preimage = struct {
     requester: ServiceId,
     blob: []u8,
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.blob);
+    }
 };
 
-pub const PreimagesExtrinsic = []Preimage;
+pub const PreimagesExtrinsic = struct {
+    data: []Preimage,
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        for (self.data) |preimage| {
+            preimage.deinit(allocator);
+        }
+        allocator.free(self.data);
+    }
+};
 
 pub const AvailAssurance = struct {
     anchor: OpaqueHash,
@@ -532,9 +719,22 @@ pub const AvailAssurance = struct {
     pub fn bitfield_size(params: jam_params.Params) usize {
         return params.avail_bitfield_bytes;
     }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.bitfield);
+    }
 };
 
-pub const AssurancesExtrinsic = []AvailAssurance; // SIZE(0..validators_count)
+pub const AssurancesExtrinsic = struct {
+    data: []AvailAssurance, // SIZE(0..validators_count)
+    //
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        for (self.data) |assurance| {
+            assurance.deinit(allocator);
+        }
+        allocator.free(self.data);
+    }
+};
 
 pub const ValidatorSignature = struct {
     validator_index: ValidatorIndex,
@@ -553,9 +753,23 @@ pub const ReportGuarantee = struct {
             .signatures = try allocator.dupe(ValidatorSignature, self.signatures),
         };
     }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        self.report.deinit(allocator);
+        allocator.free(self.signatures);
+    }
 };
 
-pub const GuaranteesExtrinsic = []ReportGuarantee; // SIZE(0..cores_count)
+pub const GuaranteesExtrinsic = struct {
+    data: []ReportGuarantee, // SIZE(0..cores_count)
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        for (self.data) |assurance| {
+            assurance.deinit(allocator);
+        }
+        allocator.free(self.data);
+    }
+};
 
 pub const Extrinsic = struct {
     tickets: TicketsExtrinsic,
@@ -583,6 +797,14 @@ pub const Extrinsic = struct {
             .guarantees = try allocator.dupe(ReportGuarantee, self.guarantees),
         };
     }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        self.tickets.deinit(allocator);
+        self.preimages.deinit(allocator);
+        self.assurances.deinit(allocator);
+        self.guarantees.deinit(allocator);
+        self.disputes.deinit(allocator);
+    }
 };
 
 pub const Block = struct {
@@ -594,5 +816,10 @@ pub const Block = struct {
             .header = try self.header.deepClone(allocator),
             .extrinsic = try self.extrinsic.deepClone(allocator),
         };
+    }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        self.header.deinit(allocator);
+        self.extrinsic.deinit(allocator);
     }
 };

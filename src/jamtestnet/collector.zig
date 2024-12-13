@@ -5,7 +5,7 @@ const ArrayList = std.ArrayList;
 
 const ordered_files = @import("../tests/ordered_files.zig");
 const getOrderedFiles = ordered_files.getOrderedFiles;
-const hex_bytes = @import("../tests/vectors/libs/types/hex_bytes.zig");
+const hex_bytes = @import("../jamtestvectors/json_types/hex_bytes.zig");
 
 pub const OutputFormats = struct {
     bin: ordered_files.Entry,

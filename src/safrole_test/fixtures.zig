@@ -1,6 +1,8 @@
 const std = @import("std");
 
-const TestVector = @import("../tests/vectors/libs/safrole.zig").TestVector;
+const loader = @import("../jamtestvectors/loader.zig");
+const safrole_test_vectors = @import("../jamtestvectors/safrole.zig");
+const TestCase = safrole_test_vectors.TestCase;
 
 const tests = @import("../tests.zig");
 const safrole = @import("../safrole.zig");
@@ -11,10 +13,10 @@ const adaptor = @import("adaptor.zig");
 const diff = @import("../safrole_test/diffz.zig");
 
 pub const Fixtures = struct {
-    pre_state: safrole_types.State,
-    post_state: safrole_types.State,
-    input: adaptor.Input,
-    output: adaptor.Output,
+    pre_state: safrole_test_vectors.State,
+    post_state: safrole_test_vectors.State,
+    input: safrole_test_vectors.Input,
+    output: safrole_test_vectors.Output,
 
     allocator: std.mem.Allocator,
 
@@ -37,7 +39,7 @@ pub const Fixtures = struct {
     ) ![]const u8 {
         return try diff.diffStates(
             self.allocator,
-            &self.post_state,
+            &self.post_state.gamma,
             state,
         );
     }
@@ -85,10 +87,10 @@ pub const Fixtures = struct {
     }
 
     pub fn expectPostState(self: @This(), actual_state: *const safrole_types.State) !void {
-        try std.testing.expectEqualDeep(self.post_state, actual_state.*);
+        try std.testing.expectEqualDeep(self.post_state.gamma, actual_state.*);
     }
 
-    pub fn expectOutput(self: @This(), actual_output: adaptor.Output) !void {
+    pub fn expectOutput(self: @This(), actual_output: safrole_test_vectors.Output) !void {
         switch (self.output) {
             .err => |expected_err| {
                 try std.testing.expectEqual(expected_err, actual_output.err);
@@ -129,7 +131,7 @@ pub const Fixtures = struct {
 
     /// Expect the output to be null, also double checks the expected output
     /// is null.
-    pub fn expectOkOutputWithNullEpochAndTicketMarkers(self: @This(), actual_output: adaptor.Output) !void {
+    pub fn expectOkOutputWithNullEpochAndTicketMarkers(self: @This(), actual_output: safrole_test_vectors.Output) !void {
         switch (actual_output) {
             .err => return error.UnexpectedError,
             .ok => |actual_ok| {
@@ -148,31 +150,21 @@ pub const Fixtures = struct {
     }
 };
 
-const TEST_VECTOR_PREFIX = "src/tests/vectors/safrole/safrole/";
+const TEST_VECTOR_PREFIX = "src/jamtestvectors/data/safrole/";
 
-pub fn buildFixtures(allocator: std.mem.Allocator, name: []const u8) !Fixtures {
+const Params = @import("../jam_params.zig").Params;
+pub fn buildFixtures(comptime params: Params, allocator: std.mem.Allocator, name: []const u8) !Fixtures {
     const full_path = try std.fs.path.join(allocator, &[_][]const u8{ TEST_VECTOR_PREFIX, name });
     defer allocator.free(full_path);
 
-    const tv_parsed = try TestVector.build_from(allocator, full_path);
-    defer tv_parsed.deinit();
-    const tv = &tv_parsed.value;
-
-    // Assume these are populated from your JSON parsing
-    const pre_state = try tests.stateFromTestVector(allocator, &tv.pre_state);
-
-    // NOTE: split up, due to update in safrole test vectors, may need to restructure
-    var input = try tests.inputFromTestVector(allocator, &tv.input);
-    input.post_offenders = try tests.postOffendersFromPreState(allocator, &tv.pre_state);
-
-    const post_state = try tests.stateFromTestVector(allocator, &tv.post_state);
-    const output = try tests.outputFromTestVector(allocator, &tv.output);
+    const test_case = try loader.loadAndDeserializeTestVector(TestCase, params, allocator, full_path);
+    // defer test_case.deinit();
 
     return .{
-        .pre_state = pre_state,
-        .input = input,
-        .post_state = post_state,
-        .output = output,
+        .pre_state = test_case.pre_state,
+        .input = test_case.input,
+        .post_state = test_case.post_state,
+        .output = test_case.output,
         .allocator = allocator,
     };
 }

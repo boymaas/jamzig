@@ -5,7 +5,7 @@ const state = @import("../../../state.zig");
 const jam_params = @import("../../../jam_params.zig");
 
 // Re-Using test vectors JSON parsing to get GenesisJson state
-const safrole_tv_types = @import("../../../tests/vectors/libs/safrole.zig");
+const safrole_tv_types = @import("../../../jamtestvectors/safrole.zig");
 
 const Gamma = struct {
     gamma_k: []safrole_tv_types.ValidatorData,

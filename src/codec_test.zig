@@ -2,12 +2,14 @@ const std = @import("std");
 const testing = std.testing;
 
 const codec = @import("codec.zig");
-const codec_test = @import("tests/vectors/codec.zig");
+const codec_test = @import("jamtestvectors/codec.zig");
 
-const convert = @import("tests/convert/codec.zig");
+const convert = @import("jamtestvectors/json_convert/codec.zig");
 
 const types = @import("types.zig");
 const jam_params = @import("jam_params.zig");
+
+const loader = @import("jamtestvectors/loader.zig");
 
 /// The Tiny PARAMS as they are defined in the ASN
 const TINY_PARAMS = jam_params.TINY_PARAMS;
@@ -48,29 +50,31 @@ test "codec: decode" {
 fn testDecodeAndCompare(comptime test_case: TestCase) !void {
     const allocator = std.testing.allocator;
 
-    const file_path = try std.fmt.allocPrint(allocator, "src/tests/vectors/codec/codec/data/{s}.json", .{test_case.name});
-    defer allocator.free(file_path);
+    const json_path = try std.fmt.allocPrint(allocator, "src/jamtestvectors/data/codec/data/{s}.json", .{test_case.name});
+    defer allocator.free(json_path);
+    const bin_path = try std.fmt.allocPrint(allocator, "src/jamtestvectors/data/codec/data/{s}.bin", .{test_case.name});
+    defer allocator.free(bin_path);
 
     const DomainType = @field(types, test_case.domain_type);
-    const VectorType = @field(codec_test.types, test_case.domain_type);
-    const vector = try codec_test.CodecTestVector(VectorType).build_from(allocator, file_path);
+    const VectorType = @field(codec_test.json_types, test_case.domain_type);
+
+    // Load the binary test vector data
+    var decoded = try loader.loadAndDeserializeTestVector(DomainType, TINY_PARAMS, allocator, bin_path);
+    defer decoded.deinit(allocator);
+
+    // Load the json expeceted vector data
+    const vector = try codec_test.CodecTestVector(VectorType).build_from(allocator, json_path);
     defer vector.deinit();
 
-    var decoded = try codec.deserialize(
-        DomainType,
-        TINY_PARAMS,
-        allocator,
-        vector.binary,
-    );
-    defer decoded.deinit();
-
+    // Convert the json into domain objects
     const expected: DomainType = try convert.convert(VectorType, DomainType, allocator, vector.expected.value);
     defer convert.generic.free(allocator, expected);
 
-    try std.testing.expectEqualDeep(expected, decoded.value);
+    // TODO: how exactly are the complex types compared? Trace into this
+    try std.testing.expectEqualDeep(expected, decoded);
 
     // Serialize the decoded value
-    const serialized = try codec.serializeAlloc(DomainType, TINY_PARAMS, allocator, decoded.value);
+    const serialized = try codec.serializeAlloc(DomainType, TINY_PARAMS, allocator, decoded);
     defer allocator.free(serialized);
 
     // Compare the serialized result with the original binary data

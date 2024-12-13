@@ -4,12 +4,13 @@ const safrole = @import("adaptor.zig");
 const safrole_fixtures = @import("fixtures.zig");
 const tiny_params = @import("tiny.zig").TINY_PARAMS;
 
-test "safrole/tiny/publish-tickets-no-mark-1.json" {
+test "safrole/tiny/publish-tickets-no-mark-1.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-1.json",
+        "tiny/publish-tickets-no-mark-1.bin",
     );
     defer fixtures.deinit();
 
@@ -25,12 +26,13 @@ test "safrole/tiny/publish-tickets-no-mark-1.json" {
     try std.testing.expectEqual(.bad_ticket_attempt, result.output.err);
 }
 
-test "safrole/tiny/publish-tickets-no-mark-2.json" {
+test "safrole/tiny/publish-tickets-no-mark-2.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-2.json",
+        "tiny/publish-tickets-no-mark-2.bin",
     );
     defer fixtures.deinit();
 
@@ -42,16 +44,17 @@ test "safrole/tiny/publish-tickets-no-mark-2.json" {
     );
     defer result.deinit(allocator);
 
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOutput(result.output);
 }
 
-test "safrole/tiny/publish-tickets-no-mark-3.json" {
+test "safrole/tiny/publish-tickets-no-mark-3.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-3.json",
+        "tiny/publish-tickets-no-mark-3.bin",
     );
     defer fixtures.deinit();
 
@@ -67,12 +70,13 @@ test "safrole/tiny/publish-tickets-no-mark-3.json" {
     try std.testing.expectEqual(.duplicate_ticket, result.output.err);
 }
 
-test "safrole/tiny/publish-tickets-no-mark-4.json" {
+test "safrole/tiny/publish-tickets-no-mark-4.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-4.json",
+        "tiny/publish-tickets-no-mark-4.bin",
     );
     defer fixtures.deinit();
 
@@ -88,12 +92,13 @@ test "safrole/tiny/publish-tickets-no-mark-4.json" {
     try std.testing.expectEqual(.bad_ticket_order, result.output.err);
 }
 
-test "safrole/tiny/publish-tickets-no-mark-5.json" {
+test "safrole/tiny/publish-tickets-no-mark-5.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-5.json",
+        "tiny/publish-tickets-no-mark-5.bin",
     );
     defer fixtures.deinit();
 
@@ -109,12 +114,13 @@ test "safrole/tiny/publish-tickets-no-mark-5.json" {
     try std.testing.expectEqual(.bad_ticket_proof, result.output.err);
 }
 
-test "safrole/tiny/publish-tickets-no-mark-6.json" {
+test "safrole/tiny/publish-tickets-no-mark-6.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-6.json",
+        "tiny/publish-tickets-no-mark-6.bin",
     );
     defer fixtures.deinit();
 
@@ -127,16 +133,17 @@ test "safrole/tiny/publish-tickets-no-mark-6.json" {
     defer result.deinit(allocator);
 
     try std.testing.expect(result.output == .ok);
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOutput(result.output);
 }
 
-test "safrole/tiny/publish-tickets-no-mark-7.json" {
+test "safrole/tiny/publish-tickets-no-mark-7.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-7.json",
+        "tiny/publish-tickets-no-mark-7.bin",
     );
     defer fixtures.deinit();
 
@@ -152,12 +159,13 @@ test "safrole/tiny/publish-tickets-no-mark-7.json" {
     try std.testing.expectEqual(.unexpected_ticket, result.output.err);
 }
 
-test "safrole/tiny/publish-tickets-no-mark-8.json" {
+test "safrole/tiny/publish-tickets-no-mark-8.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-8.json",
+        "tiny/publish-tickets-no-mark-8.bin",
     );
     defer fixtures.deinit();
 
@@ -170,16 +178,17 @@ test "safrole/tiny/publish-tickets-no-mark-8.json" {
     defer result.deinit(allocator);
 
     try std.testing.expect(result.output == .ok);
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOutput(result.output);
 }
 
-test "safrole/tiny/publish-tickets-no-mark-9.json" {
+test "safrole/tiny/publish-tickets-no-mark-9.bin" {
     const allocator = std.testing.allocator;
 
     const fixtures = try safrole_fixtures.buildFixtures(
+        tiny_params,
         allocator,
-        "tiny/publish-tickets-no-mark-9.json",
+        "tiny/publish-tickets-no-mark-9.bin",
     );
     defer fixtures.deinit();
 
@@ -192,6 +201,6 @@ test "safrole/tiny/publish-tickets-no-mark-9.json" {
     defer result.deinit(allocator);
 
     try std.testing.expect(result.output == .ok);
-    try std.testing.expectEqualDeep(fixtures.post_state, result.state.?);
+    try std.testing.expectEqualDeep(fixtures.post_state.gamma, result.state.?);
     try fixtures.expectOutput(result.output);
 }

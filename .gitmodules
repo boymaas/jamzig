@@ -1,24 +1,12 @@
-[submodule "tests/test-vectors"]
-	path = src/tests/vectors/safrole
-	url = https://github.com/w3f/jamtestvectors.git
-[submodule "src/tests/vectors/codec"]
-	path = src/tests/vectors/codec
-	url = https://github.com/w3f/jamtestvectors.git
-[submodule "src/tests/vectors/pvm/pvm"]
-	path = src/tests/vectors/pvm/pvm
-	url = https://github.com/w3f/jamtestvectors.git
-[submodule "src/tests/vectors/trie"]
-	path = src/tests/vectors/trie
-	url = https://github.com/w3f/jamtestvectors.git
-[submodule "src/tests/vectors/judgements"]
-	path = src/tests/vectors/disputes
-	url = https://github.com/w3f/jamtestvectors.git
-[submodule "src/tests/vectors/history"]
-	path = src/tests/vectors/history
-	url = https://github.com/w3f/jamtestvectors.git
-[submodule "src/tests/vectors/erasure_coding"]
-	path = src/tests/vectors/erasure_coding
-	url = https://github.com/w3f/jamtestvectors.git
 [submodule "src/stf_test/jamtestnet"]
 	path = src/jamtestnet/data
 	url = https://github.com/jam-duna/jamtestnet.git
+[submodule "src/jamtestvectors/data"]
+	path = src/jamtestvectors/data
+	url = https://github.com/w3f/jamtestvectors/
+[submodule "src/jamtestvectors/pvm"]
+	path = src/jamtestvectors/pvm
+	url = https://github.com/w3f/jamtestvectors/
+[submodule "src/jamtestvectors/pulls/erasure_coding"]
+	path = src/jamtestvectors/pulls/erasure_coding
+	url = https://github.com/w3f/jamtestvectors/

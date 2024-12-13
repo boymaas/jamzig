@@ -8,10 +8,10 @@ const assert = std.debug.assert;
 
 pub const FULL_PARAMS = @import("../jam_params.zig").FULL_PARAMS;
 
-const TEST_VECTOR_DIR = "src/tests/vectors/safrole/safrole/full";
+const TEST_VECTOR_DIR = "src/jamtestvectors/data/safrole/full";
 
 fn testSafroleVector(allocator: std.mem.Allocator, file_name: []const u8) !void {
-    var fixture = try fixtures.buildFixtures(allocator, file_name);
+    var fixture = try fixtures.buildFixtures(FULL_PARAMS, allocator, file_name);
     defer fixture.deinit();
 
     const actual_result = try safrole.transition(
@@ -39,7 +39,7 @@ test "safrole/full/automated" {
     var it = dir.iterate();
     while (try it.next()) |entry| {
         if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".bin")) continue;
 
         const path = try std.fmt.allocPrint(
             allocator,

@@ -172,6 +172,21 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
             span.err("Float deserialization not implemented", .{});
             @compileError("Float deserialization not implemented yet");
         },
+        .@"enum" => |enumInfo| {
+            const enum_span = span.child(.enum_deserialize);
+            defer enum_span.deinit();
+            enum_span.debug("Deserializing enum type: {s}", .{@typeName(T)});
+
+            const tag_value = try readInteger(reader);
+            enum_span.debug("Read enum tag value: {d}", .{tag_value});
+
+            if (tag_value >= enumInfo.fields.len) {
+                enum_span.err("Invalid enum tag value: {d}", .{tag_value});
+                return error.InvalidEnumTag;
+            }
+
+            return @enumFromInt(tag_value);
+        },
         .@"struct" => |structInfo| {
             const struct_span = span.child(.struct_deserialize);
             defer struct_span.deinit();
@@ -275,6 +290,26 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
                         return @unionInit(T, field.name, {});
                     } else {
                         field_span.debug("Deserializing field value of type: {s}", .{@typeName(field.type)});
+
+                        const field_type = field.type;
+                        if (@hasDecl(T, field.name ++ "_size")) {
+                            field_span.debug("Field has size function", .{});
+                            const size_fn = @field(T, field.name ++ "_size");
+                            const size = @call(.auto, size_fn, .{params});
+                            field_span.debug("Size function returned: {d}", .{size});
+
+                            const slice = try allocator.alloc(std.meta.Child(field_type), size);
+                            field_span.trace("Allocated slice of size {d}", .{size});
+
+                            for (slice, 0..) |*item, i| {
+                                const item_span = field_span.child(.slice_item);
+                                defer item_span.deinit();
+                                item_span.debug("Deserializing item {d} of {d}", .{ i + 1, size });
+                                item.* = try recursiveDeserializeLeaky(std.meta.Child(field_type), params, allocator, reader);
+                            }
+                            return @unionInit(T, field.name, slice);
+                        }
+
                         const field_value = try recursiveDeserializeLeaky(field.type, params, allocator, reader);
                         return @unionInit(T, field.name, field_value);
                     }
@@ -407,6 +442,15 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
             span.err("Float serialization not implemented", .{});
             @compileError("Float serialization not implemented yet");
         },
+        .@"enum" => |_| {
+            const enum_span = span.child(.enum_serialize);
+            defer enum_span.deinit();
+            enum_span.debug("Serializing enum value: {s}", .{@tagName(value)});
+
+            const tag_value = @intFromEnum(value);
+            try writeInteger(tag_value, writer);
+            enum_span.debug("Wrote enum tag value: {d}", .{tag_value});
+        },
         .@"struct" => |structInfo| {
             const struct_span = span.child(.struct_serialize);
             defer struct_span.deinit();
@@ -495,6 +539,27 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
                         field_span.debug("Void field, no additional data to write", .{});
                     } else {
                         const field_value = @field(value, field.name);
+                        const field_type = field.type;
+                        if (@hasDecl(T, field.name ++ "_size")) {
+                            field_span.debug("Field has size function", .{});
+                            const size_fn = @field(T, field.name ++ "_size");
+                            const size = @call(.auto, size_fn, .{params});
+                            field_span.debug("Size function returned: {d}", .{size});
+
+                            if (field_value.len != size) {
+                                field_span.err("Field slice length {d} does not match size function return value {d}", .{ field_value.len, size });
+                                return error.InvalidSliceLength;
+                            }
+
+                            for (field_value[0..size], 0..) |item, i| {
+                                const item_span = field_span.child(.slice_item);
+                                defer item_span.deinit();
+                                item_span.debug("Serializing item {d} of {d}", .{ i + 1, size });
+                                try recursiveSerializeLeaky(std.meta.Child(field_type), params, writer, item);
+                            }
+                            return;
+                        }
+
                         field_span.debug("Serializing field value of type: {s}", .{@typeName(field.type)});
                         try recursiveSerializeLeaky(field.type, params, writer, field_value);
                     }

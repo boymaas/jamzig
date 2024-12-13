@@ -3,6 +3,9 @@ const pvmlib = @import("pvm.zig");
 
 const fixtures = @import("pvm_test/fixtures.zig");
 
+// Get all files from the test directory
+const BASE_PATH = fixtures.BASE_PATH;
+
 test "pvm:simple" {
     const allocator = std.testing.allocator;
 
@@ -106,16 +109,14 @@ test "pvm:ecalli:host_call:add" {
 
 test "pvm:inst_add" {
     const allocator = std.testing.allocator;
-    const test_result = try fixtures.runTestFixtureFromPath(allocator, "src/tests/vectors/pvm/pvm/pvm/programs/inst_add.json");
+    const test_result = try fixtures.runTestFixtureFromPath(allocator, BASE_PATH ++ "inst_add.json");
     try std.testing.expect(test_result);
 }
 
 test "pvm:test_vectors" {
     const allocator = std.testing.allocator;
 
-    // Get all files from the test directory
-    const test_dir = "src/tests/vectors/pvm/pvm/pvm/programs";
-    var ordered_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, test_dir);
+    var ordered_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH);
     defer ordered_files.deinit();
 
     // Run tests for each file
@@ -180,7 +181,7 @@ test "pvm:test_vectors" {
 // }
 
 fn printProgramDecompilation(allocator: std.mem.Allocator, path: []const u8) !void {
-    const PMVLib = @import("./tests/vectors/libs/pvm.zig");
+    const PMVLib = @import("./jamtestvectors/pvm.zig");
 
     const vector = try PMVLib.PVMTestVector.build_from(allocator, path);
     defer vector.deinit();

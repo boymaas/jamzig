@@ -6,7 +6,7 @@ pub fn formatExtrinsic(extrinsic: types.Extrinsic, writer: anytype) !void {
 
     // Format tickets
     try writer.print("  tickets: [\n", .{});
-    for (extrinsic.tickets) |ticket| {
+    for (extrinsic.tickets.data) |ticket| {
         try writer.print("    {{ attempt: {d}, signature: 0x{s} }}\n", .{ ticket.attempt, std.fmt.fmtSliceHexLower(&ticket.signature) });
     }
     try writer.print("  ]\n", .{});
@@ -38,21 +38,21 @@ pub fn formatExtrinsic(extrinsic: types.Extrinsic, writer: anytype) !void {
 
     // Format preimages
     try writer.print("  preimages: [\n", .{});
-    for (extrinsic.preimages) |preimage| {
+    for (extrinsic.preimages.data) |preimage| {
         try writer.print("    {{ requester: {d}, blob: 0x{s} }}\n", .{ preimage.requester, std.fmt.fmtSliceHexLower(preimage.blob) });
     }
     try writer.print("  ]\n", .{});
 
     // Format assurances
     try writer.print("  assurances: [\n", .{});
-    for (extrinsic.assurances) |assurance| {
+    for (extrinsic.assurances.data) |assurance| {
         try writer.print("    {{ anchor: 0x{s}, bitfield: 0x{s}, validator_index: {d}, signature: 0x{s} }}\n", .{ std.fmt.fmtSliceHexLower(&assurance.anchor), std.fmt.fmtSliceHexLower(assurance.bitfield), assurance.validator_index, std.fmt.fmtSliceHexLower(&assurance.signature) });
     }
     try writer.print("  ]\n", .{});
 
     // Format guarantees
     try writer.print("  guarantees: [\n", .{});
-    for (extrinsic.guarantees) |guarantee| {
+    for (extrinsic.guarantees.data) |guarantee| {
         try writer.print("    {{ report: {{ ... }}, slot: {d}, signatures: [\n", .{guarantee.slot});
         for (guarantee.signatures) |sig| {
             try writer.print("      {{ validator_index: {d}, signature: 0x{s} }}\n", .{ sig.validator_index, std.fmt.fmtSliceHexLower(&sig.signature) });

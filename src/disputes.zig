@@ -137,7 +137,7 @@ test "processDisputesExtrinsic - good set" {
     const target_hash: Hash = [_]u8{1} ** 32;
 
     const extrinsic = types.DisputesExtrinsic{
-        .verdicts = &[_]types.Verdict{.{
+        .verdicts = @constCast(&[_]types.Verdict{.{
             .age = 0,
             .target = target_hash,
             .votes = &[_]types.Judgement{
@@ -145,7 +145,7 @@ test "processDisputesExtrinsic - good set" {
                 .{ .index = 1, .vote = true, .signature = [_]u8{0} ** 64 },
                 .{ .index = 2, .vote = true, .signature = [_]u8{0} ** 64 },
             },
-        }},
+        }}),
         .culprits = &[_]types.Culprit{},
         .faults = &[_]types.Fault{},
     };
@@ -168,7 +168,7 @@ test "processDisputesExtrinsic - bad set" {
     const target_hash: Hash = [_]u8{2} ** 32;
 
     const extrinsic = types.DisputesExtrinsic{
-        .verdicts = &[_]types.Verdict{.{
+        .verdicts = @constCast(&[_]types.Verdict{.{
             .age = 0,
             .target = target_hash,
             .votes = &[_]types.Judgement{
@@ -176,7 +176,7 @@ test "processDisputesExtrinsic - bad set" {
                 .{ .index = 1, .vote = false, .signature = [_]u8{0} ** 64 },
                 .{ .index = 2, .vote = false, .signature = [_]u8{0} ** 64 },
             },
-        }},
+        }}),
         .culprits = &[_]types.Culprit{},
         .faults = &[_]types.Fault{},
     };
@@ -199,7 +199,7 @@ test "processDisputesExtrinsic - wonky set" {
     const target_hash: Hash = [_]u8{3} ** 32;
 
     const extrinsic = types.DisputesExtrinsic{
-        .verdicts = &[_]types.Verdict{.{
+        .verdicts = @constCast(&[_]types.Verdict{.{
             .age = 0,
             .target = target_hash,
             .votes = &[_]types.Judgement{
@@ -207,7 +207,7 @@ test "processDisputesExtrinsic - wonky set" {
                 .{ .index = 1, .vote = false, .signature = [_]u8{0} ** 64 },
                 .{ .index = 2, .vote = false, .signature = [_]u8{0} ** 64 },
             },
-        }},
+        }}),
         .culprits = &[_]types.Culprit{},
         .faults = &[_]types.Fault{},
     };

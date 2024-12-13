@@ -23,6 +23,7 @@ pub fn encode(
     // Serialize state-specific fields
     switch (gamma.s) {
         .tickets => |tickets| {
+            // FIXME: C.1.4 Discriminators are encoded as a natural and are encoded immediately prior to the item
             try codec.serialize(u8, params, writer, 0);
 
             std.debug.assert(tickets.len == params.epoch_length);
