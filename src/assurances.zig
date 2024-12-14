@@ -14,7 +14,12 @@ pub const ValidatedAssuranceExtrinsic = struct {
         InvalidSignature,
         InvalidPublicKey,
         InvalidAnchorHash,
+        InvalidValidatorIndex,
     };
+
+    pub inline fn items(self: @This()) []types.AvailAssurance {
+        return self.inner.data;
+    }
 
     /// Validates the AssuranceExtrinsic according to protocol rules
     pub fn validate(
@@ -27,7 +32,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
             return .{ .inner = extrinsic };
         }
 
-        var prev_validator_idx: usize = -1;
+        var prev_validator_idx: isize = -1;
         for (extrinsic.data) |assurance| {
             // Validate bitfield size
             if (assurance.bitfield.len != params.avail_bitfield_bytes) {
@@ -84,16 +89,16 @@ pub fn processAssuranceExtrinsic(
     allocator: std.mem.Allocator,
     assurances_extrinsic: ValidatedAssuranceExtrinsic,
     pending_reports: *state.Rho(params.core_count),
-) ![]types.WorkReport {
+) ![]types.AvailabilityAssignment {
     // Track which cores have super-majority assurance
-    var assured_reports = std.ArrayList(types.WorkReport).init(allocator);
+    var assured_reports = std.ArrayList(types.AvailabilityAssignment).init(allocator);
     defer assured_reports.deinit();
 
     // Just track counts per core instead of individual validator bits
     var core_assurance_counts = [_]usize{0} ** params.core_count;
 
     // Process each assurance in the extrinsic
-    for (assurances_extrinsic.data) |assurance| {
+    for (assurances_extrinsic.items()) |assurance| {
         const bytes_per_field = (params.core_count + 7) / 8;
 
         var byte_idx: usize = 0;
@@ -119,7 +124,7 @@ pub fn processAssuranceExtrinsic(
     for (core_assurance_counts, 0..) |count, core_idx| {
         // If super-majority reached and core has pending report
         if (count > super_majority and
-            pending_reports.items[core_idx] != null)
+            pending_reports.reports[core_idx] != null)
         {
             try assured_reports.append(try pending_reports.reports[core_idx].?.assignment.deepClone(allocator));
         }

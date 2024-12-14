@@ -8,11 +8,11 @@ pub fn convertAvailabilityAssignments(
     assignments: types.AvailabilityAssignments,
 ) !state.Rho(core_count) {
     var rho = state.Rho(core_count).init(allocator);
-    errdefer rho.deinit(allocator);
+    errdefer rho.deinit();
 
     for (assignments.items, 0..) |assignment, core| {
         if (assignment) |a| {
-            try rho.setReport(core, try a.deepClone(allocator));
+            rho.setReport(core, try a.deepClone(allocator));
         }
     }
     return rho;

@@ -86,7 +86,7 @@ pub const TestCase = struct {
     output: Output,
     post_state: State,
 
-    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         self.input.deinit(allocator);
         self.pre_state.deinit(allocator);
         self.output.deinit(allocator);
