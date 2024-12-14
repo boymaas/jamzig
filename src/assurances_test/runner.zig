@@ -6,7 +6,7 @@ const types = @import("../types.zig");
 const helpers = @import("../tests/helpers.zig");
 const Params = @import("../jam_params.zig").Params;
 
-pub fn runAssuranceTest(allocator: std.mem.Allocator, comptime params: Params, test_case: tvector.TestCase) !void {
+pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, test_case: tvector.TestCase) !void {
     // Convert pre-state from test vector format to native format
     var pre_state_assignments = try converters.convertAvailabilityAssignments(
         params.core_count,
