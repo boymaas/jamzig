@@ -44,6 +44,7 @@ comptime {
     _ = @import("state_format/chi.zig");
     _ = @import("state_format/authorization.zig"); // TODO: rename to alpha
     _ = @import("state_format/phi.zig"); // TODO: rename to phi
+    _ = @import("state_format/recent_blocks.zig"); // TODO: rename to beta
 
     _ = @import("services.zig");
     _ = @import("services_priviledged.zig");

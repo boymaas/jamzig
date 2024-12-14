@@ -153,8 +153,10 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
         .optional => |_| {
             if (value) |v| {
                 try formatValue(v, writer);
+                try writer.writeAll("\n");
             } else {
                 try writer.writeAll("null");
+                try writer.writeAll("\n");
             }
         },
         .int, .bool => {

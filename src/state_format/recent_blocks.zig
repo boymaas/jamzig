@@ -1,4 +1,5 @@
 const std = @import("std");
+const tfmt = @import("../types/fmt.zig");
 const RecentHistory = @import("../recent_blocks.zig").RecentHistory;
 
 pub fn format(
@@ -10,32 +11,53 @@ pub fn format(
     _ = fmt;
     _ = options;
 
-    try writer.writeAll("RecentHistory{\n");
-    try writer.print("  max_blocks: {d}\n", .{self.max_blocks});
+    var indented_writer = tfmt.IndentedWriter(@TypeOf(writer)).init(writer);
+    var iw = indented_writer.writer();
 
-    for (self.blocks.items, 0..) |block, i| {
-        try writer.print("  Block {d}:\n", .{i});
-        try writer.print("    header_hash: {s}\n", .{std.fmt.fmtSliceHexLower(&block.header_hash)});
-        try writer.print("    state_root: {s}\n", .{std.fmt.fmtSliceHexLower(&block.state_root)});
+    try iw.print("RecentHistory\n", .{});
+    iw.context.indent();
+    try iw.print("max_blocks: {d}\n", .{self.max_blocks});
 
-        try writer.writeAll("    beefy_mmr: [");
-        for (block.beefy_mmr) |maybe_hash| {
-            if (maybe_hash) |hash| {
-                try writer.print("{s} ", .{std.fmt.fmtSliceHexLower(&hash)});
-            } else {
-                try writer.writeAll("null ");
-            }
-        }
-        try writer.writeAll("]\n");
-
-        try writer.writeAll("    work_reports: [");
-        for (block.work_reports) |report| {
-            try writer.writeAll("                 {");
-            try writer.print("                      hash: {s} ", .{std.fmt.fmtSliceHexLower(&report.hash)});
-            try writer.print("                      exports_root: {s} ", .{std.fmt.fmtSliceHexLower(&report.exports_root)});
-            try writer.writeAll("                 }");
-        }
-        try writer.writeAll("]\n");
+    if (self.blocks.items.len > 0) {
+        try iw.writeAll("blocks:\n");
+        iw.context.indent();
+        try tfmt.formatValue(self.blocks.items, iw);
+        iw.context.outdent();
+    } else {
+        try iw.writeAll("blocks: <empty>\n");
     }
-    try writer.writeAll("}");
+}
+
+// Test helper to demonstrate formatting
+test "RecentHistory format demo" {
+    const allocator = std.testing.allocator;
+    var history = @import("../recent_blocks.zig").RecentHistory.init(allocator, 3) catch unreachable;
+    defer history.deinit();
+
+    // Create test block
+    const block_info = .{
+        .header_hash = [_]u8{0xA1} ++ [_]u8{0} ** 31,
+        .state_root = [_]u8{0xB1} ++ [_]u8{0} ** 31,
+        .beefy_mmr = try allocator.dupe(?[32]u8, &.{
+            [_]u8{0xC1} ++ [_]u8{0} ** 31,
+            null,
+            [_]u8{0xC3} ++ [_]u8{0} ** 31,
+        }),
+        .work_reports = try allocator.dupe(@import("../types.zig").ReportedWorkPackage, &.{
+            .{
+                .hash = [_]u8{0xD1} ++ [_]u8{0} ** 31,
+                .exports_root = [_]u8{0xE1} ++ [_]u8{0} ** 31,
+            },
+            .{
+                .hash = [_]u8{0xD2} ++ [_]u8{0} ** 31,
+                .exports_root = [_]u8{0xE2} ++ [_]u8{0} ** 31,
+            },
+        }),
+    };
+
+    try history.addBlockInfo(block_info);
+
+    // Print formatted output
+    std.debug.print("\n=== RecentHistory Format Demo ===\n", .{});
+    std.debug.print("{}\n", .{history});
 }
