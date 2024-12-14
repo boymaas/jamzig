@@ -112,9 +112,10 @@ fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, tes
 test "all.tiny.vectors" {
     const allocator = std.testing.allocator;
 
-    const full_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "tiny");
+    var tiny_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "tiny");
+    defer tiny_test_files.deinit();
 
-    for (full_test_files.items()) |test_file| {
+    for (tiny_test_files.items()) |test_file| {
         if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
             continue;
         }
@@ -125,7 +126,8 @@ test "all.tiny.vectors" {
 test "all.full.vectors" {
     const allocator = std.testing.allocator;
 
-    const full_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "full");
+    var full_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "full");
+    defer full_test_files.deinit();
 
     for (full_test_files.items()) |test_file| {
         if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
