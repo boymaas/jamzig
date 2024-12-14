@@ -41,6 +41,7 @@ comptime {
 
     _ = @import("state_format/pi.zig");
     _ = @import("state_format/accumulated_reports.zig"); // TODO: rename to xi
+    _ = @import("state_format/chi.zig"); // TODO: rename to xi
 
     _ = @import("services.zig");
     _ = @import("services_priviledged.zig");
