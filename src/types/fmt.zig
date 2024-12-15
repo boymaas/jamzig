@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const tracing = @import("../tracing.zig");
-const trace = tracing.scoped(.fmt);
+const trace = tracing.scoped(.types_fmt);
 
 pub fn IndentedWriter(comptime T: type) type {
     return struct {
