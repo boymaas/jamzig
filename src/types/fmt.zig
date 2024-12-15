@@ -107,7 +107,6 @@ const ContainerType = enum {
     list, // ArrayList, ArrayListUnmanaged, BoundedArray
     multi_array_list,
     hash_map, // HashMap variants
-    array_hash_map, // ArrayHashMap
     none,
 };
 
@@ -180,12 +179,11 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype) !bool {
                 for (items, 0..) |item, i| {
                     try writer.print("{d}: ", .{i});
                     try formatValue(item, writer);
-                    try writer.writeAll("\n");
                 }
                 writer.context.outdent();
                 try writer.writeAll("]\n");
             } else {
-                try writer.writeAll("[ <empty> ]");
+                try writer.writeAll("[ <empty> ]\n");
             }
             return true;
         },
@@ -207,57 +205,21 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype) !bool {
                 // Format first entry
                 try writer.writeAll("key: ");
                 try formatValue(first.key_ptr.*, writer);
-                try writer.writeAll("\nvalue: ");
+                try writer.writeAll("value: ");
                 try formatValue(first.value_ptr.*, writer);
-                try writer.writeAll("\n");
 
                 // Format remaining entries
                 while (it.next()) |entry| {
                     try writer.writeAll("key: ");
                     try formatValue(entry.key_ptr.*, writer);
-                    try writer.writeAll("\nvalue: ");
+                    try writer.writeAll("value: ");
                     try formatValue(entry.value_ptr.*, writer);
-                    try writer.writeAll("\n");
                 }
                 writer.context.outdent();
             } else {
                 writer.context.indent();
                 try writer.writeAll("<empty hashmap>\n");
                 writer.context.outdent();
-            }
-            return true;
-        },
-        .array_hash_map => {
-            // Print the type name and length
-            try writer.print("{s} (len: {d})\n", .{
-                @typeName(T),
-                value.count(),
-            });
-
-            if (value.count() > 0) {
-                try writer.writeAll("[\n");
-                writer.context.indent();
-
-                // Get an iterator to access key-value pairs in insertion order
-                var iterator = value.iterator();
-                var index: usize = 0;
-
-                // Iterate through each key-value pair in the map
-                while (iterator.next()) |entry| {
-                    // Format each entry with its index, key, and value
-                    try writer.print("{d}: ", .{index});
-                    try formatValue(entry.key_ptr.*, writer);
-                    try writer.writeAll(" => ");
-                    try formatValue(entry.value_ptr.*, writer);
-                    try writer.writeAll("\n");
-
-                    index += 1;
-                }
-
-                writer.context.outdent();
-                try writer.writeAll("]\n");
-            } else {
-                try writer.writeAll("[ <empty> ]\n");
             }
             return true;
         },
@@ -276,7 +238,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
     // never format our allocators
     if (detectStdMemAllocator(T)) {
         span.debug("Skipping allocator formatting", .{});
-        try writer.writeAll("<std.mem.Allocator omitted>");
+        try writer.writeAll("<std.mem.Allocator omitted>\n");
         return;
     }
 
@@ -333,6 +295,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
             if (ptr.child == u8 and ptr.size == .Slice) {
                 ptr_span.debug("Handling as byte slice", .{});
                 try formatHex(value, writer);
+                try writer.writeAll("\n");
             } else {
                 switch (ptr.size) {
                     .Slice => {
@@ -348,7 +311,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                             writer.context.outdent();
                             try writer.writeAll("]\n");
                         } else {
-                            try writer.writeAll("[ <empty> ]");
+                            try writer.writeAll("[ <empty> ]\n");
                         }
                     },
                     .One => {
@@ -372,6 +335,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
             if (arr.child == u8) {
                 arr_span.debug("Handling as byte array", .{});
                 try formatHex(&value, writer);
+                try writer.writeAll("\n");
             } else {
                 try writer.writeAll("[\n");
                 writer.context.indent();
@@ -392,7 +356,6 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
             if (value) |v| {
                 opt_span.debug("Optional has value", .{});
                 try formatValue(v, writer);
-                try writer.writeAll("\n");
             } else {
                 opt_span.debug("Optional is null", .{});
 
@@ -401,13 +364,13 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
             }
         },
         .int, .bool => {
-            try std.fmt.format(writer, "{}", .{value});
+            try std.fmt.format(writer, "{}\n", .{value});
         },
         .@"enum" => {
-            try std.fmt.format(writer, "{s}", .{@tagName(value)});
+            try std.fmt.format(writer, "{s}\n", .{@tagName(value)});
         },
         .void => {
-            try writer.writeAll("void");
+            try writer.writeAll("void\n");
         },
         else => {
             @compileLog(@typeInfo(T));

@@ -48,6 +48,7 @@ comptime {
     _ = @import("state_format/recent_blocks.zig"); // TODO: rename to beta
     _ = @import("state_format/delta.zig");
     _ = @import("state_format/psi.zig"); // TODO: rename to psi
+    _ = @import("state_format/jam_params.zig"); // TODO: rename to psi
 
     _ = @import("services.zig");
     _ = @import("services_priviledged.zig");
