@@ -13,10 +13,7 @@ pub fn format(
     _ = options;
 
     var indented_writer = tfmt.IndentedWriter(@TypeOf(writer)).init(writer);
-    var iw = indented_writer.writer();
-
-    try iw.writeAll("Psi\n");
-    iw.context.indent();
+    const iw = indented_writer.writer();
 
     try tfmt.formatValue(self.*, iw);
 }
