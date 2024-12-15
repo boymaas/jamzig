@@ -137,14 +137,23 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype) !bool {
                 value.items()
             else if (@hasDecl(T, "constrained"))
                 value.constrained()
+            else if (@hasDecl(T, "constSlice"))
+                value.constSlice()
             else
                 @compileError("Container type: " ++ @typeName(T) ++ " does not have items or constrained method");
 
-            try writer.print("{s} (len: {d}, capacity: {d})\n", .{
-                @typeName(T),
-                items.len,
-                value.capacity,
-            });
+            if (@hasDecl(T, "capacity")) {
+                try writer.print("{s} (len: {d}, capacity: {d})\n", .{
+                    @typeName(T),
+                    items.len,
+                    value.capacity(),
+                });
+            } else {
+                try writer.print("{s} (len: {d})\n", .{
+                    @typeName(T),
+                    items.len,
+                });
+            }
 
             if (items.len > 0) {
                 try writer.writeAll("[\n");
@@ -155,7 +164,7 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype) !bool {
                     try writer.writeAll("\n");
                 }
                 writer.context.outdent();
-                try writer.writeAll("]");
+                try writer.writeAll("]\n");
             } else {
                 try writer.writeAll("[ <empty> ]");
             }
@@ -277,7 +286,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                                 writer.context.outdent();
                             }
                             writer.context.outdent();
-                            try writer.writeAll("]");
+                            try writer.writeAll("]\n");
                         } else {
                             try writer.writeAll("[ <empty> ]");
                         }
@@ -312,7 +321,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                     try formatValue(item, writer);
                 }
                 writer.context.outdent();
-                try writer.writeAll("]");
+                try writer.writeAll("]\n");
             }
         },
         .optional => |_| {
