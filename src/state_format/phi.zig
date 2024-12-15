@@ -61,5 +61,5 @@ test "Phi format demo" {
     var empty_phi = @import("../authorization_queue.zig").Phi(core_count).init(std.testing.allocator) catch unreachable;
     defer empty_phi.deinit();
     std.debug.print("\n=== Empty Phi Format Demo ===\n", .{});
-    std.debug.print("{}\n", .{empty_phi});
+    std.debug.print("\n{}\n", .{empty_phi});
 }

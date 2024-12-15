@@ -17,14 +17,16 @@ pub fn format(
     var iw = indented_writer.writer();
 
     try iw.writeAll("Theta: (empty are omitted)\n");
+    iw.context.indent();
     for (self.entries, 0..) |slot_entries, i| {
         if (slot_entries.items.len > 0) {
-            try iw.print("  Slot {d}: ({d} reports)\n", .{ i, slot_entries.items.len });
+            try iw.print("Slot {d}: ", .{i});
             iw.context.indent();
             try tfmt.formatValue(slot_entries, iw);
             iw.context.outdent();
         }
     }
+    iw.context.outdent();
 }
 
 test "Theta - format" {

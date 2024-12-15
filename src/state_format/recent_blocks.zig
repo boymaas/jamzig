@@ -58,6 +58,5 @@ test "RecentHistory format demo" {
     try history.addBlockInfo(block_info);
 
     // Print formatted output
-    std.debug.print("\n=== RecentHistory Format Demo ===\n", .{});
-    std.debug.print("{}\n", .{history});
+    std.debug.print("\n{}\n", .{history});
 }

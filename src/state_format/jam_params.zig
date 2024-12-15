@@ -19,6 +19,5 @@ pub fn format(
 }
 
 test "format JamParams" {
-    std.debug.print("\nJamParams Format Test:\n\n", .{});
-    std.debug.print("{s}\n", .{jam_params.TINY_PARAMS});
+    std.debug.print("\n{s}\n", .{jam_params.TINY_PARAMS});
 }

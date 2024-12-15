@@ -37,5 +37,5 @@ test "JamStateFormat" {
     defer state.deinit(allocator);
 
     // Print the JSON string (you can comment this out if you don't want to print)
-    std.debug.print("FORMAT: \n\n{any}\n", .{state});
+    std.debug.print("\n{s}\n", .{state});
 }

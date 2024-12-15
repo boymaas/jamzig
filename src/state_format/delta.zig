@@ -1,5 +1,6 @@
 const std = @import("std");
 const tfmt = @import("../types/fmt.zig");
+
 const Delta = @import("../services.zig").Delta;
 
 pub fn format(
@@ -52,6 +53,5 @@ test "Delta format demo" {
     try delta.putAccount(2, account2);
 
     // Print formatted output
-    std.debug.print("\n=== Delta Format Demo ===\n", .{});
-    std.debug.print("{}\n", .{delta});
+    std.debug.print("\n{}\n", .{delta});
 }

@@ -33,6 +33,5 @@ test "Chi format demo" {
     try chi.addAlwaysAccumulate(6, 2000);
 
     // Print formatted output
-    std.debug.print("\n=== Chi Format Demo ===\n", .{});
-    std.debug.print("{}\n", .{chi});
+    std.debug.print("\n{}\n", .{chi});
 }

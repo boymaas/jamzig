@@ -33,6 +33,5 @@ test "format Psi state" {
     try psi.punish_set.put([_]u8{5} ** 32, {});
 
     // Print formatted output to stdout
-    std.debug.print("\nPsi State Format Test:\n\n", .{});
-    std.debug.print("{s}\n", .{psi});
+    std.debug.print("\n{s}\n", .{psi});
 }

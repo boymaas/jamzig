@@ -45,5 +45,5 @@ test "format Pi state" {
 
     // Print formatted output to stdout
     std.debug.print("\nPi State Format Test:\n", .{});
-    std.debug.print("{s}\n", .{pi});
+    std.debug.print("\n{s}\n", .{pi});
 }

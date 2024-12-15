@@ -38,5 +38,5 @@ test "format Gamma state" {
     defer output.deinit();
 
     std.debug.print("\nGamma State Format Test:\n\n", .{});
-    std.debug.print("{s}\n", .{gamma});
+    std.debug.print("\n{s}\n", .{gamma});
 }

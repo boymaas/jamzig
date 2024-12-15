@@ -54,6 +54,5 @@ test "Alpha format demo" {
     try alpha.pools[3].append(auth3);
 
     // Print formatted output
-    std.debug.print("\n=== Alpha Format Demo ===\n", .{});
-    std.debug.print("{}\n", .{alpha});
+    std.debug.print("\n{}\n", .{alpha});
 }

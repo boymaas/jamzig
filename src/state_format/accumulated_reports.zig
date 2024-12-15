@@ -58,5 +58,5 @@ test "Xi format demo" {
     try xi.addEntryToTimeSlot(3, work_report_hash2, segment_root2);
 
     // Print formatted output
-    std.debug.print("{}\n", .{xi});
+    std.debug.print("\n{}\n", .{xi});
 }
