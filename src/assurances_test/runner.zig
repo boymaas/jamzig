@@ -8,6 +8,31 @@ const helpers = @import("../tests/helpers.zig");
 const diff = @import("../tests/diff.zig");
 const Params = @import("../jam_params.zig").Params;
 
+pub fn validateAndProcessAssuranceExtrinsic(
+    comptime params: Params,
+    allocator: std.mem.Allocator,
+    test_case: *const tvector.TestCase,
+    rho: *state.Rho(params.core_count),
+    kappa: types.ValidatorSet,
+) !assurances.AvailableAssignments {
+    const valid_extrinsic = try assurances.ValidatedAssuranceExtrinsic.validate(
+        params,
+        test_case.input.assurances,
+        test_case.input.parent,
+        kappa,
+    );
+
+    // Process the validated extrinsic
+    const available_assignments = try assurances.processAssuranceExtrinsic(
+        params,
+        allocator,
+        valid_extrinsic,
+        test_case.input.slot,
+        rho,
+    );
+    return available_assignments;
+}
+
 pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, test_case: tvector.TestCase) !void {
     // Convert pre-state from test vector format to native format
     var pre_state_assignments = try converters.convertAvailabilityAssignments(
@@ -32,44 +57,44 @@ pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, t
     defer expected_validators.deinit(allocator);
 
     // First validate the assurance extrinsic
-    const validated_extrinsic = assurances.ValidatedAssuranceExtrinsic.validate(
+
+    const process_result = validateAndProcessAssuranceExtrinsic(
         params,
-        test_case.input.assurances,
-        test_case.input.parent,
+        allocator,
+        &test_case,
+        &pre_state_assignments,
         pre_state_validators,
     );
+    defer {
+        if (process_result) |available_assignments| {
+            available_assignments.deinit(allocator);
+            @panic("Here");
+        } else |_| {}
+    }
 
     switch (test_case.output) {
         .err => |expected_error| {
-            if (validated_extrinsic) |_| {
+            if (process_result) |_| {
                 std.debug.print("\nGot a success, expected error: {any}\n", .{expected_error});
                 return error.UnexpectedSuccess;
             } else |actual_error| {
                 const mapped_expected_error = switch (expected_error) {
                     .bad_attestation_parent => error.InvalidAnchorHash,
                     .bad_validator_index => error.InvalidValidatorIndex,
-                    .core_not_engaged => error.InvalidBitfieldSize,
+                    .core_not_engaged => error.CoreNotEngaged,
                     .bad_signature => error.InvalidSignature,
                     .not_sorted_or_unique_assurers => error.NotSortedValidatorIndex,
                 };
-                std.debug.print("\nExpected error: {any} => {any} got error {any}\n", .{ expected_error, mapped_expected_error, actual_error });
+                if (mapped_expected_error != actual_error) {
+                    std.debug.print("\nExpected error: {any} => {any} got error {any}\n", .{ expected_error, mapped_expected_error, actual_error });
+                }
                 try std.testing.expectEqual(mapped_expected_error, actual_error);
             }
         },
         .ok => |expected_marks| {
-            if (validated_extrinsic) |valid_extrinsic| {
+            if (process_result) |available_assignments| {
                 const state_rho = &pre_state_assignments;
                 const state_kappa = &pre_state_validators;
-
-                // Process the validated extrinsic
-                const available_assignments = try assurances.processAssuranceExtrinsic(
-                    params,
-                    allocator,
-                    valid_extrinsic,
-                    test_case.input.slot,
-                    state_rho,
-                );
-                defer available_assignments.deinit(allocator);
 
                 const available_reports = try @import("../utils.zig").mapAlloc(
                     types.AvailabilityAssignment,

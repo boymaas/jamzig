@@ -24,6 +24,10 @@ pub const ValidatedAssuranceExtrinsic = struct {
         return self.inner.data;
     }
 
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        self.inner.deinit(allocator);
+    }
+
     /// Validates the AssuranceExtrinsic according to protocol rules
     pub fn validate(
         comptime params: @import("jam_params.zig").Params,
@@ -109,7 +113,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
     }
 };
 
-const AvailableAssignments = struct {
+pub const AvailableAssignments = struct {
     inner: []types.AvailabilityAssignment,
 
     pub fn items(self: @This()) []types.AvailabilityAssignment {
@@ -126,6 +130,8 @@ const AvailableAssignments = struct {
 
 /// Process a block's assurance extrinsic to determine which work reports have
 /// become available based on validator assurances
+///
+/// Warning: Errors may leave pending_reports partially mutated
 pub fn processAssuranceExtrinsic(
     comptime params: @import("jam_params.zig").Params,
     allocator: std.mem.Allocator,
@@ -138,7 +144,12 @@ pub fn processAssuranceExtrinsic(
     span.debug("Processing assurance extrinsic with {d} assurances", .{assurances_extrinsic.items().len});
     // Track which cores have super-majority assurance
     var assured_reports = std.ArrayList(types.AvailabilityAssignment).init(allocator);
-    defer assured_reports.deinit();
+    errdefer {
+        for (assured_reports.items) |r| {
+            r.deinit(allocator);
+        }
+        assured_reports.deinit();
+    }
 
     // First remove any timed out reports
     {
@@ -217,10 +228,19 @@ pub fn processAssuranceExtrinsic(
         const super_majority = params.validators_super_majority;
 
         for (core_assurance_counts, 0..) |count, core_idx| {
-            // If super-majority reached and core has pending report that hasn't timed out
-            if (count >= super_majority and pending_reports.hasReport(core_idx)) {
-                // NOTE: timed out reports were already removed as null
-                try assured_reports.append(pending_reports.takeReportOwned(core_idx).?);
+            const core_span = majority_span.child(.check_core);
+            defer core_span.deinit();
+            core_span.debug("Core {d}: checking assurance count {d} >= super_majority {d}", .{ core_idx, count, super_majority });
+
+            if (count >= super_majority) {
+                if (pending_reports.hasReport(core_idx)) {
+                    core_span.debug("Core {d}: super-majority reached and report present, taking ownership", .{core_idx});
+                    // Deep clone the report - ownership transferred to assured_reports (cleaned up on error)
+                    try assured_reports.append(pending_reports.takeReportOwned(core_idx).?.assignment);
+                } else {
+                    core_span.err("Code {d}: we have assurances for a core which is not engaged", .{core_idx});
+                    return error.CoreNotEngaged;
+                }
             }
         }
     }

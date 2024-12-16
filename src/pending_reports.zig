@@ -97,7 +97,19 @@ pub const RhoEntry = struct {
         return self.cached_hash.?;
     }
 
-    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+    pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !RhoEntry {
+        const span = trace.span(.deep_clone);
+        defer span.deinit();
+        span.debug("Deep cloning RhoEntry for core {d}", .{self.core});
+
+        return RhoEntry{
+            .core = self.core,
+            .cached_hash = self.cached_hash,
+            .assignment = try self.assignment.deepClone(allocator),
+        };
+    }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         const span = trace.span(.deinit_entry);
         defer span.deinit();
         span.debug("Deinitializing RhoEntry for core {d}", .{self.core});
@@ -153,6 +165,18 @@ pub fn Rho(comptime core_count: u16) type {
             return if (self.reports[core]) |entry| entry else null;
         }
 
+        pub fn getReportOwned(self: *const @This(), allocator: std.mem.Allocator, core: usize) !?RhoEntry {
+            const span = trace.span(.get_report_owned);
+            defer span.deinit();
+            span.debug("Getting owned (deep clone) report for core {d}", .{core});
+            std.debug.assert(core < core_count); // Core index must be within bounds
+
+            if (self.reports[core]) |entry| {
+                return entry.deepClone(allocator);
+            }
+            return null;
+        }
+
         pub fn hasReport(self: *const @This(), core: usize) bool {
             const span = trace.span(.has_report);
             defer span.deinit();
@@ -163,17 +187,15 @@ pub fn Rho(comptime core_count: u16) type {
         }
 
         /// takes a report out of the core leaving the core empty
-        pub fn takeReportOwned(self: *@This(), core: usize) ?types.AvailabilityAssignment {
+        pub fn takeReportOwned(self: *@This(), core: usize) ?RhoEntry {
             const span = trace.span(.take_report);
             defer span.deinit();
             span.debug("Taking ownership of report for core {d}", .{core});
             std.debug.assert(core < core_count); // Core index must be within bounds
 
-            // Safe to return assignment as entry holds no allocated resources
             if (self.reports[core]) |entry| {
-                const report = entry.assignment;
                 self.reports[core] = null;
-                return report;
+                return entry;
             }
 
             return null;
@@ -218,7 +240,7 @@ pub fn Rho(comptime core_count: u16) type {
             return false;
         }
 
-        pub fn deinit(self: *@This()) void {
+        pub fn deinit(self: *const @This()) void {
             const span = trace.span(.deinit);
             defer span.deinit();
             span.debug("Deinitializing Rho state", .{});
