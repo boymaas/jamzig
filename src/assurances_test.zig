@@ -106,7 +106,7 @@ fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, tes
     );
     defer test_vector.deinit(allocator);
 
-    try runAssuranceTest(FULL_PARAMS, allocator, test_vector);
+    try runAssuranceTest(params, allocator, test_vector);
 }
 
 test "all.tiny.vectors" {

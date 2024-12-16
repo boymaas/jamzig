@@ -4,6 +4,7 @@ const state = @import("state.zig");
 const crypto = std.crypto;
 
 const tracing = @import("tracing.zig");
+const trace = tracing.scoped(.assurances);
 
 /// A wrapper type that guarantees an AssuranceExtrinsic has been validated
 pub const ValidatedAssuranceExtrinsic = struct {
@@ -30,31 +31,50 @@ pub const ValidatedAssuranceExtrinsic = struct {
         parent_hash: types.HeaderHash,
         kappa: types.ValidatorSet,
     ) Error!@This() {
+        const span = trace.span(.validate);
+        defer span.deinit();
+        span.debug("Starting validation of AssuranceExtrinsic with {d} assurances", .{extrinsic.data.len});
+
         if (extrinsic.data.len == 0) {
+            span.debug("Empty assurance extrinsic, returning immediately", .{});
             return .{ .inner = extrinsic };
         }
 
         var prev_validator_idx: isize = -1;
-        for (extrinsic.data) |assurance| {
+        for (extrinsic.data, 0..) |assurance, i| {
+            const assurance_span = span.child(.validate_assurance);
+            defer assurance_span.deinit();
+            assurance_span.debug("Validating assurance {d} of {d}", .{ i + 1, extrinsic.data.len });
+
             // Validate bitfield size
             if (assurance.bitfield.len != params.avail_bitfield_bytes) {
+                assurance_span.err("Invalid bitfield size {d}, expected {d}", .{ assurance.bitfield.len, params.avail_bitfield_bytes });
                 return Error.InvalidBitfieldSize;
             }
 
             // Ensure strictly increasing validator indices
+            assurance_span.trace("Checking validator index ordering - current: {d}, previous: {d}", .{ assurance.validator_index, prev_validator_idx });
             if (assurance.validator_index == prev_validator_idx) {
+                assurance_span.err("Duplicate validator index {d}", .{assurance.validator_index});
                 return Error.DuplicateValidatorIndex;
             } else if (assurance.validator_index < prev_validator_idx) {
+                assurance_span.err("Validator indices not sorted - current: {d}, previous: {d}", .{ assurance.validator_index, prev_validator_idx });
                 return Error.NotSortedValidatorIndex;
             }
             prev_validator_idx = assurance.validator_index;
 
             // Validate anchor hash matches parent
+            assurance_span.trace("Validating anchor hash", .{});
             if (!std.mem.eql(u8, &assurance.anchor, &parent_hash)) {
+                assurance_span.err("Invalid anchor hash - doesn't match parent", .{});
                 return Error.InvalidAnchorHash;
             }
 
             // Validate signature
+            const signature_span = assurance_span.child(.validate_signature);
+            defer signature_span.deinit();
+            signature_span.debug("Validating signature for validator {d}", .{assurance.validator_index});
+
             // The message is: "$jam_available" ++ H(E(anchor, bitfield))
             const prefix = "jam_available";
             var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
@@ -65,19 +85,25 @@ pub const ValidatedAssuranceExtrinsic = struct {
             hasher.final(&hash);
 
             if (assurance.validator_index >= kappa.validators.len) {
+                signature_span.err("Invalid validator index {d}, max allowed {d}", .{ assurance.validator_index, kappa.validators.len - 1 });
                 return Error.InvalidValidatorIndex;
             }
 
+            signature_span.trace("Retrieving public key for validator {d}", .{assurance.validator_index});
             const public_key = kappa.validators[assurance.validator_index].ed25519;
             const validator_pub_key = crypto.sign.Ed25519.PublicKey.fromBytes(public_key) catch {
+                signature_span.err("Invalid public key format for validator {d}", .{assurance.validator_index});
                 return Error.InvalidPublicKey;
             };
 
             const signature = crypto.sign.Ed25519.Signature.fromBytes(assurance.signature);
 
+            signature_span.trace("Verifying signature", .{});
             signature.verify(&hash, validator_pub_key) catch {
+                signature_span.err("Signature verification failed for validator {d}", .{assurance.validator_index});
                 return Error.InvalidSignature;
             };
+            signature_span.debug("Signature verified successfully", .{});
         }
 
         return ValidatedAssuranceExtrinsic{ .inner = extrinsic };
@@ -93,17 +119,27 @@ pub fn processAssuranceExtrinsic(
     current_slot: types.TimeSlot,
     pending_reports: *state.Rho(params.core_count),
 ) ![]types.AvailabilityAssignment {
+    const span = trace.span(.process_assurance_extrinsic);
+    defer span.deinit();
+    span.debug("Processing assurance extrinsic with {d} assurances", .{assurances_extrinsic.items().len});
     // Track which cores have super-majority assurance
     var assured_reports = std.ArrayList(types.AvailabilityAssignment).init(allocator);
     defer assured_reports.deinit();
 
     // First remove any timed out reports
-    for (&pending_reports.reports) |*report| {
-        if (report.*) |*pending_report| {
-            if (current_slot > pending_report.assignment.timeout) {
-                // Report has timed out, remove it
-                pending_report.deinit(allocator);
-                report.* = null;
+    {
+        const timeout_span = span.child(.cleanup_timeouts);
+        defer timeout_span.deinit();
+        timeout_span.debug("Checking for timed out reports at slot {d}", .{current_slot});
+        for (&pending_reports.reports, 0..) |*report, core_idx| {
+            if (report.*) |*pending_report| {
+                const report_timeout = pending_report.assignment.timeout + params.work_replacement_period;
+                if (current_slot >= report_timeout) {
+                    timeout_span.debug("core {d}: report.timeout {d} < {d} => remove", .{ core_idx, report_timeout, current_slot });
+                    // Report has timed out, remove it
+                    pending_report.deinit(allocator);
+                    report.* = null;
+                }
             }
         }
     }
@@ -112,37 +148,51 @@ pub fn processAssuranceExtrinsic(
     var core_assurance_counts = [_]usize{0} ** params.core_count;
 
     // Process each assurance in the extrinsic
-    for (assurances_extrinsic.items()) |assurance| {
-        const bytes_per_field = (params.core_count + 7) / 8;
+    {
+        const process_span = span.child(.process_assurances);
+        defer process_span.deinit();
+        process_span.debug("Processing {d} assurances for {d} cores", .{ assurances_extrinsic.items().len, params.core_count });
+        for (assurances_extrinsic.items()) |assurance| {
+            const bytes_per_field = (params.core_count + 7) / 8;
 
-        var byte_idx: usize = 0;
-        while (byte_idx < bytes_per_field) : (byte_idx += 1) {
-            const byte = assurance.bitfield[byte_idx];
-            if (byte == 0) continue; // Skip empty bytes
+            var byte_idx: usize = 0;
+            while (byte_idx < bytes_per_field) : (byte_idx += 1) {
+                const byte = assurance.bitfield[byte_idx];
+                if (byte == 0) continue; // Skip empty bytes
 
-            var bit_pos: u3 = 0;
-            while (bit_pos < 8) : (bit_pos += 1) {
-                const core_idx = byte_idx * 8 + bit_pos;
-                if (core_idx >= params.core_count) break;
+                var bit_pos: u3 = 0;
+                while (bit_pos < 8) : (bit_pos += 1) {
+                    const core_idx = byte_idx * 8 + bit_pos;
+                    if (core_idx >= params.core_count) break;
 
-                if ((byte & (@as(u8, 1) << bit_pos)) != 0) {
-                    core_assurance_counts[core_idx] += 1;
+                    if ((byte & (@as(u8, 1) << bit_pos)) != 0) {
+                        core_assurance_counts[core_idx] += 1;
+                    }
                 }
+            }
+        }
+        process_span.debug("Finished processing bitfields", .{});
+    }
+
+    // Check which cores have super-majority
+    {
+        const majority_span = span.child(.check_super_majority);
+        defer majority_span.deinit();
+        majority_span.debug("Checking cores against super majority threshold {d}", .{params.validators_super_majority});
+
+        // Check which cores have super-majority
+        const super_majority = params.validators_super_majority;
+
+        for (core_assurance_counts, 0..) |count, core_idx| {
+            // If super-majority reached and core has pending report that hasn't timed out
+            if (count > super_majority and pending_reports.reports[core_idx] != null) {
+                const report = pending_reports.reports[core_idx].?;
+                // NOTE: timed out reports were already removed as null
+                try assured_reports.append(try report.assignment.deepClone(allocator));
             }
         }
     }
 
-    // Check which cores have super-majority
-    const super_majority = params.validators_super_majority;
-
-    for (core_assurance_counts, 0..) |count, core_idx| {
-        // If super-majority reached and core has pending report that hasn't timed out
-        if (count > super_majority and pending_reports.reports[core_idx] != null) {
-            const report = pending_reports.reports[core_idx].?;
-            // NOTE: timed out reports were already removed as null
-            try assured_reports.append(try report.assignment.deepClone(allocator));
-        }
-    }
-
+    span.debug("Completed processing with {d} assured reports", .{assured_reports.items.len});
     return assured_reports.toOwnedSlice();
 }
