@@ -66,37 +66,37 @@ test "tiny/assurances_for_stale_report-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurances_for_stale_report-1.bin");
 }
-//
-// test "tiny/assurances_with_bad_signature-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurances_with_bad_signature-1.bin");
-// }
-//
-// test "tiny/assurances_with_bad_validator_index-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurances_with_bad_validator_index-1.bin");
-// }
-//
-// test "tiny/assurance_with_bad_attestation_parent-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurance_with_bad_attestation_parent-1.bin");
-// }
-//
-// test "tiny/assurers_not_sorted_or_unique-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurers_not_sorted_or_unique-1.bin");
-// }
-//
-// test "tiny/assurers_not_sorted_or_unique-2.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurers_not_sorted_or_unique-2.bin");
-// }
+
+test "tiny/assurances_with_bad_signature-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurances_with_bad_signature-1.bin");
+}
+
+test "tiny/assurances_with_bad_validator_index-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurances_with_bad_validator_index-1.bin");
+}
+
+test "tiny/assurance_with_bad_attestation_parent-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurance_with_bad_attestation_parent-1.bin");
+}
+
+test "tiny/assurers_not_sorted_or_unique-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurers_not_sorted_or_unique-1.bin");
+}
+
+test "tiny/assurers_not_sorted_or_unique-2.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurers_not_sorted_or_unique-2.bin");
+}
 
 // Full test vectors
 pub const FULL_PARAMS = jam_params.FULL_PARAMS;
 
 fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, test_bin: []const u8) !void {
-    std.debug.print("Running full test: {s}\n", .{test_bin});
+    std.debug.print("Running test: {s}\n", .{test_bin});
 
     const test_vector = try loader.loadAndDeserializeTestVector(
         tvector.TestCase,
@@ -109,30 +109,41 @@ fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, tes
     try runAssuranceTest(params, allocator, test_vector);
 }
 
-// test "all.tiny.vectors" {
-//     const allocator = std.testing.allocator;
-//
-//     var tiny_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "tiny");
-//     defer tiny_test_files.deinit();
-//
-//     for (tiny_test_files.items()) |test_file| {
-//         if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
-//             continue;
-//         }
-//         try runTest(FULL_PARAMS, allocator, test_file.path);
-//     }
-// }
-//
-// test "all.full.vectors" {
-//     const allocator = std.testing.allocator;
-//
-//     var full_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "full");
-//     defer full_test_files.deinit();
-//
-//     for (full_test_files.items()) |test_file| {
-//         if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
-//             continue;
-//         }
-//         try runTest(FULL_PARAMS, allocator, test_file.path);
-//     }
-// }
+test "all.tiny.vectors" {
+    const allocator = std.testing.allocator;
+
+    var tiny_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "tiny");
+    defer tiny_test_files.deinit();
+
+    for (tiny_test_files.items()) |test_file| {
+        if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
+            continue;
+        }
+        try runTest(TINY_PARAMS, allocator, test_file.path);
+    }
+}
+
+//  _____      _ _  __     __        _
+// |  ___|   _| | | \ \   / /__  ___| |_ ___  _ __ ___
+// | |_ | | | | | |  \ \ / / _ \/ __| __/ _ \| '__/ __|
+// |  _|| |_| | | |   \ V /  __/ (__| || (_) | |  \__ \
+// |_|   \__,_|_|_|    \_/ \___|\___|\__\___/|_|  |___/
+
+test "full/assurances_for_stale_report-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(FULL_PARAMS, allocator, BASE_PATH ++ "full/assurances_for_stale_report-1.bin");
+}
+
+test "all.full.vectors" {
+    const allocator = std.testing.allocator;
+
+    var full_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "full");
+    defer full_test_files.deinit();
+
+    for (full_test_files.items()) |test_file| {
+        if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
+            continue;
+        }
+        try runTest(FULL_PARAMS, allocator, test_file.path);
+    }
+}

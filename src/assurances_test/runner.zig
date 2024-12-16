@@ -82,7 +82,7 @@ pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, t
                     .bad_validator_index => error.InvalidValidatorIndex,
                     .core_not_engaged => error.CoreNotEngaged,
                     .bad_signature => error.InvalidSignature,
-                    .not_sorted_or_unique_assurers => error.NotSortedValidatorIndex,
+                    .not_sorted_or_unique_assurers => error.NotSortedOrUniqueValidatorIndex,
                 };
                 if (mapped_expected_error != actual_error) {
                     std.debug.print("\nExpected error: {any} => {any} got error {any}\n", .{ expected_error, mapped_expected_error, actual_error });

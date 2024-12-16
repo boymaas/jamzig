@@ -13,7 +13,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
     const Error = error{
         InvalidBitfieldSize,
         DuplicateValidatorIndex,
-        NotSortedValidatorIndex,
+        NotSortedOrUniqueValidatorIndex,
         InvalidSignature,
         InvalidPublicKey,
         InvalidAnchorHash,
@@ -60,10 +60,10 @@ pub const ValidatedAssuranceExtrinsic = struct {
             assurance_span.trace("Checking validator index ordering - current: {d}, previous: {d}", .{ assurance.validator_index, prev_validator_idx });
             if (assurance.validator_index == prev_validator_idx) {
                 assurance_span.err("Duplicate validator index {d}", .{assurance.validator_index});
-                return Error.DuplicateValidatorIndex;
+                return Error.NotSortedOrUniqueValidatorIndex;
             } else if (assurance.validator_index < prev_validator_idx) {
                 assurance_span.err("Validator indices not sorted - current: {d}, previous: {d}", .{ assurance.validator_index, prev_validator_idx });
-                return Error.NotSortedValidatorIndex;
+                return Error.NotSortedOrUniqueValidatorIndex;
             }
             prev_validator_idx = assurance.validator_index;
 
@@ -142,14 +142,6 @@ pub fn processAssuranceExtrinsic(
     const span = trace.span(.process_assurance_extrinsic);
     defer span.deinit();
     span.debug("Processing assurance extrinsic with {d} assurances", .{assurances_extrinsic.items().len});
-    // Track which cores have super-majority assurance
-    var assured_reports = std.ArrayList(types.AvailabilityAssignment).init(allocator);
-    errdefer {
-        for (assured_reports.items) |r| {
-            r.deinit(allocator);
-        }
-        assured_reports.deinit();
-    }
 
     // Just track counts per core instead of individual validator bits
     var core_assurance_counts = [_]usize{0} ** params.core_count;
@@ -178,7 +170,7 @@ pub fn processAssuranceExtrinsic(
                 defer byte_span.deinit();
                 byte_span.trace("Processing byte {d}: 0x{x:0>2}", .{ byte_idx, byte });
 
-                var bit_pos: u3 = 0;
+                var bit_pos: u4 = 0;
                 while (bit_pos < 8) : (bit_pos += 1) {
                     const core_idx = byte_idx * 8 + bit_pos;
                     if (core_idx >= params.core_count) {
@@ -186,7 +178,7 @@ pub fn processAssuranceExtrinsic(
                         break;
                     }
 
-                    const bit_value = (byte & (@as(u8, 1) << bit_pos)) != 0;
+                    const bit_value = (byte & (@as(u8, 1) << @intCast(bit_pos))) != 0;
                     if (bit_value) {
                         core_assurance_counts[core_idx] += 1;
                         byte_span.trace("core[{d}] bit {d}: set   (count now {d})", .{ core_idx, bit_pos, core_assurance_counts[core_idx] });
@@ -198,6 +190,15 @@ pub fn processAssuranceExtrinsic(
             bitfield_span.debug("Finished processing bitfield, current counts: {any}", .{core_assurance_counts});
         }
         process_span.debug("Finished processing all bitfields", .{});
+    }
+
+    // Track which cores have super-majority assurance
+    var assured_reports = std.ArrayList(types.AvailabilityAssignment).init(allocator);
+    errdefer {
+        for (assured_reports.items) |r| {
+            r.deinit(allocator);
+        }
+        assured_reports.deinit();
     }
 
     // Check which cores have super-majority
@@ -227,7 +228,7 @@ pub fn processAssuranceExtrinsic(
         }
     }
 
-    // First remove any timed out reports
+    // Now remove any remaining timed out reports
     {
         const timeout_span = span.child(.cleanup_timeouts);
         defer timeout_span.deinit();
