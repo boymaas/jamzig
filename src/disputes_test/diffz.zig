@@ -5,7 +5,7 @@ const tmpfile = @import("tmpfile");
 
 pub const Error = error{OutOfMemory};
 
-// TODO: make this generic efore and after with anytype
+// TODO: use the testing/diff.zig
 pub fn diffStates(
     allocator: std.mem.Allocator,
     before: *const disputes.State,

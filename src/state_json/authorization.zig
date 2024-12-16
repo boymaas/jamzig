@@ -15,16 +15,5 @@ pub fn jsonStringify(comptime core_count: u16, self: *const Alpha(core_count), j
     }
     try jw.endArray();
 
-    try jw.objectField("queues");
-    try jw.beginArray();
-    for (self.queues) |queue| {
-        try jw.beginArray();
-        for (queue.constSlice()) |auth| {
-            try jw.write(std.fmt.fmtSliceHexLower(&auth));
-        }
-        try jw.endArray();
-    }
-    try jw.endArray();
-
     try jw.endObject();
 }

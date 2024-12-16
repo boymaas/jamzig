@@ -7,6 +7,7 @@ comptime {
     _ = @import("jamtestvectors/pvm.zig");
     _ = @import("jamtestvectors/history.zig");
     _ = @import("jamtestvectors/erasure_coding.zig");
+    _ = @import("jamtestvectors/assurances.zig");
 
     _ = @import("codec.zig");
     _ = @import("codec_test.zig");
@@ -38,6 +39,20 @@ comptime {
     _ = @import("state_encoding.zig");
     _ = @import("state_decoding.zig");
 
+    _ = @import("state_format/accumulated_reports.zig"); // TODO: rename to xi
+    _ = @import("state_format/authorization.zig"); // TODO: rename to alpha
+    _ = @import("state_format/available_reports.zig"); // TODO: rename to theta
+    _ = @import("state_format/chi.zig");
+    _ = @import("state_format/delta.zig");
+    _ = @import("state_format/jam_params.zig");
+    _ = @import("state_format/jam_state.zig");
+    _ = @import("state_format/phi.zig");
+    _ = @import("state_format/pi.zig");
+    _ = @import("state_format/psi.zig"); // TODO: rename to psi
+    _ = @import("state_format/recent_blocks.zig"); // TODO: rename to beta
+    _ = @import("state_format/rho.zig"); // TODO: rename to beta
+    _ = @import("state_format/safrole_state.zig"); // TODO: rename to gamma
+
     _ = @import("services.zig");
     _ = @import("services_priviledged.zig");
 
@@ -45,6 +60,9 @@ comptime {
 
     _ = @import("authorization.zig");
     _ = @import("authorization_queue.zig");
+
+    _ = @import("assurances.zig");
+    _ = @import("assurances_test.zig");
 
     _ = @import("disputes.zig");
     _ = @import("disputes_test.zig");

@@ -1,6 +1,8 @@
 const std = @import("std");
 const Gamma = @import("../safrole_state.zig").Gamma;
 
+const tfmt = @import("../types/fmt.zig");
+
 pub fn format(
     comptime validators_count: u32,
     comptime epoch_length: u32,
@@ -12,19 +14,29 @@ pub fn format(
     _ = fmt;
     _ = options;
 
-    try writer.writeAll("Gamma{\n");
+    var indented_writer = tfmt.IndentedWriter(@TypeOf(writer)).init(writer);
+    const iw = indented_writer.writer();
 
-    try writer.print("  k: {any}\n", .{self.k});
-    try writer.print("  z: {any}\n", .{self.z});
+    try tfmt.formatValue(self.*, iw);
+}
 
-    try writer.writeAll("  s: {\n");
-    switch (self.s) {
-        .tickets => |tickets| try writer.print("    tickets: {any}\n", .{tickets}),
-        .keys => |keys| try writer.print("    keys: {any}\n", .{keys}),
-    }
-    try writer.writeAll("  }\n");
+const testing = std.testing;
+const types = @import("../types.zig");
 
-    try writer.print("  a: {any}\n", .{self.a});
+test "format Gamma state" {
+    // Set up test parameters
+    const validators_count: u32 = 4;
+    const epoch_length: u32 = 3;
+    const allocator = testing.allocator;
 
-    try writer.writeAll("}");
+    // Initialize a Gamma instance with some test data
+    var gamma = try Gamma(validators_count, epoch_length).init(allocator);
+    defer gamma.deinit(allocator);
+
+    // Set up a test buffer to capture the formatted output
+    var output = std.ArrayList(u8).init(allocator);
+    defer output.deinit();
+
+    std.debug.print("\nGamma State Format Test:\n\n", .{});
+    std.debug.print("\n{s}\n", .{gamma});
 }

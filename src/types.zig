@@ -557,10 +557,6 @@ pub const Header = struct {
         };
     }
 
-    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try @import("types/format.zig").formatHeader(self, writer);
-    }
-
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         allocator.free(self.offenders_mark);
         if (self.epoch_mark) |*em| {
@@ -777,10 +773,6 @@ pub const Extrinsic = struct {
     guarantees: GuaranteesExtrinsic,
     assurances: AssurancesExtrinsic,
     disputes: DisputesExtrinsic,
-
-    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try @import("types/format.zig").formatExtrinsic(self, writer);
-    }
 
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){

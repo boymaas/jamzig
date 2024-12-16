@@ -50,7 +50,7 @@ pub fn Phi(comptime core_count: u16) type {
             options: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
-            try @import("state_format/phi.zig").format(self, fmt, options, writer);
+            try @import("state_format/phi.zig").format(core_count, self, fmt, options, writer);
         }
 
         // Add an authorization to the queue for a specific core

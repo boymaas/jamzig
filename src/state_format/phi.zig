@@ -1,8 +1,11 @@
 const std = @import("std");
+const tfmt = @import("../types/fmt.zig");
+
 const Phi = @import("../authorization_queue.zig").Phi;
 
 pub fn format(
-    self: anytype,
+    comptime core_count: u32,
+    self: *const Phi(core_count),
     comptime fmt: []const u8,
     options: std.fmt.FormatOptions,
     writer: anytype,
@@ -10,21 +13,53 @@ pub fn format(
     _ = fmt;
     _ = options;
 
-    try writer.writeAll("Phi{\n");
-    var printed_any = false;
-    for (self.queue, 0..) |core_entry, core_idx| {
-        if (core_entry.items.len > 0) {
-            printed_any = true;
-            try writer.print("  [{d}]Authorization Queue:\n", .{core_idx});
+    var indented_writer = tfmt.IndentedWriter(@TypeOf(writer)).init(writer);
+    var iw = indented_writer.writer();
 
-            for (core_entry.items, 0..) |entry, idx| {
-                try writer.print("    [{d}] {}\n", .{ idx, std.fmt.fmtSliceHexLower(&entry) });
-            }
-        }
-    }
+    try iw.writeAll("Phi\n");
+    iw.context.indent();
 
-    if (!printed_any) {
-        try writer.writeAll("  (All queues empty)\n");
+    // Count total entries for header
+    var total_entries: usize = 0;
+    for (self.queue) |core_queue| {
+        total_entries += core_queue.items.len;
     }
-    try writer.writeAll("}");
+    try iw.print("total_entries: {d}\n", .{total_entries});
+
+    if (total_entries > 0) {
+        try iw.writeAll("queues:\n");
+        iw.context.indent();
+
+        try tfmt.formatValue(self.queue, iw);
+
+        iw.context.outdent();
+    } else {
+        try iw.writeAll("queues: <empty>\n");
+    }
+}
+
+// Test helper to demonstrate formatting
+test "Phi format demo" {
+    const core_count: u16 = 4;
+    var phi = try Phi(core_count).init(std.testing.allocator);
+    defer phi.deinit();
+
+    // Add test data
+    const hash1 = [_]u8{0xA1} ++ [_]u8{0} ** 31;
+    const hash2 = [_]u8{0xA2} ++ [_]u8{0} ** 31;
+    const hash3 = [_]u8{0xA3} ++ [_]u8{0} ** 31;
+
+    try phi.addAuthorization(1, hash1);
+    try phi.addAuthorization(1, hash2);
+    try phi.addAuthorization(3, hash3);
+
+    // Print formatted output
+    std.debug.print("\n=== Phi Format Demo ===\n", .{});
+    std.debug.print("{}\n", .{phi});
+
+    // Print empty state
+    var empty_phi = @import("../authorization_queue.zig").Phi(core_count).init(std.testing.allocator) catch unreachable;
+    defer empty_phi.deinit();
+    std.debug.print("\n=== Empty Phi Format Demo ===\n", .{});
+    std.debug.print("\n{}\n", .{empty_phi});
 }

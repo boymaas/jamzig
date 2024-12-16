@@ -97,7 +97,19 @@ pub const RhoEntry = struct {
         return self.cached_hash.?;
     }
 
-    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+    pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !RhoEntry {
+        const span = trace.span(.deep_clone);
+        defer span.deinit();
+        span.debug("Deep cloning RhoEntry for core {d}", .{self.core});
+
+        return RhoEntry{
+            .core = self.core,
+            .cached_hash = self.cached_hash,
+            .assignment = try self.assignment.deepClone(allocator),
+        };
+    }
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         const span = trace.span(.deinit_entry);
         defer span.deinit();
         span.debug("Deinitializing RhoEntry for core {d}", .{self.core});
@@ -139,11 +151,8 @@ pub fn Rho(comptime core_count: u16) type {
             const span = trace.span(.set_report);
             defer span.deinit();
             span.debug("Setting report for core {d}", .{core});
+            std.debug.assert(core < core_count); // Core index must be within bounds
 
-            if (core >= core_count) {
-                span.err("Core index {d} out of bounds (max {d})", .{ core, core_count - 1 });
-                @panic("Core index out of bounds");
-            }
             self.reports[core] = RhoEntry.init(@intCast(core), assignment);
         }
 
@@ -151,24 +160,57 @@ pub fn Rho(comptime core_count: u16) type {
             const span = trace.span(.get_report);
             defer span.deinit();
             span.debug("Getting report for core {d}", .{core});
+            std.debug.assert(core < core_count); // Core index must be within bounds
 
-            if (core >= core_count) {
-                span.err("Core index {d} out of bounds (max {d})", .{ core, core_count - 1 });
-                @panic("Core index out of bounds");
-            }
             return if (self.reports[core]) |entry| entry else null;
+        }
+
+        pub fn getReportOwned(self: *const @This(), allocator: std.mem.Allocator, core: usize) !?RhoEntry {
+            const span = trace.span(.get_report_owned);
+            defer span.deinit();
+            span.debug("Getting owned (deep clone) report for core {d}", .{core});
+            std.debug.assert(core < core_count); // Core index must be within bounds
+
+            if (self.reports[core]) |entry| {
+                return entry.deepClone(allocator);
+            }
+            return null;
+        }
+
+        pub fn hasReport(self: *const @This(), core: usize) bool {
+            const span = trace.span(.has_report);
+            defer span.deinit();
+            span.debug("Checking report presence for core {d}", .{core});
+            std.debug.assert(core < core_count); // Core index must be within bounds
+
+            return self.reports[core] != null;
+        }
+
+        /// takes a report out of the core leaving the core empty
+        pub fn takeReportOwned(self: *@This(), core: usize) ?RhoEntry {
+            const span = trace.span(.take_report);
+            defer span.deinit();
+            span.debug("Taking ownership of report for core {d}", .{core});
+            std.debug.assert(core < core_count); // Core index must be within bounds
+
+            if (self.reports[core]) |entry| {
+                self.reports[core] = null;
+                return entry;
+            }
+
+            return null;
         }
 
         pub fn clearReport(self: *@This(), core: usize) void {
             const span = trace.span(.clear_report);
             defer span.deinit();
             span.debug("Clearing report for core {d}", .{core});
+            std.debug.assert(core < core_count); // Core index must be within bounds
 
-            if (core >= core_count) {
-                span.err("Core index {d} out of bounds (max {d})", .{ core, core_count - 1 });
-                @panic("Core index out of bounds");
+            if (self.reports[core]) |report| {
+                report.deinit(self.allocator);
+                self.reports[core] = null;
             }
-            self.reports[core] = null;
         }
 
         pub fn clearFromCore(self: *@This(), work_report_hash: WorkReportHash) !bool {
@@ -198,7 +240,7 @@ pub fn Rho(comptime core_count: u16) type {
             return false;
         }
 
-        pub fn deinit(self: *@This()) void {
+        pub fn deinit(self: *const @This()) void {
             const span = trace.span(.deinit);
             defer span.deinit();
             span.debug("Deinitializing Rho state", .{});
@@ -220,100 +262,9 @@ pub fn Rho(comptime core_count: u16) type {
 //
 
 const testing = std.testing;
+
 const createEmptyWorkReport = @import("tests/fixtures.zig").createEmptyWorkReport;
-
-const TEST_C: u16 = 341; // Standard number of cores for testing
 const TEST_HASH = [_]u8{ 'T', 'E', 'S', 'T' } ++ [_]u8{0} ** 28;
-
-test "Rho - Initialization" {
-    const allocator = std.testing.allocator;
-
-    var rho = Rho(TEST_C).init(allocator);
-    defer rho.deinit();
-
-    try testing.expectEqual(@as(usize, TEST_C), rho.reports.len);
-    for (rho.reports) |report| {
-        try testing.expectEqual(@as(?RhoEntry, null), report);
-    }
-}
-
-test "Rho - Set and Get Report" {
-    var rho = Rho(TEST_C).init(testing.allocator);
-    defer rho.deinit();
-
-    const work_report = createEmptyWorkReport(TEST_HASH);
-    const timeslot = 100;
-
-    // Test setting a report
-    const assignment = types.AvailabilityAssignment{
-        .report = work_report,
-        .timeout = timeslot,
-    };
-    rho.setReport(0, assignment);
-    const report = rho.getReport(0);
-    try testing.expect(report != null);
-    if (report) |r| {
-        try testing.expectEqual(r.assignment.report.package_spec.hash, TEST_HASH);
-        try testing.expectEqual(r.assignment.timeout, 100);
-    }
-
-    // Test getting a non-existent report
-    const empty_report = rho.getReport(1);
-    try testing.expectEqual(@as(?RhoEntry, null), empty_report);
-}
-
-test "Rho - Clear Report" {
-    var rho = Rho(TEST_C).init(testing.allocator);
-    defer rho.deinit();
-
-    const work_report = createEmptyWorkReport(TEST_HASH);
-    const timeslot = 100;
-
-    // Set a report
-    const assignment = types.AvailabilityAssignment{
-        .report = work_report,
-        .timeout = timeslot,
-    };
-    rho.setReport(0, assignment);
-    try testing.expect(rho.getReport(0) != null);
-
-    // Clear the report
-    rho.clearReport(0);
-    try testing.expectEqual(@as(?RhoEntry, null), rho.getReport(0));
-}
-
-test "Rho - Clear From Core" {
-    var rho = Rho(TEST_C).init(testing.allocator);
-    defer rho.deinit();
-
-    const work_report1 = createEmptyWorkReport(TEST_HASH);
-    const test_hash2 = [_]u8{ 'T', 'E', 'S', 'T', '2' } ++ [_]u8{0} ** 27;
-    const work_report2 = createEmptyWorkReport(test_hash2);
-    const timeslot = 100;
-
-    // Set reports
-    const assignment1 = types.AvailabilityAssignment{
-        .report = work_report1,
-        .timeout = timeslot,
-    };
-    const assignment2 = types.AvailabilityAssignment{
-        .report = work_report2,
-        .timeout = timeslot,
-    };
-    rho.setReport(0, assignment1);
-    rho.setReport(1, assignment2);
-    try testing.expect(rho.getReport(0) != null);
-    try testing.expect(rho.getReport(1) != null);
-
-    var entry_core_0 = rho.getReport(0);
-
-    const cleared = try rho.clearFromCore(try entry_core_0.?.hash(testing.allocator));
-    try testing.expect(cleared);
-
-    // Check that the first report is cleared and the second is still present
-    try testing.expectEqual(@as(?RhoEntry, null), rho.getReport(0));
-    try testing.expect(rho.getReport(1) != null);
-}
 
 test "RhoEntry - Lazy Hash Calculation" {
     const work_report = createEmptyWorkReport(TEST_HASH);

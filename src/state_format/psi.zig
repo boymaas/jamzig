@@ -1,7 +1,10 @@
 const std = @import("std");
+const Psi = @import("../disputes.zig").Psi;
+
+const tfmt = @import("../types/fmt.zig");
 
 pub fn format(
-    psi: anytype,
+    self: *const Psi,
     comptime fmt: []const u8,
     options: std.fmt.FormatOptions,
     writer: anytype,
@@ -9,29 +12,26 @@ pub fn format(
     _ = fmt;
     _ = options;
 
-    try writer.writeAll("Psi {\n");
-    try writer.writeAll("  good_set: {\n");
-    for (psi.good_set.keys()) |key| {
-        try writer.print("    {x}\n", .{key});
-    }
-    try writer.writeAll("  },\n");
+    var indented_writer = tfmt.IndentedWriter(@TypeOf(writer)).init(writer);
+    const iw = indented_writer.writer();
 
-    try writer.writeAll("  bad_set: {\n");
-    for (psi.bad_set.keys()) |key| {
-        try writer.print("    {x}\n", .{key});
-    }
-    try writer.writeAll("  },\n");
+    try tfmt.formatValue(self.*, iw);
+}
 
-    try writer.writeAll("  wonky_set: {\n");
-    for (psi.wonky_set.keys()) |key| {
-        try writer.print("    {x}\n", .{key});
-    }
-    try writer.writeAll("  },\n");
+test "format Psi state" {
+    const allocator = std.testing.allocator;
 
-    try writer.writeAll("  punish_set: {\n");
-    for (psi.punish_set.keys()) |key| {
-        try writer.print("    {x}\n", .{key});
-    }
-    try writer.writeAll("  }\n");
-    try writer.writeAll("}");
+    // Create a sample Psi state
+    var psi = Psi.init(allocator);
+    defer psi.deinit();
+
+    // Add some sample data to each set
+    try psi.good_set.put([_]u8{1} ** 32, {});
+    try psi.bad_set.put([_]u8{2} ** 32, {});
+    try psi.wonky_set.put([_]u8{3} ** 32, {});
+    try psi.punish_set.put([_]u8{4} ** 32, {});
+    try psi.punish_set.put([_]u8{5} ** 32, {});
+
+    // Print formatted output to stdout
+    std.debug.print("\n{s}\n", .{psi});
 }

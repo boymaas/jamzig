@@ -62,6 +62,9 @@ fn testDecodeAndCompare(comptime test_case: TestCase) !void {
     var decoded = try loader.loadAndDeserializeTestVector(DomainType, TINY_PARAMS, allocator, bin_path);
     defer decoded.deinit(allocator);
 
+    // const format = @import("types/fmt.zig").format;
+    // std.debug.print("decoded:\n{s}\n", .{format(decoded)});
+
     // Load the json expeceted vector data
     const vector = try codec_test.CodecTestVector(VectorType).build_from(allocator, json_path);
     defer vector.deinit();
