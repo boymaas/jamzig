@@ -18,6 +18,7 @@ pub const Error = error{
     AnchorNotRecent,
     BadServiceId,
     BadCodeHash,
+    BadAnchor,
     DependencyMissing,
     DuplicatePackage,
     BadStateRoot,
@@ -66,6 +67,12 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 if (!std.mem.eql(u8, &guarantee.report.context.beefy_root, &binfo.beefy_mmr_root())) {
                     return Error.BadBeefyMmrRoot;
                 }
+                if (!std.mem.eql(u8, &guarantee.report.context.state_root, &binfo.state_root)) {
+                    return Error.BadStateRoot;
+                }
+                if (!std.mem.eql(u8, &guarantee.report.context.anchor, &binfo.header_hash)) {
+                    return Error.BadAnchor;
+                }
             } else {
                 return Error.AnchorNotRecent;
             }
@@ -94,12 +101,6 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 } else {
                     return Error.BadServiceId;
                 }
-            }
-
-            // Validate core assignment
-            const assignment = jam_state.rho.?.getReport(guarantee.report.core_index);
-            if (assignment == null) {
-                return Error.WrongAssignment;
             }
 
             // Check core is not engaged
@@ -169,6 +170,12 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 signature.verify(prefix ++ &hash, validator_pub_key) catch {
                     return Error.BadSignature;
                 };
+            }
+
+            // Validate core assignment
+            const assignment = jam_state.rho.?.getReport(guarantee.report.core_index);
+            if (assignment == null) {
+                return Error.WrongAssignment;
             }
 
             // Check sufficient guarantors

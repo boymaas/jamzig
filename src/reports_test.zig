@@ -23,22 +23,22 @@ test "tiny/bad_code_hash-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_code_hash-1.bin");
 }
-// test "tiny/bad_core_index-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_core_index-1.bin");
-// }
-// test "tiny/bad_service_id-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_service_id-1.bin");
-// }
-// test "tiny/bad_signature-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_signature-1.bin");
-// }
-// test "tiny/bad_state_root-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_state_root-1.bin");
-// }
+test "tiny/bad_core_index-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_core_index-1.bin");
+}
+test "tiny/bad_service_id-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_service_id-1.bin");
+}
+test "tiny/bad_signature-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_signature-1.bin");
+}
+test "tiny/bad_state_root-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_state_root-1.bin");
+}
 // test "tiny/bad_validator_index-1.bin" {
 //     const allocator = std.testing.allocator;
 //     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_validator_index-1.bin");
