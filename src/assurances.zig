@@ -79,7 +79,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
             defer signature_span.deinit();
             signature_span.debug("Validating signature for validator {d}", .{assurance.validator_index});
 
-            // The message is: "$jam_available" ++ H(E(anchor, bitfield))
+            // The message is: "jam_available" ++ H(E(anchor, bitfield))
             const prefix: []const u8 = "jam_available";
             var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
             hasher.update(&assurance.anchor);

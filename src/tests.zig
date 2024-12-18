@@ -64,6 +64,9 @@ comptime {
     _ = @import("assurances.zig");
     _ = @import("assurances_test.zig");
 
+    _ = @import("reports.zig");
+    _ = @import("reports_test.zig");
+
     _ = @import("disputes.zig");
     _ = @import("disputes_test.zig");
 

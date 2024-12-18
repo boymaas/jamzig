@@ -162,7 +162,7 @@ pub fn Rho(comptime core_count: u16) type {
             span.debug("Getting report for core {d}", .{core});
             std.debug.assert(core < core_count); // Core index must be within bounds
 
-            return if (self.reports[core]) |entry| entry else null;
+            return self.reports[core];
         }
 
         pub fn getReportOwned(self: *const @This(), allocator: std.mem.Allocator, core: usize) !?RhoEntry {
@@ -181,6 +181,16 @@ pub fn Rho(comptime core_count: u16) type {
             const span = trace.span(.has_report);
             defer span.deinit();
             span.debug("Checking report presence for core {d}", .{core});
+            std.debug.assert(core < core_count); // Core index must be within bounds
+
+            return self.reports[core] != null;
+        }
+
+        // TODO: how do we check if a core is engaged?
+        pub fn isEngaged(self: *const @This(), core: usize) bool {
+            const span = trace.span(.is_engaged);
+            defer span.deinit();
+            span.debug("Checking if core {d} is engaged", .{core});
             std.debug.assert(core < core_count); // Core index must be within bounds
 
             return self.reports[core] != null;

@@ -15,6 +15,7 @@ pub const Epoch = U32;
 pub const TimeSlot = U32;
 pub const ServiceId = U32;
 pub const Gas = U64;
+pub const Balance = U64;
 pub const ValidatorIndex = U16;
 pub const CoreIndex = U16;
 pub const TicketAttempt = u8;
@@ -50,7 +51,7 @@ pub const ValidatorMetadata = [128]u8;
 
 pub const ServiceInfo = struct {
     code_hash: OpaqueHash,
-    balance: U64,
+    balance: Balance,
     min_item_gas: Gas,
     min_memo_gas: Gas,
     bytes: U64,
@@ -332,12 +333,17 @@ pub const ReportedWorkPackage = struct {
 pub const BlockInfo = struct {
     /// The hash of the block header
     header_hash: Hash,
-    /// The root hash of the state trie
-    state_root: Hash,
     /// The Merkle Mountain Range (MMR) of BEEFY commitments
     beefy_mmr: []?Hash,
+    /// The root hash of the state trie
+    state_root: Hash,
     /// The hashes of work reports included in this block
     work_reports: []ReportedWorkPackage,
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.beefy_mmr);
+        allocator.free(self.work_reports);
+    }
 
     /// Creates a deep copy of the BlockInfo with newly allocated memory
     pub fn deepClone(self: *const BlockInfo, allocator: std.mem.Allocator) !BlockInfo {

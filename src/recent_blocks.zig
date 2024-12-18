@@ -10,6 +10,8 @@ const merkle = @import("merkle_binary.zig");
 const mmr = @import("merkle_mountain_ranges.zig");
 
 /// Represents a recent block with information needed for importing
+/// NOTE: this type was defined in the history test vectors, thus this is NOT
+/// a domain type!
 pub const RecentBlock = struct {
     /// The hash of the block header
     header_hash: types.Hash,
@@ -19,6 +21,10 @@ pub const RecentBlock = struct {
     accumulate_root: types.Hash,
     /// The hashes of the work reports included in this block
     work_reports: []types.ReportedWorkPackage,
+
+    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.work_reports);
+    }
 
     pub fn fromBlock(allocator: std.mem.Allocator, block: *const types.Block) !@This() {
         return RecentBlock{
@@ -83,13 +89,14 @@ pub const RecentHistory = struct {
     }
 
     /// Imports a new block into the recent history
-    pub fn import(self: *Self, allocator: Allocator, input: RecentBlock) !void {
+    /// TODO: remove allocator, now its managed
+    pub fn import(self: *Self, input: RecentBlock) !void {
         // Create a new BlockStateInformation
         var block_info = types.BlockInfo{
             .header_hash = input.header_hash,
             .state_root = std.mem.zeroes(types.Hash), // This will be updated in the next block
             .beefy_mmr = undefined,
-            .work_reports = try allocator.dupe(types.ReportedWorkPackage, input.work_reports),
+            .work_reports = try self.allocator.dupe(types.ReportedWorkPackage, input.work_reports),
         };
 
         // Update the parent block's state root if it exists
@@ -99,15 +106,15 @@ pub const RecentHistory = struct {
 
         // Append the accumlate root Beefy MMR
         const last_beefy_mmr = if (self.blocks.getLastOrNull()) |last_block|
-            try allocator.dupe(?types.Hash, last_block.beefy_mmr)
+            try self.allocator.dupe(?types.Hash, last_block.beefy_mmr)
         else
             &[_]?types.Hash{};
 
-        var beefy_mmr = mmr.MMR.fromOwnedSlice(allocator, @constCast(last_beefy_mmr));
+        var beefy_mmr = mmr.MMR.fromOwnedSlice(self.allocator, @constCast(last_beefy_mmr));
         // errdefer beefy_mmr.deinit();
 
         // Append the accumulate root to the Beefy MMR
-        try mmr.append(&beefy_mmr, input.accumulate_root, Keccak256);
+        try mmr.append(&beefy_mmr, block_info.state_root, Keccak256);
 
         // Update the new block's Beefy MMR
         block_info.beefy_mmr = try beefy_mmr.toOwnedSlice();
@@ -131,6 +138,16 @@ pub const RecentHistory = struct {
     pub fn getBlockInfo(self: Self, index: usize) ?types.BlockInfo {
         if (index < self.blocks.items.len) {
             return self.blocks.items[index];
+        }
+        return null;
+    }
+
+    /// Retrieves the BlockInfo by its header hash, or null if not found
+    pub fn getBlockInfoByHash(self: Self, header_hash: types.Hash) ?types.BlockInfo {
+        for (self.blocks.items) |block| {
+            if (std.mem.eql(u8, &block.header_hash, &header_hash)) {
+                return block;
+            }
         }
         return null;
     }

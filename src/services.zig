@@ -2,6 +2,8 @@ const std = @import("std");
 const math = std.math;
 const mem = std.mem;
 
+const types = @import("types.zig");
+
 const Allocator = std.mem.Allocator;
 
 // These constants are related to economic parameters
@@ -11,16 +13,16 @@ pub const B_I: Balance = 10;
 pub const B_L: Balance = 1;
 
 pub const Transfer = struct {
-    from: ServiceIndex,
-    to: ServiceIndex,
+    from: ServiceId,
+    to: ServiceId,
     amount: Balance,
 };
 
-pub const Hash = [32]u8;
-pub const ServiceIndex = u32;
-pub const Balance = u64;
-pub const GasLimit = u64;
-pub const Timeslot = u32;
+pub const Hash = types.OpaqueHash;
+pub const ServiceId = types.ServiceId;
+pub const Balance = types.Balance;
+pub const GasLimit = types.Gas;
+pub const Timeslot = types.TimeSlot;
 
 // Gp@9.3
 pub const StorageFootprint = struct {
@@ -48,13 +50,13 @@ pub const PreimageLookupKey = struct {
 };
 
 pub const PreimageSubmission = struct {
-    index: ServiceIndex,
+    index: ServiceId,
     hash: Hash,
     preimage: []const u8,
 };
 
 pub const AccountUpdate = struct {
-    index: ServiceIndex,
+    index: ServiceId,
     new_balance: Balance,
     new_gas_limit: GasLimit,
 };
@@ -210,7 +212,7 @@ pub const ServiceAccount = struct {
 // and its various service accounts. As defined in GP0.4.1p@Ch9
 
 pub const Delta = struct {
-    accounts: std.AutoHashMap(ServiceIndex, ServiceAccount),
+    accounts: std.AutoHashMap(ServiceId, ServiceAccount),
     allocator: Allocator,
 
     pub fn format(
@@ -224,7 +226,7 @@ pub const Delta = struct {
 
     pub fn init(allocator: Allocator) Delta {
         return .{
-            .accounts = std.AutoHashMap(ServiceIndex, ServiceAccount).init(allocator),
+            .accounts = std.AutoHashMap(ServiceId, ServiceAccount).init(allocator),
             .allocator = allocator,
         };
     }
@@ -242,16 +244,16 @@ pub const Delta = struct {
     }
 
     // TODO: change serviceindex to serviceid in types
-    pub fn putAccount(self: *Delta, index: ServiceIndex, account: ServiceAccount) !void {
+    pub fn putAccount(self: *Delta, index: ServiceId, account: ServiceAccount) !void {
         if (self.accounts.contains(index)) return error.AccountAlreadyExists;
         try self.accounts.put(index, account);
     }
 
-    pub fn getAccount(self: *Delta, index: ServiceIndex) ?*ServiceAccount {
+    pub fn getAccount(self: *const Delta, index: ServiceId) ?*ServiceAccount {
         return if (self.accounts.getPtr(index)) |account_ptr| account_ptr else null;
     }
 
-    pub fn getOrCreateAccount(self: *Delta, index: ServiceIndex) !*ServiceAccount {
+    pub fn getOrCreateAccount(self: *Delta, index: ServiceId) !*ServiceAccount {
         if (self.getAccount(index)) |account| {
             return account;
         }
@@ -262,7 +264,7 @@ pub const Delta = struct {
         return self.getAccount(index).?;
     }
 
-    pub fn updateBalance(self: *Delta, index: ServiceIndex, new_balance: Balance) !void {
+    pub fn updateBalance(self: *Delta, index: ServiceId, new_balance: Balance) !void {
         if (self.getAccount(index)) |account| {
             account.balance = new_balance;
         } else {
@@ -312,7 +314,7 @@ test "Delta initialization, account creation, and retrieval" {
     var delta = Delta.init(allocator);
     defer delta.deinit();
 
-    const index: ServiceIndex = 1;
+    const index: ServiceId = 1;
     _ = try delta.getOrCreateAccount(index);
 }
 
@@ -321,7 +323,7 @@ test "Delta balance update" {
     var delta = Delta.init(allocator);
     defer delta.deinit();
 
-    const index: ServiceIndex = 1;
+    const index: ServiceId = 1;
     _ = try delta.getOrCreateAccount(index);
 
     const new_balance: Balance = 1000;
@@ -331,7 +333,7 @@ test "Delta balance update" {
     try testing.expect(account != null);
     try testing.expect(account.?.balance == new_balance);
 
-    const non_existent_index: ServiceIndex = 2;
+    const non_existent_index: ServiceId = 2;
     try testing.expectError(error.AccountNotFound, delta.updateBalance(non_existent_index, new_balance));
 }
 
