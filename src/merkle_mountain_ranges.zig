@@ -9,6 +9,54 @@ const Entry = ?Hash;
 
 pub const MMR = std.ArrayList(Entry);
 
+// TODO: get rid of allocation
+pub fn filter_nulls(mrange: []const Entry, buffer: []Hash) []Hash {
+    var count: usize = 0;
+    for (mrange) |maybe_hash| {
+        if (maybe_hash) |hash| {
+            buffer[count] = hash;
+            count += 1;
+        }
+    }
+    return buffer[0..count];
+}
+
+/// MMR Super Peak function
+pub fn super_peak(mrange: []const Entry, hasher: anytype) Hash {
+    // The maximum number of peaks for n leaves is floor(log2(n)) + 1. For
+    // practical MMR sizes (up to millions of entries), this means we rarely
+    // need more than 32 peaks. (8.589.934.591)
+    std.debug.assert(mrange.len <= 32);
+
+    var buffer: [32]Hash = undefined; // Adjust size based on your needs
+    const filtered = filter_nulls(mrange, &buffer);
+    return super_peak_inner(filtered, hasher);
+}
+
+pub fn super_peak_inner(h: []Hash, hasher: anytype) Hash {
+    if (h.len == 0) {
+        return [_]u8{0} ** 32;
+    }
+
+    if (h.len == 1) {
+        return h[0]; // this is always set on len == 1
+    }
+
+    var message: [68]u8 = undefined;
+    @memcpy(message[0..4], "node");
+
+    var mr = super_peak_inner(h[0..(h.len - 1)], hasher);
+    @memcpy(message[4..36], &mr);
+    @memcpy(message[36..68], &h[h.len - 1]);
+
+    var H = hasher.init(.{});
+    H.update(&message);
+
+    var hash: [32]u8 = undefined;
+    H.final(&hash);
+    return hash;
+}
+
 pub fn append(mrange: *MMR, leaf: Hash, hasher: anytype) !void {
     _ = try P(mrange, leaf, 0, hasher);
     return;
@@ -45,6 +93,8 @@ pub fn R(s: *MMR, i: usize, v: Entry) !*MMR {
 
 const encoder = @import("codec/encoder.zig");
 
+// TODO: this is covered in the default codec implementation
+// as such this can be removed
 pub fn encode(mrange: []?Hash, writer: anytype) !void {
     try writer.writeAll(encoder.encodeInteger(mrange.len).as_slice());
 
@@ -59,6 +109,33 @@ pub fn encode(mrange: []?Hash, writer: anytype) !void {
 }
 
 const testing = std.testing;
+
+test "super_peak calculation" {
+    const allocator = std.testing.allocator;
+    const Blake2b_256 = std.crypto.hash.blake2.Blake2b(256);
+
+    var mmr = MMR.init(allocator);
+    defer mmr.deinit();
+
+    // Test empty MMR
+    var peak = try super_peak(&mmr, Blake2b_256);
+    try testing.expectEqualSlices(u8, &[_]u8{0} ** 32, &peak);
+
+    // Add single leaf
+    const leaf1 = [_]u8{1} ** 32;
+    try append(&mmr, leaf1, Blake2b_256);
+    peak = try super_peak(&mmr, Blake2b_256);
+    try testing.expectEqualSlices(u8, &leaf1, &peak);
+
+    // Add second leaf to create a node
+    inline for (2..32) |i| {
+        const leaf2 = [_]u8{i} ** 32;
+        try append(&mmr, leaf2, Blake2b_256);
+    }
+
+    peak = try super_peak(&mmr, Blake2b_256);
+    std.debug.print("{s}\n", .{std.fmt.fmtSliceHexLower(&peak)});
+}
 
 test "mmr_append" {
     const allocator = std.testing.allocator;
