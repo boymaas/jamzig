@@ -40,10 +40,6 @@ pub fn Alpha(comptime core_count: u16) type {
             if (core >= core_count) return error.InvalidCore;
 
             var pool = &self.pools[core];
-            // Check if auth already exists
-            for (pool.slice()) |pool_auth| {
-                if (std.mem.eql(u8, &pool_auth, &auth)) return;
-            }
 
             // Add new auth if pool isn't full
             try pool.append(auth);
@@ -58,7 +54,7 @@ pub fn Alpha(comptime core_count: u16) type {
             // Find and remove the matching auth hash
             for (slice, 0..) |pool_auth, i| {
                 if (std.mem.eql(u8, &pool_auth, &auth)) {
-                    _ = pool.swapRemove(i);
+                    _ = pool.orderedRemove(i);
                     return;
                 }
             }

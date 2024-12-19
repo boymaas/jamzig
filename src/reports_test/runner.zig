@@ -50,6 +50,11 @@ pub fn runReportTest(comptime params: Params, allocator: std.mem.Allocator, test
         &test_case,
         &pre_state,
     );
+    defer {
+        if (process_result) |result| {
+            result.deinit(allocator);
+        } else |_| {}
+    }
 
     switch (test_case.output) {
         .err => |expected_error| {

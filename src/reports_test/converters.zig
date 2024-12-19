@@ -107,43 +107,37 @@ pub fn convertState(
         allocator,
         test_state.avail_assignments,
     );
-    errdefer if (jam_state.rho) |*rho| rho.deinit();
 
     // Validate and convert validator sets
     if (test_state.curr_validators.validators.len != params.validators_count) {
         return StateInitError.InvalidValidatorCount;
     }
     jam_state.kappa = try convertValidatorSet(allocator, test_state.curr_validators);
-    errdefer if (jam_state.kappa) |kappa| kappa.deinit(allocator);
 
     if (test_state.prev_validators.validators.len != params.validators_count) {
         return StateInitError.InvalidValidatorCount;
     }
     jam_state.lambda = try convertValidatorSet(allocator, test_state.prev_validators);
-    errdefer if (jam_state.lambda) |lambda| lambda.deinit(allocator);
 
     // Set entropy buffer
     jam_state.eta = test_state.entropy;
 
     // Convert recent blocks history
     jam_state.beta = try convertBeta(allocator, test_state.recent_blocks, params.recent_history_size);
-    errdefer if (jam_state.beta) |*beta| beta.deinit();
 
     // Validate and convert auth pools
     if (test_state.auth_pools.pools.len != params.core_count) {
         return StateInitError.InvalidAuthPoolsCount;
     }
     jam_state.alpha = convertAuthPools(test_state.auth_pools, params.core_count);
-    errdefer if (jam_state.phi) |*phi| phi.deinit();
 
     // Convert service state
     jam_state.delta = try convertServices(allocator, test_state.services);
-    errdefer if (jam_state.delta) |*delta| delta.deinit();
 
     // Convert offenders list
-    const converted_offenders = try convertOffenders(allocator, test_state.offenders, params.validators_count);
-    // TODO: do something with these offenders
-    defer allocator.free(converted_offenders);
+    // const converted_offenders = try convertOffenders(allocator, test_state.offenders, params.validators_count);
+    // // TODO: do something with these offenders
+    // defer allocator.free(converted_offenders);
 
     return jam_state;
 }

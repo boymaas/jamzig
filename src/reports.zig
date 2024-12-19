@@ -6,6 +6,7 @@ const crypto = std.crypto;
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.reports);
 
+/// Error types for report validation and processing
 pub const Error = error{
     BadCoreIndex,
     FutureReportSlot,
@@ -43,37 +44,100 @@ pub const ValidatedGuaranteeExtrinsic = struct {
         slot: types.TimeSlot,
         jam_state: *const state.JamState(params),
     ) !@This() {
+        const span = trace.span(.validate_guarantees);
+        defer span.deinit();
+        span.debug("Starting guarantee validation for {d} guarantees", .{guarantees.data.len});
+
         // Validate all guarantees
         for (guarantees.data) |guarantee| {
+            const core_span = span.child(.validate_core);
+            defer core_span.deinit();
+            core_span.debug("Validating core index {d} for report hash {s}", .{
+                guarantee.report.core_index,
+                std.fmt.fmtSliceHexLower(&guarantee.report.package_spec.hash),
+            });
+            core_span.trace("Report context - anchor: {s}, lookup_anchor: {s}", .{
+                std.fmt.fmtSliceHexLower(&guarantee.report.context.anchor),
+                std.fmt.fmtSliceHexLower(&guarantee.report.context.lookup_anchor),
+            });
+
             // Check core index
             if (guarantee.report.core_index >= params.core_count) {
+                core_span.err("Invalid core index {d} >= {d}", .{ guarantee.report.core_index, params.core_count });
                 return Error.BadCoreIndex;
             }
 
+            const slot_span = span.child(.validate_slot);
+            defer slot_span.deinit();
+            slot_span.debug("Validating report slot {d} against current slot {d} for core {d}", .{
+                guarantee.slot,
+                slot,
+                guarantee.report.core_index,
+            });
+            slot_span.trace("Report epoch: {d}, current epoch: {d}", .{
+                guarantee.slot / params.epoch_length,
+                slot / params.epoch_length,
+            });
+
             // Validate report slot is not in future
             if (guarantee.slot > slot) {
+                slot_span.err("Report slot {d} is in the future (current: {d})", .{ guarantee.slot, slot });
                 return Error.FutureReportSlot;
             }
+
+            const epoch_span = span.child(.validate_epoch);
+            defer epoch_span.deinit();
 
             // Check epoch is current or last
             const report_epoch = guarantee.slot / params.epoch_length;
             const current_epoch = slot / params.epoch_length;
+            epoch_span.debug("Validating report epoch {d} against current epoch {d}", .{ report_epoch, current_epoch });
+
             if (report_epoch + 1 < current_epoch) {
+                epoch_span.err("Report epoch {d} is too old (current: {d})", .{ report_epoch, current_epoch });
                 return Error.ReportEpochBeforeLast;
             }
 
             // Validate anchor is recent
+            const anchor_span = span.child(.validate_anchor);
+            defer anchor_span.deinit();
+
             if (jam_state.beta.?.getBlockInfoByHash(guarantee.report.context.anchor)) |binfo| {
+                anchor_span.debug("Found anchor block, validating roots", .{});
+                anchor_span.trace("Block info - hash: {s}, state root: {s}", .{
+                    std.fmt.fmtSliceHexLower(&binfo.header_hash),
+                    std.fmt.fmtSliceHexLower(&binfo.state_root),
+                });
+
                 if (!std.mem.eql(u8, &guarantee.report.context.beefy_root, &binfo.beefy_mmr_root())) {
+                    anchor_span.err("Beefy MMR root mismatch - expected: {s}, got: {s}", .{
+                        std.fmt.fmtSliceHexLower(&binfo.beefy_mmr_root()),
+                        std.fmt.fmtSliceHexLower(&guarantee.report.context.beefy_root),
+                    });
                     return Error.BadBeefyMmrRoot;
                 }
+
                 if (!std.mem.eql(u8, &guarantee.report.context.state_root, &binfo.state_root)) {
+                    anchor_span.err("State root mismatch - expected: {s}, got: {s}", .{
+                        std.fmt.fmtSliceHexLower(&binfo.state_root),
+                        std.fmt.fmtSliceHexLower(&guarantee.report.context.state_root),
+                    });
                     return Error.BadStateRoot;
                 }
+
                 if (!std.mem.eql(u8, &guarantee.report.context.anchor, &binfo.header_hash)) {
+                    anchor_span.err("Anchor hash mismatch - expected: {s}, got: {s}", .{
+                        std.fmt.fmtSliceHexLower(&binfo.header_hash),
+                        std.fmt.fmtSliceHexLower(&guarantee.report.context.anchor),
+                    });
                     return Error.BadAnchor;
                 }
+
+                anchor_span.debug("Anchor validation successful", .{});
             } else {
+                anchor_span.err("Anchor block not found in recent history: {s}", .{
+                    std.fmt.fmtSliceHexLower(&guarantee.report.context.anchor),
+                });
                 return Error.AnchorNotRecent;
             }
 
@@ -143,13 +207,27 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
 
             // Validate signatures
+            const sig_span = span.child(.validate_signatures);
+            defer sig_span.deinit();
+
             for (guarantee.signatures) |sig| {
+                const sig_detail_span = sig_span.child(.validate_signature);
+                defer sig_detail_span.deinit();
+
+                sig_detail_span.debug("Validating signature for validator index {d}", .{sig.validator_index});
+                sig_detail_span.trace("Signature: {s}", .{std.fmt.fmtSliceHexLower(&sig.signature)});
+
                 if (sig.validator_index >= jam_state.kappa.?.validators.len) {
+                    sig_detail_span.err("Invalid validator index {d} >= {d}", .{
+                        sig.validator_index,
+                        jam_state.kappa.?.validators.len,
+                    });
                     return Error.BadValidatorIndex;
                 }
 
                 const validator = jam_state.kappa.?.validators[sig.validator_index];
                 const public_key = validator.ed25519;
+                sig_detail_span.trace("Validator public key: {s}", .{std.fmt.fmtSliceHexLower(&public_key)});
 
                 // Create message to verify using Blake2b
                 // The message is: "jam_guarantee" ++ H(E(anchor, bitfield))
@@ -174,28 +252,80 @@ pub const ValidatedGuaranteeExtrinsic = struct {
 
             // Core must be free or its previous report must have timed out
             // (exceeded WorkReplacementPeriod since last report)
-            if (jam_state.rho.?.getReport(guarantee.report.core_index)) |entry| {
-                if (!entry.assignment.isTimedOut(params.work_replacement_period, guarantee.slot)) {
-                    return Error.CoreEngaged;
+            {
+                const timeout_span = span.child(.validate_timeout);
+                defer timeout_span.deinit();
+
+                if (jam_state.rho.?.getReport(guarantee.report.core_index)) |entry| {
+                    timeout_span.debug("Checking core {d} timeout - last: {d}, current: {d}, period: {d}", .{
+                        guarantee.report.core_index,
+                        entry.assignment.timeout,
+                        guarantee.slot,
+                        params.work_replacement_period,
+                    });
+
+                    if (!entry.assignment.isTimedOut(params.work_replacement_period, guarantee.slot)) {
+                        timeout_span.err("Core {d} still engaged - needs {d} more slots", .{
+                            guarantee.report.core_index,
+                            (entry.assignment.timeout + params.work_replacement_period) - guarantee.slot,
+                        });
+                        return Error.CoreEngaged;
+                    }
+                    timeout_span.debug("Core {d} timeout validated", .{guarantee.report.core_index});
+                } else {
+                    timeout_span.debug("Core {d} is free", .{guarantee.report.core_index});
                 }
             }
 
             // Check if the authorizer hash is valid
-            if (!jam_state.alpha.?.isAuthorized(guarantee.report.core_index, guarantee.report.authorizer_hash)) {
-                return Error.CoreUnauthorized;
+            {
+                const auth_span = span.child(.validate_authorization);
+                defer auth_span.deinit();
+
+                auth_span.debug("Checking authorization for core {d} with hash {s}", .{
+                    guarantee.report.core_index,
+                    std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash),
+                });
+
+                if (!jam_state.alpha.?.isAuthorized(guarantee.report.core_index, guarantee.report.authorizer_hash)) {
+                    auth_span.err("Core {d} not authorized for hash {s}", .{
+                        guarantee.report.core_index,
+                        std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash),
+                    });
+                    return Error.CoreUnauthorized;
+                }
+                auth_span.debug("Authorization validated for core {d}", .{guarantee.report.core_index});
             }
 
             // Check for duplicate packages across states
             // TODO: move this to recent_blocks
-            const package_hash = guarantee.report.package_spec.hash;
-            for (jam_state.beta.?.blocks.items) |block| {
-                for (block.work_reports) |report| {
-                    if (std.mem.eql(u8, &report.hash, &package_hash)) {
-                        return Error.DuplicatePackage;
+            {
+                const dup_span = span.child(.check_duplicate_package);
+                defer dup_span.deinit();
+
+                const package_hash = guarantee.report.package_spec.hash;
+                dup_span.debug("Checking for duplicate package hash {s}", .{
+                    std.fmt.fmtSliceHexLower(&package_hash),
+                });
+
+                for (jam_state.beta.?.blocks.items, 0..) |block, block_idx| {
+                    for (block.work_reports, 0..) |report, report_idx| {
+                        dup_span.trace("Comparing against block {d} report {d}: {s}", .{
+                            block_idx,
+                            report_idx,
+                            std.fmt.fmtSliceHexLower(&report.hash),
+                        });
+                        if (std.mem.eql(u8, &report.hash, &package_hash)) {
+                            dup_span.err("Found duplicate package in block {d} report {d}", .{
+                                block_idx,
+                                report_idx,
+                            });
+                            return Error.DuplicatePackage;
+                        }
                     }
                 }
+                dup_span.debug("No duplicates found for package hash", .{});
             }
-
             // // Check sufficient guarantors
             // if (guarantee.signatures.len < params.validators_super_majority) {
             //     return Error.InsufficientGuarantees;
@@ -225,6 +355,13 @@ pub fn processGuaranteeExtrinsic(
     slot: types.TimeSlot,
     jam_state: *state.JamState(params),
 ) !Result {
+    const span = trace.span(.process_guarantees);
+    defer span.deinit();
+    span.debug("Processing guarantees - count: {d}, slot: {d}", .{ validated.guarantees.len, slot });
+    span.trace("Current state root: {s}", .{
+        std.fmt.fmtSliceHexLower(&jam_state.beta.?.blocks.items[0].state_root),
+    });
+
     var reported = std.ArrayList(types.ReportedWorkPackage).init(allocator);
     defer reported.deinit();
 
@@ -233,27 +370,37 @@ pub fn processGuaranteeExtrinsic(
 
     // Process each validated guarantee
     for (validated.guarantees) |guarantee| {
+        const process_span = span.child(.process_guarantee);
+        defer process_span.deinit();
+
         const core_index = guarantee.report.core_index;
+        process_span.debug("Processing guarantee for core {d}", .{core_index});
 
         // Core can be reused, this is checked when validating the guarantee
         // Add report to Rho state
+        process_span.debug("Creating availability assignment with timeout {d}", .{slot});
         const assignment = types.AvailabilityAssignment{
             .report = try guarantee.report.deepClone(allocator),
             .timeout = slot,
         };
+
         jam_state.rho.?.setReport(
             core_index,
             assignment,
         );
 
         // remove the authorizer from the pool
+        process_span.debug(
+            "Removing authorizer from pool {d}",
+            .{std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash)},
+        );
         jam_state.alpha.?.removeAuthorizer(core_index, guarantee.report.authorizer_hash);
 
         // Track reported packages
         // NOTE:need to entry to use the hash_function to get the work report hash
-        var entry = jam_state.rho.?.getReport(core_index).?;
+        const entry = jam_state.rho.?.getReport(core_index).?;
         try reported.append(.{
-            .hash = try entry.hash(allocator),
+            .hash = entry.assignment.report.package_spec.hash,
             .exports_root = guarantee.report.package_spec.exports_root,
         });
 

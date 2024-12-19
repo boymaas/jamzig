@@ -197,6 +197,7 @@ pub fn JamState(comptime params: Params) type {
             if (self.phi) |*phi| phi.deinit();
             if (self.pi) |*pi| pi.deinit();
             if (self.psi) |*psi| psi.deinit();
+            if (self.rho) |*rho| rho.deinit();
             if (self.theta) |*theta| theta.deinit();
             if (self.xi) |*xi| xi.deinit();
         }
