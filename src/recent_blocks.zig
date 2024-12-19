@@ -111,10 +111,10 @@ pub const RecentHistory = struct {
             &[_]?types.Hash{};
 
         var beefy_mmr = mmr.MMR.fromOwnedSlice(self.allocator, @constCast(last_beefy_mmr));
-        // errdefer beefy_mmr.deinit();
+        errdefer beefy_mmr.deinit();
 
         // Append the accumulate root to the Beefy MMR
-        try mmr.append(&beefy_mmr, block_info.state_root, Keccak256);
+        try mmr.append(&beefy_mmr, input.accumulate_root, Keccak256);
 
         // Update the new block's Beefy MMR
         block_info.beefy_mmr = try beefy_mmr.toOwnedSlice();
@@ -127,8 +127,7 @@ pub const RecentHistory = struct {
     pub fn addBlockInfo(self: *Self, new_block: types.BlockInfo) !void {
         if (self.blocks.items.len == self.max_blocks) {
             const oldest_block = self.blocks.orderedRemove(0);
-            self.allocator.free(oldest_block.beefy_mmr);
-            self.allocator.free(oldest_block.work_reports);
+            oldest_block.deinit(self.allocator);
         }
 
         try self.blocks.append(new_block);

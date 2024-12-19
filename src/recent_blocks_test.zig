@@ -44,11 +44,9 @@ test "recent blocks: parsing all test cases" {
 
         // Process the new block
         const recent_block = try fromTestVectorInputToRecentBlock(allocator, vector.expected.value.input);
-        defer {
-            allocator.free(recent_block.work_reports);
-        }
+        defer recent_block.deinit(allocator);
 
-        try recent_history.import(allocator, recent_block);
+        try recent_history.import(recent_block);
 
         // Verify the post-state
         try testing.expectEqual(vector.expected.value.post_state.beta.len, recent_history.blocks.items.len);

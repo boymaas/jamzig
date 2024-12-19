@@ -9,7 +9,6 @@ const Entry = ?Hash;
 
 pub const MMR = std.ArrayList(Entry);
 
-// TODO: get rid of allocation
 pub fn filter_nulls(mrange: []const Entry, buffer: []Hash) []Hash {
     var count: usize = 0;
     for (mrange) |maybe_hash| {
@@ -118,13 +117,13 @@ test "super_peak calculation" {
     defer mmr.deinit();
 
     // Test empty MMR
-    var peak = try super_peak(&mmr, Blake2b_256);
+    var peak = super_peak(mmr.items, Blake2b_256);
     try testing.expectEqualSlices(u8, &[_]u8{0} ** 32, &peak);
 
     // Add single leaf
     const leaf1 = [_]u8{1} ** 32;
     try append(&mmr, leaf1, Blake2b_256);
-    peak = try super_peak(&mmr, Blake2b_256);
+    peak = super_peak(mmr.items, Blake2b_256);
     try testing.expectEqualSlices(u8, &leaf1, &peak);
 
     // Add second leaf to create a node
@@ -133,7 +132,7 @@ test "super_peak calculation" {
         try append(&mmr, leaf2, Blake2b_256);
     }
 
-    peak = try super_peak(&mmr, Blake2b_256);
+    peak = super_peak(mmr.items, Blake2b_256);
     std.debug.print("{s}\n", .{std.fmt.fmtSliceHexLower(&peak)});
 }
 
