@@ -22,6 +22,7 @@ pub const Error = error{
     BadAnchor,
     DependencyMissing,
     DuplicatePackage,
+    DuplicatePackageInGuarantees,
     BadStateRoot,
     BadBeefyMmrRoot,
     CoreUnauthorized,
@@ -47,6 +48,47 @@ pub const ValidatedGuaranteeExtrinsic = struct {
         const span = trace.span(.validate_guarantees);
         defer span.deinit();
         span.debug("Starting guarantee validation for {d} guarantees", .{guarantees.data.len});
+
+        // Check for duplicate packages using a sorting-based approach.
+        // This implementation trades slightly higher memory usage (~11KB for 341 cores)
+        // for better runtime complexity (O(n log n) vs O(n²)). The sorted approach
+        // provides more predictable performance and better cache locality,
+        // to alternatives like hash tables.
+        // TODO: benchmark this
+        {
+            const dup_span = span.child(.check_duplicate_package_in_batch);
+            defer dup_span.deinit();
+
+            dup_span.debug("Starting duplicate check for {d} guarantees", .{guarantees.data.len});
+
+            // Create temporary array to store hashes for sorting
+            // avoid allocation
+            var bounded_buffer = try std.BoundedArray(types.WorkPackageHash, params.core_count).init(0);
+
+            // Copy all package hashes
+            for (guarantees.data, 0..) |g, i| {
+                try bounded_buffer.append(g.report.package_spec.hash);
+                dup_span.trace("Collected hash at index {d}: {s}", .{ i, std.fmt.fmtSliceHexLower(&bounded_buffer.get(i)) });
+            }
+
+            // Sort hashes for efficient duplicate checking
+            std.mem.sortUnstable(types.WorkPackageHash, bounded_buffer.slice(), {}, @import("utils/sort.zig").ascHashFn);
+
+            // Get access to the sorted hashes
+            const sorted_hashes = bounded_buffer.constSlice();
+
+            // Check adjacent hashes for duplicates
+            for (sorted_hashes[0 .. sorted_hashes.len - 1], sorted_hashes[1..], 0..) |hash1, hash2, i| {
+                dup_span.trace("Comparing sorted hashes at indices {d} and {d}", .{ i, i + 1 });
+
+                if (std.mem.eql(u8, &hash1, &hash2)) {
+                    dup_span.err("Found duplicate package hash: {s}", .{std.fmt.fmtSliceHexLower(&hash1)});
+                    return Error.DuplicatePackage;
+                }
+            }
+
+            dup_span.debug("No duplicates found in batch of {d} packages", .{guarantees.data.len});
+        }
 
         // Validate all guarantees
         for (guarantees.data) |guarantee| {
@@ -221,47 +263,51 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
 
             // Validate signatures
-            const sig_span = span.child(.validate_signatures);
-            defer sig_span.deinit();
+            {
+                const sig_span = span.child(.validate_signatures);
+                defer sig_span.deinit();
 
-            for (guarantee.signatures) |sig| {
-                const sig_detail_span = sig_span.child(.validate_signature);
-                defer sig_detail_span.deinit();
+                sig_span.debug("Validating {d} guarantor signatures", .{guarantee.signatures.len});
 
-                sig_detail_span.debug("Validating signature for validator index {d}", .{sig.validator_index});
-                sig_detail_span.trace("Signature: {s}", .{std.fmt.fmtSliceHexLower(&sig.signature)});
+                for (guarantee.signatures) |sig| {
+                    const sig_detail_span = sig_span.child(.validate_signature);
+                    defer sig_detail_span.deinit();
 
-                if (sig.validator_index >= jam_state.kappa.?.validators.len) {
-                    sig_detail_span.err("Invalid validator index {d} >= {d}", .{
-                        sig.validator_index,
-                        jam_state.kappa.?.validators.len,
-                    });
-                    return Error.BadValidatorIndex;
+                    sig_detail_span.debug("Validating signature for validator index {d}", .{sig.validator_index});
+                    sig_detail_span.trace("Signature: {s}", .{std.fmt.fmtSliceHexLower(&sig.signature)});
+
+                    if (sig.validator_index >= jam_state.kappa.?.validators.len) {
+                        sig_detail_span.err("Invalid validator index {d} >= {d}", .{
+                            sig.validator_index,
+                            jam_state.kappa.?.validators.len,
+                        });
+                        return Error.BadValidatorIndex;
+                    }
+
+                    const validator = jam_state.kappa.?.validators[sig.validator_index];
+                    const public_key = validator.ed25519;
+                    sig_detail_span.trace("Validator public key: {s}", .{std.fmt.fmtSliceHexLower(&public_key)});
+
+                    // Create message to verify using Blake2b
+                    // The message is: "jam_guarantee" ++ H(E(anchor, bitfield))
+                    const prefix: []const u8 = "jam_guarantee";
+                    const w = try @import("./codec.zig").serializeAlloc(types.WorkReport, params, allocator, guarantee.report);
+                    defer allocator.free(w);
+                    var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
+                    hasher.update(w);
+                    var hash: [32]u8 = undefined;
+                    hasher.final(&hash);
+
+                    const validator_pub_key = crypto.sign.Ed25519.PublicKey.fromBytes(public_key) catch {
+                        return Error.InvalidValidatorPublicKey;
+                    };
+
+                    const signature = crypto.sign.Ed25519.Signature.fromBytes(sig.signature);
+
+                    signature.verify(prefix ++ &hash, validator_pub_key) catch {
+                        return Error.BadSignature;
+                    };
                 }
-
-                const validator = jam_state.kappa.?.validators[sig.validator_index];
-                const public_key = validator.ed25519;
-                sig_detail_span.trace("Validator public key: {s}", .{std.fmt.fmtSliceHexLower(&public_key)});
-
-                // Create message to verify using Blake2b
-                // The message is: "jam_guarantee" ++ H(E(anchor, bitfield))
-                const prefix: []const u8 = "jam_guarantee";
-                const w = try @import("./codec.zig").serializeAlloc(types.WorkReport, params, allocator, guarantee.report);
-                defer allocator.free(w);
-                var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
-                hasher.update(w);
-                var hash: [32]u8 = undefined;
-                hasher.final(&hash);
-
-                const validator_pub_key = crypto.sign.Ed25519.PublicKey.fromBytes(public_key) catch {
-                    return Error.InvalidValidatorPublicKey;
-                };
-
-                const signature = crypto.sign.Ed25519.Signature.fromBytes(sig.signature);
-
-                signature.verify(prefix ++ &hash, validator_pub_key) catch {
-                    return Error.BadSignature;
-                };
             }
 
             // Core must be free or its previous report must have timed out
@@ -314,7 +360,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             // Check for duplicate packages across states
             // TODO: move this to recent_blocks
             {
-                const dup_span = span.child(.check_duplicate_package);
+                const dup_span = span.child(.check_duplicate_package_in_recent_history);
                 defer dup_span.deinit();
 
                 const package_hash = guarantee.report.package_spec.hash;
@@ -322,21 +368,30 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                     std.fmt.fmtSliceHexLower(&package_hash),
                 });
 
-                for (jam_state.beta.?.blocks.items, 0..) |block, block_idx| {
+                const blocks = jam_state.beta.?.blocks;
+                dup_span.debug("Comparing against {d} blocks", .{blocks.items.len});
+                for (blocks.items, 0..) |block, block_idx| {
+                    const block_span = dup_span.child(.check_block);
+                    defer block_span.deinit();
+
+                    block_span.debug("Checking block {d} with {d} reports", .{
+                        block_idx,
+                        block.work_reports.len,
+                    });
+
                     for (block.work_reports, 0..) |report, report_idx| {
-                        dup_span.trace("Comparing against block {d} report {d}: {s}", .{
-                            block_idx,
+                        block_span.trace("Comparing against report {d}: {s}", .{
                             report_idx,
                             std.fmt.fmtSliceHexLower(&report.hash),
                         });
                         if (std.mem.eql(u8, &report.hash, &package_hash)) {
-                            dup_span.err("Found duplicate package in block {d} report {d}", .{
-                                block_idx,
+                            block_span.err("Found duplicate package in report {d}", .{
                                 report_idx,
                             });
                             return Error.DuplicatePackage;
                         }
                     }
+                    block_span.debug("No duplicates found in block {d}", .{block_idx});
                 }
                 dup_span.debug("No duplicates found for package hash", .{});
             }

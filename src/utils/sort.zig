@@ -19,7 +19,8 @@ pub fn makeLessThanSliceOfFn(comptime T: type) fn (void, T, T) bool {
     }.lessThan;
 }
 
-const lessThanSliceOfU8 = makeLessThanSliceOfFn(u8);
+pub const lessThanSliceOfU8 = makeLessThanSliceOfFn(u8);
+pub const ascHashFn = makeLessThanSliceOfFn([32]u8);
 
 const testing = std.testing;
 

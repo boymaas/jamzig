@@ -55,14 +55,14 @@ test "tiny/dependency_missing-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/dependency_missing-1.bin");
 }
-// test "tiny/duplicate_package_in_recent_history-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/duplicate_package_in_recent_history-1.bin");
-// }
-// test "tiny/duplicated_package_in_report-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/duplicated_package_in_report-1.bin");
-// }
+test "tiny/duplicate_package_in_recent_history-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/duplicate_package_in_recent_history-1.bin");
+}
+test "tiny/duplicated_package_in_report-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/duplicated_package_in_report-1.bin");
+}
 // test "tiny/future_report_slot-1.bin" {
 //     const allocator = std.testing.allocator;
 //     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/future_report_slot-1.bin");
