@@ -47,14 +47,14 @@ test "tiny/consume_authorization_once-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/consume_authorization_once-1.bin");
 }
-// test "tiny/core_engaged-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/core_engaged-1.bin");
-// }
-// test "tiny/dependency_missing-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/dependency_missing-1.bin");
-// }
+test "tiny/core_engaged-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/core_engaged-1.bin");
+}
+test "tiny/dependency_missing-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/dependency_missing-1.bin");
+}
 // test "tiny/duplicate_package_in_recent_history-1.bin" {
 //     const allocator = std.testing.allocator;
 //     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/duplicate_package_in_recent_history-1.bin");

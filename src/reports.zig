@@ -142,12 +142,26 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
 
             // Validate guarantors are sorted and unique
-            var prev_index: types.ValidatorIndex = 0;
-            for (guarantee.signatures) |sig| {
-                if (sig.validator_index <= prev_index) {
-                    return Error.NotSortedOrUniqueGuarantors;
+            {
+                const guarantor_span = span.child(.signatures_sorted_unique);
+                defer guarantor_span.deinit();
+
+                guarantor_span.debug("Validating {d} guarantor signatures are sorted and unique", .{guarantee.signatures.len});
+
+                var prev_index: ?types.ValidatorIndex = null;
+                for (guarantee.signatures, 0..) |sig, i| {
+                    guarantor_span.trace("Checking validator index {d} at position {d}", .{ sig.validator_index, i });
+
+                    if (prev_index != null and sig.validator_index <= prev_index.?) {
+                        guarantor_span.err("Guarantor validation failed: index {d} <= previous {d}", .{
+                            sig.validator_index,
+                            prev_index.?,
+                        });
+                        return Error.NotSortedOrUniqueGuarantors;
+                    }
+                    prev_index = sig.validator_index;
                 }
-                prev_index = sig.validator_index;
+                guarantor_span.debug("All guarantor indices validated as sorted and unique", .{});
             }
 
             // Check service ID exists
