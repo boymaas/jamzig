@@ -92,6 +92,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
         }
 
         // Validate all guarantees
+        var prev_guarantee_core: ?u32 = null;
         for (guarantees.data) |guarantee| {
             const core_span = span.child(.validate_core);
             defer core_span.deinit();
@@ -109,6 +110,13 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 core_span.err("Invalid core index {d} >= {d}", .{ guarantee.report.core_index, params.core_count });
                 return Error.BadCoreIndex;
             }
+
+            // Check for out-of-order guarantees
+            if (prev_guarantee_core != null and guarantee.report.core_index <= prev_guarantee_core.?) {
+                core_span.err("Out-of-order guarantee: {d} <= {d}", .{ guarantee.report.core_index, prev_guarantee_core.? });
+                return Error.OutOfOrderGuarantee;
+            }
+            prev_guarantee_core = guarantee.report.core_index;
 
             // Check if we have enough signatures:
 
