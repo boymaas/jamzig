@@ -244,6 +244,10 @@ pub const AvailabilityAssignment = struct {
     report: WorkReport,
     timeout: U32,
 
+    pub fn isTimedOut(self: @This(), work_replacement_period: u8, timeslot: TimeSlot) bool {
+        return self.timeout + work_replacement_period <= timeslot;
+    }
+
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         self.report.deinit(allocator);
     }

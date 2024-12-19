@@ -172,16 +172,34 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 };
             }
 
-            // Validate core assignment
-            const assignment = jam_state.rho.?.getReport(guarantee.report.core_index);
-            if (assignment == null) {
-                return Error.WrongAssignment;
+            // Core must be free or its previous report must have timed out
+            // (exceeded WorkReplacementPeriod since last report)
+            if (jam_state.rho.?.getReport(guarantee.report.core_index)) |entry| {
+                if (!entry.assignment.isTimedOut(params.work_replacement_period, guarantee.slot)) {
+                    return Error.CoreEngaged;
+                }
             }
 
-            // Check sufficient guarantors
-            if (guarantee.signatures.len < params.validators_super_majority) {
-                return Error.InsufficientGuarantees;
+            // Check if the authorizer hash is valid
+            if (!jam_state.alpha.?.isAuthorized(guarantee.report.core_index, guarantee.report.authorizer_hash)) {
+                return Error.CoreUnauthorized;
             }
+
+            // Check for duplicate packages across states
+            // TODO: move this to recent_blocks
+            const package_hash = guarantee.report.package_spec.hash;
+            for (jam_state.beta.?.blocks.items) |block| {
+                for (block.work_reports) |report| {
+                    if (std.mem.eql(u8, &report.hash, &package_hash)) {
+                        return Error.DuplicatePackage;
+                    }
+                }
+            }
+
+            // // Check sufficient guarantors
+            // if (guarantee.signatures.len < params.validators_super_majority) {
+            //     return Error.InsufficientGuarantees;
+            // }
         }
 
         return @This(){ .guarantees = guarantees.data };
@@ -217,37 +235,25 @@ pub fn processGuaranteeExtrinsic(
     for (validated.guarantees) |guarantee| {
         const core_index = guarantee.report.core_index;
 
-        // Check if core can be reused
-        if (jam_state.rho.?.getReport(core_index)) |existing| {
-            const timeout = existing.assignment.timeout;
-            if (slot < timeout + params.work_replacement_period) {
-                return error.CoreEngaged;
-            }
-        }
-
-        // Check for duplicate packages across states
-        // TODO: move this to recent_blocks
-        const package_hash = guarantee.report.package_spec.hash;
-        for (jam_state.beta.?.blocks.items) |block| {
-            for (block.work_reports) |report| {
-                if (std.mem.eql(u8, &report.hash, &package_hash)) {
-                    return error.DuplicatePackage;
-                }
-            }
-        }
-
+        // Core can be reused, this is checked when validating the guarantee
         // Add report to Rho state
+        const assignment = types.AvailabilityAssignment{
+            .report = try guarantee.report.deepClone(allocator),
+            .timeout = slot,
+        };
         jam_state.rho.?.setReport(
             core_index,
-            types.AvailabilityAssignment{
-                .report = try guarantee.report.deepClone(allocator),
-                .timeout = guarantee.slot,
-            },
+            assignment,
         );
 
+        // remove the authorizer from the pool
+        jam_state.alpha.?.removeAuthorizer(core_index, guarantee.report.authorizer_hash);
+
         // Track reported packages
+        // NOTE:need to entry to use the hash_function to get the work report hash
+        var entry = jam_state.rho.?.getReport(core_index).?;
         try reported.append(.{
-            .hash = package_hash,
+            .hash = try entry.hash(allocator),
             .exports_root = guarantee.report.package_spec.exports_root,
         });
 

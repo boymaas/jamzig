@@ -3,17 +3,15 @@ const types = @import("types.zig");
 
 // Constants TODO: Move to configuration
 const O: usize = 8; // Maximum number of items in the authorizations pool
-const Q: usize = 80; // Maximum number of items in the authorizations queue
 
 // Types
 const Hash = [32]u8;
 const AuthorizationPool = std.BoundedArray(Hash, O);
-const AuthorizationQueue = std.BoundedArray(Hash, Q);
 
 pub fn Alpha(comptime core_count: u16) type {
     return struct {
         //  α[c] The set of authorizers allowable for a particular core c as the
-        //  authorizer pool TODO: this can become somewhat big, maybe better to allocate
+        //  authorizer pool
         pools: [core_count]AuthorizationPool,
 
         pub fn init() @This() {
@@ -36,6 +34,34 @@ pub fn Alpha(comptime core_count: u16) type {
                 if (std.mem.eql(u8, &pool_auth, &auth)) return true;
             }
             return false;
+        }
+
+        pub fn addAuthorizer(self: *@This(), core: usize, auth: Hash) !void {
+            if (core >= core_count) return error.InvalidCore;
+
+            var pool = &self.pools[core];
+            // Check if auth already exists
+            for (pool.slice()) |pool_auth| {
+                if (std.mem.eql(u8, &pool_auth, &auth)) return;
+            }
+
+            // Add new auth if pool isn't full
+            try pool.append(auth);
+        }
+
+        pub fn removeAuthorizer(self: *@This(), core: usize, auth: Hash) void {
+            if (core >= core_count) return;
+
+            var pool = &self.pools[core];
+            const slice = pool.slice();
+
+            // Find and remove the matching auth hash
+            for (slice, 0..) |pool_auth, i| {
+                if (std.mem.eql(u8, &pool_auth, &auth)) {
+                    _ = pool.swapRemove(i);
+                    return;
+                }
+            }
         }
 
         pub fn format(
