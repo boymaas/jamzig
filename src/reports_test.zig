@@ -83,18 +83,18 @@ test "tiny/no_enough_guarantees-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/no_enough_guarantees-1.bin");
 }
-// test "tiny/not_authorized-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/not_authorized-1.bin");
-// }
-// test "tiny/not_authorized-2.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/not_authorized-2.bin");
-// }
-// test "tiny/not_sorted_guarantor-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/not_sorted_guarantor-1.bin");
-// }
+test "tiny/not_authorized-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/not_authorized-1.bin");
+}
+test "tiny/not_authorized-2.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/not_authorized-2.bin");
+}
+test "tiny/not_sorted_guarantor-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/not_sorted_guarantor-1.bin");
+}
 // test "tiny/out_of_order_guarantees-1.bin" {
 //     const allocator = std.testing.allocator;
 //     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/out_of_order_guarantees-1.bin");
