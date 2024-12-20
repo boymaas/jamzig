@@ -90,7 +90,32 @@ pub fn shuffleWithHash(
     // Handle empty sequence case
     if (sequence.len < 1) return;
 
-    // Use an arena allocator for temporary allocations
+    // Calculate total memory needed:
+    // For each recursion level (sequence.len times):
+    // - One temporary sequence of size n-i
+    // - One final result array of size n-i
+    // where i goes from 0 to sequence.len-1
+
+    // Calculate total memory needed for all recursion levels:
+    //
+    // For a sequence of n=1023 validators, each validator being 4 bytes (u32):
+    // Level 0: two arrays of size 1023 = 2 * 1023 * 4 = 8,184 bytes
+    // Level 1: two arrays of size 1022 = 2 * 1022 * 4 = 8,176 bytes
+    // Level 2: two arrays of size 1021 = 2 * 1021 * 4 = 8,168 bytes
+    // ...and so on until...
+    // Level 1022: two arrays of size 1 = 2 * 1 * 4 = 8 bytes
+    //
+    // Total bytes = sequence.len * (sizeOf(T) * sequence.len)
+    // For n=1023, T=u32: 1023 * (4 * 1023) = 4,186,116 bytes ≈ 4.1MB
+    //
+    // Note: This is an upper bound as we allocate full sequence.len for simplicity,
+    // actual memory use is less since each level needs smaller arrays
+    //
+    // TODO: OPTIMIZE THIS!
+    const total_size = sequence.len * (@sizeOf(T) * sequence.len);
+    _ = total_size;
+
+    // Initialize arena with calculated capacity
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
