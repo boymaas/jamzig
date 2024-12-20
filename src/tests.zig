@@ -17,6 +17,9 @@ comptime {
     _ = @import("fisher_yates.zig");
     _ = @import("fisher_yates_test.zig");
 
+    _ = @import("guarantor_assignments.zig");
+    _ = @import("guarantor_assignments_test.zig");
+
     _ = @import("safrole_test.zig");
     _ = @import("safrole_test/diffz.zig");
 
