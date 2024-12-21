@@ -290,6 +290,15 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                         }
                     }
                 }
+
+                // walk the guarantees to see if the prereq is there
+                for (guarantees.data) |g| {
+                    if (std.mem.eql(u8, &g.report.package_spec.hash, &segment.work_package_hash)) {
+                        found_package = true;
+                        break;
+                    }
+                }
+
                 if (!found_package) {
                     return Error.SegmentRootLookupInvalid;
                 }

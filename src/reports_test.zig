@@ -115,22 +115,22 @@ test "tiny/reports_with_dependencies-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-1.bin");
 }
-// test "tiny/reports_with_dependencies-2.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-2.bin");
-// }
-// test "tiny/reports_with_dependencies-3.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-3.bin");
-// }
-// test "tiny/reports_with_dependencies-4.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-4.bin");
-// }
-// test "tiny/reports_with_dependencies-5.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-5.bin");
-// }
+test "tiny/reports_with_dependencies-2.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-2.bin");
+}
+test "tiny/reports_with_dependencies-3.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-3.bin");
+}
+test "tiny/reports_with_dependencies-4.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-4.bin");
+}
+test "tiny/reports_with_dependencies-5.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-5.bin");
+}
 // test "tiny/reports_with_dependencies-6.bin" {
 //     const allocator = std.testing.allocator;
 //     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/reports_with_dependencies-6.bin");
