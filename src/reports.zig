@@ -124,6 +124,29 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
             prev_guarantee_core = guarantee.report.core_index;
 
+            // Validate gas limits
+            {
+                const gas_span = span.child(.validate_gas);
+                defer gas_span.deinit();
+                gas_span.debug("Validating gas limits for {d} results", .{guarantee.report.results.len});
+
+                // Calculate total accumulate gas for this report
+                var total_gas: u64 = 0;
+                for (guarantee.report.results) |result| {
+                    total_gas += result.accumulate_gas;
+                }
+
+                gas_span.debug("Total accumulate gas: {d}", .{total_gas});
+
+                // Check total doesn't exceed G_A
+                if (total_gas > params.gas_alloc_accumulation) {
+                    gas_span.err("Work report gas {d} exceeds limit {d}", .{ total_gas, params.gas_alloc_accumulation });
+                    return Error.WorkReportGasTooHigh;
+                }
+
+                gas_span.debug("Gas validation passed", .{});
+            }
+
             // Check if we have enough signatures:
 
             const slot_span = span.child(.validate_slot);

@@ -143,14 +143,14 @@ test "tiny/segment_root_lookup_invalid-2.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/segment_root_lookup_invalid-2.bin");
 }
-// test "tiny/service_item_gas_too_low-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/service_item_gas_too_low-1.bin");
-// }
-// test "tiny/too_high_work_report_gas-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/too_high_work_report_gas-1.bin");
-// }
+test "tiny/service_item_gas_too_low-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/service_item_gas_too_low-1.bin");
+}
+test "tiny/too_high_work_report_gas-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/too_high_work_report_gas-1.bin");
+}
 // test "tiny/too_many_dependencies-1.bin" {
 //     const allocator = std.testing.allocator;
 //     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/too_many_dependencies-1.bin");

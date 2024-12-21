@@ -23,13 +23,14 @@ pub const Params = struct {
     // F: The audit bias factor, expected additional auditors per no-show
     audit_bias_factor: u8 = 2, // F
     // GA: The total gas allocated to a core for Accumulation
-    // gas_alloc_accumulation: u32, // GA
+    // See: https://github.com/w3f/jamtestvectors/pull/20#issuecomment-2526203035
+    gas_alloc_accumulation: u32 = 10_000_000, // GA
     // GI: The gas allocated to invoke a work-package’s Is-Authorized logic
-    // gas_alloc_is_authorized: u32, // GI
+    gas_alloc_is_authorized: u32 = 1_000_000, // GI
     // GR: The total gas allocated for a work-package’s Refine logic
-    // gas_alloc_refine: u32, // GR
+    gas_alloc_refine: u32 = 500_000_000, // GR
     // GT: The total gas allocated across all cores for Accumulation
-    //total_gas_alloc_accumulation: u32, // GT
+    total_gas_alloc_accumulation: u32 = 35_000_000, // GT
     // H: The size of recent history, in blocks
     recent_history_size: u8 = 8, // H
     // I: The maximum amount of work items in a package

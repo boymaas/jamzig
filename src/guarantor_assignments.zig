@@ -47,8 +47,6 @@ pub fn permuteAssignments(
     // Apply rotation
     rotateAssignments(params.core_count, assignments.items, rotation);
 
-    std.debug.print("Assignments: {any}\n", .{assignments.items});
-
     return assignments.toOwnedSlice();
 }
 
