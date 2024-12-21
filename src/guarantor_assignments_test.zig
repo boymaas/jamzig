@@ -12,13 +12,13 @@ test "rotateAssignments" {
 
     // Test no rotation (n=0)
     var result = try allocator.dupe(u32, &cores);
-    guarantor.rotateAssignments(result, 0);
+    guarantor.rotateAssignments(4, result, 0);
     try testing.expectEqualSlices(u32, &cores, result);
     allocator.free(result);
 
     // Test single position rotation
     result = try allocator.dupe(u32, &cores);
-    guarantor.rotateAssignments(result, 1);
+    guarantor.rotateAssignments(4, result, 1);
     try testing.expectEqual(result[0], cores[1]);
     try testing.expectEqual(result[1], cores[2]);
     try testing.expectEqual(result[2], cores[3]);
@@ -27,7 +27,7 @@ test "rotateAssignments" {
 
     // Test full rotation (should equal original)
     result = try allocator.dupe(u32, &cores);
-    guarantor.rotateAssignments(result, 4);
+    guarantor.rotateAssignments(4, result, 4);
     try testing.expectEqualSlices(u32, &cores, result);
     allocator.free(result);
 }
