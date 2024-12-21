@@ -15,6 +15,8 @@ pub const Error = error{
     FutureReportSlot,
     ReportEpochBeforeLast,
     InsufficientGuarantees,
+    TooManyDependencies,
+
     TooManyGuarantees,
     OutOfOrderGuarantee,
     NotSortedOrUniqueGuarantors,
@@ -33,7 +35,6 @@ pub const Error = error{
     BadValidatorIndex,
     WorkReportGasTooHigh,
     ServiceItemGasTooLow,
-    TooManyDependencies,
     SegmentRootLookupInvalid,
     BadSignature,
     InvalidValidatorPublicKey,
@@ -146,9 +147,30 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 gas_span.debug("Gas validation passed", .{});
             }
 
+            // Check total dependencies don't exceed J according to equation 11.3
+            {
+                const deps_span = span.child(.check_dependencies);
+                defer deps_span.deinit();
+                deps_span.debug("Checking total dependencies", .{});
+
+                const total_deps = guarantee.report.segment_root_lookup.len + guarantee.report.context.prerequisites.len;
+                deps_span.debug("Found {d} segment roots and {d} prerequisites, total {d}", .{
+                    guarantee.report.segment_root_lookup.len,
+                    guarantee.report.context.prerequisites.len,
+                    total_deps,
+                });
+
+                if (total_deps > params.max_number_of_dependencies_for_work_reports) {
+                    deps_span.err("Too many dependencies: {d} > {d}", .{ total_deps, params.max_work_items_per_package });
+                    return Error.TooManyDependencies;
+                }
+                deps_span.debug("Dependencies check passed", .{});
+            }
+
             // Check if we have enough signatures:
 
             const slot_span = span.child(.validate_slot);
+
             defer slot_span.deinit();
             slot_span.debug("Validating report slot {d} against current slot {d} for core {d}", .{
                 guarantee.slot,

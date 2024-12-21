@@ -35,6 +35,9 @@ pub const Params = struct {
     recent_history_size: u8 = 8, // H
     // I: The maximum amount of work items in a package
     max_work_items_per_package: u8 = 4, // I
+    // J: The maximum amount of dependencies in a work report segment-root
+    // lookup dictionary and the number of pre-requisites for a work item
+    max_number_of_dependencies_for_work_reports: u8 = 8, // J
     // K: The maximum number of tickets which may be submitted in a single extrinsic
     max_tickets_per_extrinsic: u32 = 16, // K
     // L: The maximum age in timeslots of the lookup anchor

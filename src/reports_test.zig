@@ -151,10 +151,10 @@ test "tiny/too_high_work_report_gas-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/too_high_work_report_gas-1.bin");
 }
-// test "tiny/too_many_dependencies-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/too_many_dependencies-1.bin");
-// }
+test "tiny/too_many_dependencies-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/too_many_dependencies-1.bin");
+}
 test "tiny/wrong_assignment-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/wrong_assignment-1.bin");
