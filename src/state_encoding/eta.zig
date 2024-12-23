@@ -1,12 +1,33 @@
 const std = @import("std");
 const testing = std.testing;
+const trace = @import("../tracing.zig").scoped(.eta_encoder);
 
 const Eta = @import("../types.zig").Eta;
 
 pub fn encode(self: *const Eta, writer: anytype) !void {
-    for (self) |entropy_item| {
+    const span = trace.span(.encode_entropy_pool);
+    defer span.deinit();
+
+    span.debug("Starting Eta encoding", .{});
+    span.trace("Eta buffer length: {d}", .{self.len});
+
+    // First pass encoding
+    const first_pass_span = span.child(.first_pass);
+    defer first_pass_span.deinit();
+
+    first_pass_span.debug("Starting entropy encoding", .{});
+    for (self, 0..) |entropy_item, i| {
+        const item_span = first_pass_span.child(.entropy_item);
+        defer item_span.deinit();
+
+        item_span.debug("Processing entropy item {d}", .{i});
+        item_span.trace("Entropy data: {any}", .{std.fmt.fmtSliceHexLower(&entropy_item)});
+
         try writer.writeAll(&entropy_item);
+        item_span.debug("Successfully wrote entropy item", .{});
     }
+
+    span.debug("Completed Eta encoding", .{});
 }
 
 test "encode" {

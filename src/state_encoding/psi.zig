@@ -1,5 +1,4 @@
 const std = @import("std");
-
 const types = @import("../types.zig");
 
 const encoder = @import("../codec/encoder.zig");
@@ -9,42 +8,51 @@ const disputes = @import("../disputes.zig");
 const Psi = disputes.Psi;
 const Hash = disputes.Hash;
 
+const trace = @import("../tracing.zig").scoped(.psi_encoding);
+
 pub fn encode(self: *const Psi, writer: anytype) !void {
-    // Encode good_set
-    try encodeOrderedSet(&self.good_set, writer);
+    const span = trace.span(.encode);
+    defer span.deinit();
+    span.debug("Starting PSI state encoding", .{});
 
-    // Encode bad_set
-    try encodeOrderedSet(&self.bad_set, writer);
+    // Encode each set
+    try encodeOrderedSet(&self.good_set, "good", writer);
+    try encodeOrderedSet(&self.bad_set, "bad", writer);
+    try encodeOrderedSet(&self.wonky_set, "wonky", writer);
+    try encodeOrderedSet(&self.punish_set, "punish", writer);
 
-    // Encode wonky_set
-    try encodeOrderedSet(&self.wonky_set, writer);
-
-    // Encode punish_set
-    try encodeOrderedSet(&self.punish_set, writer);
+    span.debug("Successfully encoded all PSI sets", .{});
 }
-
-// For sorting a small list, insertion sort is generally the best choice among these options. Here's why:
-//
-// 1. Simplicity: Insertion sort is straightforward and has low overhead, which is beneficial for small datasets.
-// 2. Performance on small lists: For small n, the O(n^2) worst-case complexity of insertion sort is not a significant issue, and it often outperforms more complex algorithms due to its simplicity and good cache performance.
-// 3. Adaptive behavior: Insertion sort performs exceptionally well on nearly sorted data, which is common in many real-world scenarios.
-// 4. In-place sorting: It sorts the list in-place, requiring only O(1) extra space.
 
 const makeLessThanSliceOfFn = @import("../utils/sort.zig").makeLessThanSliceOfFn;
 const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
 
-fn encodeOrderedSet(set: *const std.AutoArrayHashMap([32]u8, void), writer: anytype) !void {
+fn encodeOrderedSet(set: *const std.AutoArrayHashMap([32]u8, void), name: []const u8, writer: anytype) !void {
+    const span = trace.span(.encode_ordered_set);
+    defer span.deinit();
+    span.debug("Encoding ordered set: {s}", .{name});
+    span.trace("Set size: {d} items", .{set.count()});
+
     var list = std.ArrayList(Hash).init(set.allocator);
     defer list.deinit();
 
     try list.appendSlice(set.keys());
+    span.debug("Created temporary list for sorting", .{});
 
     std.sort.insertion(Hash, list.items, {}, lessThanSliceOfHashes);
+    span.debug("Sorted hash list", .{});
 
     try writer.writeAll(encoder.encodeInteger(@intCast(list.items.len)).as_slice());
-    for (list.items) |hash| {
+    span.trace("Wrote length prefix: {d}", .{list.items.len});
+
+    for (list.items, 0..) |hash, i| {
+        const item_span = span.child(.hash_item);
+        defer item_span.deinit();
+        item_span.trace("Writing hash {d} of {d}: {any}", .{ i + 1, list.items.len, std.fmt.fmtSliceHexLower(&hash) });
         try writer.writeAll(&hash);
     }
+
+    span.debug("Successfully encoded ordered set: {s}", .{name});
 }
 
 //  _____         _   _

@@ -4,46 +4,83 @@ const types = @import("../types.zig");
 const codec = @import("../codec.zig");
 const jam_params = @import("../jam_params.zig");
 
+const trace = @import("../tracing.zig").scoped(.gamma_encoding);
+
 pub fn encode(
     comptime params: jam_params.Params,
     gamma: *const state.Gamma(params.validators_count, params.epoch_length),
     writer: anytype,
 ) !void {
-    // Serialize validators array
+    const span = trace.span(.encode);
+    defer span.deinit();
+    span.debug("Starting gamma state encoding", .{});
 
+    // Serialize validators array
     std.debug.assert(gamma.k.validators.len == params.validators_count);
 
-    for (gamma.k.validators) |validator| {
+    const validators_span = span.child(.validators);
+    defer validators_span.deinit();
+    validators_span.debug("Encoding {d} validators", .{gamma.k.validators.len});
+
+    for (gamma.k.validators, 0..) |validator, i| {
+        const validator_span = validators_span.child(.validator);
+        defer validator_span.deinit();
+        validator_span.debug("Encoding validator {d} of {d}", .{ i + 1, gamma.k.validators.len });
+        validator_span.trace("Validator BLS key: {any}", .{std.fmt.fmtSliceHexLower(&validator.bls)});
         try codec.serialize(types.ValidatorData, params, writer, validator);
     }
 
     // Serialize VRF root
+    const vrf_span = span.child(.vrf_root);
+    defer vrf_span.deinit();
+    vrf_span.debug("Encoding VRF root", .{});
+    vrf_span.trace("VRF root value: {any}", .{std.fmt.fmtSliceHexLower(&gamma.z)});
     try codec.serialize(types.BandersnatchVrfRoot, params, writer, gamma.z);
 
     // Serialize state-specific fields
+    const state_span = span.child(.state);
+    defer state_span.deinit();
+
     switch (gamma.s) {
         .tickets => |tickets| {
+            state_span.debug("Encoding tickets state", .{});
             // FIXME: C.1.4 Discriminators are encoded as a natural and are encoded immediately prior to the item
             try codec.serialize(u8, params, writer, 0);
 
             std.debug.assert(tickets.len == params.epoch_length);
+            state_span.debug("Encoding {d} tickets", .{tickets.len});
 
-            for (tickets) |ticket| {
+            for (tickets, 0..) |ticket, i| {
+                const ticket_span = state_span.child(.ticket);
+                defer ticket_span.deinit();
+                ticket_span.debug("Encoding ticket {d} of {d}", .{ i + 1, tickets.len });
+                ticket_span.trace("Ticket ID: {any}, attempt: {d}", .{ std.fmt.fmtSliceHexLower(&ticket.id), ticket.attempt });
                 try codec.serialize(types.TicketBody, params, writer, ticket);
             }
         },
         .keys => |keys| {
+            state_span.debug("Encoding keys state", .{});
             try codec.serialize(u8, params, writer, 1);
 
             std.debug.assert(keys.len == params.epoch_length);
+            state_span.debug("Encoding {d} keys", .{keys.len});
 
-            for (keys) |key| {
+            for (keys, 0..) |key, i| {
+                const key_span = state_span.child(.key);
+                defer key_span.deinit();
+                key_span.debug("Encoding key {d} of {d}", .{ i + 1, keys.len });
+                key_span.trace("Key value: {any}", .{std.fmt.fmtSliceHexLower(&key)});
                 try codec.serialize(types.BandersnatchPublic, params, writer, key);
             }
         },
     }
 
+    const tickets_span = span.child(.tickets);
+    defer tickets_span.deinit();
+    tickets_span.debug("Encoding additional tickets array with {d} entries", .{gamma.a.len});
     try codec.serialize([]types.TicketBody, params, writer, gamma.a);
+
+    span.debug("Successfully completed gamma state encoding", .{});
 }
 
 //  _____         _   _

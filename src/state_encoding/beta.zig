@@ -1,4 +1,5 @@
 const std = @import("std");
+const trace = @import("../tracing.zig").scoped(.state_encoding);
 
 const types = @import("../types.zig");
 const ReportedWorkPackage = types.ReportedWorkPackage;
@@ -9,28 +10,55 @@ const recent_blocks = @import("../recent_blocks.zig");
 const RecentHistory = recent_blocks.RecentHistory;
 
 pub fn encode(self: *const RecentHistory, writer: anytype) !void {
+    const span = trace.span(.encode);
+    defer span.deinit();
+    span.debug("Starting recent history encoding", .{});
+    span.trace("Number of blocks to encode: {d}", .{self.blocks.items.len});
+
     // Encode the number of blocks
     try writer.writeAll(encoder.encodeInteger(self.blocks.items.len).as_slice());
+    span.debug("Encoded block count", .{});
 
     // Encode each block
-    for (self.blocks.items) |block| {
+    for (self.blocks.items, 0..) |block, i| {
+        const block_span = span.child(.block);
+        defer block_span.deinit();
+        block_span.debug("Encoding block {d}", .{i});
+        block_span.trace("Header hash: {s}", .{std.fmt.fmtSliceHexLower(&block.header_hash)});
+
         // Encode header hash
         try writer.writeAll(&block.header_hash);
+        block_span.debug("Encoded header hash", .{});
 
         // Encode beefy MMR
         const mmr_encoder = @import("../merkle_mountain_ranges.zig").encode;
+        block_span.debug("Encoding beefy MMR", .{});
         try mmr_encoder(block.beefy_mmr, writer);
+        block_span.debug("Encoded beefy MMR", .{});
 
         // Encode state root
+        block_span.trace("State root: {s}", .{std.fmt.fmtSliceHexLower(&block.state_root)});
         try writer.writeAll(&block.state_root);
+        block_span.debug("Encoded state root", .{});
 
         // Encode work reports
+        block_span.debug("Encoding {d} work reports", .{block.work_reports.len});
         try writer.writeAll(encoder.encodeInteger(block.work_reports.len).as_slice());
-        for (block.work_reports) |report| {
+
+        for (block.work_reports, 0..) |report, j| {
+            const report_span = block_span.child(.work_report);
+            defer report_span.deinit();
+            report_span.debug("Encoding work report {d}", .{j});
+            report_span.trace("Report hash: {s}", .{std.fmt.fmtSliceHexLower(&report.hash)});
+            report_span.trace("Exports root: {s}", .{std.fmt.fmtSliceHexLower(&report.exports_root)});
+
             try writer.writeAll(&report.hash);
             try writer.writeAll(&report.exports_root);
+            report_span.debug("Work report encoded", .{});
         }
+        block_span.debug("Block encoding complete", .{});
     }
+    span.debug("Recent history encoding complete", .{});
 }
 
 //  _____         _   _

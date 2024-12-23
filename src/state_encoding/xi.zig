@@ -1,6 +1,7 @@
 const std = @import("std");
 const sort = std.sort;
 const encoder = @import("../codec/encoder.zig");
+const trace = @import("../tracing.zig").scoped(.xi);
 
 const makeLessThanSliceOfFn = @import("../utils/sort.zig").makeLessThanSliceOfFn;
 const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
@@ -8,34 +9,55 @@ const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
 /// Xi (ξ) is defined as a dictionary mapping hashes to hashes: D⟨H → H⟩E
 /// where H represents 32-byte hashes
 pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *const [epoch_size]std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
-    for (xi) |*epoch| {
+    const span = trace.span(.encode);
+    defer span.deinit();
+    span.debug("Starting Xi encoding for {d} epochs", .{epoch_size});
+
+    for (xi, 0..) |*epoch, i| {
+        span.debug("Encoding epoch {d}/{d}", .{ i + 1, epoch_size });
         try encodeTimeslotEntry(allocator, epoch, writer);
     }
+
+    span.debug("Successfully encoded all epochs", .{});
 }
 
 pub fn encodeTimeslotEntry(allocator: std.mem.Allocator, xi: *const std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
+    const span = trace.span(.encode_timeslot);
+    defer span.deinit();
+
+    const entry_count = xi.count();
+    span.debug("Encoding timeslot entry with {d} mappings", .{entry_count});
+
     // First encode the number of mappings
-    try writer.writeAll(encoder.encodeInteger(xi.count()).as_slice());
+    try writer.writeAll(encoder.encodeInteger(entry_count).as_slice());
+    span.trace("Wrote entry count prefix", .{});
 
     // Sort the keys to ensure deterministic encoding
-    var keys = try std.ArrayList([32]u8).initCapacity(allocator, xi.count());
+    var keys = try std.ArrayList([32]u8).initCapacity(allocator, entry_count);
     defer keys.deinit();
 
     var iter = xi.keyIterator();
     while (iter.next()) |key| {
         try keys.append(key.*);
     }
+    span.trace("Collected {d} keys", .{keys.items.len});
 
     // Use std.sort.insertionSort since we expect small maps
     sort.insertion([32]u8, keys.items, {}, lessThanSliceOfHashes);
+    span.debug("Sorted keys for deterministic encoding", .{});
 
     // Write each key-value pair in sorted order
-    for (keys.items) |key| {
+    for (keys.items, 0..) |key, i| {
+        const value = xi.get(key).?;
+        span.trace("Writing pair {d}/{d} - key: {any}, value: {any}", .{ i + 1, keys.items.len, std.fmt.fmtSliceHexLower(&key), std.fmt.fmtSliceHexLower(&value) });
+
         // Write key
         try writer.writeAll(&key);
         // Write corresponding value
-        try writer.writeAll(&xi.get(key).?);
+        try writer.writeAll(&value);
     }
+
+    span.debug("Successfully encoded timeslot entry", .{});
 }
 
 test "Xi encode" {

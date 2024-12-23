@@ -11,34 +11,66 @@ const Theta = available_reports.Theta;
 const makeLessThanSliceOfFn = @import("../utils/sort.zig").makeLessThanSliceOfFn;
 const lessThanSliceOfHashes = makeLessThanSliceOfFn(types.Hash);
 
+const trace = @import("../tracing.zig").scoped(.theta);
+
 /// Theta (ϑ) is defined as a sequence of work reports and their dependencies: ⟦(W, {H})⟧E
 /// where W is a work report and H is a set of 32-byte hashes representing unaccumulated dependencies
 pub fn encode(theta: anytype, writer: anytype) !void {
+    const span = trace.span(.encode);
+    defer span.deinit();
+    span.debug("Starting theta encoding", .{});
+
     // Encode each entry
-    for (theta.entries) |slot_entry| {
+    for (theta.entries, 0..) |slot_entry, i| {
+        const entry_span = span.child(.slot_entry);
+        defer entry_span.deinit();
+        entry_span.debug("Processing slot entry {d}", .{i});
+
         // Encode the dependencies set
         // First write number of dependencies
         try codec.writeInteger(slot_entry.items.len, writer);
-        for (slot_entry.items) |entry| {
+        entry_span.debug("Wrote {d} slot entries", .{slot_entry.items.len});
+
+        for (slot_entry.items, 0..) |entry, j| {
+            const item_span = entry_span.child(.entry_item);
+            defer item_span.deinit();
+            item_span.debug("Encoding entry {d} of {d}", .{ j + 1, slot_entry.items.len });
             try encodeEntry(theta.allocator, entry, writer);
         }
     }
+    span.debug("Completed theta encoding", .{});
 }
 
 pub fn encodeSlotEntry(allocator: std.mem.Allocator, slot_entries: Theta.SlotEntries, writer: anytype) !void {
+    const span = trace.span(.encode_slot_entry);
+    defer span.deinit();
+    span.debug("Starting slot entries encoding", .{});
+
     try writer.writeAll(encoder.encodeInteger(slot_entries.items.len).as_slice());
-    for (slot_entries.items) |entry| {
+    span.debug("Wrote slot entries count: {d}", .{slot_entries.items.len});
+
+    for (slot_entries.items, 0..) |entry, i| {
+        const entry_span = span.child(.entry);
+        defer entry_span.deinit();
+        entry_span.debug("Encoding entry {d} of {d}", .{ i + 1, slot_entries.items.len });
         try encodeEntry(allocator, entry, writer);
     }
+    span.debug("Completed slot entries encoding", .{});
 }
 
 pub fn encodeEntry(allocator: std.mem.Allocator, entry: available_reports.Entry, writer: anytype) !void {
+    const span = trace.span(.encode_entry);
+    defer span.deinit();
+    span.debug("Starting entry encoding", .{});
+
     // Encode the work report
     try codec.serialize(WorkReport, {}, writer, entry.work_report);
+    span.debug("Encoded work report", .{});
 
     // Encode the dependencies
     const dependency_count = entry.dependencies.count();
     try codec.writeInteger(dependency_count, writer);
+    span.debug("Writing {d} dependencies", .{dependency_count});
 
     // TODO: this pattern of having a dictionary and needing to sort by key
     // is all over the place, we need a utility for this.
@@ -49,13 +81,19 @@ pub fn encodeEntry(allocator: std.mem.Allocator, entry: available_reports.Entry,
     while (keys.next()) |hash| {
         try key_list.append(hash.*);
     }
+    span.trace("Collected {d} hash keys", .{key_list.items.len});
 
     // NOTE: assuming short lists of deps
     sort.insertion([32]u8, key_list.items, {}, lessThanSliceOfHashes);
+    span.debug("Sorted dependency hashes", .{});
 
-    for (key_list.items) |hash| {
+    for (key_list.items, 0..) |hash, i| {
+        const hash_span = span.child(.hash);
+        defer hash_span.deinit();
+        hash_span.trace("Writing hash {d} of {d}: {s}", .{ i + 1, key_list.items.len, std.fmt.fmtSliceHexLower(&hash) });
         try writer.writeAll(&hash);
     }
+    span.debug("Completed entry encoding", .{});
 }
 
 // Tests
