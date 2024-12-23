@@ -2,15 +2,31 @@ const std = @import("std");
 const testing = std.testing;
 const authorization_queue = @import("../authorization_queue.zig");
 const Phi = authorization_queue.Phi;
+
 const Q = authorization_queue.Q; // Maximum queue items (80)
 const H = authorization_queue.H; // Hash size (32)
 
+const tracing = @import("../tracing.zig");
+
+const trace = tracing.scoped(.phi_decoder);
+
 pub fn decode(comptime core_count: u16, allocator: std.mem.Allocator, reader: anytype) !Phi(core_count) {
+    const span = trace.span(.decode);
+    defer span.deinit();
+
+    span.debug("starting phi state decoding for {d} cores", .{core_count});
+
     var phi = try Phi(core_count).init(allocator);
     errdefer phi.deinit();
 
+    span.debug("initialized empty phi state", .{});
+
     // For each core
     for (0..core_count) |core| {
+        const core_span = span.child(.process_core);
+        defer core_span.deinit();
+        core_span.debug("processing core {d}", .{core});
+
         var i: usize = 0;
         while (i < Q) : (i += 1) {
             var hash: [H]u8 = undefined;
@@ -25,12 +41,21 @@ pub fn decode(comptime core_count: u16, allocator: std.mem.Allocator, reader: an
                 }
             }
 
-            // Only add non-zero hashes to the queue
-            if (!is_zero) {
+            if (is_zero) {
+                core_span.trace("skipping zero hash at position {d}", .{i});
+            } else {
+                core_span.debug("found non-zero hash at position {d}", .{i});
                 try phi.addAuthorization(@intCast(core), hash);
             }
         }
+        core_span.info("processed {d} hashes for core {d}, found {d} non-zero", .{
+            Q,
+            core,
+            phi.queue[core].items.len,
+        });
     }
+
+    span.info("completed decoding phi state", .{});
 
     return phi;
 }

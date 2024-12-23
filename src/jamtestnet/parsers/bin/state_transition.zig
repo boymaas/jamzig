@@ -21,24 +21,28 @@ pub const KeyVal = struct {
         span.debug("Reading key of length: {d}", .{key_len});
         const key = try allocator.alloc(u8, @intCast(key_len));
         try reader.readNoEof(key);
+        span.trace("Decoded key: {s}", .{std.fmt.fmtSliceHexLower(key)});
 
         // Read value length and data
         const val_len = try codec.readInteger(reader);
         span.debug("Reading value of length: {d}", .{val_len});
         const val = try allocator.alloc(u8, @intCast(val_len));
         try reader.readNoEof(val);
+        span.trace("Decoded value: {s}", .{std.fmt.fmtSliceHexLower(val)});
 
         // Read id length and data
         const id_len = try codec.readInteger(reader);
         span.debug("Reading id of length: {d}", .{id_len});
         const id = try allocator.alloc(u8, @intCast(id_len));
         try reader.readNoEof(id);
+        span.trace("Decoded id: {s}", .{std.fmt.fmtSliceHexLower(id)});
 
         // Read desc length and data
         const desc_len = try codec.readInteger(reader);
         span.debug("Reading desc of length: {d}", .{desc_len});
         const desc = try allocator.alloc(u8, @intCast(desc_len));
         try reader.readNoEof(desc);
+        span.trace("Decoded desc: {s}", .{std.fmt.fmtSliceHexLower(desc)});
 
         span.debug("Successfully decoded KeyVal", .{});
         return KeyVal{
