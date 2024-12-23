@@ -51,7 +51,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// φ: Authorization queue for tasks or processes awaiting authorization by the network.
         /// Manipulated in: src/authorization.zig
-        phi: ?Phi(params.core_count),
+        phi: ?Phi(params.core_count, params.max_authorizations_queue_items),
 
         /// χ: Privileged service identities, which may have special roles within the protocol.
         /// Manipulated in: src/services.zig

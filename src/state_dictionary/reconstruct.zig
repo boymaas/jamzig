@@ -52,7 +52,7 @@ pub fn reconstructState(
                 },
                 2 => {
                     log.debug("Decoding phi component (id={d})", .{key[0]});
-                    jam_state.phi = try state_decoding.phi.decode(params.core_count, allocator, getReader(value));
+                    jam_state.phi = try state_decoding.phi.decode(params.core_count, params.max_authorizations_queue_items, allocator, getReader(value));
                 },
                 3 => {
                     log.debug("Decoding beta component (id={d})", .{key[0]});

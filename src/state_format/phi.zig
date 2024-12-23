@@ -5,7 +5,8 @@ const Phi = @import("../authorization_queue.zig").Phi;
 
 pub fn format(
     comptime core_count: u32,
-    self: *const Phi(core_count),
+    comptime max_authorizations_queue_items: u32,
+    self: *const Phi(core_count, max_authorizations_queue_items),
     comptime fmt: []const u8,
     options: std.fmt.FormatOptions,
     writer: anytype,
@@ -41,7 +42,8 @@ pub fn format(
 // Test helper to demonstrate formatting
 test "Phi format demo" {
     const core_count: u16 = 4;
-    var phi = try Phi(core_count).init(std.testing.allocator);
+    const max_authorizations_queue_items: u16 = 80;
+    var phi = try Phi(core_count, max_authorizations_queue_items).init(std.testing.allocator);
     defer phi.deinit();
 
     // Add test data
@@ -58,7 +60,7 @@ test "Phi format demo" {
     std.debug.print("{}\n", .{phi});
 
     // Print empty state
-    var empty_phi = @import("../authorization_queue.zig").Phi(core_count).init(std.testing.allocator) catch unreachable;
+    var empty_phi = @import("../authorization_queue.zig").Phi(core_count, max_authorizations_queue_items).init(std.testing.allocator) catch unreachable;
     defer empty_phi.deinit();
     std.debug.print("\n=== Empty Phi Format Demo ===\n", .{});
     std.debug.print("\n{}\n", .{empty_phi});

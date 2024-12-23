@@ -8,8 +8,7 @@ const codec = @import("../codec.zig");
 const authorization_queue = @import("../authorization_queue.zig");
 const Phi = authorization_queue.Phi;
 
-const Q = authorization_queue.Q;
-const H = authorization_queue.H;
+const H = 32;
 
 pub fn encode(self: anytype, writer: anytype) !void {
     // The number of cores (C) is a constant no need to encode it
@@ -21,7 +20,7 @@ pub fn encode(self: anytype, writer: anytype) !void {
             try writer.writeAll(&hash);
         }
         // Write 0 hashes to fill the queue until 80
-        const zero_hashes_to_write = Q - core_queue.items.len;
+        const zero_hashes_to_write = self.max_authorizations_queue_items - core_queue.items.len;
         const zero_hash = [_]u8{0} ** H;
         var i: usize = 0;
         while (i < zero_hashes_to_write) : (i += 1) {
@@ -41,7 +40,8 @@ const testing = std.testing;
 
 test "encode" {
     const C = 4;
-    var auth_queue = try Phi(C).init(testing.allocator);
+    const Q = 80;
+    var auth_queue = try Phi(C, Q).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash1 = [_]u8{1} ** H;

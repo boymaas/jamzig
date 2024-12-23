@@ -19,6 +19,7 @@ test "jamtestnet.jamduna: safrole import" {
     defer span.deinit();
 
     // we derive from the normal settings
+    // see: https://github.com/jam-duna/jamtestnet/blob/main/chainspecs.json#L2
     const JAMDUNA_PARAMS = jam_params.Params{
         .epoch_length = 12,
         .ticket_submission_end_epoch_slot = 10,
@@ -28,6 +29,7 @@ test "jamtestnet.jamduna: safrole import" {
         .avail_bitfield_bytes = (2 + 7) / 8,
         // JAMDUNA changes
         .max_ticket_entries_per_validator = 3, // N
+        .max_authorizations_queue_items = 6, // M
     };
 
     // Get test allocator
