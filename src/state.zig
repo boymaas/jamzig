@@ -173,6 +173,27 @@ pub fn JamState(comptime params: Params) type {
             };
         }
 
+        /// Checks if the whole state has been initialized. We do not have any
+        /// entries which are null
+        pub fn ensureFullyInitialized(self: *const JamState(params)) !void {
+            if (self.alpha == null) return error.UninitializedAlpha;
+            if (self.beta == null) return error.UninitializedBeta;
+            if (self.gamma == null) return error.UninitializedGamma;
+            if (self.delta == null) return error.UninitializedDelta;
+            if (self.eta == null) return error.UninitializedEta;
+            if (self.iota == null) return error.UninitializedIota;
+            if (self.kappa == null) return error.UninitializedKappa;
+            if (self.lambda == null) return error.UninitializedLambda;
+            if (self.rho == null) return error.UninitializedRho;
+            if (self.tau == null) return error.UninitializedTau;
+            if (self.phi == null) return error.UninitializedPhi;
+            if (self.chi == null) return error.UninitializedChi;
+            if (self.psi == null) return error.UninitializedPsi;
+            if (self.pi == null) return error.UninitializedPi;
+            if (self.xi == null) return error.UninitializedXi;
+            if (self.theta == null) return error.UninitializedTheta;
+        }
+
         const state_dict = @import("state_dictionary.zig");
         pub fn buildStateMerklizationDictionary(self: *const JamState(params), allocator: std.mem.Allocator) !state_dict.MerklizationDictionary {
             return try state_dict.buildStateMerklizationDictionary(params, allocator, self);
@@ -234,7 +255,7 @@ pub fn JamState(comptime params: Params) type {
             if (other.eta) |eta| self.eta = eta;
 
             // if (source.alpha) |alpha| self.alpha = alpha;
-            // if (source.beta) |beta| self.beta = beta;
+            if (other.beta) |*beta| try self.beta.?.merge(beta);
             // if (source.chi) |chi| self.chi = chi;
             // if (source.delta) |delta| self.delta = delta;
             if (other.gamma) |*gamma| {

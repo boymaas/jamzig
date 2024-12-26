@@ -90,7 +90,7 @@ test "jamtestnet.jamduna: verifying state reconstruction" {
     }
 }
 
-test "jamtestnet.jamduna: safrole state transitions" {
+test "jamtestnet.jamduna.state-transitions" {
     const allocator = std.testing.allocator;
     std.debug.print("\n=== Starting Safrole State Transitions Test ===\n", .{});
 
@@ -114,21 +114,31 @@ test "jamtestnet.jamduna: safrole state transitions" {
             std.debug.print("Initializing genesis state...\n", .{});
             var dict = try state_transition.pre_state_as_merklization_dict(allocator);
             defer dict.deinit();
-            current_state = try state_dict.reconstruct.reconstructState(JAMDUNA_PARAMS, allocator, &dict);
+            current_state = try state_dict.reconstruct.reconstructState(
+                JAMDUNA_PARAMS,
+                allocator,
+                &dict,
+            );
+            std.debug.print("Beta {s}", .{current_state.?.beta.?});
             std.debug.print("Genesis state initialized\n", .{});
         }
 
         // std.debug.print("Current state {s}", .{current_state.?});
 
         std.debug.print("Executing state transition...\n", .{});
-        var delta_state = try stf.stateTransition(JAMDUNA_PARAMS, allocator, &current_state.?, &state_transition.block);
+        var delta_state = try stf.stateTransition(
+            JAMDUNA_PARAMS,
+            allocator,
+            &current_state.?,
+            &state_transition.block,
+        );
         defer delta_state.deinit(allocator);
 
         std.debug.print("Merging states...\n", .{});
         try current_state.?.merge(&delta_state, allocator);
         std.debug.print("State merge complete\n", .{});
 
-        std.debug.print("New state {s}", .{current_state.?});
+        // std.debug.print("New state {s}", .{current_state.?});
 
         var current_state_mdict = try current_state.?.buildStateMerklizationDictionaryWithConfig(allocator, .{ .include_preimage_timestamps = false });
         defer current_state_mdict.deinit();
@@ -140,7 +150,7 @@ test "jamtestnet.jamduna: safrole state transitions" {
         defer expected_state_diff.deinit();
 
         if (expected_state_diff.has_changes()) {
-            std.debug.print("State Diff: {}", .{expected_state_diff});
+            // std.debug.print("State Diff: {}", .{expected_state_diff});
 
             var expected_state = try state_dict.reconstruct.reconstructState(JAMDUNA_PARAMS, allocator, &expected_state_mdict);
             defer expected_state.deinit(allocator);

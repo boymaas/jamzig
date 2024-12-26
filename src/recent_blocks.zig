@@ -9,6 +9,8 @@ const types = @import("types.zig");
 const merkle = @import("merkle_binary.zig");
 const mmr = @import("merkle_mountain_ranges.zig");
 
+const jam_params = @import("jam_params.zig");
+
 /// Represents a recent block with information needed for importing
 /// NOTE: this type was defined in the history test vectors, thus this is NOT
 /// a domain type!
@@ -26,19 +28,22 @@ pub const RecentBlock = struct {
         allocator.free(self.work_reports);
     }
 
-    pub fn fromBlock(allocator: std.mem.Allocator, block: *const types.Block) !@This() {
+    pub fn fromBlock(comptime params: jam_params.Params, allocator: std.mem.Allocator, block: *const types.Block) !@This() {
         return RecentBlock{
-            .header_hash = undefined, // TODO: block.header.header_hash,
+            .header_hash = try block.header.header_hash(params, allocator),
             .parent_state_root = block.header.parent_state_root,
-            .accumulate_root = undefined, // TODO block.header.extrinsic_hash,
+            .accumulate_root = try block.calcAccumulateRoot(allocator),
             .work_reports = blk: {
                 // Extract work report hashes from guarantees
                 // TODO: move this to block level, more clean
-                var reports = std.ArrayList(types.Hash).init(allocator);
+                var reports = std.ArrayList(types.ReportedWorkPackage).init(allocator);
                 errdefer reports.deinit();
 
-                for (block.extrinsic.guarantees) |guarantee| {
-                    try reports.append(guarantee.report.package_spec.hash);
+                for (block.extrinsic.guarantees.data) |guarantee| {
+                    try reports.append(.{
+                        .hash = guarantee.report.package_spec.hash,
+                        .exports_root = guarantee.report.package_spec.exports_root,
+                    });
                 }
 
                 break :blk try reports.toOwnedSlice();
@@ -161,6 +166,26 @@ pub const RecentHistory = struct {
             try new_history.addBlockInfo(cloned_block);
         }
         return new_history;
+    }
+
+    /// Merges another RecentHistory into this one, replacing all blocks
+    /// with those from the other history.
+    /// TODO: do this smarter and more efficiently
+    pub fn merge(self: *Self, other: *const Self) !void {
+        // Clear existing blocks first
+        for (self.blocks.items) |*block| {
+            block.deinit(self.allocator);
+        }
+        self.blocks.clearRetainingCapacity();
+
+        // Update max_blocks if needed
+        self.max_blocks = other.max_blocks;
+
+        // Clone and add all blocks from other
+        for (other.blocks.items) |block| {
+            const cloned_block = try block.deepClone(self.allocator);
+            try self.addBlockInfo(cloned_block);
+        }
     }
 };
 

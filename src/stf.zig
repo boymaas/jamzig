@@ -73,6 +73,7 @@ pub fn stateTransition(
     // memory is freed when doing so. As such, maybe its better to work with updates or deltas which will also
     // communicate what has changed. These deltas can then be applied to a JamState, and we can get a summary of what
     // has been changed.
+    try current_state.ensureFullyInitialized();
 
     var new_state: JamState(params) = try JamState(params).init(allocator);
 
@@ -96,11 +97,12 @@ pub fn stateTransition(
     // - Validating new blocks (e.g., checking parent hashes)
     // - Handling short-term chain reorganizations
     // - Providing context for other protocol operations
-    // new_state.beta = try transitionRecentHistory(
-    //     allocator,
-    //     &current_state.beta,
-    //     new_block,
-    // );
+    new_state.beta = try transitionRecentHistory(
+        params,
+        allocator,
+        &current_state.beta.?,
+        new_block,
+    );
 
     // NOTE: it seems safrole needs updated psi with offenders now
     // putting it here to make it work
@@ -266,7 +268,9 @@ pub fn transitionTime(
     return header.slot;
 }
 
+// TODO: optimize this by not deepcloning and sharing pointers
 pub fn transitionRecentHistory(
+    comptime params: Params,
     allocator: Allocator,
     current_beta: *const state.Beta,
     new_block: *const Block,
@@ -274,7 +278,7 @@ pub fn transitionRecentHistory(
     const RecentBlock = @import("recent_blocks.zig").RecentBlock;
     // Transition β with information from the new block
     var new_beta = try current_beta.deepClone(allocator);
-    try new_beta.import(allocator, try RecentBlock.fromBlock(allocator, new_block));
+    try new_beta.import(try RecentBlock.fromBlock(params, allocator, new_block));
     return new_beta;
 }
 

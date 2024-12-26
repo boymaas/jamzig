@@ -154,6 +154,22 @@ pub const WorkExecResult = union(enum(u8)) {
     bad_code: void = 3,
     code_oversize: void = 4,
 
+    // TODO: make a good type here
+    pub fn getOutputHash(self: *const @This(), comptime H: type) !OpaqueHash {
+        var hasher = H.init(.{});
+
+        switch (self.*) {
+            .ok => |data| hasher.update(data),
+            else => {
+                return error.OkTagNotActive;
+            },
+        }
+
+        var hash: OpaqueHash = undefined;
+        hasher.final(&hash);
+        return hash;
+    }
+
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return switch (self) {
             .ok => |data| WorkExecResult{ .ok = try allocator.dupe(u8, data) },
@@ -553,6 +569,27 @@ pub const Header = struct {
     entropy_source: BandersnatchVrfSignature,
     seal: BandersnatchVrfSignature,
 
+    // TODO: this should be cached on next call
+    pub fn header_hash(
+        self: @This(),
+        comptime params: jam_params.Params,
+        allocator: std.mem.Allocator,
+    ) !HeaderHash {
+        const codec = @import("codec.zig");
+        // TODO: optimize we can remove allocation here as we can calculate
+        // the max size of the header
+        const header_with_seal = try codec.serializeAlloc(Header, params, allocator, self);
+        defer allocator.free(header_with_seal);
+
+        const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
+        var hash: [32]u8 = undefined;
+        var hasher = Blake2b256.init(.{});
+        hasher.update(header_with_seal);
+        hasher.final(&hash);
+
+        return hash;
+    }
+
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         const epoch_mark = if (self.epoch_mark) |mark| try mark.deepClone(allocator) else null;
         const tickets_mark = if (self.tickets_mark) |mark| try mark.deepClone(allocator) else null;
@@ -816,6 +853,40 @@ pub const Extrinsic = struct {
 pub const Block = struct {
     header: Header,
     extrinsic: Extrinsic,
+
+    // TODO: return the AccumulateRoot type
+    // Replace the stub implementation in Block.calcAccumulateRoot
+    pub fn calcAccumulateRoot(self: *const @This(), allocator: std.mem.Allocator) !OpaqueHash {
+        const accumulate_root = @import("accumulate_root.zig");
+
+        // Early return if no guarantees
+        if (self.extrinsic.guarantees.data.len == 0) {
+            return std.mem.zeroes(OpaqueHash);
+        }
+
+        // Collect successful accumulation outputs from guaranteed work reports
+        var outputs = std.ArrayList(accumulate_root.AccumulationOutput).init(allocator);
+        defer outputs.deinit();
+
+        const Blake2b256 = std.crypto.hash.blake2.Blake2b256;
+
+        for (self.extrinsic.guarantees.data) |guarantee| {
+            for (guarantee.report.results) |result| {
+                if (result.result == .ok) {
+                    try outputs.append(.{
+                        .service_id = result.service_id,
+                        .output_hash = try result.result.getOutputHash(Blake2b256), // Use code_hash as output hash
+                    });
+                }
+            }
+        }
+
+        // Calculate the accumulate root using the collected outputs
+        return try accumulate_root.calculateAccumulateRoot(
+            allocator,
+            outputs.items,
+        );
+    }
 
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
