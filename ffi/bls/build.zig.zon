@@ -1,0 +1,20 @@
+.{
+    .name = "bls",
+    .version = "0.0.0",
+
+    .dependencies = .{
+        .bls = .{
+            .url = "git+https://github.com/herumi/bls#dcc5a071c3ab0ce0c6926b27672e9a4f024a7451",
+            .hash = "1220db9dfb54ae5d741e2e360501cfe32e32ceee71c73fc6fcfb00192d3a94926d9a",
+        },
+        .mcl = .{
+            .url = "git+https://github.com/herumi/mcl#3462cf0983bffb703a6e9f4623e47a26ec6e7fe5",
+            .hash = "1220ec4f2518f2f56293d4b84bfe5f9d3925de2894bf8defc7697e133c7ac4f17979",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+}

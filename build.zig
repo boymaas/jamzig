@@ -1,54 +1,34 @@
 const std = @import("std");
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
 pub fn build(b: *std.Build) !void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
-
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    // Existing options
     const tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
     const tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{};
-
     const tracy = b.option([]const u8, "tracy", "Enable Tracy integration. Supply path to Tracy source");
-    const tracy_callstack = b.option(bool, "tracy-callstack", "Include callstack information with Tracy data. Does nothing if -Dtracy is not provided") orelse (tracy != null);
-    const tracy_allocation = b.option(bool, "tracy-allocation", "Include allocation information with Tracy data. Does nothing if -Dtracy is not provided") orelse (tracy != null);
+    const tracy_callstack = b.option(bool, "tracy-callstack", "Include callstack information with Tracy data") orelse (tracy != null);
+    const tracy_allocation = b.option(bool, "tracy-allocation", "Include allocation information with Tracy data") orelse (tracy != null);
+    const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
 
     const build_options = b.addOptions();
     build_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
     build_options.addOption([]const u8, "enable_tracing_level", tracing_level);
-
     build_options.addOption(bool, "enable_tracy", tracy != null);
     build_options.addOption(bool, "enable_tracy_callstack", tracy_callstack);
     build_options.addOption(bool, "enable_tracy_allocation", tracy_allocation);
 
-    // This is a list of filters that can be passed to the test step to run only
-    // can be specified by:
-    //
-    //      -Dtest-filter=[list]         Skip tests that do not match filter
-    //
-    const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
-
     // Dependencies
-    // Add the pretty module as a dependency to the executable
-    // https://github.com/timfayz/pretty
     const pretty_module = b.dependency("pretty", .{ .target = target, .optimize = optimize }).module("pretty");
-    // Add the diffz module:
-    // https://github.com/ziglibs/diffz/tree/420fcb22306ffd4c9c3c761863dfbb6bdbb18a73
     const diffz_module = b.dependency("diffz", .{ .target = target, .optimize = optimize }).module("diffz");
-    // Add tmpfile module
-    // https://github.com/liyu1981/tmpfile.zig/archive/7ca14fb3a8a59e5ab83d3fca7aa0b85e087bd6ff.zip
     const tmpfile_module = b.dependency("tmpfile", .{}).module("tmpfile");
 
-    // Build any rust dependencies
+    // Build MCL
+    const mcl_dep = b.dependency("mcl", .{ .target = target, .optimize = optimize });
+    const bls_dep = b.dependency("bls", .{ .target = target, .optimize = optimize });
+
+    // Rest of the existing build.zig implementation...
     var rust_deps = try buildRustDependencies(b);
     defer rust_deps.deinit();
 
@@ -58,8 +38,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-
-    exe.root_module.addOptions("build_options", build_options);
 
     if (tracy) |tracy_path| {
         const client_cpp = b.pathJoin(
@@ -130,10 +108,10 @@ pub fn build(b: *std.Build) !void {
     // Statically link our rust_deps to the unit tests
     rust_deps.statically_link_to(unit_tests);
 
-    // Since our rust static lib depend on libc and libccp we need to link
-    // against them as well.
-    unit_tests.linkLibC();
-    unit_tests.linkLibCpp();
+    // Link the library
+    unit_tests.linkLibrary(mcl_dep.artifact("mcl"));
+    unit_tests.linkLibrary(bls_dep.artifact("bls384_256"));
+    // _ = bls_dep;
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 

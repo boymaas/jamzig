@@ -1,0 +1,14 @@
+.{
+    .name = "mcl",
+    .version = "2.12.0",
+    .dependencies = .{
+        .mcl = .{
+            .url = "git+https://github.com/herumi/mcl#3462cf0983bffb703a6e9f4623e47a26ec6e7fe5",
+            .hash = "1220ec4f2518f2f56293d4b84bfe5f9d3925de2894bf8defc7697e133c7ac4f17979",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+}
