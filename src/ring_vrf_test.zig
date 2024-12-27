@@ -1,6 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
-const crypto = @import("crypto.zig");
+const bandersnatch = @import("crypto/bandersnatch.zig");
 const ring_vrf = @import("ring_vrf.zig");
 
 fn timeFunction(comptime desc: []const u8, comptime func: anytype, args: anytype) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
@@ -20,7 +20,7 @@ test "ring_vrf: ring signature and VRF" {
     // Generate public keys for the ring
     for (0..RING_SIZE) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try crypto.createKeyPairFromSeed(seed);
+        const key_pair = try bandersnatch.createKeyPairFromSeed(seed);
         ring[i] = key_pair.public_key;
 
         // Print the first 3 keys in hex format
@@ -34,7 +34,7 @@ test "ring_vrf: ring signature and VRF" {
     }
 
     // Replace some keys with padding points
-    const padding_point = try crypto.getPaddingPoint(RING_SIZE);
+    const padding_point = try bandersnatch.getPaddingPoint(RING_SIZE);
     ring[2] = padding_point;
     // We can also set a key to 0, which will be converted to padding points by the verifier
     ring[7] = std.mem.zeroes(types.BandersnatchPublic);
@@ -47,7 +47,7 @@ test "ring_vrf: ring signature and VRF" {
 
     // Generate a key pair for the prover
     const prover_seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_key_index));
-    const prover_key_pair = try crypto.createKeyPairFromSeed(prover_seed);
+    const prover_key_pair = try bandersnatch.createKeyPairFromSeed(prover_seed);
 
     // Create prover
     var prover = try ring_vrf.RingProver.init(
@@ -84,7 +84,7 @@ test "ring_vrf: verify against commitment" {
     // Generate public keys for the ring
     for (0..RING_SIZE) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try crypto.createKeyPairFromSeed(seed);
+        const key_pair = try bandersnatch.createKeyPairFromSeed(seed);
         ring[i] = key_pair.public_key;
     }
 
@@ -99,7 +99,7 @@ test "ring_vrf: verify against commitment" {
 
     // Generate a key pair for the prover
     const prover_seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_key_index));
-    const prover_key_pair = try crypto.createKeyPairFromSeed(prover_seed);
+    const prover_key_pair = try bandersnatch.createKeyPairFromSeed(prover_seed);
 
     // Create prover
     var prover = try ring_vrf.RingProver.init(
@@ -158,7 +158,7 @@ test "ring_vrf: fuzz | takes 10s" {
     for (0..RING_SIZE) |i| {
         var seed: [32]u8 = undefined;
         random.bytes(&seed);
-        const key_pair = try crypto.createKeyPairFromSeed(&seed);
+        const key_pair = try bandersnatch.createKeyPairFromSeed(&seed);
         ring_keypairs[i] = key_pair;
         ring[i] = key_pair.public_key;
     }

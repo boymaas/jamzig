@@ -223,6 +223,8 @@ pub fn verifyRingSignatureAgainstCommitment(
 //  \___/|_| |_|_|\__|   |_|\___||___/\__|___/
 //
 
+const bandersnatch = @import("crypto/bandersnatch.zig");
+
 test "ring_vrf: basic usage" {
     const ring_size: usize = 5;
     var public_keys: [ring_size]types.BandersnatchPublic = undefined;
@@ -230,7 +232,7 @@ test "ring_vrf: basic usage" {
     // Generate some test public keys
     for (0..ring_size) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try @import("crypto.zig").createKeyPairFromSeed(seed);
+        const key_pair = try bandersnatch.createKeyPairFromSeed(seed);
         public_keys[i] = key_pair.public_key;
     }
 
@@ -241,7 +243,7 @@ test "ring_vrf: basic usage" {
     // Create prover
     const prover_idx = 2;
     const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
-    const key_pair = try @import("crypto.zig").createKeyPairFromSeed(seed);
+    const key_pair = try bandersnatch.createKeyPairFromSeed(seed);
     var prover = try RingProver.init(key_pair.private_key, &public_keys, prover_idx);
     defer prover.deinit();
 

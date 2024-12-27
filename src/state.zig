@@ -105,7 +105,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize Psi component
         pub fn initPsi(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.psi = try Psi.init(allocator);
+            self.psi = Psi.init(allocator);
         }
 
         /// Initialize Pi component

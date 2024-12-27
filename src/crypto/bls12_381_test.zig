@@ -154,7 +154,7 @@ test "bls12_381: seeded key pair generation" {
     const seeds = [_][32]u8{
         [_]u8{1} ++ [_]u8{0} ** 31,
         [_]u8{2} ++ [_]u8{0} ** 31,
-        [_]u8{255} ++ [_]u8{0} ** 31,
+        [_]u8{255} ++ [_]u8{255} ** 31,
     };
 
     // Generate key pairs with the same seeds and verify they're identical
