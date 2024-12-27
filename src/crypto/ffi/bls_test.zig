@@ -156,19 +156,19 @@ test "Multi-Message Signature Aggregation" {
     }
 
     // First verify that messages are actually different
-    try std.testing.expect(try bls.areAllMessageDifferent(&msg_vec));
+    try std.testing.expect(try bls.areAllMessageDifferent(std.testing.allocator, &msg_vec));
 
     // Aggregate signatures
     var agg_sig: bls.Signature = undefined;
     try agg_sig.aggregate(&sig_vec);
 
     // Verify aggregated signature with different messages
-    try std.testing.expect(try agg_sig.aggregateVerify(&pk_vec, &msg_vec));
+    try std.testing.expect(try agg_sig.aggregateVerify(std.testing.allocator, &pk_vec, &msg_vec));
 
     // Should fail if we modify any message
     const original_byte = msg_vec[0][msg_prefix.len];
     msg_vec[0][msg_prefix.len] = original_byte + 1;
-    try std.testing.expect(!try agg_sig.aggregateVerify(&pk_vec, &msg_vec));
+    try std.testing.expect(!try agg_sig.aggregateVerify(std.testing.allocator, &pk_vec, &msg_vec));
 }
 
 test "Message Uniqueness Check" {
@@ -182,11 +182,11 @@ test "Message Uniqueness Check" {
     }
 
     // Test different array sizes
-    try std.testing.expect(try bls.areAllMessageDifferent(msg_vec[0..1])); // Single message
-    try std.testing.expect(try bls.areAllMessageDifferent(msg_vec[0..100])); // Many different messages
-    try std.testing.expect(try bls.areAllMessageDifferent(msg_vec[0..256])); // Max unique messages
+    try std.testing.expect(try bls.areAllMessageDifferent(std.testing.allocator, msg_vec[0..1])); // Single message
+    try std.testing.expect(try bls.areAllMessageDifferent(std.testing.allocator, msg_vec[0..100])); // Many different messages
+    try std.testing.expect(try bls.areAllMessageDifferent(std.testing.allocator, msg_vec[0..256])); // Max unique messages
 
     // Test with duplicate messages
     msg_vec[256] = msg_vec[0]; // Create duplicate
-    try std.testing.expect(!try bls.areAllMessageDifferent(msg_vec[0..257]));
+    try std.testing.expect(!try bls.areAllMessageDifferent(std.testing.allocator, msg_vec[0..257]));
 }

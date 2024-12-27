@@ -117,10 +117,10 @@ pub const Signature = struct {
         return bls.blsAggregateVerifyNoCheck(&self.v_, &pubVec[0].v_, &msgVec[0][0], MSG_SIZE, n) == 1;
     }
     // Check whether all msgVec are different..
-    pub fn aggregateVerify(self: *const Signature, pubVec: []const PublicKey, msgVec: []const Message) !bool {
+    pub fn aggregateVerify(self: *const Signature, allocator: std.mem.Allocator, pubVec: []const PublicKey, msgVec: []const Message) !bool {
         const n = pubVec.len;
         if (n == 0 or n != msgVec.len) return Error.InvalidLength;
-        if (!try areAllMessageDifferent(msgVec)) return false;
+        if (!try areAllMessageDifferent(allocator, msgVec)) return false;
         return bls.blsAggregateVerifyNoCheck(&self.v_, &pubVec[0].v_, &msgVec[0][0], MSG_SIZE, n) == 1;
     }
 };
@@ -137,10 +137,9 @@ const MessageComp = struct {
     }
 };
 // Returns true if all msgVec are different.
-pub fn areAllMessageDifferent(msgVec: []const Message) !bool {
+pub fn areAllMessageDifferent(allocator: std.mem.Allocator, msgVec: []const Message) !bool {
     if (msgVec.len <= 1) return true;
-    const gpa_allocator = std.heap.page_allocator;
-    var set = std.HashMap(Message, void, MessageComp, std.hash_map.default_max_load_percentage).init(gpa_allocator);
+    var set = std.HashMap(Message, void, MessageComp, std.hash_map.default_max_load_percentage).init(allocator);
 
     defer set.deinit();
 
