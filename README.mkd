@@ -2,37 +2,45 @@
 
 JAMZIG is a Zig-based implementation of a node for the JAM (JamCore) distributed system. This project focuses on providing a robust, efficient, and scalable solution for network communication and data processing.
 
+JamZig account: 14T1UcnoaMND24ubV86FCT4YxJ8q5CKVG7winwZ7umAit8g2
+
 ## What is JAM?
 
-JAM (JamCore) is a novel blockchain protocol designed to achieve scalable, trustless computation while maintaining a high degree of coherency. It combines elements of both Polkadot and Ethereum to provide a global singleton permissionless object environment paired with secure sideband computation parallelized over a scalable node network.
+JAM is a decentralized hybrid protocol that combines elements of both Polkadot and Ethereum. It provides:
+
+1. A global singleton permissionless object environment (similar to Ethereum's smart contracts)
+2. Secure sideband computation parallelized over a scalable node network (similar to Polkadot's approach)
+
+The protocol is designed around a "collect-refine-join-accumulate" model that enables massive parallelization while maintaining state coherency.
 
 ## Why JAM?
 
-JAM was developed to address the scalability challenges faced by existing blockchain systems while preserving the benefits of a coherent state. It aims to:
+According to the graypaper, JAM was developed to address five key goals:
 
-1. Increase computational throughput
-2. Maintain state coherency
-3. Provide a flexible and accessible platform for developers
-4. Enable efficient parallel processing of tasks
+1. Resilience: High resistance to being stopped, corrupted, or censored
+2. Generality: Ability to perform Turing-complete computation
+3. Performance: Ability to perform computation quickly and at low cost
+4. Coherency: Maintaining causal relationships between different elements of state
+5. Accessibility: Ensuring negligible barriers to innovation with easy, fast, cheap, and permissionless access
 
-## On-Chain vs. On-Core Development
+## In-Core vs On-Chain Computation
 
-JAM introduces a unique dual-execution environment:
+JAM introduces two distinct execution environments:
 
-- **On-Chain**: Similar to traditional blockchain systems, providing a coherent state and handling critical operations.
-- **On-Core**: A parallelized computation environment that allows for high-throughput processing of tasks, with results later integrated into the on-chain state.
+- **In-Core Computation**: Allows for massive parallelization of work across the validator network. Work done in-core is verified through a crypto-economic game of guaranteeing, assuring, auditing, and potentially judging.
 
-This dual approach allows JAM to achieve scalability without sacrificing the benefits of a coherent state machine.
+- **On-Chain Computation**: Similar to traditional blockchain computation where all nodes must process and verify the same state transitions.
 
-## Key Features
+## Key Technical Features
 
-- Efficient data encoding and decoding using a custom codec
-- Implementation of a Merkle binary tree for data integrity verification
-- A Parallel Virtual Machine (PVM) for executing distributed computations
-- Support for recent block management in blockchain-like structures
-- Custom types and data structures optimized for performance
-- Comprehensive test suite including fixtures and vector tests
+- Implementation of the Polka Virtual Machine (PVM), based on RISC-V instruction set architecture
+- Sophisticated erasure coding system for data availability
+- Safrole consensus mechanism for block production
+- GRANDPA for block finalization
+- Novel authorization system for managing compute resources
+- Bandersnatch Ring VRF for validator selection
+- Service-based architecture replacing traditional account model
 
-The codebase is designed with modularity in mind, allowing for easy extension and maintenance. It leverages Zig's powerful features to ensure memory safety and high performance.
+The protocol is designed to achieve theoretical performance of around 341 cores processing in parallel. 
 
-For more information about JAM and JAMZIG, visit our website: [https://jamzig.dev](https://jamzig.dev)
+For more information about JAM and JAMZIG, visit our website: [https://jamzig.dev](https://jamzig.dev) or see: [https://graypaper.com](https://graypaper.com).
