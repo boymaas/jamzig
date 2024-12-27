@@ -36,9 +36,17 @@ pub const Bls12_381 = struct {
         /// Secret part
         secret_key: SecretKey,
 
-        /// Create a new random key pair
-        pub fn create() KeyPair {
-            const sk = SecretKey.create();
+        /// Create a new key pair from an optional seed
+        /// If no seed is provided, random values will be used
+        pub fn create(seed: ?[seed_length]u8) !KeyPair {
+            var sk: SecretKey = undefined;
+            if (seed) |s| {
+                // Use the provided seed for deterministic key generation
+                try sk.key.setLittleEndianMod(&s);
+            } else {
+                // Generate a random key using the library's CSPRNG
+                sk.key.setByCSPRNG();
+            }
             return KeyPair{
                 .secret_key = sk,
                 .public_key = sk.getPublicKey(),

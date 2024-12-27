@@ -13,7 +13,7 @@ test "bls12_381: key pair creation and serialization" {
     try Bls12_381.init();
 
     // Create a new random key pair
-    const key_pair = Bls12_381.KeyPair.create();
+    const key_pair = try Bls12_381.KeyPair.create(null);
 
     // Test public key serialization and deserialization
     const pk_bytes = try key_pair.public_key.toBytes();
@@ -35,7 +35,7 @@ test "bls12_381: key pair creation and serialization" {
 test "bls12_381: signature and verification" {
     try Bls12_381.init();
 
-    const key_pair = Bls12_381.KeyPair.create();
+    const key_pair = try Bls12_381.KeyPair.create(null);
     const message = "Hello, BLS!";
 
     // Sign using the key pair
@@ -62,7 +62,7 @@ test "bls12_381: signature aggregation - single message" {
 
     // Generate multiple key pairs and signatures
     for (0..3) |i| {
-        const key_pair = Bls12_381.KeyPair.create();
+        const key_pair = try Bls12_381.KeyPair.create(null);
         public_keys[i] = key_pair.public_key;
         signatures[i] = key_pair.sign(message);
     }
@@ -92,7 +92,7 @@ test "bls12_381: signature aggregation - multiple messages" {
 
     // Generate signatures for different messages
     for (0..3) |i| {
-        const key_pair = Bls12_381.KeyPair.create();
+        const key_pair = try Bls12_381.KeyPair.create(null);
         public_keys[i] = key_pair.public_key;
         signatures[i] = key_pair.sign(&messages[i]);
     }
@@ -125,7 +125,7 @@ test "bls12_381: public key aggregation" {
 
     // Generate multiple key pairs
     for (0..3) |i| {
-        key_pairs[i] = Bls12_381.KeyPair.create();
+        key_pairs[i] = try Bls12_381.KeyPair.create(null);
         if (i == 0) {
             aggregated_public_key = key_pairs[i].public_key;
         } else {
@@ -146,6 +146,39 @@ test "bls12_381: public key aggregation" {
     try signature.verify(message, aggregated_public_key);
 }
 
+// Test seeded key pair generation
+test "bls12_381: seeded key pair generation" {
+    try Bls12_381.init();
+
+    // Create two sets of identical seeds
+    const seeds = [_][32]u8{
+        [_]u8{1} ++ [_]u8{0} ** 31,
+        [_]u8{2} ++ [_]u8{0} ** 31,
+        [_]u8{255} ++ [_]u8{0} ** 31,
+    };
+
+    // Generate key pairs with the same seeds and verify they're identical
+    for (seeds) |seed| {
+        const key_pair1 = try Bls12_381.KeyPair.create(seed);
+        const key_pair2 = try Bls12_381.KeyPair.create(seed);
+
+        const pk1_bytes = try key_pair1.public_key.toBytes();
+        const pk2_bytes = try key_pair2.public_key.toBytes();
+        try testing.expectEqualSlices(u8, &pk1_bytes, &pk2_bytes);
+
+        const sk1_bytes = try key_pair1.secret_key.toBytes();
+        const sk2_bytes = try key_pair2.secret_key.toBytes();
+        try testing.expectEqualSlices(u8, &sk1_bytes, &sk2_bytes);
+    }
+
+    // Verify different seeds produce different keys
+    const key_pair1 = try Bls12_381.KeyPair.create(seeds[0]);
+    const key_pair2 = try Bls12_381.KeyPair.create(seeds[1]);
+    const pk1_bytes = try key_pair1.public_key.toBytes();
+    const pk2_bytes = try key_pair2.public_key.toBytes();
+    try testing.expect(!std.mem.eql(u8, &pk1_bytes, &pk2_bytes));
+}
+
 // Test error cases
 test "bls12_381: error cases" {
     try Bls12_381.init();
@@ -161,7 +194,7 @@ test "bls12_381: error cases" {
     try testing.expectError(error.InvalidFormat, Bls12_381.PublicKey.fromBytes(invalid_pk_bytes));
 
     // Test empty public key array for aggregation
-    const key_pair = Bls12_381.KeyPair.create();
+    const key_pair = try Bls12_381.KeyPair.create(null);
     const signature = key_pair.sign("test");
     try testing.expectError(error.InvalidLength, signature.fastAggregateVerify(&[_]Bls12_381.PublicKey{}, "test"));
 
