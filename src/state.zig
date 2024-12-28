@@ -160,7 +160,6 @@ pub fn JamState(comptime params: Params) type {
             return JamState(params){
                 .tau = null,
                 .eta = null,
-
                 .alpha = null,
                 .beta = null,
                 .chi = null,
