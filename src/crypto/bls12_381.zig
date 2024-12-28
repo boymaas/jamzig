@@ -6,6 +6,9 @@ const crypto = std.crypto;
 const mem = std.mem;
 const ffi = @import("ffi/bls.zig");
 
+/// Track if the BLS library has been initialized
+var is_initialized: bool = false;
+
 /// Common errors that can occur during BLS operations
 pub const Error = error{
     CantInit,
@@ -24,6 +27,7 @@ pub const Bls12_381 = struct {
     /// Initialize the BLS library. Must be called before any other operations.
     pub fn init() !void {
         try ffi.init();
+        is_initialized = true;
     }
 
     /// A BLS12-381 key pair containing both public and secret keys
@@ -39,6 +43,7 @@ pub const Bls12_381 = struct {
         /// Create a new key pair from an optional seed
         /// If no seed is provided, random values will be used
         pub fn create(seed: ?[seed_length]u8) !KeyPair {
+            std.debug.assert(is_initialized);
             var sk: SecretKey = undefined;
             if (seed) |s| {
                 // Use the provided seed for deterministic key generation
@@ -63,6 +68,7 @@ pub const Bls12_381 = struct {
 
         /// Sign a message using this key pair
         pub fn sign(self: KeyPair, msg: []const u8) Signature {
+            std.debug.assert(is_initialized);
             var sig: Signature = undefined;
             self.secret_key.key.sign(&sig.sig, msg);
             return sig;
@@ -78,6 +84,7 @@ pub const Bls12_381 = struct {
 
         /// Create a signature from raw bytes
         pub fn fromBytes(bytes: [encoded_length]u8) !Signature {
+            std.debug.assert(is_initialized);
             var sig: Signature = undefined;
             try sig.sig.deserialize(&bytes);
             return sig;
@@ -92,6 +99,7 @@ pub const Bls12_381 = struct {
 
         /// Verify the signature against a message and public key
         pub fn verify(self: Signature, msg: []const u8, public_key: PublicKey) !void {
+            std.debug.assert(is_initialized);
             if (!public_key.key.verify(&self.sig, msg)) {
                 return error.SignatureVerificationFailed;
             }
@@ -99,6 +107,7 @@ pub const Bls12_381 = struct {
 
         /// Aggregate multiple signatures into a single signature
         pub fn aggregate(signatures: []const Signature) !Signature {
+            std.debug.assert(is_initialized);
             var result: Signature = undefined;
             var raw_sigs = try std.ArrayList(ffi.Signature).initCapacity(
                 std.heap.page_allocator,
@@ -162,6 +171,7 @@ pub const Bls12_381 = struct {
 
         /// Create a public key from raw bytes
         pub fn fromBytes(bytes: [encoded_length]u8) !PublicKey {
+            std.debug.assert(is_initialized);
             var pk: PublicKey = undefined;
             try pk.key.deserialize(&bytes);
             return pk;
@@ -176,6 +186,7 @@ pub const Bls12_381 = struct {
 
         /// Aggregate multiple public keys into a single key
         pub fn aggregate(self: *PublicKey, other: PublicKey) void {
+            std.debug.assert(is_initialized);
             self.key.add(&other.key);
         }
     };
@@ -189,6 +200,7 @@ pub const Bls12_381 = struct {
 
         /// Generate a new random secret key
         pub fn create() SecretKey {
+            std.debug.assert(is_initialized);
             var sk: SecretKey = undefined;
             sk.key.setByCSPRNG();
             return sk;
@@ -196,6 +208,7 @@ pub const Bls12_381 = struct {
 
         /// Create a secret key from raw bytes
         pub fn fromBytes(bytes: [encoded_length]u8) !SecretKey {
+            std.debug.assert(is_initialized);
             var sk: SecretKey = undefined;
             try sk.key.deserialize(&bytes);
             return sk;
@@ -210,6 +223,7 @@ pub const Bls12_381 = struct {
 
         /// Get the public key corresponding to this secret key
         pub fn getPublicKey(self: SecretKey) PublicKey {
+            std.debug.assert(is_initialized);
             var pk: PublicKey = undefined;
             self.key.getPublicKey(&pk.key);
             return pk;
@@ -217,6 +231,7 @@ pub const Bls12_381 = struct {
 
         /// Sign a message using this secret key
         pub fn sign(self: SecretKey, msg: []const u8) Signature {
+            std.debug.assert(is_initialized);
             var sig: Signature = undefined;
             self.key.sign(&sig.sig, msg);
             return sig;
@@ -224,6 +239,7 @@ pub const Bls12_381 = struct {
 
         /// Aggregate this secret key with another one
         pub fn aggregate(self: *SecretKey, other: SecretKey) void {
+            std.debug.assert(is_initialized);
             self.key.add(&other.key);
         }
     };
