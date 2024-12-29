@@ -75,13 +75,14 @@ fn formatBlockHeaderDebug(
     block: *const types.Block,
 ) !void {
     const block_hash = try block.header.header_hash(params, std.heap.page_allocator);
-    try writer.print("▶ Block: S#{d:0>4}({d:0>3}/{d:0>3}) author={d:0>4} hash=0x{s} pstate=0x{s}", .{
+    try writer.print("▶ Block: S#{d:0>4}({d:0>3}/{d:0>3}) author={d:0>4} hash={s} pstate={s} seal={s}", .{
         block.header.slot,
         block.header.slot % params.epoch_length,
         block.header.slot / params.epoch_length,
         block.header.author_index,
         std.fmt.fmtSliceHexLower(block_hash[0..2]),
         std.fmt.fmtSliceHexLower(block.header.parent_state_root[0..2]),
+        std.fmt.fmtSliceHexLower(block.header.seal[0..2]),
     });
 }
 
