@@ -208,7 +208,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             author_keys: ValidatorKeySet,
             eta_prime: *const types.Eta,
             gamma_s: *const types.GammaS,
-        ) !types.BandersnatchVrfSignature {
+        ) !Bandersnatch.Signature {
             // TODO: optimize, no allocation needed
             var context = std.ArrayList(u8).init(self.allocator);
             defer context.deinit();
@@ -249,26 +249,26 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             defer self.allocator.free(header_unsigned);
 
             // Generate and return the seal signature
-            _ = author_keys;
-            return [_]u8{0} ** 96;
+            return author_keys.bandersnatch_keypair
+                .sign(header_unsigned, context.items);
         }
 
         /// Generate the VRF entropy signature using the seal output
         fn generateEntropySignature(
             self: *Self,
-            seal_output: types.BandersnatchVrfSignature,
             author_keys: ValidatorKeySet,
-        ) !types.BandersnatchVrfSignature {
-            var message = std.ArrayList(u8).init(self.allocator);
-            defer message.deinit();
+            seal_output: Bandersnatch.Signature,
+        ) !Bandersnatch.Signature {
+            var context = std.ArrayList(u8).init(self.allocator);
+            defer context.deinit();
 
             // Construct entropy message
-            try message.appendSlice("jam_entropy");
-            try message.appendSlice(&seal_output);
+            try context.appendSlice("jam_entropy");
+            try context.appendSlice(&try seal_output.outputHash()); // Y function
 
             // Create VRF prover
-            _ = author_keys;
-            return [_]u8{0} ** 96;
+            return try author_keys.bandersnatch_keypair
+                .sign(&[_]u8{}, context.items);
         }
 
         // Build the next block in the chain with proper sealing
@@ -305,18 +305,19 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             };
 
             // Generate block seal
-            header.seal = try self.generateBlockSeal(
+            const block_seal = try self.generateBlockSeal(
                 &header,
                 author_keys,
                 &self.state.eta.?,
                 &self.state.gamma.?.s,
             );
+            header.seal = block_seal.toBytes();
 
             // Generate entropy signature using seal output
-            header.entropy_source = try self.generateEntropySignature(
-                header.seal,
+            header.entropy_source = (try self.generateEntropySignature(
                 author_keys,
-            );
+                block_seal,
+            )).toBytes();
 
             // Create empty extrinsic for now
             const extrinsic = types.Extrinsic{
@@ -340,6 +341,8 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             // Update block history
             self.last_header_hash = try block.header.header_hash(params, self.allocator);
             self.last_state_root = try self.state.buildStateRoot(self.allocator);
+
+            span.trace("block:\n{s}", .{types.fmt.format(&block)});
 
             return block;
         }

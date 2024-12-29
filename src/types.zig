@@ -2,6 +2,8 @@ const std = @import("std");
 const types = @import("types.zig");
 const jam_params = @import("jam_params.zig");
 
+pub const fmt = @import("types/fmt.zig");
+
 pub const U8 = u8;
 pub const U16 = u16;
 pub const U32 = u32;

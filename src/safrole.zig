@@ -9,8 +9,7 @@ pub const state = @import("state.zig");
 const crypto = @import("crypto.zig");
 const ring_vrf = @import("ring_vrf.zig");
 
-const tracing = @import("tracing.zig");
-const trace = tracing.scoped(.safrole);
+const trace = @import("tracing.zig").scoped(.safrole);
 
 pub const Params = @import("jam_params.zig").Params;
 

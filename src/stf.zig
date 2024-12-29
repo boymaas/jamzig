@@ -309,21 +309,6 @@ pub fn transitionRecentHistory(
     return new_beta;
 }
 
-// TODO: now worth to be a function
-pub fn getBlockEntropy(
-    header: *const types.Header,
-) types.BandersnatchVrfOutput {
-    const span = trace.span(.get_block_entropy);
-    defer span.deinit();
-    span.debug("Extracting block entropy from header", .{});
-
-    const vrf = @import("vrf.zig");
-
-    const output = vrf.getVrfOutput(&header.entropy_source);
-    span.trace("VRF output: {any}", .{std.fmt.fmtSliceHexLower(&output)});
-    return output;
-}
-
 const safrole = @import("safrole.zig");
 pub fn transitionSafrole(
     comptime params: Params,
@@ -351,9 +336,8 @@ pub fn transitionSafrole(
 
     // Verify the entropy source signature from the block header
     span.debug("Extracting entropy from block header", .{});
-    const entropy = getBlockEntropy(
-        &new_block.header,
-    );
+    const entropy = try @import("crypto/bandersnatch.zig").Bandersnatch.Signature.fromBytes(new_block.header.entropy_source).outputHash();
+
     span.trace("Block entropy={any}", .{std.fmt.fmtSliceHexLower(&entropy)});
     span.debug("Preparing Safrole input", .{});
     const input = .{

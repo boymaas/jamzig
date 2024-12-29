@@ -323,13 +323,10 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                         }
                     },
                     .One => {
-                        ptr_span.warn("Unsupported pointer size: {s} skipping", .{@typeName(@TypeOf(value))});
-                        // try writer.writeAll("ptr(");
-                        // try formatValue(value.*, writer);
-                        // try writer.writeAll(")");
+                        try formatValue(value.*, writer);
                     },
                     else => {
-                        ptr_span.warn("Unsupported pointer size: {s} skipping", .{@typeName(@TypeOf(value))});
+                        std.debug.print("\x1b[38;5;214m Unsupported pointer size: {s} skipping\x1b[0m", .{@typeName(@TypeOf(value))});
                         // @compileError("Unsupported pointer size: " ++ @typeName(ptr.size));
                     },
                 }
