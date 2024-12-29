@@ -11,8 +11,8 @@ pub const logging = @import("sequoia/logging.zig");
 const trace = @import("tracing.zig").scoped(.sequoia);
 
 const Ed25519 = std.crypto.sign.Ed25519;
-const Bls12_381 = crypto.bls.Bls12_381;
-const bandersnatch = crypto.bandersnatch;
+const Bls12_381 = crypto.bls12_381.Bls12_381;
+const Bandersnatch = crypto.bandersnatch.Bandersnatch;
 
 pub fn GenesisConfig(params: jam_params.Params) type {
     return struct {
@@ -33,7 +33,6 @@ pub fn GenesisConfig(params: jam_params.Params) type {
             config.initial_slot = 0;
 
             // Initialize validator keys
-            try Bls12_381.init();
             var validator_keys = try allocator.alloc(ValidatorKeySet, params.validators_count);
             errdefer allocator.free(validator_keys);
 
@@ -94,9 +93,9 @@ pub fn GenesisConfig(params: jam_params.Params) type {
             for (state.kappa.?.validators, 0..params.validators_count) |*validator, i| {
                 const key = self.validator_keys[i];
                 validator.* = .{
-                    .bandersnatch = key.bandersnatch_keypair.public_key,
+                    .bandersnatch = key.bandersnatch_keypair.public_key.toBytes(),
                     .ed25519 = key.ed25519_keypair.public_key.toBytes(),
-                    .bls = [_]u8{0} ** 144,
+                    .bls = [_]u8{0} ** 144, // TODO: fill out
                     .metadata = [_]u8{0} ** 128,
                 };
             }
@@ -144,7 +143,7 @@ pub fn GenesisConfig(params: jam_params.Params) type {
 }
 
 const ValidatorKeySet = struct {
-    bandersnatch_keypair: bandersnatch.BandersnatchKeyPair,
+    bandersnatch_keypair: Bandersnatch.KeyPair,
     ed25519_keypair: Ed25519.KeyPair,
     bls12_381_keypair: Bls12_381.KeyPair,
 
@@ -152,9 +151,9 @@ const ValidatorKeySet = struct {
 
     pub fn init(seed: [SEED_LENGTH]u8) !ValidatorKeySet {
         return ValidatorKeySet{
-            .bandersnatch_keypair = try bandersnatch.createKeyPairFromSeed(&seed),
+            .bandersnatch_keypair = try Bandersnatch.KeyPair.create(&seed),
             .ed25519_keypair = try Ed25519.KeyPair.create(seed),
-            .bls12_381_keypair = try Bls12_381.KeyPair.create(seed),
+            .bls12_381_keypair = try Bls12_381.KeyPair.create(&seed),
         };
     }
 
@@ -186,9 +185,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             config: GenesisConfig(params),
             rng: *std.Random,
         ) !Self {
-            // Initialize BLS for cryptographic operations
-            try Bls12_381.init();
-
             return Self{
                 .allocator = allocator,
                 .config = config,
@@ -203,23 +199,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
         pub fn deinit(self: *Self) void {
             self.config.deinit(self.allocator);
             self.state.deinit(self.allocator);
-        }
-
-        /// Check if ticket-based sealing is possible for the current slot
-        fn canUseTicketSealing(self: *Self, _: types.ValidatorIndex) bool {
-            if (self.state.gamma) |gamma| {
-                // Check the GammaS component which holds either tickets or keys
-                switch (gamma.s) {
-                    .tickets => |tickets| {
-                        // Calculate slot within epoch
-                        const slot_in_epoch = self.current_slot % params.epoch_length;
-                        // Check if there's a valid ticket for this slot
-                        return tickets[slot_in_epoch].id[0] != 0;
-                    },
-                    .keys => return false, // In fallback mode, can't use tickets
-                }
-            }
-            return false;
         }
 
         /// Generate the block seal signature using either ticket or fallback mode
@@ -270,7 +249,8 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             defer self.allocator.free(header_unsigned);
 
             // Generate and return the seal signature
-            return try prover.signIetf(header_unsigned, context);
+            _ = author_keys;
+            return [_]u8{0} ** 96;
         }
 
         /// Generate the VRF entropy signature using the seal output
@@ -278,7 +258,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             self: *Self,
             seal_output: types.BandersnatchVrfSignature,
             author_keys: ValidatorKeySet,
-            validator_set: types.ValidatorSet,
         ) !types.BandersnatchVrfSignature {
             var message = std.ArrayList(u8).init(self.allocator);
             defer message.deinit();
@@ -287,22 +266,9 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             try message.appendSlice("jam_entropy");
             try message.appendSlice(&seal_output);
 
-            const pub_keys = try validator_set.getBandersnatchPublicKeys(self.allocator);
-            defer self.allocator.free(pub_keys);
-
             // Create VRF prover
-            var prover = try ring_vrf.RingProver.init(
-                author_keys.bandersnatch_keypair.private_key,
-                pub_keys,
-                try validator_set.findValidatorIndex(
-                    .BandersnatchPublic,
-                    author_keys.bandersnatch_keypair.public_key,
-                ),
-            );
-            defer prover.deinit();
-
-            // Generate and return entropy signature
-            return try prover.signIetf(message.items, &[_]u8{});
+            _ = author_keys;
+            return [_]u8{0} ** 96;
         }
 
         // Build the next block in the chain with proper sealing
@@ -316,9 +282,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             span.debug("Selected block author index: {d}", .{author_index});
 
             const author_keys = self.config.validator_keys[author_index];
-
-            // Determine if we can use ticket-based sealing
-            const use_ticket = self.canUseTicketSealing(author_index);
 
             // Ensure new slot is greater than parent
             const new_slot = @max(
@@ -345,15 +308,14 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             header.seal = try self.generateBlockSeal(
                 &header,
                 author_keys,
-                self.state.kappa.?,
-                use_ticket,
+                &self.state.eta.?,
+                &self.state.gamma.?.s,
             );
 
             // Generate entropy signature using seal output
             header.entropy_source = try self.generateEntropySignature(
                 header.seal,
                 author_keys,
-                self.state.kappa.?,
             );
 
             // Create empty extrinsic for now
