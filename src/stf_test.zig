@@ -6,6 +6,8 @@ const sequoia = @import("sequoia.zig");
 const state = @import("state.zig");
 const jam_params = @import("jam_params.zig");
 
+const diffz = @import("tests/diffz.zig");
+
 test "sequoia: State transition with sequoia-generated blocks" {
     // Initialize test environment
     const allocator = testing.allocator;
@@ -53,7 +55,8 @@ test "sequoia: State transition with sequoia-generated blocks" {
         // Log block information for debugging after state transition
         const debug_current_state = try sequoia.logging.allocPrintStateDebug(jam_params.TINY_PARAMS, allocator, current_state);
         if (!std.mem.eql(u8, debug_last_state, debug_current_state)) {
-            std.debug.print("\n\nState changed:\n{s}\n", .{debug_current_state});
+            std.debug.print("\n\nState changes detected:\n", .{});
+            try diffz.debugPrintDiff(allocator, debug_last_state, debug_current_state);
         }
         allocator.free(debug_last_state);
         debug_last_state = debug_current_state;

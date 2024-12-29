@@ -67,17 +67,6 @@ pub fn formatStateDebug(
             },
         }
     }
-
-    if (state.eta) |eta| {
-        try writer.print("\n→ Entropy State (η)\n", .{});
-        for (eta, 0..) |e, i| {
-            try writer.print("    η[{d}]: 0x{s}...{s}\n", .{
-                i,
-                std.fmt.fmtSliceHexLower(e[0..4]),
-                std.fmt.fmtSliceHexLower(e[28..32]),
-            });
-        }
-    }
 }
 
 // Format block debug information
@@ -152,6 +141,34 @@ pub fn allocPrintBlockDebug(
     var list = std.ArrayList(u8).init(allocator);
     errdefer list.deinit();
     try formatBlockDebug(list.writer(), params, block);
+    return list.toOwnedSlice();
+}
+
+// Format entropy debug information
+pub fn formatEntropyDebug(writer: anytype, eta: types.EntropyBuffer) !void {
+    try writer.print("\n→ Entropy State (η)\n", .{});
+    for (eta, 0..) |e, i| {
+        try writer.print("    η[{d}]: 0x{s}...{s}\n", .{
+            i,
+            std.fmt.fmtSliceHexLower(e[0..4]),
+            std.fmt.fmtSliceHexLower(e[28..32]),
+        });
+    }
+}
+
+// Print entropy debug information to stderr
+pub fn printEntropyDebug(eta: types.EntropyBuffer) void {
+    formatEntropyDebug(std.io.getStdErr().writer(), eta) catch return;
+}
+
+// Return allocated string with entropy debug information
+pub fn allocPrintEntropyDebug(
+    allocator: std.mem.Allocator,
+    eta: types.EntropyBuffer,
+) ![]u8 {
+    var list = std.ArrayList(u8).init(allocator);
+    errdefer list.deinit();
+    try formatEntropyDebug(list.writer(), eta);
     return list.toOwnedSlice();
 }
 
