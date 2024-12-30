@@ -300,12 +300,43 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
 
             const author_keys = self.config.validator_keys[author_index];
 
+            // TODO: add an config option to skip slots, simulating failing or delayed block production
+
+            const previous_epoch = self.current_slot / params.epoch_length;
+            const previous_slot_position = self.current_slot & params.epoch_length;
+
             // Ensure new slot is greater than parent
             const new_slot = @max(
                 self.current_slot + 1,
                 self.state.tau.? + 1,
             );
             self.current_slot = new_slot;
+
+            const current_epoch = self.current_slot / params.epoch_length;
+            const current_slot_position = self.current_slot % params.epoch_length;
+
+            // Header's epoch marker (He): empty, or for first block in epoch:
+            // - Next epoch randomness
+            // - Current epoch randomness
+            // - Next epoch's Bandersnatch validator keys
+            var epoch_mark: ?types.EpochMark = null;
+            if (current_epoch > previous_epoch) {
+                epoch_mark = .{
+                    .entropy = self.state.eta.?[0],
+                    .tickets_entropy = self.state.eta.?[1],
+                    .validators = try self.state.gamma.?.k.getBandersnatchPublicKeys(self.allocator), // TODO: this has to be gamma_k_prime
+                };
+            }
+
+            var tickets_mark: ?types.TicketsMark = null;
+            if (current_epoch == previous_epoch //
+            and current_slot_position > params.ticket_submission_end_epoch_slot //
+            and previous_slot_position <= params.ticket_submission_end_epoch_slot //
+            and self.state.gamma.?.a.len == params.epoch_length //
+            ) {
+                // TODO: untested, need ticket submission first
+                tickets_mark = .{ .tickets = try safrole.Z_outsideInOrdering(types.TicketBody, self.allocator, self.state.gamma.?.a) };
+            }
 
             // TODO: Get eta_prime for this slot
             const eta_prime = &self.state.eta.?;
@@ -319,8 +350,8 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 .extrinsic_hash = std.mem.zeroes(types.Hash),
                 .slot = self.current_slot,
                 .author_index = author_index,
-                .epoch_mark = null,
-                .tickets_mark = null,
+                .epoch_mark = epoch_mark,
+                .tickets_mark = tickets_mark,
                 .offenders_mark = &[_]types.Ed25519Public{},
                 .entropy_source = entropy_source.toBytes(),
                 .seal = undefined,

@@ -525,7 +525,7 @@ pub fn gammaS_Fallback(
 }
 
 // (69) Outside in ordering function
-fn Z_outsideInOrdering(comptime T: type, allocator: std.mem.Allocator, data: []const T) ![]T {
+pub fn Z_outsideInOrdering(comptime T: type, allocator: std.mem.Allocator, data: []const T) ![]T {
     const span = trace.span(.z_outside_in_ordering);
     defer span.deinit();
     span.debug("Performing outside-in ordering on type {s}", .{@typeName(T)});
