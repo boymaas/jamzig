@@ -336,7 +336,10 @@ pub fn transitionSafrole(
 
     // Verify the entropy source signature from the block header
     span.debug("Extracting entropy from block header", .{});
-    const entropy = try @import("crypto/bandersnatch.zig").Bandersnatch.Signature.fromBytes(new_block.header.entropy_source).outputHash();
+    const entropy = try @import("crypto/bandersnatch.zig")
+        .Bandersnatch.Signature
+        .fromBytes(new_block.header.entropy_source)
+        .outputHash();
 
     span.trace("Block entropy={any}", .{std.fmt.fmtSliceHexLower(&entropy)});
     span.debug("Preparing Safrole input", .{});
