@@ -118,37 +118,34 @@ pub fn transition(
     };
     defer allocator.free(verified_extrinsic);
 
-    // Chapter 6.7: The tickets should have been placed in order of their
-    // implied identifier. Duplicate tickets are not allowed.
+    // Chapter 6.7: The tickets should be in order of their implied identifier.
+    // Duplicate tickets are not allowed.
     var index: usize = 0;
     while (index < verified_extrinsic.len) : (index += 1) {
         const current_ticket = verified_extrinsic[index];
 
-        // Check if the ticket has already been seen
-        var i: usize = 0;
-        while (i < index) : (i += 1) {
-            if (std.mem.eql(u8, &verified_extrinsic[i].id, &current_ticket.id)) {
-                return Error.duplicate_ticket;
+        // Since the list should be ordered, we only need to check the previous
+        // ticket for order and duplicates within verified_extrinsic.
+        // This replaces the O(n^2) duplicate check with an O(n) check.
+        if (index > 0) {
+            const order = std.mem.order(u8, &current_ticket.id, &verified_extrinsic[index - 1].id);
+            switch (order) {
+                .lt => return Error.bad_ticket_order, // Out of order
+                .eq => return Error.duplicate_ticket, // Duplicate found
+                .gt => {}, // Correct ordering
             }
         }
 
-        // Check if we have an entry in the ordered ticket accumulator
-        // gamma_a. If this is the case, we have a duplicate ticket.
+        // Check for duplicates in gamma_a using binary search
+        // This is already efficient (O(log n)) and doesn't need modification
         const position = std.sort.binarySearch(types.TicketBody, pre_state.gamma_a, current_ticket, struct {
             fn order(context: types.TicketBody, item: types.TicketBody) std.math.Order {
                 return std.mem.order(u8, &context.id, &item.id);
             }
         }.order);
+
         if (position != null) {
             return Error.duplicate_ticket;
-        }
-
-        // Check the order of tickets
-        if (index > 0) {
-            const prev_ticket = verified_extrinsic[index - 1];
-            if (std.mem.order(u8, &current_ticket.id, &prev_ticket.id) == .lt) {
-                return Error.bad_ticket_order;
-            }
         }
     }
 
@@ -325,7 +322,13 @@ pub fn transition(
     };
 }
 
-fn verifyTicketEnvelope(allocator: std.mem.Allocator, ring_size: usize, gamma_z: types.BandersnatchVrfRoot, n2: types.Entropy, extrinsic: []const types.TicketEnvelope) ![]types.TicketBody {
+fn verifyTicketEnvelope(
+    allocator: std.mem.Allocator,
+    ring_size: usize,
+    gamma_z: types.BandersnatchVrfRoot,
+    n2: types.Entropy,
+    extrinsic: []const types.TicketEnvelope,
+) ![]types.TicketBody {
     const span = trace.span(.verify_ticket_envelope);
     defer span.deinit();
     span.debug("Verifying {d} ticket envelopes", .{extrinsic.len});
@@ -346,13 +349,11 @@ fn verifyTicketEnvelope(allocator: std.mem.Allocator, ring_size: usize, gamma_z:
 
     for (extrinsic, 0..) |extr, i| {
         // TODO: rewrite
-        const X_t = [_]u8{ 'j', 'a', 'm', '_', 't', 'i', 'c', 'k', 'e', 't', '_', 's', 'e', 'a', 'l' };
-
-        const vrf_input = X_t ++ n2 ++ [_]u8{extr.attempt};
+        const vrf_input = "jam_ticket_seal" ++ n2 ++ [_]u8{extr.attempt};
         const output = try ring_vrf.verifyRingSignatureAgainstCommitment(
             gamma_z,
             ring_size,
-            &vrf_input,
+            vrf_input,
             &empty_aux_data,
             &extr.signature,
         );
