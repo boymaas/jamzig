@@ -254,16 +254,32 @@ pub fn transition(
             // only if e' = e + 1
             current_epoch == prev_epoch + 1)
         {
+            span.debug("Operating in ticket mode for gamma_s", .{});
+            span.trace("Conditions met: prev_slot({d}) >= Y({d}), gamma_a.len({d}) == epoch_length({d})", .{
+                prev_epoch_slot,
+                params.ticket_submission_end_epoch_slot,
+                post_state.gamma_a.len,
+                params.epoch_length,
+            });
             post_state.gamma_s = .{
                 .tickets = try Z_outsideInOrdering(types.TicketBody, allocator, post_state.gamma_a),
             };
         } else {
+            span.warn("Falling back to key mode for gamma_s", .{});
+            span.trace("Conditions: prev_slot({d}) >= Y({d}), gamma_a.len({d}) == epoch_length({d})", .{
+                prev_epoch_slot,
+                params.ticket_submission_end_epoch_slot,
+                post_state.gamma_a.len,
+                params.epoch_length,
+            });
             post_state.gamma_s = .{
                 .keys = try gammaS_Fallback(allocator, post_state.eta[2], params.epoch_length, post_state.kappa),
             };
         }
 
         // On an new epoch gamma_a will be reset to 0
+        span.debug("Resetting gamma_a ticket accumulator at epoch boundary", .{});
+        span.trace("Freeing previous gamma_a with {d} tickets", .{post_state.gamma_a.len});
         allocator.free(post_state.gamma_a);
         post_state.gamma_a = &[_]types.TicketBody{};
     }
