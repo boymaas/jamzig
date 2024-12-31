@@ -168,6 +168,12 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
     return struct {
         const Self = @This();
 
+        // Registry of tickets mapping ticket IDs to validator indices & entry indices
+        const TicketRegistryEntry = struct {
+            validator_index: types.ValidatorIndex,
+            entry_index: u8,
+        };
+
         config: GenesisConfig(params),
 
         allocator: std.mem.Allocator,
@@ -181,12 +187,24 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
 
         validator_tickets: [params.validators_count]u8,
 
+        // Within a block authoring epoch, block production privileges are granted based on tickets that were submitted in the
+        // prior epoch. These tickets use anonymous ring signature proofs, so while everyone can verify tickets came from valid
+        // validators, only the original submitters know which tickets are theirs. Therefore we maintain a local registry mapping
+        // each ticket ID to its creator, allowing us to recover the correct block author when one of their tickets is selected.
+        // TODO: rename with _epoch
+        ticket_registry_previous: std.AutoHashMap(types.OpaqueHash, TicketRegistryEntry),
+        ticket_registry_current: std.AutoHashMap(types.OpaqueHash, TicketRegistryEntry),
+
         /// Initialize the BlockBuilder with required state
         pub fn init(
             allocator: std.mem.Allocator,
             config: GenesisConfig(params),
             rng: *std.Random,
         ) !Self {
+            // Initialize registry
+            const registry_current = std.AutoHashMap(types.OpaqueHash, TicketRegistryEntry).init(allocator);
+            const registry_previous = std.AutoHashMap(types.OpaqueHash, TicketRegistryEntry).init(allocator);
+
             return Self{
                 .allocator = allocator,
                 .config = config,
@@ -196,12 +214,16 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 .last_state_root = null,
                 .rng = rng,
                 .validator_tickets = std.mem.zeroes([params.validators_count]u8),
+                .ticket_registry_current = registry_current,
+                .ticket_registry_previous = registry_previous,
             };
         }
 
         pub fn deinit(self: *Self) void {
             self.config.deinit(self.allocator);
             self.state.deinit(self.allocator);
+            self.ticket_registry_current.deinit();
+            self.ticket_registry_previous.deinit();
         }
 
         fn generateVrfOutputFallback(author_keys: *const ValidatorKeySet, eta_prime: *const types.Eta) !types.BandersnatchVrfOutput {
@@ -381,6 +403,12 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             if (current_epoch > previous_epoch) {
                 span.debug("New epoch - resetting validator ticket counts", .{});
                 self.validator_tickets = std.mem.zeroes([params.validators_count]u8);
+
+                // Swap ticket registry maps, and clear the current one
+                const previous = self.ticket_registry_previous;
+                self.ticket_registry_previous = self.ticket_registry_current;
+                self.ticket_registry_current = previous;
+                self.ticket_registry_current.clearRetainingCapacity();
             }
 
             const extrinsic = types.Extrinsic{
@@ -487,6 +515,12 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                     };
                     try generated.append(.{ .envelope = ticket, .id = ticket_id });
 
+                    // After creating the ticket and getting its ID:
+                    try self.ticket_registry_current.put(ticket_id, .{
+                        .validator_index = try self.state.kappa.?.findValidatorIndex(.BandersnatchPublic, validator.bandersnatch_keypair.public_key.toBytes()),
+                        .entry_index = entry_idx,
+                    });
+
                     // Increment ticket count for this validator
                     self.validator_tickets[idx] += 1;
 
@@ -535,9 +569,25 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
 
                 // Select based on gamma_s mode
                 switch (gamma.s) {
-                    .tickets => |_| {
-                        span.debug("Ticket-based author selection not implemented", .{});
-                        return error.TicketsNotImplementedYet;
+                    .tickets => |tickets| {
+                        span.debug("Using ticket-based author selection", .{});
+
+                        // Get ticket for this slot
+                        const ticket = tickets[slot_in_epoch];
+
+                        // Look up the validator who created this ticket
+                        if (self.ticket_registry_previous.get(ticket.id)) |registry_entry| {
+                            span.debug("Found ticket registry entry - validator: {d}, attempt: {d}", .{ registry_entry.validator_index, registry_entry.entry_index });
+
+                            // Validate the entry index matches
+                            if (registry_entry.entry_index == ticket.attempt) {
+                                return registry_entry.validator_index;
+                            }
+                        }
+
+                        // No valid author found
+                        span.err("No validator found for ticket", .{});
+                        return error.NoValidatorFound;
                     },
                     .keys => |keys| {
                         span.debug("Using fallback key-based author selection", .{});
