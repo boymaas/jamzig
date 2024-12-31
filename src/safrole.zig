@@ -149,6 +149,7 @@ pub fn transition(
             break :blk true;
         });
 
+        // NOTE: we only check on id for duplicates
         const position = std.sort.binarySearch(types.TicketBody, pre_state.gamma_a, current_ticket, struct {
             fn order(context: types.TicketBody, item: types.TicketBody) std.math.Order {
                 return std.mem.order(u8, &context.id, &item.id);
@@ -156,6 +157,11 @@ pub fn transition(
         }.order);
 
         if (position != null) {
+            span.warn("Found duplicate ticket ID: {s}", .{std.fmt.fmtSliceHexLower(&current_ticket.id)});
+            span.trace("Current gamma_a contents:", .{});
+            for (pre_state.gamma_a, 0..) |ticket, idx| {
+                span.trace("  [{d}] ID: {s}", .{ idx, std.fmt.fmtSliceHexLower(&ticket.id) });
+            }
             return Error.duplicate_ticket;
         }
     }

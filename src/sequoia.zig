@@ -478,6 +478,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                         &[_]u8{},
                         &vrf_proof,
                     );
+                    span.trace("  Ticket ID: {s}", .{std.fmt.fmtSliceHexLower(&ticket_id)});
 
                     // Create and append ticket
                     const ticket = types.TicketEnvelope{
