@@ -38,6 +38,16 @@ extern fn vrf_sign(
     signature_size_out: *usize,
 ) bool;
 
+extern fn ietf_vrf_sign(
+    prover: *const Prover,
+    vrf_input_data: [*]const u8,
+    vrf_input_data_len: usize,
+    aux_data: [*]const u8,
+    aux_data_len: usize,
+    signature_out: [*]u8,
+    signature_size_out: *usize,
+) bool;
+
 extern fn free_ring_vrf_prover(prover: *Prover) void;
 
 pub const RingProver = struct {
@@ -87,6 +97,32 @@ pub const RingProver = struct {
         std.debug.assert(signature_size == @sizeOf(types.BandersnatchRingVrfSignature));
         return signature;
     }
+
+    pub fn signIetf(
+        self: *const RingProver,
+        vrf_input: []const u8,
+        aux_data: []const u8,
+    ) Error!types.BandersnatchIetfVrfSignature {
+        var signature: types.BandersnatchIetfVrfSignature = undefined;
+        var signature_size: usize = 0;
+
+        const success = ietf_vrf_sign(
+            self.ptr,
+            vrf_input.ptr,
+            vrf_input.len,
+            aux_data.ptr,
+            aux_data.len,
+            @ptrCast(&signature),
+            &signature_size,
+        );
+
+        if (!success) {
+            return Error.SigningFailed;
+        }
+
+        std.debug.assert(signature_size == @sizeOf(types.BandersnatchIetfVrfSignature));
+        return signature;
+    }
 };
 
 // __     __        _  __ _
@@ -111,6 +147,19 @@ extern fn vrf_verify(
     signature: [*]const u8,
     signature_len: usize,
     output_hash_out: [*]u8,
+) bool;
+
+extern fn ietf_vrf_verify(
+    verifier: *const Verifier,
+    vrf_input_data: [*]const u8,
+    vrf_input_data_len: usize,
+    aux_data: [*]const u8,
+    aux_data_len: usize,
+    signature: [*]const u8,
+    signature_len: usize,
+    signer_key_index: usize,
+    output: [*]u8,
+    output_len: *usize,
 ) bool;
 
 extern fn vrf_get_commitment(
@@ -159,6 +208,38 @@ pub const RingVerifier = struct {
             return Error.VerificationFailed;
         }
 
+        return output;
+    }
+
+    pub fn verifyIetf(
+        self: *const RingVerifier,
+        vrf_input: []const u8,
+        aux_data: []const u8,
+        signature: *const types.BandersnatchIetfVrfSignature,
+        signer_key_index: usize,
+    ) Error!types.BandersnatchVrfOutput {
+        var output: types.BandersnatchVrfOutput = undefined;
+        var output_len: usize = 0;
+
+        const success = ietf_vrf_verify(
+            self.ptr,
+            vrf_input.ptr,
+            vrf_input.len,
+            aux_data.ptr,
+            aux_data.len,
+            @ptrCast(signature),
+            @sizeOf(types.BandersnatchIetfVrfSignature), // adjust if variable sized
+            signer_key_index,
+            &output,
+            &output_len,
+        );
+
+        if (!success) {
+            return Error.VerificationFailed;
+        }
+
+        // If the output is always exactly 32 bytes, you can assert here:
+        // std.debug.assert(output_len == 32);
         return output;
     }
 
@@ -216,6 +297,39 @@ pub fn verifyRingSignatureAgainstCommitment(
     return vrf_output;
 }
 
+//  ____           _     _ _             ____       _       _
+// |  _ \ __ _  __| | __| (_)_ __   __ _|  _ \ ___ (_)_ __ | |_
+// | |_) / _` |/ _` |/ _` | | '_ \ / _` | |_) / _ \| | '_ \| __|
+// |  __/ (_| | (_| | (_| | | | | | (_| |  __/ (_) | | | | | |_
+// |_|   \__,_|\__,_|\__,_|_|_| |_|\__, |_|   \___/|_|_| |_|\__|
+//                                 |___/
+
+extern fn get_padding_point(
+    ring_size: usize,
+    output: [*]u8,
+) bool;
+
+pub fn getPaddingPoint(ring_size: usize) Error!types.BandersnatchPublic {
+    var point: types.BandersnatchPublic = undefined;
+
+    const success = get_padding_point(
+        ring_size,
+        @ptrCast(&point),
+    );
+
+    if (!success) {
+        return Error.GetCommitmentFailed;
+    }
+
+    return point;
+}
+
+test "ring_vrf.padding: get padding point" {
+    const ring_size: usize = 5;
+    const padding_point = try getPaddingPoint(ring_size);
+    std.debug.print("Padding point for ring size {d}: {any}\n", .{ ring_size, std.fmt.fmtSliceHexLower(&padding_point) });
+}
+
 //  _   _       _ _     _____         _
 // | | | |_ __ (_) |_  |_   _|__  ___| |_ ___
 // | | | | '_ \| | __|   | |/ _ \/ __| __/ __|
@@ -223,15 +337,17 @@ pub fn verifyRingSignatureAgainstCommitment(
 //  \___/|_| |_|_|\__|   |_|\___||___/\__|___/
 //
 
-test "ring_vrf: basic usage" {
+const bandersnatch = @import("crypto/bandersnatch.zig");
+
+test "ring_vrf.basic: basic usage" {
     const ring_size: usize = 5;
     var public_keys: [ring_size]types.BandersnatchPublic = undefined;
 
     // Generate some test public keys
     for (0..ring_size) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try @import("crypto.zig").createKeyPairFromSeed(seed);
-        public_keys[i] = key_pair.public_key;
+        const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+        public_keys[i] = key_pair.public_key.toBytes();
     }
 
     // Create verifier
@@ -241,8 +357,12 @@ test "ring_vrf: basic usage" {
     // Create prover
     const prover_idx = 2;
     const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
-    const key_pair = try @import("crypto.zig").createKeyPairFromSeed(seed);
-    var prover = try RingProver.init(key_pair.private_key, &public_keys, prover_idx);
+    const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+    var prover = try RingProver.init(
+        key_pair.secret_key.toBytes(),
+        &public_keys,
+        prover_idx,
+    );
     defer prover.deinit();
 
     // Test signing and verification
@@ -254,4 +374,42 @@ test "ring_vrf: basic usage" {
 
     // Test getting commitment
     _ = try verifier.get_commitment();
+}
+
+test "ring_vrf.ietf: IETF VRF usage" {
+    const ring_size: usize = 5;
+    var public_keys: [ring_size]types.BandersnatchPublic = undefined;
+
+    // Generate some test public keys
+    for (0..ring_size) |i| {
+        const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
+        const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+        public_keys[i] = key_pair.public_key.toBytes();
+    }
+
+    // Create verifier
+    var verifier = try RingVerifier.init(&public_keys);
+    defer verifier.deinit();
+
+    // Create prover
+    const prover_idx = 2;
+    const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
+    const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+    var prover = try RingProver.init(key_pair.secret_key.toBytes(), &public_keys, prover_idx);
+    defer prover.deinit();
+
+    // Test signing and verification (IETF VRF)
+    const vrf_input = "ietf test input";
+    const aux_data = "ietf aux data";
+
+    // 1. IETF VRF sign
+    const ietf_signature = try prover.signIetf(vrf_input, aux_data);
+
+    // 2. IETF VRF verify
+    //    You typically need to specify which ring index is the actual signer
+    const signer_key_index = prover_idx;
+    const vrf_output = try verifier.verifyIetf(vrf_input, aux_data, &ietf_signature, signer_key_index);
+
+    std.debug.print("IETF VRF signature: {x}\n", .{ietf_signature});
+    std.debug.print("IETF VRF output: {x}\n", .{vrf_output});
 }

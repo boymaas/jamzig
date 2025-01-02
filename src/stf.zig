@@ -42,6 +42,9 @@ const Header = types.Header;
 
 const Params = @import("jam_params.zig").Params;
 
+const tracing = @import("tracing.zig");
+const trace = tracing.scoped(.stf);
+
 /// State Transition Function Implementation
 ///
 /// This is a naive, sequential implementation of JAM's state transition function
@@ -73,23 +76,29 @@ pub fn stateTransition(
     // memory is freed when doing so. As such, maybe its better to work with updates or deltas which will also
     // communicate what has changed. These deltas can then be applied to a JamState, and we can get a summary of what
     // has been changed.
-    try current_state.ensureFullyInitialized();
+    const span = trace.span(.state_transition);
+    defer span.deinit();
+    span.debug("Starting state transition", .{});
+    span.trace("New block header hash: {any}", .{std.fmt.fmtSliceHexLower(&new_block.header.parent)});
 
-    var new_state: JamState(params) = try JamState(params).init(allocator);
+    try current_state.ensureFullyInitialized();
+    span.debug("Current state verified as fully initialized", .{});
+
+    var state_delta: JamState(params) = try JamState(params).init(allocator);
+    errdefer state_delta.deinit(allocator);
+    span.debug("Initialized state delta", .{});
 
     // Step 1: Time Transition (τ')
     // Purpose: Update the blockchain's internal time based on the new block's header.
     // This step ensures that the blockchain's concept of time progresses with each new block.
     // It's crucial for maintaining the temporal order of events and for time-based protocol rules.
-    if (current_state.tau) |tau| {
-        new_state.tau = try transitionTime(
-            allocator,
-            tau,
-            new_block.header,
-        );
-    } else {
-        return error.UninitializedTau;
-    }
+    span.debug("Starting time transition (τ')", .{});
+    state_delta.tau = try transitionTime(
+        allocator,
+        current_state.tau.?,
+        new_block.header,
+    );
+    span.trace("Updated tau value: {d}", .{state_delta.tau.?});
 
     // Step 2: Recent History Transition (β')
     // Purpose: Update the recent history of blocks with information from the new block.
@@ -97,16 +106,20 @@ pub fn stateTransition(
     // - Validating new blocks (e.g., checking parent hashes)
     // - Handling short-term chain reorganizations
     // - Providing context for other protocol operations
-    new_state.beta = try transitionRecentHistory(
+    span.debug("Starting recent history transition (β')", .{});
+    state_delta.beta = try transitionRecentHistory(
         params,
         allocator,
         &current_state.beta.?,
         new_block,
     );
+    span.trace("Updated beta block count: {d}", .{state_delta.beta.?.blocks.items.len});
 
     // NOTE: it seems safrole needs updated psi with offenders now
     // putting it here to make it work
-    new_state.psi = try current_state.psi.?.deepClone();
+    span.debug("Starting PSI initialization", .{});
+    state_delta.psi = try current_state.psi.?.deepClone();
+    span.trace("Offender count in PSI: {d}", .{state_delta.psi.?.punish_set.count()});
 
     // Step 3-5: Safrole Consensus Mechanism Transition (γ', η', ι', κ', λ')
     // Purpose: Update the consensus-related state components based on the Safrole rules.
@@ -118,6 +131,7 @@ pub fn stateTransition(
     // - λ': Updating the set of validators from the previous epoch
     // These updates ensure the proper rotation and management of validators,
     // maintain the chain's randomness, and prepare for future epochs.
+    span.debug("Starting Safrole consensus transition", .{});
     var safrole_transition = try transitionSafrole(
         params,
         allocator,
@@ -127,24 +141,27 @@ pub fn stateTransition(
         &current_state.kappa.?,
         &current_state.lambda.?,
         &current_state.tau.?,
-        &new_state.psi.?,
+        &state_delta.psi.?, // offenders
         new_block,
     );
     // NOTE: only deinit the markers as we are using rest of allocated
     // fiels in the new state
     defer safrole_transition.deinit_markers(allocator);
+    span.trace("Safrole transition completed with post state gamma count: {d}", .{safrole_transition.post_state.gamma_k.len()});
 
     // Extract state components from post_state
-    new_state.gamma = .{
+    state_delta.gamma = .{
         .k = safrole_transition.post_state.gamma_k,
         .a = safrole_transition.post_state.gamma_a,
         .s = safrole_transition.post_state.gamma_s,
         .z = safrole_transition.post_state.gamma_z,
     };
-    new_state.eta = safrole_transition.post_state.eta;
-    new_state.iota = safrole_transition.post_state.iota;
-    new_state.kappa = safrole_transition.post_state.kappa;
-    new_state.lambda = safrole_transition.post_state.lambda;
+    state_delta.eta = safrole_transition.post_state.eta;
+    state_delta.iota = safrole_transition.post_state.iota;
+    state_delta.kappa = safrole_transition.post_state.kappa;
+    state_delta.lambda = safrole_transition.post_state.lambda;
+
+    span.debug("State transition completed successfully", .{});
 
     // Store markers if present
     // if (safrole_transition.epoch_marker) |marker| {
@@ -253,7 +270,7 @@ pub fn stateTransition(
     //     &new_state.kappa,
     // );
 
-    return new_state;
+    return state_delta;
 }
 
 pub fn transitionTime(
@@ -261,8 +278,13 @@ pub fn transitionTime(
     current_tau: state.Tau,
     header: Header,
 ) !state.Tau {
+    const span = trace.span(.transition_time);
+    defer span.deinit();
+    span.debug("Starting time transition", .{});
+    span.trace("Current tau: {d}, Header slot: {d}", .{ current_tau, header.slot });
+
     _ = allocator;
-    _ = current_tau;
+    //_ = current_tau;
     // Transition τ based on the new block's header
     // TODO: do some checking
     return header.slot;
@@ -275,19 +297,16 @@ pub fn transitionRecentHistory(
     current_beta: *const state.Beta,
     new_block: *const Block,
 ) !state.Beta {
+    const span = trace.span(.transition_recent_history);
+    defer span.deinit();
+    span.debug("Starting recent history transition", .{});
+    span.trace("Current beta block count: {d}", .{current_beta.blocks.items.len});
+
     const RecentBlock = @import("recent_blocks.zig").RecentBlock;
     // Transition β with information from the new block
     var new_beta = try current_beta.deepClone(allocator);
     try new_beta.import(try RecentBlock.fromBlock(params, allocator, new_block));
     return new_beta;
-}
-
-// TODO: now worth to be a function
-pub fn getBlockEntropy(
-    header: *const types.Header,
-) types.BandersnatchVrfOutput {
-    const vrf = @import("vrf.zig");
-    return vrf.getVrfOutput(&header.entropy_source);
 }
 
 const safrole = @import("safrole.zig");
@@ -303,40 +322,59 @@ pub fn transitionSafrole(
     post_psi: *const state.Psi,
     new_block: *const Block,
 ) !safrole.Result {
+    const span = trace.span(.transition_safrole);
+    defer span.deinit();
+    span.debug("Starting Safrole transition", .{});
+
+    span.trace("Current state:", .{});
+    span.trace("  tau={d}", .{current_tau.*});
+    span.trace("  gamma_k size={d}", .{current_gamma.k.len()});
+    span.trace("  gamma_z={any}", .{std.fmt.fmtSliceHexLower(&current_gamma.z)});
+    span.trace("  kappa size={d}", .{current_kappa.items().len});
+    span.trace("  lambda size={d}", .{current_lambda.items().len});
+    span.trace("  iota size={d}", .{current_iota.items().len});
 
     // Verify the entropy source signature from the block header
-    const entropy = getBlockEntropy(
-        &new_block.header,
-    );
-    // Prepare safrole input from block
+    span.debug("Extracting entropy from block header", .{});
+    const entropy = try @import("crypto/bandersnatch.zig")
+        .Bandersnatch.Signature
+        .fromBytes(new_block.header.entropy_source)
+        .outputHash();
+
+    span.trace("Block entropy={any}", .{std.fmt.fmtSliceHexLower(&entropy)});
+    span.debug("Preparing Safrole input", .{});
     const input = .{
         .slot = new_block.header.slot,
         .entropy = entropy,
         .extrinsic = new_block.extrinsic.tickets,
     };
+    span.trace("Input values:", .{});
+    span.trace("  slot={d}", .{input.slot});
+    span.trace("  ticket count={d}", .{input.extrinsic.data.len});
 
-    // Prepare current safrole state
+    span.debug("Preparing current Safrole state", .{});
     const safrole_state = .{
         .tau = current_tau.*,
         .eta = current_eta.*,
         .lambda = current_lambda.*,
         .kappa = current_kappa.*,
-        .gamma_k = current_gamma.k,
         .iota = current_iota.*,
+        .gamma_k = current_gamma.k,
         .gamma_a = current_gamma.a,
         .gamma_s = current_gamma.s,
         .gamma_z = current_gamma.z,
     };
 
+    span.debug("Getting offenders from PSI", .{});
     const offenders = post_psi.offendersSlice();
+    span.trace("Offender count={d}", .{offenders.len});
 
-    // Call safrole transition
+    span.debug("Calling Safrole transition", .{});
     return try safrole.transition(
         allocator,
         params,
-        safrole_state,
+        &safrole_state,
         input.slot,
-        // TODO: get the entropy out of the entropy source
         input.entropy,
         input.extrinsic,
         offenders,

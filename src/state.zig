@@ -74,7 +74,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize Alpha component
         pub fn initAlpha(self: *JamState(params), _: std.mem.Allocator) !void {
-            self.alpha = try Alpha.init();
+            self.alpha = Alpha(params.core_count).init();
         }
 
         /// Initialize Beta component (max_blocks should be 10)
@@ -90,22 +90,22 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize Delta component
         pub fn initDelta(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.delta = try Delta.init(allocator);
+            self.delta = Delta.init(allocator);
         }
 
         /// Initialize Phi component
         pub fn initPhi(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.phi = try Phi(params.core_count).init(allocator);
+            self.phi = try Phi(params.core_count, params.max_authorizations_queue_items).init(allocator);
         }
 
         /// Initialize Chi component
         pub fn initChi(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.chi = try Chi.init(allocator);
+            self.chi = Chi.init(allocator);
         }
 
         /// Initialize Psi component
         pub fn initPsi(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.psi = try Psi.init(allocator);
+            self.psi = Psi.init(allocator);
         }
 
         /// Initialize Pi component
@@ -114,13 +114,18 @@ pub fn JamState(comptime params: Params) type {
         }
 
         /// Initialize Xi component
-        pub fn initXi(self: *JamState(params), _: std.mem.Allocator) !void {
-            self.xi = try Xi(params.epoch_length).init();
+        pub fn initXi(self: *JamState(params), allocator: std.mem.Allocator) !void {
+            self.xi = Xi(params.epoch_length).init(allocator);
+        }
+
+        /// Initialize Rho component
+        pub fn initRho(self: *JamState(params), allocator: std.mem.Allocator) !void {
+            self.rho = Rho(params.core_count).init(allocator);
         }
 
         /// Initialize Theta component
-        pub fn initTheta(self: *JamState(params), _: std.mem.Allocator) !void {
-            self.theta = try Theta(params.epoch_length).init();
+        pub fn initTheta(self: *JamState(params), allocator: std.mem.Allocator) !void {
+            self.theta = Theta(params.epoch_length).init(allocator);
         }
 
         /// Initialize Eta component
@@ -155,7 +160,6 @@ pub fn JamState(comptime params: Params) type {
             return JamState(params){
                 .tau = null,
                 .eta = null,
-
                 .alpha = null,
                 .beta = null,
                 .chi = null,
@@ -171,6 +175,27 @@ pub fn JamState(comptime params: Params) type {
                 .theta = null,
                 .xi = null,
             };
+        }
+
+        /// Initialize an empty genesis state with all components properly initialized
+        pub fn initGenesis(allocator: std.mem.Allocator) !JamState(params) {
+            var state = try JamState(params).init(allocator);
+
+            try state.initAlpha(allocator);
+            try state.initBeta(allocator);
+            try state.initChi(allocator);
+            try state.initDelta(allocator);
+            try state.initPhi(allocator);
+            try state.initPsi(allocator);
+            try state.initPi(allocator);
+            try state.initXi(allocator);
+            try state.initTheta(allocator);
+            try state.initRho(allocator);
+            try state.initEta();
+            try state.initTau();
+            try state.initSafrole(allocator);
+
+            return state;
         }
 
         /// Checks if the whole state has been initialized. We do not have any
@@ -242,54 +267,30 @@ pub fn JamState(comptime params: Params) type {
             try @import("state_format/jam_state.zig").format(params, self, fmt, options, writer);
         }
 
-        /// Merge another state into this one
-        /// If a field is non-null in the source state, it will override the corresponding field in this state
+        /// Destructively merges `other` state into this one.
+        /// Non-null fields from `other` override corresponding fields here.
+        /// NOTE: `other` becomes invalid after merge.
         /// NOTE: Performs a simple state merge operation for Milestone 1.
         /// Future versions will implement optimized merge strategies.
         pub fn merge(
             self: *JamState(params),
-            other: *const JamState(params),
+            other: *JamState(params),
             allocator: std.mem.Allocator,
         ) !void {
             if (other.tau) |tau| self.tau = tau;
             if (other.eta) |eta| self.eta = eta;
-
             // if (source.alpha) |alpha| self.alpha = alpha;
             if (other.beta) |*beta| try self.beta.?.merge(beta);
             // if (source.chi) |chi| self.chi = chi;
             // if (source.delta) |delta| self.delta = delta;
-            if (other.gamma) |*gamma| {
-                if (self.gamma) |*self_gamma| {
-                    try self_gamma.merge(gamma, allocator);
-                } else {
-                    self.gamma = try Gamma(params.validators_count, params.epoch_length).init(allocator);
-                    try self.gamma.?.merge(gamma, allocator);
-                }
-            }
-            if (other.iota) |iota| {
-                if (self.iota) |*self_iota| {
-                    try self_iota.merge(iota);
-                } else {
-                    self.iota = try types.ValidatorSet.init(allocator, params.validators_count);
-                    try self.iota.?.merge(iota);
-                }
-            }
-            if (other.kappa) |kappa| {
-                if (self.kappa) |*self_kappa| {
-                    try self_kappa.merge(kappa);
-                } else {
-                    self.kappa = try types.ValidatorSet.init(allocator, params.validators_count);
-                    try self.kappa.?.merge(kappa);
-                }
-            }
-            if (other.lambda) |lambda| {
-                if (self.lambda) |*self_lambda| {
-                    try self_lambda.merge(lambda);
-                } else {
-                    self.lambda = try types.ValidatorSet.init(allocator, params.validators_count);
-                    try self.lambda.?.merge(lambda);
-                }
-            }
+            if (other.gamma) |*gamma|
+                self.gamma.?.merge(gamma, allocator);
+            if (other.iota) |*iota|
+                self.iota.?.merge(iota, allocator);
+            if (other.kappa) |*kappa|
+                self.kappa.?.merge(kappa, allocator);
+            if (other.lambda) |*lambda|
+                self.lambda.?.merge(lambda, allocator);
             // if (source.phi) |phi| self.phi = phi;
             // if (source.pi) |pi| self.pi = pi;
             // if (source.psi) |psi| self.psi = psi;

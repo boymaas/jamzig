@@ -172,11 +172,9 @@ pub const RecentHistory = struct {
     /// with those from the other history.
     /// TODO: do this smarter and more efficiently
     pub fn merge(self: *Self, other: *const Self) !void {
-        // Clear existing blocks first
-        for (self.blocks.items) |*block| {
+        while (self.blocks.popOrNull()) |*block| {
             block.deinit(self.allocator);
         }
-        self.blocks.clearRetainingCapacity();
 
         // Update max_blocks if needed
         self.max_blocks = other.max_blocks;

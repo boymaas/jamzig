@@ -31,7 +31,7 @@ pub fn transition(
     const result = safrole.transition(
         allocator,
         params,
-        pre_state.gamma,
+        &pre_state.gamma,
         input.slot,
         input.entropy,
         input.extrinsic,

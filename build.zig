@@ -24,10 +24,6 @@ pub fn build(b: *std.Build) !void {
     const diffz_module = b.dependency("diffz", .{ .target = target, .optimize = optimize }).module("diffz");
     const tmpfile_module = b.dependency("tmpfile", .{}).module("tmpfile");
 
-    // Build MCL
-    const mcl_dep = b.dependency("mcl", .{ .target = target, .optimize = optimize });
-    const bls_dep = b.dependency("bls", .{ .target = target, .optimize = optimize });
-
     // Rest of the existing build.zig implementation...
     var rust_deps = try buildRustDependencies(b);
     defer rust_deps.deinit();
@@ -105,13 +101,10 @@ pub fn build(b: *std.Build) !void {
     unit_tests.root_module.addImport("diffz", diffz_module);
     unit_tests.root_module.addImport("tmpfile", tmpfile_module);
 
+    unit_tests.linkLibCpp();
+
     // Statically link our rust_deps to the unit tests
     rust_deps.statically_link_to(unit_tests);
-
-    // Link the library
-    unit_tests.linkLibrary(mcl_dep.artifact("mcl"));
-    unit_tests.linkLibrary(bls_dep.artifact("bls384_256"));
-    // _ = bls_dep;
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 

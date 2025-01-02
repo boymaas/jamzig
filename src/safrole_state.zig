@@ -45,26 +45,16 @@ pub fn Gamma(comptime validators_count: u32, comptime epoch_length: u32) type {
         /// Merges another Gamma into this one, handling all allocations
         pub fn merge(
             self: *@This(),
-            other: *const @This(),
+            other: *@This(),
             allocator: std.mem.Allocator,
-        ) !void {
-            // Use ValidatorSet merge for k
-            try self.k.merge(other.k);
-
-            // For GammaS, need to handle the union and copy data
-            self.s.deinit(allocator);
-            switch (other.s) {
-                .tickets => |tickets| {
-                    self.s = .{ .tickets = try allocator.dupe(types.TicketBody, tickets) };
-                },
-                .keys => |keys| {
-                    self.s = .{ .keys = try allocator.dupe(types.BandersnatchPublic, keys) };
-                },
-            }
+        ) void {
+            self.k.merge(&other.k, allocator);
+            self.s.merge(&other.s, allocator);
 
             // Copy a
             allocator.free(self.a);
-            self.a = try allocator.dupe(types.TicketBody, other.a);
+            self.a = other.a;
+            other.a = &[_]types.TicketBody{};
 
             // Merge z using stack
             self.z = other.z;
