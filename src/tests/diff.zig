@@ -19,6 +19,11 @@ pub const DiffResult = union(enum) {
         }
     }
 
+    pub fn debugPrintAndDeinit(self: @This(), allocator: std.mem.Allocator) void {
+        defer self.deinit(allocator);
+        self.debugPrint();
+    }
+
     pub fn debugPrintDeinitAndReturnErrorOnDiff(self: @This(), allocator: std.mem.Allocator) !void {
         defer self.deinit(allocator);
         self.debugPrint();

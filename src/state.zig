@@ -160,7 +160,6 @@ pub fn JamState(comptime params: Params) type {
             return JamState(params){
                 .tau = null,
                 .eta = null,
-
                 .alpha = null,
                 .beta = null,
                 .chi = null,
@@ -268,8 +267,9 @@ pub fn JamState(comptime params: Params) type {
             try @import("state_format/jam_state.zig").format(params, self, fmt, options, writer);
         }
 
-        /// Merge another state into this one
-        /// If a field is non-null in the source state, it will override the corresponding field in this state
+        /// Destructively merges `other` state into this one.
+        /// Non-null fields from `other` override corresponding fields here.
+        /// NOTE: `other` becomes invalid after merge.
         /// NOTE: Performs a simple state merge operation for Milestone 1.
         /// Future versions will implement optimized merge strategies.
         pub fn merge(

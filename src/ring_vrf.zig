@@ -103,7 +103,6 @@ pub const RingProver = struct {
         vrf_input: []const u8,
         aux_data: []const u8,
     ) Error!types.BandersnatchIetfVrfSignature {
-        // Adjust 'BandersnatchIetfVrfSignature' type to whatever you use to hold IETF VRF signatures.
         var signature: types.BandersnatchIetfVrfSignature = undefined;
         var signature_size: usize = 0;
 
@@ -121,8 +120,7 @@ pub const RingProver = struct {
             return Error.SigningFailed;
         }
 
-        // If you expect a specific signature size, you can assert or check it here:
-        // std.debug.assert(signature_size == @sizeOf(types.BandersnatchIetfVrfSignature));
+        std.debug.assert(signature_size == @sizeOf(types.BandersnatchIetfVrfSignature));
         return signature;
     }
 };
@@ -299,6 +297,39 @@ pub fn verifyRingSignatureAgainstCommitment(
     return vrf_output;
 }
 
+//  ____           _     _ _             ____       _       _
+// |  _ \ __ _  __| | __| (_)_ __   __ _|  _ \ ___ (_)_ __ | |_
+// | |_) / _` |/ _` |/ _` | | '_ \ / _` | |_) / _ \| | '_ \| __|
+// |  __/ (_| | (_| | (_| | | | | | (_| |  __/ (_) | | | | | |_
+// |_|   \__,_|\__,_|\__,_|_|_| |_|\__, |_|   \___/|_|_| |_|\__|
+//                                 |___/
+
+extern fn get_padding_point(
+    ring_size: usize,
+    output: [*]u8,
+) bool;
+
+pub fn getPaddingPoint(ring_size: usize) Error!types.BandersnatchPublic {
+    var point: types.BandersnatchPublic = undefined;
+
+    const success = get_padding_point(
+        ring_size,
+        @ptrCast(&point),
+    );
+
+    if (!success) {
+        return Error.GetCommitmentFailed;
+    }
+
+    return point;
+}
+
+test "ring_vrf.padding: get padding point" {
+    const ring_size: usize = 5;
+    const padding_point = try getPaddingPoint(ring_size);
+    std.debug.print("Padding point for ring size {d}: {any}\n", .{ ring_size, std.fmt.fmtSliceHexLower(&padding_point) });
+}
+
 //  _   _       _ _     _____         _
 // | | | |_ __ (_) |_  |_   _|__  ___| |_ ___
 // | | | | '_ \| | __|   | |/ _ \/ __| __/ __|
@@ -315,8 +346,8 @@ test "ring_vrf.basic: basic usage" {
     // Generate some test public keys
     for (0..ring_size) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try bandersnatch.createKeyPairFromSeed(seed);
-        public_keys[i] = key_pair.public_key;
+        const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+        public_keys[i] = key_pair.public_key.toBytes();
     }
 
     // Create verifier
@@ -326,8 +357,12 @@ test "ring_vrf.basic: basic usage" {
     // Create prover
     const prover_idx = 2;
     const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
-    const key_pair = try bandersnatch.createKeyPairFromSeed(seed);
-    var prover = try RingProver.init(key_pair.private_key, &public_keys, prover_idx);
+    const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+    var prover = try RingProver.init(
+        key_pair.secret_key.toBytes(),
+        &public_keys,
+        prover_idx,
+    );
     defer prover.deinit();
 
     // Test signing and verification
@@ -348,8 +383,8 @@ test "ring_vrf.ietf: IETF VRF usage" {
     // Generate some test public keys
     for (0..ring_size) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try bandersnatch.createKeyPairFromSeed(seed);
-        public_keys[i] = key_pair.public_key;
+        const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+        public_keys[i] = key_pair.public_key.toBytes();
     }
 
     // Create verifier
@@ -359,8 +394,8 @@ test "ring_vrf.ietf: IETF VRF usage" {
     // Create prover
     const prover_idx = 2;
     const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
-    const key_pair = try bandersnatch.createKeyPairFromSeed(seed);
-    var prover = try RingProver.init(key_pair.private_key, &public_keys, prover_idx);
+    const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+    var prover = try RingProver.init(key_pair.secret_key.toBytes(), &public_keys, prover_idx);
     defer prover.deinit();
 
     // Test signing and verification (IETF VRF)

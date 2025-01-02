@@ -2,6 +2,8 @@ const std = @import("std");
 const types = @import("types.zig");
 const jam_params = @import("jam_params.zig");
 
+pub const fmt = @import("types/fmt.zig");
+
 pub const U8 = u8;
 pub const U16 = u16;
 pub const U32 = u32;
@@ -39,6 +41,7 @@ pub const Ed25519Public = ByteArray32;
 pub const BandersnatchVrfOutput = OpaqueHash;
 pub const BandersnatchVrfRoot = BlsPublic; // TODO: check if this is correct
 pub const BandersnatchVrfSignature = [96]u8;
+pub const BandersnatchIetfVrfSignature = [96]u8;
 pub const BandersnatchRingVrfSignature = [784]u8;
 pub const Ed25519Signature = [64]u8;
 
@@ -430,6 +433,32 @@ pub const TicketsMark = struct {
 pub const ValidatorSet = struct {
     validators: []ValidatorData,
 
+    const KeyType = enum {
+        BlsPublic,
+        BandersnatchPublic,
+        Ed25519Public,
+    };
+
+    /// Find the index of a validator by their public key
+    /// key_type must be "bls", "bandersnatch", or "edwards"
+    /// Returns error.ValidatorNotFound if the key doesn't match any validator
+    pub fn findValidatorIndex(self: ValidatorSet, comptime key_type: KeyType, key: anytype) !u16 {
+        const field_name = comptime switch (key_type) {
+            .BlsPublic => "bls",
+            .BandersnatchPublic => "bandersnatch",
+            .Ed25519Public => "edwards",
+        };
+
+        for (self.validators, 0..) |validator, i| {
+            // std.debug.print("Comparing validator[{d}] key: {any} with search key: {any}\n", .{ i, &@field(validator, field_name), &key });
+            if (std.mem.eql(u8, &@field(validator, field_name), &key)) {
+                // std.debug.print("Found validator[{d}] with key: {any}\n", .{ i, &key });
+                return @intCast(i);
+            }
+        }
+        return error.ValidatorNotFound;
+    }
+
     pub fn validators_size(params: jam_params.Params) usize {
         return params.validators_count;
     }
@@ -438,6 +467,24 @@ pub const ValidatorSet = struct {
         return @This(){
             .validators = try allocator.alloc(ValidatorData, validators_count),
         };
+    }
+
+    /// Returns an allocated slice of BLS public keys from all validators
+    pub fn getBlsPublicKeys(self: ValidatorSet, allocator: std.mem.Allocator) ![]BlsPublic {
+        var keys = try allocator.alloc(BlsPublic, self.validators.len);
+        for (self.validators, 0..) |validator, i| {
+            keys[i] = validator.bls_key;
+        }
+        return keys;
+    }
+
+    /// Returns an allocated slice of Bandersnatch public keys from all validators
+    pub fn getBandersnatchPublicKeys(self: ValidatorSet, allocator: std.mem.Allocator) ![]BandersnatchPublic {
+        var keys = try allocator.alloc(BandersnatchPublic, self.validators.len);
+        for (self.validators, 0..) |validator, i| {
+            keys[i] = validator.bandersnatch;
+        }
+        return keys;
     }
 
     pub fn clearAndTakeOwnership(self: *@This()) []ValidatorData {
@@ -538,6 +585,35 @@ pub const OffendersMark = struct {
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
             .items = try allocator.dupe(Ed25519Public, self.offenders),
+        };
+    }
+};
+
+pub const HeaderUnsigned = struct {
+    parent: HeaderHash,
+    parent_state_root: StateRoot,
+    extrinsic_hash: OpaqueHash,
+    slot: TimeSlot,
+    epoch_mark: ?EpochMark = null,
+    tickets_mark: ?TicketsMark = null,
+    offenders_mark: []Ed25519Public,
+    author_index: ValidatorIndex,
+    entropy_source: BandersnatchVrfSignature,
+
+    /// Creates HeaderUnsigned from Header, excluding the seal.
+    /// Used for encoding to bytes without allocations. Shares
+    /// ownership with the original header.
+    pub fn fromHeaderShared(header: *const Header) @This() {
+        return @This(){
+            .parent = header.parent,
+            .parent_state_root = header.parent_state_root,
+            .extrinsic_hash = header.extrinsic_hash,
+            .slot = header.slot,
+            .epoch_mark = header.epoch_mark,
+            .tickets_mark = header.tickets_mark,
+            .offenders_mark = header.offenders_mark,
+            .author_index = header.author_index,
+            .entropy_source = header.entropy_source,
         };
     }
 };

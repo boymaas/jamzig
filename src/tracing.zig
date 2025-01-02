@@ -26,32 +26,39 @@ blk: {
     const scope_strs = build_options.enable_tracing_scopes;
     var configs: []const ScopeConfig = &[_]ScopeConfig{};
 
-    for (scope_strs) |scope_str| {
-        if (scope_str.len == 0) continue;
+    for (scope_strs) |full_str| {
+        if (full_str.len == 0) continue;
 
-        // Check if string contains '='
-        if (std.mem.indexOf(u8, scope_str, "=")) |equals_pos| {
-            // Format is scope=level
-            const scope_name = scope_str[0..equals_pos];
+        // Split on commas
+        var scope_iter = std.mem.splitSequence(u8, full_str, ",");
+        while (scope_iter.next()) |scope_str| {
+            // Skip empty entries
+            if (scope_str.len == 0) continue;
 
-            // Skip if scope name is empty
-            if (scope_name.len == 0) continue;
+            // Check if string contains '='
+            if (std.mem.indexOf(u8, scope_str, "=")) |equals_pos| {
+                // Format is scope=level
+                const scope_name = scope_str[0..equals_pos];
 
-            const level_str = scope_str[equals_pos + 1 ..];
+                // Skip if scope name is empty
+                if (scope_name.len == 0) continue;
 
-            // Skip if invalid level, using comptime catch
-            const level = LogLevel.fromString(level_str) catch continue;
+                const level_str = scope_str[equals_pos + 1 ..];
 
-            configs = configs ++ &[_]ScopeConfig{.{
-                .name = scope_name,
-                .level = level,
-            }};
-        } else {
-            // Just a scope name - use default level
-            configs = configs ++ &[_]ScopeConfig{.{
-                .name = scope_str,
-                .level = LogLevel.debug,
-            }};
+                // Skip if invalid level, using comptime catch
+                const level = LogLevel.fromString(level_str) catch continue;
+
+                configs = configs ++ &[_]ScopeConfig{.{
+                    .name = scope_name,
+                    .level = level,
+                }};
+            } else {
+                // Just a scope name - use default level
+                configs = configs ++ &[_]ScopeConfig{.{
+                    .name = scope_str,
+                    .level = LogLevel.debug,
+                }};
+            }
         }
     }
 
