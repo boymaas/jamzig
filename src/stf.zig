@@ -38,6 +38,9 @@ const time = @import("time.zig");
 const state = @import("state.zig");
 const JamState = state.JamState;
 
+const state_d = @import("state_delta.zig");
+const StateTransition = state_d.StateTransition;
+
 const types = @import("types.zig");
 const Block = types.Block;
 const Header = types.Header;
@@ -89,16 +92,14 @@ pub fn stateTransition(
 
     std.debug.assert(current_state.ensureFullyInitialized() catch false);
 
-    var state_delta: JamState(params) = try JamState(params).init(allocator);
-    errdefer state_delta.deinit(allocator);
-    span.debug("Initialized state delta", .{});
+    const state_transition = try StateTransition(params).init(allocator, current_state);
 
     span.debug("Starting time transition (τ')", .{});
-    state_delta.tau = try transitionTime(
-        current_state.tau.?,
+    try transitionTime(
+        &state_transition,
         new_block.header.slot,
     );
-    span.trace("Updated tau value: {d}", .{state_delta.tau.?});
+    span.trace("Updated tau value: {d}", .{state_transition.ensure(.tau_prime)});
 
     const transition_time = params.Time().init(
         current_state.tau.?,
@@ -106,19 +107,19 @@ pub fn stateTransition(
     );
 
     span.debug("Starting recent history transition (β')", .{});
-    state_delta.beta = try transitionRecentHistory(
+    state_d.beta = try transitionRecentHistory(
         params,
         allocator,
         &current_state.beta.?,
         new_block,
     );
-    span.trace("Updated beta block count: {d}", .{state_delta.beta.?.blocks.items.len});
+    span.trace("Updated beta block count: {d}", .{state_d.beta.?.blocks.items.len});
 
     // TODO: it seems safrole needs updated psi with offenders now
     // putting it here to make it work
     span.debug("Starting PSI initialization", .{});
-    state_delta.psi = try current_state.psi.?.deepClone();
-    span.trace("Offender count in PSI: {d}", .{state_delta.psi.?.punish_set.count()});
+    state_d.psi = try current_state.psi.?.deepClone();
+    span.trace("Offender count in PSI: {d}", .{state_d.psi.?.punish_set.count()});
 
     // Step 3-5: Safrole Consensus Mechanism Transition (γ', η', ι', κ', λ')
     // Purpose: Update the consensus-related state components based on the Safrole rules.
@@ -141,23 +142,23 @@ pub fn stateTransition(
     span.trace("Block entropy={any}", .{std.fmt.fmtSliceHexLower(&entropy)});
 
     span.debug("Starting epoch transition", .{});
-    state_delta.eta = transitionEta(&current_state.eta.?, entropy);
+    state_d.eta = transitionEta(&current_state.eta.?, entropy);
 
     var safrole_transition = try transitionSafrole(
         params,
         allocator,
         &transition_time,
-        &state_delta.eta.?,
+        &state_d.eta.?,
         &current_state.kappa.?,
         &current_state.gamma.?,
         &current_state.iota.?,
-        &state_delta.psi.?, // offenders
+        &state_d.psi.?, // offenders
         new_block.extrinsic.tickets,
     );
     // NOTE: only deinit the markers as we are using rest of allocated
     // fiels in the new state
     defer safrole_transition.deinit_markers(allocator);
-    try state_delta.merge(&safrole_transition.post_state, allocator);
+    try state_d.merge(&safrole_transition.post_state, allocator);
 
     span.debug("State transition completed successfully", .{});
 
@@ -268,53 +269,54 @@ pub fn stateTransition(
     //     &new_state.kappa,
     // );
 
-    return state_delta;
+    return state_d;
 }
 
 pub fn transitionTime(
-    current_tau: state.Tau,
+    comptime params: Params,
+    stx: *StateTransition(params),
     header_slot: types.TimeSlot,
-) !state.Tau {
+) !void {
     const span = trace.span(.transition_time);
     defer span.deinit();
     span.debug("Starting time transition", .{});
-    span.trace("Current tau: {d}, Header slot: {d}", .{ current_tau, header_slot });
 
-    if (header_slot <= current_tau) {
+    const current_tau: *state.Tau = try stx.ensure(.tau);
+    if (header_slot <= current_tau.*) {
         span.err("Invalid slot: new slot {d} <= current tau {d}", .{ header_slot, current_tau });
-        return Error.BadSlot;
+        return error.bad_slot;
     }
 
-    return header_slot;
+    const tau_prime = try stx.ensure(.tau_prime);
+    tau_prime.* = header_slot;
 }
 
 /// Performs the eta transition by rotating entropy values and integrating new entropy
 /// Returns the new eta state (eta_prime)
-pub fn transitionEta(comptime params: Params, transition_time: *const params.Time(), current_eta: *const state.Eta, new_entropy: types.Entropy) state.Eta {
+pub fn transitionEta(comptime params: Params, stx: *StateTransition(params), new_entropy: types.Entropy) !void {
     const span = trace.span(.transition_eta);
     defer span.deinit();
 
-    var eta_prime: types.Eta = current_eta.*;
-    if (transition_time.isNewEpoch()) {
+    var eta_current: *types.Eta = try stx.ensure(.eta);
+    var eta_prime: *types.Eta = try stx.ensure(.eta_prime);
+    if (stx.time.isNewEpoch()) {
         span.trace("Rotating entropy values: eta[2]={any}, eta[1]={any}, eta[0]={any}", .{
-            std.fmt.fmtSliceHexLower(&current_eta[2]),
-            std.fmt.fmtSliceHexLower(&current_eta[1]),
-            std.fmt.fmtSliceHexLower(&current_eta[0]),
+            std.fmt.fmtSliceHexLower(&eta_current[2]),
+            std.fmt.fmtSliceHexLower(&eta_current[1]),
+            std.fmt.fmtSliceHexLower(&eta_current[0]),
         });
 
         // Rotate the entropy values
-        eta_prime[3] = current_eta[2];
-        eta_prime[2] = current_eta[1];
-        eta_prime[1] = current_eta[0];
+        eta_prime[3] = eta_current[2];
+        eta_prime[2] = eta_current[1];
+        eta_prime[1] = eta_current[0];
     }
 
     // Update eta[0] with new entropy
     const entropy = @import("entropy.zig");
-    eta_prime[0] = entropy.update(current_eta[0], new_entropy);
+    eta_prime[0] = entropy.update(eta_current[0], new_entropy);
 
     span.trace("New eta[0] after entropy update: {any}", .{std.fmt.fmtSliceHexLower(&eta_prime[0])});
-
-    return eta_prime;
 }
 
 // TODO: optimize this by not deepcloning and sharing pointers
@@ -340,26 +342,16 @@ const safrole = @import("safrole.zig");
 pub fn transitionSafrole(
     comptime params: Params,
     allocator: Allocator,
-    transition_time: *const params.Time(),
-    eta_prime: *const state.Eta,
-    current_kappa: *const state.Kappa,
-    current_gamma: *const state.Gamma(params.validators_count, params.epoch_length),
-    current_iota: *const state.Iota,
-    post_psi: *const state.Psi,
+    stx: *StateTransition(params),
     extrinsic_tickets: types.TicketsExtrinsic,
-) !safrole.Result(params) {
+) !safrole.Result {
     const span = trace.span(.transition_safrole);
     defer span.deinit();
 
     return try safrole.transition(
         params,
         allocator,
-        transition_time,
-        eta_prime,
-        current_kappa,
-        current_gamma,
-        current_iota,
-        post_psi,
+        stx,
         extrinsic_tickets,
     );
 }

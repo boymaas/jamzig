@@ -11,6 +11,8 @@ pub const Params = @import("../jam_params.zig").Params;
 
 pub const safrole = @import("../safrole.zig");
 
+const dstate = @import("../state_delta.zig");
+
 // Constant
 pub const TransitionResult = struct {
     output: safrole_test_vector.Output,
@@ -51,28 +53,21 @@ pub fn transition(
     );
     current_state.iota = try pre_state.gamma.iota.deepClone(allocator);
 
+    const transition_time = params.Time().init(current_state.tau.?, input.slot);
+    var transition_state = try dstate.StateTransition(params).init(allocator, &current_state, transition_time);
+
     // Now simulate the state transitions tested in this test vector
     const stf = @import("../stf.zig");
 
-    const transition_time = params.Time().init(current_state.tau.?, input.slot);
-
-    // Construct a new state_delta
-    var state_delta = state.JamState(params){};
-
     // Since the vector tests correct progression of time
-    state_delta.tau = try stf.transitionTime(current_state.tau.?, input.slot);
-    state_delta.eta = stf.transitionEta(params, &transition_time, &current_state.eta.?, input.entropy);
+    try stf.transitionTime(params, &transition_state, input.slot);
+    try stf.transitionEta(params, &transition_state, input.entropy);
 
     // we need to transition eta here first using the entropy
     var result = stf.transitionSafrole(
         params,
         allocator,
-        &transition_time,
-        &state_delta.eta.?,
-        &current_state.kappa.?,
-        &current_state.gamma.?,
-        &current_state.iota.?,
-        &current_state.psi.?,
+        &transition_state,
         input.extrinsic,
     ) catch |e| {
         const test_vector_error = switch (e) {
@@ -92,8 +87,7 @@ pub fn transition(
     };
     defer result.deinit(allocator);
 
-    try current_state.merge(&state_delta, allocator);
-    try current_state.merge(&result.post_state, allocator);
+    // We need to do something with transition_state
 
     const test_vector_post_state = try JamStateToTestVectorState(
         params,
