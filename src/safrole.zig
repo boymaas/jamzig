@@ -47,6 +47,7 @@ pub const Result = struct {
         self.deinit_markers(allocator);
     }
 
+    // TODO: this can be removed
     pub fn deinit_markers(self: *@This(), allocator: std.mem.Allocator) void {
         if (self.epoch_marker) |*marker| {
             allocator.free(marker.validators);

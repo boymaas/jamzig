@@ -21,7 +21,7 @@ pub fn StateTransition(comptime params: Params) type {
 
         allocator: std.mem.Allocator,
         time: params.Time(),
-        base: state.JamState(params),
+        base: *const state.JamState(params),
         prime: state.JamState(params),
 
         // Intermediate states
@@ -37,7 +37,7 @@ pub fn StateTransition(comptime params: Params) type {
         ) !Self {
             return Self{
                 .allocator = allocator,
-                .base = base_state.*,
+                .base = base_state,
                 .prime = try state.JamState(params).init(allocator),
                 .time = transition_time,
             };
@@ -119,7 +119,8 @@ pub fn StateTransition(comptime params: Params) type {
                 return &prime_field.*.?;
             } else {
                 // Base state requested
-                return &base_field.*.?;
+                // TODO: this is a concession maybe redesign soe we can get const type as well
+                return @constCast(&base_field.*.?);
             }
         }
 
