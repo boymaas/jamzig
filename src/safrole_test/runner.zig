@@ -26,7 +26,6 @@ pub fn runSafroleTest(
         // std.debug.print("Expected output: {any}\n", .{fixture.output});
         // std.debug.print("Actual output: {any}\n", .{actual_result.output});
         std.debug.print("Error: {any}\n", .{err});
-        try fixture.printInputStateChangesAndOutput();
         std.debug.print("\n\n", .{});
         return err;
     };
@@ -35,9 +34,7 @@ pub fn runSafroleTest(
     if (actual_result.state) |state| {
         fixture.expectPostState(&state) catch |err| {
             std.debug.print("\n❌ Post-state mismatch for {s}\n", .{bin_file_path});
-            try fixture.diffAgainstPostStateAndPrint(&state.gamma);
             std.debug.print("Error: {any}\n", .{err});
-            try fixture.printInputStateChangesAndOutput();
             return err;
         };
     }
@@ -59,34 +56,10 @@ pub fn runSafroleTestDir(
     var failed_tests = std.ArrayList([]const u8).init(allocator);
     defer failed_tests.deinit();
 
-    var test_count: usize = 0;
-    var pass_count: usize = 0;
-
     for (file_list.items()) |entry| {
         if (!std.mem.endsWith(u8, entry.name, ".bin")) continue;
 
-        test_count += 1;
-        runSafroleTest(params, allocator, entry.path) catch {
-            const failed_test = try allocator.dupe(u8, entry.path);
-            try failed_tests.append(failed_test);
-            break;
-        };
-        pass_count += 1;
-    }
-
-    // Print summary
-    std.debug.print("\n=== Test Summary ===\n", .{});
-    std.debug.print("Total tests: {d}\n", .{test_count});
-    std.debug.print("Passed: {d}\n", .{pass_count});
-    std.debug.print("Failed: {d}\n", .{test_count - pass_count});
-
-    if (failed_tests.items.len > 0) {
-        std.debug.print("\nFailed tests:\n", .{});
-        for (failed_tests.items) |failed_test| {
-            std.debug.print("❌ {s}\n", .{failed_test});
-            allocator.free(failed_test);
-        }
-        return error.TestsFailed;
+        try runSafroleTest(params, allocator, entry.path);
     }
 }
 

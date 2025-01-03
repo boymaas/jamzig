@@ -11,6 +11,7 @@ const safrole_types = @import("../safrole/types.zig");
 const adaptor = @import("adaptor.zig");
 
 const diff = @import("../tests/diff.zig");
+const expect = @import("../tests/expect.zig");
 
 pub const Fixtures = struct {
     pre_state: safrole_test_vectors.State,
@@ -50,29 +51,6 @@ pub const Fixtures = struct {
         diff_result.debugPrint();
     }
 
-    pub fn printInput(self: @This()) !void {
-        try std.io.getStdErr().writer().print("Input: {any}\n", .{self.input});
-    }
-
-    pub fn printPreState(self: @This()) !void {
-        try std.io.getStdErr().writer().print("PreState: {any}\n", .{self.pre_state});
-    }
-
-    pub fn printPostState(self: @This()) !void {
-        try std.io.getStdErr().writer().print("PostState: {any}\n", .{self.post_state});
-    }
-
-    pub fn printOutput(self: @This()) !void {
-        try std.io.getStdErr().writer().print("Output: {any}\n", .{self.output});
-    }
-
-    pub fn printInputStateChangesAndOutput(self: @This()) !void {
-        std.debug.print("Fixture input, state changes and expected output:\n", .{});
-        try self.printInput();
-        try self.diffStatesAndPrint();
-        try self.printOutput();
-    }
-
     pub fn deinit(self: @This()) void {
         self.pre_state.deinit(self.allocator);
         self.input.deinit(self.allocator);
@@ -81,7 +59,7 @@ pub const Fixtures = struct {
     }
 
     pub fn expectPostState(self: @This(), actual_state: *const safrole_test_vectors.State) !void {
-        try std.testing.expectEqualDeep(self.post_state, actual_state.*);
+        try expect.expectFormattedEqual(self.post_state, actual_state.*);
     }
 
     pub fn expectOutput(self: @This(), actual_output: safrole_test_vectors.Output) !void {
@@ -91,6 +69,7 @@ pub const Fixtures = struct {
             },
             .ok => |expected_ok| {
                 if (actual_output == .err) return error.UnexpectedError;
+
                 const actual_ok = actual_output.ok;
 
                 if (expected_ok.epoch_mark) |expected_epoch_mark| {
