@@ -19,6 +19,31 @@ pub fn Theta(comptime epoch_size: usize) type {
             };
         }
 
+        pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+            var cloned = @This(){
+                .entries = undefined,
+                .allocator = allocator,
+            };
+            errdefer cloned.deinit();
+
+            // Initialize the entries array with empty SlotEntries
+            cloned.entries = [_]SlotEntries{.{}} ** epoch_size;
+
+            // Clone each SlotEntries and their contained Entry items
+            for (self.entries, 0..) |slot_entries, i| {
+                // Ensure we have enough capacity in the new list
+                try cloned.entries[i].ensureTotalCapacity(allocator, slot_entries.items.len);
+
+                // Clone each Entry in the slot
+                for (slot_entries.items) |entry| {
+                    const cloned_entry = try entry.deepClone(allocator);
+                    try cloned.entries[i].append(allocator, cloned_entry);
+                }
+            }
+
+            return cloned;
+        }
+
         pub fn deinit(self: *@This()) void {
             for (self.entries) |slot_entries| {
                 for (slot_entries.items) |*entry| {
@@ -62,6 +87,22 @@ pub const Entry = struct {
 
     pub fn deinit(self: *Entry, allocator: std.mem.Allocator) void {
         self.dependencies.deinit(allocator);
+    }
+
+    pub fn deepClone(self: Entry, allocator: std.mem.Allocator) !Entry {
+        // Create a new dependencies map
+        var cloned_dependencies = std.AutoHashMapUnmanaged([32]u8, void){};
+
+        // Clone each dependency key-value pair
+        var iterator = self.dependencies.iterator();
+        while (iterator.next()) |entry| {
+            try cloned_dependencies.put(allocator, entry.key_ptr.*, {});
+        }
+
+        return Entry{
+            .work_report = try self.work_report.deepClone(allocator),
+            .dependencies = cloned_dependencies,
+        };
     }
 };
 
