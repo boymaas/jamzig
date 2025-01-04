@@ -67,6 +67,18 @@ pub const ValidatorStats = struct {
     pub fn jsonStringify(stats: *const @This(), jw: anytype) !void {
         try @import("state_json/validator_stats.zig").jsonStringifyValidatorStats(stats, jw);
     }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        _ = allocator; // Unused since ValidatorStats contains only primitive types
+        return @This(){
+            .blocks_produced = self.blocks_produced,
+            .tickets_introduced = self.tickets_introduced,
+            .preimages_introduced = self.preimages_introduced,
+            .octets_across_preimages = self.octets_across_preimages,
+            .reports_guaranteed = self.reports_guaranteed,
+            .availability_assurances = self.availability_assurances,
+        };
+    }
 };
 
 /// PiComponent holds the stats for all validators across two epochs
@@ -108,6 +120,30 @@ pub const Pi = struct {
         self.previous_epoch_stats.deinit();
         self.previous_epoch_stats = self.current_epoch_stats;
         self.current_epoch_stats = try Pi.initValidatorStats(self.allocator, self.validator_count);
+    }
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        // Create new ArrayLists for current and previous epoch stats
+        var current_stats = try std.ArrayList(ValidatorStats).initCapacity(allocator, self.validator_count);
+        var previous_stats = try std.ArrayList(ValidatorStats).initCapacity(allocator, self.validator_count);
+
+        // Deep clone each ValidatorStats instance from current epoch
+        for (self.current_epoch_stats.items) |stats| {
+            try current_stats.append(try stats.deepClone(allocator));
+        }
+
+        // Deep clone each ValidatorStats instance from previous epoch
+        for (self.previous_epoch_stats.items) |stats| {
+            try previous_stats.append(try stats.deepClone(allocator));
+        }
+
+        // Return new Pi instance with cloned data
+        return @This(){
+            .current_epoch_stats = current_stats,
+            .previous_epoch_stats = previous_stats,
+            .allocator = allocator,
+            .validator_count = self.validator_count,
+        };
     }
 
     /// Clean up allocated resources
