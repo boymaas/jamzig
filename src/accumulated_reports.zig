@@ -16,6 +16,24 @@ pub fn Xi(comptime epoch_size: usize) type {
             };
         }
 
+        pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !@This() {
+            var cloned = @This(){
+                .entries = undefined,
+                .allocator = allocator,
+            };
+
+            for (self.entries, 0..) |slot_entries, i| {
+                cloned.entries[i] = std.AutoHashMapUnmanaged(types.WorkReportHash, types.Hash){};
+
+                var iterator = slot_entries.iterator();
+                while (iterator.next()) |entry| {
+                    try cloned.entries[i].put(allocator, entry.key_ptr.*, entry.value_ptr.*);
+                }
+            }
+
+            return cloned;
+        }
+
         pub fn deinit(self: *@This()) void {
             for (self.entries) |slot_entries| {
                 @constCast(&slot_entries).deinit(self.allocator);
