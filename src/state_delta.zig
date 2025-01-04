@@ -119,7 +119,7 @@ pub fn StateTransition(comptime params: Params) type {
                 return &prime_field.*.?;
             } else {
                 // Base state requested
-                // TODO: this is a concession maybe redesign soe we can get const type as well
+                // TODO: redesign to support const return types
                 return @constCast(&base_field.*.?);
             }
         }
