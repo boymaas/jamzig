@@ -54,6 +54,7 @@ pub fn transition(
 
     const transition_time = params.Time().init(current_state.tau.?, input.slot);
     var stx = try dstate.StateTransition(params).init(allocator, &current_state, transition_time);
+    defer stx.deinit();
 
     var result = performTransitions(
         params,

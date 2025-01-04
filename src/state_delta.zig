@@ -216,12 +216,12 @@ pub fn StateTransition(comptime params: Params) type {
             field_ptr.* = value;
         }
 
+        /// frees all owned memory except non-owned self.base
         pub fn deinit(self: *Self) void {
             self.prime.deinit(self.allocator);
-            inline for (dagger_states.kvs) |kv| {
-                if (@field(self, kv.key)) |*field| field.deinit();
+            inline for (comptime dagger_states.keys()) |k| {
+                if (@field(self, k)) |*field| field.deinit();
             }
-            if (self.accumulation_commitment) |*c| c.deinit();
         }
     };
 }

@@ -75,7 +75,6 @@ pub const Result = struct {
 // Extracted ticket processing logic
 fn processTicketExtrinsic(
     comptime params: Params,
-    allocator: std.mem.Allocator,
     stx: *StateTransition(params),
     ticket_extrinsic: types.TicketsExtrinsic,
 ) Error![]types.TicketBody {
@@ -109,7 +108,7 @@ fn processTicketExtrinsic(
     const gamma = try stx.ensure(.gamma);
     const eta_prime = try stx.ensure(.eta_prime);
     const verified_extrinsic = verifyTicketEnvelope(
-        allocator,
+        stx.allocator,
         params.validators_count,
         &gamma.z,
         eta_prime[2],
@@ -119,6 +118,7 @@ fn processTicketExtrinsic(
             return Error.bad_ticket_proof;
         } else return e;
     };
+    errdefer stx.allocator.free(verified_extrinsic);
 
     // Chapter 6.7: The tickets should be in order of their implied identifier
     var index: usize = 0;
@@ -190,49 +190,54 @@ fn transitionEpoch(
     try stx.initialize(.kappa_prime, try current_gamma.k.deepClone(allocator));
 
     // Create new gamma state
-    var new_gamma = try current_gamma.deepClone(allocator);
+    var gamma_prime: *state.Gamma(params.validators_count, params.epoch_length) //
+        = try stx.ensure(.gamma_prime);
 
     // γ.k gets ι (with offenders zeroed out)
     const current_psi = try stx.ensure(.psi);
-    new_gamma.k.deinit(allocator);
-    new_gamma.k = phiZeroOutOffenders(
+    gamma_prime.k.deinit(allocator);
+    gamma_prime.k = phiZeroOutOffenders(
         try current_iota.deepClone(allocator),
         current_psi.offendersSlice(),
     );
 
     // Calculate new gamma_z
     span.debug("Calculating new gamma_z from gamma_k", .{});
-    new_gamma.z = try bandersnatchRingRoot(allocator, new_gamma.k);
-    span.trace("New gamma_z value: {any}", .{std.fmt.fmtSliceHexLower(&new_gamma.z)});
+    gamma_prime.z = try bandersnatchRingRoot(allocator, gamma_prime.k);
+    span.trace("New gamma_z value: {any}", .{std.fmt.fmtSliceHexLower(&gamma_prime.z)});
 
     // Handle gamma_s transition
-    const gamma_s = &new_gamma.s;
+    const gamma_s = &gamma_prime.s;
     gamma_s.deinit(allocator);
     _ = gamma_s.clearAndTakeOwnership();
 
     // Update gamma_s based on conditions
-    if (stx.time.current_epoch >= params.ticket_submission_end_epoch_slot and
+    if (stx.time.prior_slot_in_epoch >= params.ticket_submission_end_epoch_slot and
         current_gamma.a.len == params.epoch_length and
         stx.time.current_epoch == stx.time.prior_epoch + 1)
     {
         span.debug("Operating in ticket mode for gamma_s", .{});
-        span.trace("Conditions met: prev_slot({d}) >= Y({d}), gamma_a.len({d}) == epoch_length({d})", .{
+        span.trace("Conditions met: prev_slot({d}) >= Y({d}) and gamma_a.len({d}) == epoch_length({d}) and current_epoch({d}) == prior_epoch({d}) + 1)", .{
             stx.time.prior_slot_in_epoch,
             params.ticket_submission_end_epoch_slot,
             current_gamma.a.len,
             params.epoch_length,
+            stx.time.current_epoch,
+            stx.time.prior_epoch,
         });
         gamma_s.* = .{
             .tickets = try Z_outsideInOrdering(types.TicketBody, allocator, current_gamma.a),
         };
     } else {
         span.warn("Falling back to key mode for gamma_s", .{});
-        span.trace("Conditions: prev_slot({d}) >= Y({d}), gamma_a.len({d}) == epoch_length({d})", .{
-            stx.time.prior_slot_in_epoch,
-            params.ticket_submission_end_epoch_slot,
-            current_gamma.a.len,
-            params.epoch_length,
-        });
+
+        if (current_gamma.a.len != params.epoch_length) {
+            span.warn("  - Gamma accumulator size {d} != epoch length {d}", .{ current_gamma.a.len, params.epoch_length });
+        }
+        if (stx.time.current_epoch != stx.time.prior_epoch + 1) {
+            span.warn("  - Current epoch {d} != prior epoch + 1 ({d})", .{ stx.time.current_epoch, stx.time.prior_epoch + 1 });
+        }
+
         const kappa_prime = try stx.ensure(.kappa_prime);
         gamma_s.* = .{
             .keys = try gammaS_Fallback(allocator, eta_prime[2], params.epoch_length, kappa_prime.*),
@@ -242,11 +247,8 @@ fn transitionEpoch(
     // Reset gamma_a
     span.debug("Resetting gamma_a ticket accumulator at epoch boundary", .{});
     span.trace("Freeing previous gamma_a with {d} tickets", .{current_gamma.a.len});
-    allocator.free(new_gamma.a);
-    new_gamma.a = &[_]types.TicketBody{};
-
-    // Initialize the complete new gamma state
-    try stx.initialize(.gamma_prime, new_gamma);
+    allocator.free(gamma_prime.a);
+    gamma_prime.a = &[_]types.TicketBody{};
 }
 
 // Main transition function using extracted components
@@ -261,7 +263,7 @@ pub fn transition(
     span.debug("Starting state transition", .{});
 
     // Process ticket extrinsic
-    const verified_extrinsic = try processTicketExtrinsic(params, allocator, stx, ticket_extrinsic);
+    const verified_extrinsic = try processTicketExtrinsic(params, stx, ticket_extrinsic);
     defer allocator.free(verified_extrinsic);
 
     // Handle epoch transition if needed
@@ -284,6 +286,7 @@ pub fn transition(
             verified_extrinsic,
             params.epoch_length,
         );
+        allocator.free(gamma_prime.a);
         gamma_prime.a = merged_gamma_a;
     }
 

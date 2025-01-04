@@ -36,5 +36,39 @@ pub fn Time(comptime epoch_length: u32, comptime slot_period: u32, comptime tick
         pub inline fn isNewEpoch(self: Self) bool {
             return self.is_new_epoch;
         }
+
+        pub fn format(
+            self: Self,
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = fmt;
+            _ = options;
+
+            try writer.print(
+                \\Time:
+                \\  Current Slot: {d}
+                \\  Prior Slot: {d}
+                \\  Current Epoch: {d}
+                \\  Prior Epoch: {d}
+                \\  Current Slot in Epoch: {d}
+                \\  Prior Slot in Epoch: {d}
+                \\  Seconds: {d}
+                \\  Is New Epoch: {}
+                \\  In Ticket Submission Period: {}
+                \\
+            , .{
+                self.current_slot,
+                self.prior_slot,
+                self.current_epoch,
+                self.prior_epoch,
+                self.current_slot_in_epoch,
+                self.prior_slot_in_epoch,
+                self.seconds,
+                self.is_new_epoch,
+                self.is_in_ticket_submission_period,
+            });
+        }
     };
 }

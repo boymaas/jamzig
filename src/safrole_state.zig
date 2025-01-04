@@ -45,7 +45,7 @@ pub fn Gamma(comptime validators_count: u32, comptime epoch_length: u32) type {
         pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !Gamma(validators_count, epoch_length) {
             return .{
                 .k = try self.k.deepClone(allocator),
-                .z = self.z, // Simple copy as it's a value type
+                .z = self.z,
                 .s = try self.s.deepClone(allocator),
                 .a = try allocator.dupe(types.TicketBody, self.a),
             };
