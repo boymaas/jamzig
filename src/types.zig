@@ -510,12 +510,6 @@ pub const ValidatorSet = struct {
             .validators = try allocator.dupe(ValidatorData, self.validators),
         };
     }
-
-    pub fn merge(self: *@This(), other: *@This(), allocator: std.mem.Allocator) void {
-        std.debug.assert(self.validators.len == other.validators.len); // Assert lengths match in debug mode
-        self.deinit(allocator); // Free current
-        self.validators = other.clearAndTakeOwnership();
-    }
 };
 
 // Safrole types
@@ -543,12 +537,6 @@ pub const GammaS = union(enum) {
             .keys => |*keys| keys.* = &[_]BandersnatchPublic{},
         }
         return current;
-    }
-
-    pub fn merge(self: *@This(), other: *@This(), allocator: std.mem.Allocator) void {
-        self.deinit(allocator); // free current entry
-        // abandon ownership of other, and take it
-        self.* = other.clearAndTakeOwnership();
     }
 
     // TODO: make the const* to *

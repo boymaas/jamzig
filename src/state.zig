@@ -308,26 +308,127 @@ pub fn JamState(comptime params: Params) type {
             other: *JamState(params),
             allocator: std.mem.Allocator,
         ) !void {
-            if (other.tau) |tau| self.tau = tau;
-            if (other.eta) |eta| self.eta = eta;
-            // if (source.alpha) |alpha| self.alpha = alpha;
-            if (other.beta) |*beta| try self.beta.?.merge(beta);
-            // if (source.chi) |chi| self.chi = chi;
-            // if (source.delta) |delta| self.delta = delta;
-            if (other.gamma) |*gamma|
-                self.gamma.?.merge(gamma, allocator);
-            if (other.iota) |*iota|
-                self.iota.?.merge(iota, allocator);
-            if (other.kappa) |*kappa|
-                self.kappa.?.merge(kappa, allocator);
-            if (other.lambda) |*lambda|
-                self.lambda.?.merge(lambda, allocator);
-            // if (source.phi) |phi| self.phi = phi;
-            // if (source.pi) |pi| self.pi = pi;
-            // if (source.psi) |psi| self.psi = psi;
-            // if (source.rho) |rho| self.rho = rho;
-            // if (source.theta) |theta| self.theta = theta;
-            // if (source.xi) |xi| self.xi = xi;
+            if (other.tau) |tau| {
+                self.tau = tau;
+                other.tau = null;
+            }
+
+            if (other.eta) |eta| {
+                self.eta = eta;
+                other.eta = null;
+            }
+
+            if (other.alpha) |alpha| {
+                if (self.alpha) |*self_alpha| {
+                    self_alpha.deinit(); // Alpha has no deinit
+                }
+                self.alpha = alpha;
+                other.alpha = null;
+            }
+
+            if (other.beta) |*beta| {
+                if (self.beta) |*self_beta| {
+                    self_beta.deinit();
+                }
+                self.beta = beta.*;
+                other.beta = null;
+            }
+
+            if (other.chi) |*chi| {
+                if (self.chi) |*self_chi| {
+                    self_chi.deinit();
+                }
+                self.chi = chi.*;
+                other.chi = null;
+            }
+
+            if (other.delta) |*delta| {
+                if (self.delta) |*self_delta| {
+                    self_delta.deinit();
+                }
+                self.delta = delta.*;
+                other.delta = null;
+            }
+
+            if (other.gamma) |*gamma| {
+                if (self.gamma) |*self_gamma| {
+                    self_gamma.deinit(allocator);
+                }
+                self.gamma = gamma.*;
+                other.gamma = null;
+            }
+
+            if (other.iota) |*iota| {
+                if (self.iota) |*self_iota| {
+                    self_iota.deinit(allocator);
+                }
+                self.iota = iota.*;
+                other.iota = null;
+            }
+
+            if (other.kappa) |*kappa| {
+                if (self.kappa) |*self_kappa| {
+                    self_kappa.deinit(allocator);
+                }
+                self.kappa = kappa.*;
+                other.kappa = null;
+            }
+
+            if (other.lambda) |*lambda| {
+                if (self.lambda) |*self_lambda| {
+                    self_lambda.deinit(allocator);
+                }
+                self.lambda = lambda.*;
+                other.lambda = null;
+            }
+
+            if (other.phi) |*phi| {
+                if (self.phi) |*self_phi| {
+                    self_phi.deinit();
+                }
+                self.phi = phi.*;
+                other.phi = null;
+            }
+
+            if (other.pi) |*pi| {
+                if (self.pi) |*self_pi| {
+                    self_pi.deinit();
+                }
+                self.pi = pi.*;
+                other.pi = null;
+            }
+
+            if (other.psi) |*psi| {
+                if (self.psi) |*self_psi| {
+                    self_psi.deinit();
+                }
+                self.psi = psi.*;
+                other.psi = null;
+            }
+
+            if (other.rho) |*rho| {
+                if (self.rho) |*self_rho| {
+                    self_rho.deinit();
+                }
+                self.rho = rho.*;
+                other.rho = null;
+            }
+
+            if (other.theta) |*theta| {
+                if (self.theta) |*self_theta| {
+                    self_theta.deinit();
+                }
+                self.theta = theta.*;
+                other.theta = null;
+            }
+
+            if (other.xi) |*xi| {
+                if (self.xi) |*self_xi| {
+                    self_xi.deinit();
+                }
+                self.xi = xi.*;
+                other.xi = null;
+            }
         }
     };
 }

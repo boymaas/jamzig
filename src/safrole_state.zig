@@ -50,23 +50,5 @@ pub fn Gamma(comptime validators_count: u32, comptime epoch_length: u32) type {
                 .a = try allocator.dupe(types.TicketBody, self.a),
             };
         }
-
-        /// Merges another Gamma into this one, handling all allocations
-        pub fn merge(
-            self: *@This(),
-            other: *@This(),
-            allocator: std.mem.Allocator,
-        ) void {
-            self.k.merge(&other.k, allocator);
-            self.s.merge(&other.s, allocator);
-
-            // Copy a
-            allocator.free(self.a);
-            self.a = other.a;
-            other.a = &[_]types.TicketBody{};
-
-            // Merge z using stack
-            self.z = other.z;
-        }
     };
 }

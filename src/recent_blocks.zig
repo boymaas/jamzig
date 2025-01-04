@@ -167,24 +167,6 @@ pub const RecentHistory = struct {
         }
         return clone;
     }
-
-    /// Merges another RecentHistory into this one, replacing all blocks
-    /// with those from the other history.
-    /// TODO: do this smarter and more efficiently
-    pub fn merge(self: *Self, other: *const Self) !void {
-        while (self.blocks.popOrNull()) |*block| {
-            block.deinit(self.allocator);
-        }
-
-        // Update max_blocks if needed
-        self.max_blocks = other.max_blocks;
-
-        // Clone and add all blocks from other
-        for (other.blocks.items) |block| {
-            const cloned_block = try block.deepClone(self.allocator);
-            try self.addBlockInfo(cloned_block);
-        }
-    }
 };
 
 const testing = std.testing;
