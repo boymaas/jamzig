@@ -88,19 +88,6 @@ pub fn JamState(comptime params: Params) type {
             self.gamma = try Gamma(params.validators_count, params.epoch_length).init(allocator);
         }
 
-        pub fn ensureGamma(
-            self: *JamState(params),
-            allocator: std.mem.Allocator,
-            ensurance: *const Gamma(params.validators_count, params.epoch_length),
-        ) !*Gamma(params.validators_count, params.epoch_length) {
-            if (self.gamma) |*gamma| {
-                return gamma;
-            } else {
-                self.gamma = try ensurance.deepClone(allocator);
-                return &self.gamma.?;
-            }
-        }
-
         /// Initialize Delta component
         pub fn initDelta(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.delta = Delta.init(allocator);
@@ -237,55 +224,36 @@ pub fn JamState(comptime params: Params) type {
             return try @import("state_merklization.zig").merklizeStateDictionary(allocator, &map);
         }
 
+        // Comptime patterns
+        usingnamespace StateHelpers;
+
         pub fn deepClone(self: *const JamState(params), allocator: std.mem.Allocator) !JamState(params) {
             var clone = JamState(params){};
-
             inline for (std.meta.fields(JamState(params))) |field| {
-                if (@typeInfo(field.type) != .optional) continue;
-
-                const FieldType = std.meta.Child(field.type);
-                const FieldTypeInfo = @typeInfo(FieldType);
-
-                if (FieldTypeInfo == .@"struct" or FieldTypeInfo == .@"union") {
-                    if (@field(self, field.name)) |value| {
-                        if (@hasDecl(FieldType, "deepClone")) {
-                            // Check if deepClone takes an allocator
-                            const info = @typeInfo(@TypeOf(FieldType.deepClone));
-                            if (info == .@"fn" and info.@"fn".params.len > 1) {
-                                @field(clone, field.name) = try value.deepClone(allocator);
-                            } else {
-                                @field(clone, field.name) = try value.deepClone();
-                            }
-                        } else {
-                            @panic("Please implement deepClone for: " ++ @typeName(FieldType));
-                        }
-                    }
-                } else {
-                    // For simple types that can be copied directly
-                    if (@field(self, field.name)) |value| {
-                        @field(clone, field.name) = value;
-                    }
-                }
+                @field(clone, field.name) = try self.cloneField(&field, allocator);
             }
             return clone;
         }
 
+        /// Destructively merges `other` state into this one.
+        /// Non-null fields from `other` override corresponding fields here.
+        /// NOTE: Performs a simple state merge operation for Milestone 1.
+        /// Future versions will implement optimized merge strategies.
+        pub fn merge(
+            self: *JamState(params),
+            other: *JamState(params),
+            allocator: std.mem.Allocator,
+        ) !void {
+            inline for (std.meta.fields(@This())) |field| {
+                try self.mergeField(other, &field, allocator);
+            }
+        }
+
         /// Deinitialize and free resources
         pub fn deinit(self: *JamState(params), allocator: std.mem.Allocator) void {
-            // NOTE: alpha has no allocations, yet?
-            if (self.beta) |*beta| beta.deinit(); // TODO: check and make consistent to take allocator
-            if (self.chi) |*chi| chi.deinit();
-            if (self.delta) |*delta| delta.deinit();
-            if (self.gamma) |*gamma| gamma.deinit(allocator);
-            if (self.iota) |iota| iota.deinit(allocator);
-            if (self.kappa) |kappa| kappa.deinit(allocator);
-            if (self.lambda) |lambda| lambda.deinit(allocator);
-            if (self.phi) |*phi| phi.deinit();
-            if (self.pi) |*pi| pi.deinit();
-            if (self.psi) |*psi| psi.deinit();
-            if (self.rho) |*rho| rho.deinit();
-            if (self.theta) |*theta| theta.deinit();
-            if (self.xi) |*xi| xi.deinit();
+            inline for (std.meta.fields(@This())) |field| {
+                self.deinitField(&field, allocator);
+            }
         }
 
         /// Format
@@ -297,141 +265,98 @@ pub fn JamState(comptime params: Params) type {
         ) !void {
             try @import("state_format/jam_state.zig").format(params, self, fmt, options, writer);
         }
-
-        /// Destructively merges `other` state into this one.
-        /// Non-null fields from `other` override corresponding fields here.
-        /// NOTE: `other` becomes invalid after merge.
-        /// NOTE: Performs a simple state merge operation for Milestone 1.
-        /// Future versions will implement optimized merge strategies.
-        pub fn merge(
-            self: *JamState(params),
-            other: *JamState(params),
-            allocator: std.mem.Allocator,
-        ) !void {
-            if (other.tau) |tau| {
-                self.tau = tau;
-                other.tau = null;
-            }
-
-            if (other.eta) |eta| {
-                self.eta = eta;
-                other.eta = null;
-            }
-
-            if (other.alpha) |alpha| {
-                if (self.alpha) |*self_alpha| {
-                    self_alpha.deinit(); // Alpha has no deinit
-                }
-                self.alpha = alpha;
-                other.alpha = null;
-            }
-
-            if (other.beta) |*beta| {
-                if (self.beta) |*self_beta| {
-                    self_beta.deinit();
-                }
-                self.beta = beta.*;
-                other.beta = null;
-            }
-
-            if (other.chi) |*chi| {
-                if (self.chi) |*self_chi| {
-                    self_chi.deinit();
-                }
-                self.chi = chi.*;
-                other.chi = null;
-            }
-
-            if (other.delta) |*delta| {
-                if (self.delta) |*self_delta| {
-                    self_delta.deinit();
-                }
-                self.delta = delta.*;
-                other.delta = null;
-            }
-
-            if (other.gamma) |*gamma| {
-                if (self.gamma) |*self_gamma| {
-                    self_gamma.deinit(allocator);
-                }
-                self.gamma = gamma.*;
-                other.gamma = null;
-            }
-
-            if (other.iota) |*iota| {
-                if (self.iota) |*self_iota| {
-                    self_iota.deinit(allocator);
-                }
-                self.iota = iota.*;
-                other.iota = null;
-            }
-
-            if (other.kappa) |*kappa| {
-                if (self.kappa) |*self_kappa| {
-                    self_kappa.deinit(allocator);
-                }
-                self.kappa = kappa.*;
-                other.kappa = null;
-            }
-
-            if (other.lambda) |*lambda| {
-                if (self.lambda) |*self_lambda| {
-                    self_lambda.deinit(allocator);
-                }
-                self.lambda = lambda.*;
-                other.lambda = null;
-            }
-
-            if (other.phi) |*phi| {
-                if (self.phi) |*self_phi| {
-                    self_phi.deinit();
-                }
-                self.phi = phi.*;
-                other.phi = null;
-            }
-
-            if (other.pi) |*pi| {
-                if (self.pi) |*self_pi| {
-                    self_pi.deinit();
-                }
-                self.pi = pi.*;
-                other.pi = null;
-            }
-
-            if (other.psi) |*psi| {
-                if (self.psi) |*self_psi| {
-                    self_psi.deinit();
-                }
-                self.psi = psi.*;
-                other.psi = null;
-            }
-
-            if (other.rho) |*rho| {
-                if (self.rho) |*self_rho| {
-                    self_rho.deinit();
-                }
-                self.rho = rho.*;
-                other.rho = null;
-            }
-
-            if (other.theta) |*theta| {
-                if (self.theta) |*self_theta| {
-                    self_theta.deinit();
-                }
-                self.theta = theta.*;
-                other.theta = null;
-            }
-
-            if (other.xi) |*xi| {
-                if (self.xi) |*self_xi| {
-                    self_xi.deinit();
-                }
-                self.xi = xi.*;
-                other.xi = null;
-            }
-        }
     };
 }
+
+// Helper functions that will be used by our generated methods
+const StateHelpers = struct {
+    // Helper for merging a single field
+    fn mergeField(self: anytype, other: anytype, struct_field: *const std.builtin.Type.StructField, allocator: std.mem.Allocator) !void {
+        const field = @field(other, struct_field.name);
+        if (field) |other_value| {
+            // If the other state has this field
+            if (@field(self, struct_field.name)) |*self_value| {
+                // Clean up our existing value if needed
+                callDeinit(self_value, allocator);
+            }
+            // Transfer ownership
+            @field(self, struct_field.name) = other_value;
+            @field(other, struct_field.name) = null;
+        }
+    }
+
+    // Helper for deep cloning a single field
+    fn cloneField(self: anytype, struct_field: *const std.builtin.Type.StructField, allocator: std.mem.Allocator) !std.meta.Child(struct_field.type) {
+        const field_type = std.meta.Child(struct_field.type);
+
+        if (comptime isComplexType(field_type)) {
+            if (@field(self, struct_field.name)) |value| {
+                if (@hasDecl(field_type, "deepClone")) {
+                    const info = @typeInfo(@TypeOf(field_type.deepClone));
+                    if (info == .@"fn" and info.@"fn".params.len > 1) {
+                        return try value.deepClone(allocator);
+                    } else {
+                        return try value.deepClone();
+                    }
+                } else {
+                    @panic("Please implement deepClone for: " ++ @typeName(field_type));
+                }
+            }
+        } else {
+            // For simple types that can be copied directly
+            if (@field(self, struct_field.name)) |value| {
+                return value;
+            }
+        }
+        unreachable;
+    }
+
+    // Helper for deinitializing a single field
+    fn deinitField(self: anytype, struct_field: *const std.builtin.Type.StructField, allocator: std.mem.Allocator) void {
+        var field = @field(self, struct_field.name);
+        if (field) |*value| {
+            callDeinit(value, allocator);
+        }
+    }
+
+    // Helper function to check if a type is a struct or union
+    fn isComplexType(comptime T: type) bool {
+        const type_info = @typeInfo(T);
+        return type_info == .@"struct" or type_info == .@"union";
+    }
+
+    fn callDeinit(value: anytype, allocator: std.mem.Allocator) void {
+        const ValueType = std.meta.Child(@TypeOf(value));
+
+        // return early, as we have nothing to call here
+        if (!comptime isComplexType(ValueType)) {
+            return;
+        }
+
+        // Check if the type has a deinit method
+        if (!@hasDecl(ValueType, "deinit")) {
+            @panic("Please implement deinit for: " ++ @typeName(ValueType));
+        }
+
+        // Get the type information about the deinit function
+        const deinit_info = @typeInfo(@TypeOf(@field(ValueType, "deinit")));
+
+        // Ensure it's actually a function
+        if (deinit_info != .@"fn") {
+            @panic("deinit must be a function for: " ++ @typeName(ValueType));
+        }
+
+        // Check the number of parameters the deinit function expects
+        const params_len = deinit_info.@"fn".params.len;
+
+        // Call deinit with the appropriate number of parameters
+        switch (params_len) {
+            1 => value.deinit(),
+            2 => value.deinit(allocator),
+            else => @panic("deinit must take 0 or 1 parameters for: " ++ @typeName(ValueType)),
+        }
+    }
+};
 
 pub const Alpha = @import("authorization.zig").Alpha;
 pub const Beta = @import("recent_blocks.zig").RecentHistory;
