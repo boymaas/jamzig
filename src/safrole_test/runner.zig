@@ -1,5 +1,5 @@
 const std = @import("std");
-const safrole = @import("adaptor.zig");
+const safrole_adaptor = @import("adaptor.zig");
 const fixtures = @import("fixtures.zig");
 const assert = std.debug.assert;
 const Params = @import("../jam_params.zig").Params;
@@ -12,7 +12,7 @@ pub fn runSafroleTest(
     var fixture = try fixtures.buildFixtures(params, allocator, bin_file_path);
     defer fixture.deinit();
 
-    const actual_result = try safrole.transition(
+    const actual_result = try safrole_adaptor.transition(
         params,
         allocator,
         fixture.pre_state,
@@ -34,6 +34,8 @@ pub fn runSafroleTest(
     if (actual_result.state) |state| {
         fixture.expectPostState(&state) catch |err| {
             std.debug.print("\n❌ Post-state mismatch for {s}\n", .{bin_file_path});
+            std.debug.print("\n\x1b[33m↓ Expected State Changes Below ↓\x1b[0m\n", .{});
+            try fixture.diffStatesAndPrint();
             std.debug.print("Error: {any}\n", .{err});
             return err;
         };

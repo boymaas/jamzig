@@ -57,7 +57,6 @@ pub fn transition(
 
     var result = performTransitions(
         params,
-        allocator,
         &stx,
         input,
     ) catch |e| {
@@ -101,7 +100,6 @@ pub fn transition(
 
 fn performTransitions(
     comptime params: Params,
-    allocator: std.mem.Allocator,
     stx: *dstate.StateTransition(params),
     input: safrole_test_vector.Input,
 ) !safrole.Result {
@@ -111,7 +109,6 @@ fn performTransitions(
     try stf.transitionEta(params, stx, input.entropy);
     return try stf.transitionSafrole(
         params,
-        allocator,
         stx,
         input.extrinsic,
     );

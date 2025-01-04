@@ -281,7 +281,7 @@ pub fn transitionTime(
     defer span.deinit();
     span.debug("Starting time transition", .{});
 
-    const current_tau: *state.Tau = try stx.ensure(.tau);
+    const current_tau = try stx.ensure(.tau);
     if (header_slot <= current_tau.*) {
         span.err("Invalid slot: new slot {d} <= current tau {d}", .{ header_slot, current_tau });
         return error.bad_slot;
@@ -297,8 +297,8 @@ pub fn transitionEta(comptime params: Params, stx: *StateTransition(params), new
     const span = trace.span(.transition_eta);
     defer span.deinit();
 
-    var eta_current: *types.Eta = try stx.ensure(.eta);
-    var eta_prime: *types.Eta = try stx.ensure(.eta_prime);
+    var eta_current = try stx.ensure(.eta);
+    var eta_prime = try stx.ensure(.eta_prime);
     if (stx.time.isNewEpoch()) {
         span.trace("Rotating entropy values: eta[2]={any}, eta[1]={any}, eta[0]={any}", .{
             std.fmt.fmtSliceHexLower(&eta_current[2]),
@@ -341,7 +341,6 @@ pub fn transitionRecentHistory(
 const safrole = @import("safrole.zig");
 pub fn transitionSafrole(
     comptime params: Params,
-    allocator: Allocator,
     stx: *StateTransition(params),
     extrinsic_tickets: types.TicketsExtrinsic,
 ) !safrole.Result {
@@ -350,7 +349,7 @@ pub fn transitionSafrole(
 
     return try safrole.transition(
         params,
-        allocator,
+        stx.allocator,
         stx,
         extrinsic_tickets,
     );
@@ -381,6 +380,7 @@ pub fn transitionDisputes(
     );
     defer allocator.free(current_kappa_keys);
 
+    // TODO: we have a function on ValidatorSet for this
     const current_lambda_keys = try utils.mapAlloc(
         types.ValidatorData,
         types.Ed25519Public,

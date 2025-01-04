@@ -45,7 +45,7 @@ pub fn StateTransition(comptime params: Params) type {
 
         /// Ensure a field is available for transition. Returns an error if field
         /// cannot be transitioned to the requested state.
-        pub fn ensure(self: *Self, comptime field: STAccessors(State)) Error!*STAccessorType(State, field) {
+        pub fn ensure(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(State, field) {
             const name = @tagName(field);
 
             // Handle intermediate states
@@ -120,13 +120,13 @@ pub fn StateTransition(comptime params: Params) type {
             } else {
                 // Base state requested
                 // TODO: redesign to support const return types
-                return @constCast(&base_field.*.?);
+                return &base_field.*.?;
             }
         }
 
         /// Initialize a field with a value. Only works for prime and dagger states.
         /// Returns error if field is already initialized or if trying to initialize a base field.
-        pub fn initialize(self: *Self, comptime field: STAccessors(State), value: STAccessorType(State, field)) Error!void {
+        pub fn initialize(self: *Self, comptime field: STAccessors(State), value: STBaseType(State, field)) Error!void {
             const name = @tagName(field);
 
             // Ensure we're only initializing prime or dagger states
@@ -169,7 +169,7 @@ pub fn StateTransition(comptime params: Params) type {
 
         /// Overwrite a field's value. The field must already be initialized.
         /// Returns error if the field is not initialized yet.
-        pub fn overwrite(self: *Self, comptime field: STAccessors(State), value: STAccessorType(State, field)) Error!void {
+        pub fn overwrite(self: *Self, comptime field: STAccessors(State), value: STBaseType(State, field)) Error!void {
             const name = @tagName(field);
 
             // Special handling for dagger states
@@ -221,9 +221,8 @@ pub fn StateTransition(comptime params: Params) type {
     };
 }
 
-/// Returns the type of a field accessor for a given state and field name.
-/// Handles both base fields and special transition states (dagger/double_dagger).
-pub fn STAccessorType(comptime T: anytype, comptime field: anytype) type {
+/// Returns the base type for a given field accessor
+pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
     const field_name = @tagName(field);
     // Handle special transition states
     if (std.mem.eql(u8, field_name, "beta_dagger")) {
@@ -248,6 +247,19 @@ pub fn STAccessorType(comptime T: anytype, comptime field: anytype) type {
     orelse @compileError("Invalid field name: " ++ base_name);
 
     return std.meta.Child(std.meta.fieldInfo(T, field_enum).type);
+}
+
+/// Returns the appropriate pointer type (*const or *) for a given field accessor
+pub fn STAccessorPointerType(comptime T: anytype, comptime field: anytype) type {
+    const field_name = @tagName(field);
+    const BaseType = STBaseType(T, field);
+
+    return if (std.mem.endsWith(u8, field_name, "_prime") or
+        std.mem.endsWith(u8, field_name, "_dagger") or
+        std.mem.endsWith(u8, field_name, "_double_dagger"))
+        *BaseType
+    else
+        *const BaseType;
 }
 
 // Generates all field variants (base + prime).
