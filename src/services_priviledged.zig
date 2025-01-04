@@ -88,6 +88,21 @@ pub const Chi = struct {
             (self.designate != null and index == self.designate.?) or
             self.always_accumulate.contains(index);
     }
+
+    pub fn deepClone(self: *const Chi) !Chi {
+        var cloned = Chi.init(self.allocator);
+        cloned.manager = self.manager;
+        cloned.assign = self.assign;
+        cloned.designate = self.designate;
+
+        // Deep copy the hashmap entries
+        var it = self.always_accumulate.iterator();
+        while (it.next()) |entry| {
+            try cloned.always_accumulate.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+
+        return cloned;
+    }
 };
 
 //  _   _       _ _  _____         _
