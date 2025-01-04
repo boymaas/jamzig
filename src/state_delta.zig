@@ -10,13 +10,26 @@ pub const Error = error{
     StateTransitioned,
 } || error{OutOfMemory};
 
+const DaggerState = enum {
+    beta_dagger,
+    delta_double_dagger,
+    rho_dagger,
+    rho_double_dagger,
+};
+
+const DaggerStateInfo = struct {
+    name: []const u8,
+    Type: type,
+    requires_previous: bool,
+    blocks_next: bool,
+};
+
 /// StateTransition implements a pattern for state transitions.
 /// It maintains both the original (base) state and a transitioning (prime) state,
 /// creating copies of state fields only when they need to be modified.
 pub fn StateTransition(comptime params: Params) type {
     return struct {
         const Self = @This();
-
         const State = state.JamState(params);
 
         allocator: std.mem.Allocator,
@@ -25,10 +38,37 @@ pub fn StateTransition(comptime params: Params) type {
         prime: state.JamState(params),
 
         // Intermediate states
-        beta_dagger: ?state.Beta = null, // β†
-        delta_double_dagger: ?state.Delta = null, // δ‡
-        rho_dagger: ?state.Rho(params.core_count) = null, // ρ†
-        rho_double_dagger: ?state.Rho(params.core_count) = null, // ρ‡
+        beta_dagger: ?state.Beta = null,
+        delta_double_dagger: ?state.Delta = null,
+        rho_dagger: ?state.Rho(params.core_count) = null,
+        rho_double_dagger: ?state.Rho(params.core_count) = null,
+
+        const dagger_states = std.StaticStringMap(DaggerStateInfo).initComptime(.{
+            .{ "beta_dagger", .{
+                .name = "beta",
+                .Type = state.Beta,
+                .requires_previous = true,
+                .blocks_next = false,
+            } },
+            .{ "delta_double_dagger", .{
+                .name = "delta",
+                .Type = state.Delta,
+                .requires_previous = true,
+                .blocks_next = false,
+            } },
+            .{ "rho_dagger", .{
+                .name = "rho",
+                .Type = state.Rho(params.core_count),
+                .requires_previous = true,
+                .blocks_next = true,
+            } },
+            .{ "rho_double_dagger", .{
+                .name = "rho",
+                .Type = state.Rho(params.core_count),
+                .requires_previous = true,
+                .blocks_next = false,
+            } },
+        });
 
         pub fn init(
             allocator: std.mem.Allocator,
@@ -43,43 +83,30 @@ pub fn StateTransition(comptime params: Params) type {
             };
         }
 
-        /// Ensure a field is available for transition. Returns an error if field
-        /// cannot be transitioned to the requested state.
+        fn handleDaggerState(
+            self: *Self,
+            comptime name: []const u8,
+            comptime field: STAccessors(State),
+        ) !?STAccessorPointerType(State, field) {
+            if (dagger_states.get(name)) |info| {
+                const prime_field = &@field(self.prime, info.name);
+                const dagger_field = &@field(self, name);
+
+                if (prime_field.* == null) return Error.PreviousStateRequired;
+                if (dagger_field.* == null) {
+                    dagger_field.* = try prime_field.*.?.deepClone(self.allocator);
+                }
+                return &dagger_field.*.?;
+            }
+            return null;
+        }
+
         pub fn ensure(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(State, field) {
             const name = @tagName(field);
 
-            // Handle intermediate states
-            if (comptime std.mem.eql(u8, name, "beta_dagger")) {
-                if (self.prime.beta == null) return Error.PreviousStateRequired;
-                if (self.beta_dagger == null) {
-                    self.beta_dagger = try self.prime.beta.?.deepClone(self.allocator);
-                }
-                return &self.beta_dagger.?;
-            }
-
-            if (comptime std.mem.eql(u8, name, "delta_double_dagger")) {
-                if (self.prime.delta == null) return Error.PreviousStateRequired;
-                if (self.delta_double_dagger == null) {
-                    self.delta_double_dagger = try self.prime.delta.?.deepClone(self.allocator);
-                }
-                return &self.delta_double_dagger.?;
-            }
-
-            if (comptime std.mem.eql(u8, name, "rho_dagger")) {
-                if (self.rho_double_dagger != null) return Error.StateTransitioned;
-                if (self.prime.rho == null) return Error.PreviousStateRequired;
-                if (self.rho_dagger == null) {
-                    self.rho_dagger = try self.prime.rho.?.deepClone(self.allocator);
-                }
-                return &self.rho_dagger.?;
-            }
-
-            if (comptime std.mem.eql(u8, name, "rho_double_dagger")) {
-                if (self.rho_dagger == null) return Error.PreviousStateRequired;
-                if (self.rho_double_dagger == null) {
-                    self.rho_double_dagger = try self.rho_dagger.?.deepClone(self.allocator);
-                }
-                return &self.rho_double_dagger.?;
+            // Handle dagger states
+            if (try self.handleDaggerState(name, field)) |result| {
+                return result;
             }
 
             // Handle regular prime transitions
@@ -93,70 +120,55 @@ pub fn StateTransition(comptime params: Params) type {
             }
 
             if (is_prime) {
-                // Prime state requested
                 if (prime_field.* == null) {
-                    switch (@typeInfo(@TypeOf(base_field.*.?))) {
-                        .@"struct", .@"union" => {
-                            // Check if type has deepClone method
-                            if (@hasDecl(@TypeOf(base_field.*.?), "deepClone")) {
-                                // Check if deepClone takes allocator
-                                const info = @typeInfo(@TypeOf(@TypeOf(base_field.*.?).deepClone));
-                                prime_field.* = if (info == .@"fn" and info.@"fn".params.len > 1 and
-                                    info.@"fn".params[1].type == std.mem.Allocator)
-                                    try base_field.*.?.deepClone(self.allocator)
-                                else
-                                    try base_field.*.?.deepClone();
-                            } else {
-                                // No deepClone, do simple copy
-                                @compileError("All structs / unions must have a deepClone method");
-                            }
-                        },
-                        else => {
-                            prime_field.* = base_field.*.?;
-                        }, // Simple types get copied directly
-                    }
+                    prime_field.* = try self.cloneField(base_field.*);
                 }
                 return &prime_field.*.?;
             } else {
-                // Base state requested
-                // TODO: redesign to support const return types
                 return &base_field.*.?;
             }
         }
 
-        /// Initialize a field with a value. Only works for prime and dagger states.
-        /// Returns error if field is already initialized or if trying to initialize a base field.
+        fn cloneField(self: *Self, field: anytype) !@TypeOf(field.?) {
+            const T = @TypeOf(field.?);
+            return switch (@typeInfo(T)) {
+                .@"struct", .@"union" => if (@hasDecl(T, "deepClone")) blk: {
+                    const info = @typeInfo(@TypeOf(T.deepClone));
+                    break :blk if (info == .@"fn" and info.@"fn".params.len > 1 and
+                        info.@"fn".params[1].type == std.mem.Allocator)
+                        try field.?.deepClone(self.allocator)
+                    else
+                        try field.?.deepClone();
+                } else @compileError("All structs / unions must have a deepClone method"),
+                else => field.?,
+            };
+        }
+
+        fn initializeDaggerState(
+            self: *Self,
+            comptime name: []const u8,
+            value: anytype,
+        ) !bool {
+            if (dagger_states.get(name)) |_| {
+                const field_ptr = &@field(self, name);
+                if (field_ptr.* != null) return Error.StateTransitioned;
+                field_ptr.* = value;
+                return true;
+            }
+            return false;
+        }
+
         pub fn initialize(self: *Self, comptime field: STAccessors(State), value: STBaseType(State, field)) Error!void {
             const name = @tagName(field);
 
-            // Ensure we're only initializing prime or dagger states
-            if (!std.mem.endsWith(u8, name, "_prime") and
-                !std.mem.endsWith(u8, name, "_dagger") and
-                !std.mem.endsWith(u8, name, "_double_dagger"))
-            {
-                return Error.StateTransitioned;
+            // Handle dagger states
+            if (try self.initializeDaggerState(name, value)) {
+                return;
             }
 
-            // Special handling for dagger states
-            if (comptime std.mem.eql(u8, name, "beta_dagger")) {
-                if (self.beta_dagger != null) return Error.StateTransitioned;
-                self.beta_dagger = value;
-                return;
-            }
-            if (comptime std.mem.eql(u8, name, "delta_double_dagger")) {
-                if (self.delta_double_dagger != null) return Error.StateTransitioned;
-                self.delta_double_dagger = value;
-                return;
-            }
-            if (comptime std.mem.eql(u8, name, "rho_dagger")) {
-                if (self.rho_dagger != null) return Error.StateTransitioned;
-                self.rho_dagger = value;
-                return;
-            }
-            if (comptime std.mem.eql(u8, name, "rho_double_dagger")) {
-                if (self.rho_double_dagger != null) return Error.StateTransitioned;
-                self.rho_double_dagger = value;
-                return;
+            // Ensure we're only initializing prime states
+            if (!std.mem.endsWith(u8, name, "_prime")) {
+                return Error.StateTransitioned;
             }
 
             // Handle prime state initialization
@@ -167,30 +179,25 @@ pub fn StateTransition(comptime params: Params) type {
             prime_field.* = value;
         }
 
-        /// Overwrite a field's value. The field must already be initialized.
-        /// Returns error if the field is not initialized yet.
+        fn overwriteDaggerState(
+            self: *Self,
+            name: []const u8,
+            value: anytype,
+        ) !bool {
+            if (dagger_states.get(name)) |_| {
+                const field_ptr = &@field(self, name);
+                if (field_ptr.* == null) return Error.PreviousStateRequired;
+                field_ptr.* = value;
+                return true;
+            }
+            return false;
+        }
+
         pub fn overwrite(self: *Self, comptime field: STAccessors(State), value: STBaseType(State, field)) Error!void {
             const name = @tagName(field);
 
-            // Special handling for dagger states
-            if (comptime std.mem.eql(u8, name, "beta_dagger")) {
-                if (self.beta_dagger == null) return Error.PreviousStateRequired;
-                self.beta_dagger = value;
-                return;
-            }
-            if (comptime std.mem.eql(u8, name, "delta_double_dagger")) {
-                if (self.delta_double_dagger == null) return Error.PreviousStateRequired;
-                self.delta_double_dagger = value;
-                return;
-            }
-            if (comptime std.mem.eql(u8, name, "rho_dagger")) {
-                if (self.rho_dagger == null) return Error.PreviousStateRequired;
-                self.rho_dagger = value;
-                return;
-            }
-            if (comptime std.mem.eql(u8, name, "rho_double_dagger")) {
-                if (self.rho_double_dagger == null) return Error.PreviousStateRequired;
-                self.rho_double_dagger = value;
+            // Handle dagger states
+            if (try self.overwriteDaggerState(name, value)) {
                 return;
             }
 
@@ -209,17 +216,17 @@ pub fn StateTransition(comptime params: Params) type {
             field_ptr.* = value;
         }
 
-        /// Free all transition state resources
         pub fn deinit(self: *Self) void {
             self.prime.deinit(self.allocator);
-            if (self.beta_dagger) |*beta| beta.deinit();
-            if (self.delta_double_dagger) |*delta| delta.deinit();
-            if (self.rho_dagger) |*rho| rho.deinit();
-            if (self.rho_double_dagger) |*rho| rho.deinit();
+            inline for (dagger_states.kvs) |kv| {
+                if (@field(self, kv.key)) |*field| field.deinit();
+            }
             if (self.accumulation_commitment) |*c| c.deinit();
         }
     };
 }
+
+// Rest of the helper functions remain the same...
 
 /// Returns the base type for a given field accessor
 pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
