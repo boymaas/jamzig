@@ -8,9 +8,7 @@ const disputes = @import("../disputes.zig");
 const Params = @import("../jam_params.zig").Params;
 const StateTransition = @import("../state_delta.zig").StateTransition;
 
-pub const Error = error{
-    invalid_disputes_extrinsic,
-};
+pub const Error = error{};
 
 pub fn transition(
     comptime validators_count: u32,

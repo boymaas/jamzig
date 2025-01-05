@@ -6,6 +6,8 @@ const types = @import("../types.zig");
 const Params = @import("../jam_params.zig").Params;
 const StateTransition = @import("../state_delta.zig").StateTransition;
 
+pub const Error = error{};
+
 pub fn transitionCoreAllocations(
     comptime params: Params,
     stx: *StateTransition(params),

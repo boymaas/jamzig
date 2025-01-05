@@ -7,9 +7,7 @@ const StateTransition = @import("../state_delta.zig").StateTransition;
 
 const trace = @import("../tracing.zig").scoped(.stf);
 
-pub const Error = error{
-    bad_slot,
-};
+pub const Error = error{};
 
 pub fn transition(
     comptime params: Params,

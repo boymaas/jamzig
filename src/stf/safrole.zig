@@ -9,9 +9,7 @@ const StateTransition = @import("../state_delta.zig").StateTransition;
 const tracing = @import("../tracing.zig");
 const trace = tracing.scoped(.stf);
 
-pub const Error = error{
-    invalid_tickets_extrinsic,
-};
+pub const Error = error{};
 
 pub fn transition(
     comptime params: Params,

@@ -8,11 +8,13 @@ const StateTransition = state_d.StateTransition;
 
 const trace = @import("../tracing.zig").scoped(.stf);
 
-pub const Error = error{
-    invalid_entropy,
-};
+pub const Error = error{};
 
-pub fn transition(comptime params: Params, stx: *StateTransition(params), new_entropy: types.Entropy) !void {
+pub fn transition(
+    comptime params: Params,
+    stx: *StateTransition(params),
+    new_entropy: types.Entropy,
+) !void {
     const span = trace.span(.transition_eta);
     defer span.deinit();
 
