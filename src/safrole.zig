@@ -3,7 +3,7 @@ const ArrayList = std.ArrayList;
 
 const crypto = @import("crypto.zig");
 const ring_vrf = @import("ring_vrf.zig");
-const state_d = @import("state_delta.zig");
+const state_delta = @import("state_delta.zig");
 pub const entropy = @import("entropy.zig");
 pub const jam_params = @import("jam_params.zig");
 pub const state = @import("state.zig");
@@ -15,7 +15,7 @@ pub const ordering = @import("safrole/ordering.zig");
 pub const epoch_handler = @import("safrole/epoch_handler.zig");
 
 const Params = @import("jam_params.zig").Params;
-const StateTransition = state_d.StateTransition;
+const StateTransition = state_delta.StateTransition;
 
 const trace = @import("tracing.zig").scoped(.safrole);
 
@@ -36,7 +36,7 @@ pub const Error = error{
     DuplicateTicket,
     /// Too many tickets in extrinsic
     TooManyTicketsInExtrinsic,
-} || std.mem.Allocator.Error || ring_vrf.Error || state_d.Error;
+} || std.mem.Allocator.Error || ring_vrf.Error || state_delta.Error;
 
 pub const Result = struct {
     epoch_marker: ?types.EpochMark,
