@@ -96,6 +96,8 @@ pub fn stateTransition(
     var stx = try StateTransition(params).init(allocator, current_state, stx_time);
     errdefer stx.deinit();
 
+    span.debug("Time: {s}", .{stx_time});
+
     span.debug("Starting time transition (τ')", .{});
     try transitionTime(
         params,
@@ -338,7 +340,6 @@ pub fn transitionSafrole(
 
     return try safrole.transition(
         params,
-        stx.allocator,
         stx,
         extrinsic_tickets,
     );

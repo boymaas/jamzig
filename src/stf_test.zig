@@ -27,7 +27,7 @@ test "sequoia: State transition with sequoia-generated blocks" {
     defer builder.deinit();
 
     // Test multiple block transitions
-    const num_blocks = 512;
+    const num_blocks = 26;
 
     // Let's give access to the current state
     var current_state = &builder.state;

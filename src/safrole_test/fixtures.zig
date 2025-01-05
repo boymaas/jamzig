@@ -21,7 +21,7 @@ pub const Fixtures = struct {
     allocator: std.mem.Allocator,
 
     pub fn diffStates(self: @This()) !diff.DiffResult {
-        return try diff.diffBasedOnFormat(self.allocator, &self.pre_state, &self.post_state);
+        return try diff.diffBasedOnTypesFormat(self.allocator, &self.pre_state, &self.post_state);
     }
 
     pub fn diffStatesAndPrint(self: @This()) !void {
@@ -58,7 +58,7 @@ pub const Fixtures = struct {
     }
 
     pub fn expectPostState(self: @This(), actual_state: *const safrole_test_vectors.State) !void {
-        try expect.expectFormattedEqual(self.post_state, actual_state.*);
+        try expect.expectTypesFmtEqual(self.post_state, actual_state.*);
     }
 
     pub fn expectOutput(self: @This(), actual_output: safrole_test_vectors.Output) !void {

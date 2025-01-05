@@ -45,6 +45,21 @@ pub const DiffResult = union(enum) {
     }
 };
 
+pub fn diffBasedOnTypesFormat(
+    allocator: std.mem.Allocator,
+    actual: anytype,
+    expected: anytype,
+) !DiffResult {
+
+    // Print both before and after states
+    const actual_str = try tfmt.formatAlloc(allocator, actual);
+    defer allocator.free(actual_str);
+    const expected_str = try tfmt.formatAlloc(allocator, expected);
+    defer allocator.free(expected_str);
+
+    return diffBasedOnStrings(allocator, actual_str, expected_str);
+}
+
 pub fn diffBasedOnFormat(
     allocator: std.mem.Allocator,
     before: anytype,

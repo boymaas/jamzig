@@ -77,9 +77,8 @@ pub fn transition(
     };
     defer result.deinit(allocator);
 
-    // We need to do something with transition_state
-    // TODO: this can be done with transition_state
-    try current_state.merge(&stx.prime, allocator);
+    // merge the stx into
+    try stx.takeBaseAndMerge();
 
     const test_vector_post_state = try JamStateToTestVectorState(
         params,

@@ -225,9 +225,8 @@ pub fn StateTransition(comptime params: Params) type {
 
         /// Takes ownership of prime/dagger states to create merged state, consuming the prime state and
         /// altering base.
-        pub fn takeBaseAndMerge(self: *Self) !State {
-            try self.base.merge(&self.prime, self.allocator);
-            return self.base;
+        pub fn takeBaseAndMerge(self: *Self) !void {
+            try @constCast(self.base).merge(&self.prime, self.allocator);
         }
 
         /// frees all owned memory except non-owned self.base

@@ -210,7 +210,7 @@ fn transitionEpoch(
     _ = gamma_s.clearAndTakeOwnership();
 
     // Update gamma_s based on conditions
-    if (stx.time.isOutsideTicketSubmissionPeriod() and
+    if (stx.time.priorWasInTicketSubmissionTail() and
         current_gamma.a.len == params.epoch_length and
         stx.time.isConsecutiveEpoch())
     {
@@ -232,7 +232,7 @@ fn transitionEpoch(
         if (current_gamma.a.len != params.epoch_length) {
             span.warn("  - Gamma accumulator size {d} != epoch length {d}", .{ current_gamma.a.len, params.epoch_length });
         }
-        if (stx.time.current_epoch != stx.time.prior_epoch + 1) {
+        if (!stx.time.isConsecutiveEpoch()) {
             span.warn("  - Current epoch {d} != prior epoch + 1 ({d})", .{ stx.time.current_epoch, stx.time.prior_epoch + 1 });
         }
 
@@ -252,7 +252,6 @@ fn transitionEpoch(
 // Main transition function using extracted components
 pub fn transition(
     comptime params: Params,
-    allocator: std.mem.Allocator,
     stx: *StateTransition(params),
     ticket_extrinsic: types.TicketsExtrinsic,
 ) Error!Result {
@@ -262,13 +261,13 @@ pub fn transition(
 
     // Process ticket extrinsic
     const verified_extrinsic = try processTicketExtrinsic(params, stx, ticket_extrinsic);
-    defer allocator.free(verified_extrinsic);
+    defer stx.allocator.free(verified_extrinsic);
 
     // Handle epoch transition if needed
     if (stx.time.isNewEpoch()) {
         try transitionEpoch(
             params,
-            allocator,
+            stx.allocator,
             stx,
         );
     }
@@ -279,12 +278,12 @@ pub fn transition(
     if (stx.time.is_in_ticket_submission_period) {
         span.debug("Processing ticket submissions", .{});
         const merged_gamma_a = try mergeTicketsIntoTicketAccumulatorGammaA(
-            allocator,
-            gamma.a,
+            stx.allocator,
+            gamma_prime.a,
             verified_extrinsic,
             params.epoch_length,
         );
-        allocator.free(gamma_prime.a);
+        stx.allocator.free(gamma_prime.a);
         gamma_prime.a = merged_gamma_a;
     }
 
@@ -298,19 +297,18 @@ pub fn transition(
         epoch_marker = .{
             .entropy = (try stx.ensure(.eta_prime))[1],
             .tickets_entropy = (try stx.ensure(.eta_prime))[2],
-            .validators = try extractBandersnatchKeys(allocator, gamma_prime.k),
+            .validators = try extractBandersnatchKeys(stx.allocator, gamma_prime.k),
         };
     }
 
-    if (stx.time.current_epoch == stx.time.prior_epoch and
-        stx.time.prior_slot_in_epoch < params.ticket_submission_end_epoch_slot and
-        params.ticket_submission_end_epoch_slot <= stx.time.current_slot_in_epoch and
-        gamma.a.len == params.epoch_length) // TODO: check if this should not be gamma_prime.a
+    if (stx.time.isSameEpoch() and
+        stx.time.didCrossTicketSubmissionEnd() and
+        gamma_prime.a.len == params.epoch_length) // TODO: check if this should not be gamma_prime.a
     {
         winning_ticket_marker = .{
             .tickets = try Z_outsideInOrdering(
                 types.TicketBody,
-                allocator,
+                stx.allocator,
                 gamma.a,
             ),
         };

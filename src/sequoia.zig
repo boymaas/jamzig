@@ -393,14 +393,20 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 self.block_time.current_slot_in_epoch,
             });
 
-            // Select block producer for this slot
+            // Select block producer for this slot, there is an interesting
+            // detail here. As on the first block of a new epoch there could be a state
+            // change from fallback ==> tickets. Or transitions from one set of tickets
+            // to the other set of ticktets tickets ==> tickets.
+            //
+            // Now for building blocks, the first block produced in the new epoch will use the old
+            // fallback keys or old tickets.
             const author_index = try self.selectBlockAuthor();
             span.debug("Selected block author index: {d}", .{author_index});
 
-            // Process epoch transition if needed
+            // If the block we are producing will initiate the new epoch, selectBlockAuthor will
+            // need to old keys, that is the current ones
             if (self.block_time.isNewEpoch()) {
-                span.debug("Processing epoch transition - {d} slots until next epoch", .{self.block_time.slotsUntilNextEpoch()});
-
+                span.debug("TicketRegistry current => previous", .{});
                 // Swap ticket registry maps at epoch boundary
                 const previous = self.ticket_registry_previous;
                 self.ticket_registry_previous = self.ticket_registry_current;
@@ -486,13 +492,14 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             header.seal = block_seal.toBytes();
 
             var tickets = types.TicketsExtrinsic{ .data = &[_]types.TicketEnvelope{} };
-            if (self.block_time.isInTicketSubmissionPeriod()) {
+            {
+                const span_gen_tickets = span.child(.generate_tickets);
                 if (self.block_time.slotsUntilTicketSubmissionEnds()) |remaining_slots| {
-                    span.debug("Processing ticket submission - {d} slots remaining", .{remaining_slots});
+                    span_gen_tickets.debug("Generating ticket submissions submission - {d} slots remaining", .{remaining_slots});
                     tickets = .{ .data = try self.generateTickets(&eta_prime) };
+                } else {
+                    span_gen_tickets.debug("Outside ticket submission period", .{});
                 }
-            } else {
-                span.debug("Outside ticket submission period", .{});
             }
 
             // Ticket counts are now reset in the epoch transition logic above</REPLACE>
@@ -592,7 +599,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                         &[_]u8{},
                         &vrf_proof,
                     );
-                    span.trace("  Ticket ID: {s}", .{std.fmt.fmtSliceHexLower(&ticket_id)});
+                    span.debug("  Ticket ID: {s}", .{std.fmt.fmtSliceHexLower(&ticket_id)});
 
                     // Create and append ticket
                     const ticket = types.TicketEnvelope{
