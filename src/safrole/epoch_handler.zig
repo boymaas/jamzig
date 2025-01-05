@@ -44,14 +44,14 @@ pub fn handleEpochTransition(
     // γ.k gets ι (with offenders zeroed out)
     const current_psi = try stx.ensure(.psi);
     gamma_prime.k.deinit(allocator);
-    gamma_prime.k = phiZeroOutOffenders(
+    gamma_prime.k = zeroOutOffenders(
         try current_iota.deepClone(allocator),
         current_psi.offendersSlice(),
     );
 
     // Calculate new gamma_z
     span.debug("Calculating new gamma_z from gamma_k", .{});
-    gamma_prime.z = try bandersnatchRingRoot(allocator, gamma_prime.k);
+    gamma_prime.z = try buildBandersnatchRingRoot(allocator, gamma_prime.k);
     span.trace("New gamma_z value: {any}", .{std.fmt.fmtSliceHexLower(&gamma_prime.z)});
 
     // Handle gamma_s transition
@@ -100,14 +100,11 @@ pub fn handleEpochTransition(
 }
 
 // 58. PHI: Zero out any offenders on post_state.iota
-fn phiZeroOutOffenders(data: types.ValidatorSet, offenders: []const types.Ed25519Public) types.ValidatorSet {
-    // TODO: (58) Zero out any offenders on post_state.iota, The origin of
-    // the offenders is explained in section 10.
+fn zeroOutOffenders(data: types.ValidatorSet, offenders: []const types.Ed25519Public) types.ValidatorSet {
     for (data.items()) |*validator_data| {
         // check if in offenders list
         for (offenders) |*offender| {
             if (std.mem.eql(u8, offender, &validator_data.ed25519)) {
-                std.debug.print("Validator data to 0", .{});
                 validator_data.* = std.mem.zeroes(types.ValidatorData);
             }
         }
@@ -115,9 +112,8 @@ fn phiZeroOutOffenders(data: types.ValidatorSet, offenders: []const types.Ed2551
     return data;
 }
 
-// O: See section 3.8 and appendix G
-// O(⟦HB⟧) ∈ Yr ≡ KZG_commitment(⟦HB⟧)
-fn bandersnatchRingRoot(
+/// Build the Bandersnatch Ring Root
+fn buildBandersnatchRingRoot(
     allocator: std.mem.Allocator,
     gamma_k: types.GammaK,
 ) !types.GammaZ {
