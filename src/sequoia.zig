@@ -6,6 +6,7 @@ const ring_vrf = @import("ring_vrf.zig");
 const jam_params = @import("jam_params.zig");
 const jamstate = @import("state.zig");
 const codec = @import("codec.zig");
+const time = @import("time.zig");
 
 pub const logging = @import("sequoia/logging.zig");
 const trace = @import("tracing.zig").scoped(.sequoia);
@@ -178,6 +179,8 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
 
         allocator: std.mem.Allocator,
         state: jamstate.JamState(params),
+
+        prior_slot: types.TimeSlot = 0,
         current_slot: types.TimeSlot = 0,
 
         last_header_hash: ?types.Hash,
@@ -209,6 +212,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 .allocator = allocator,
                 .config = config,
                 .state = try config.buildJamState(allocator, rng),
+                .prior_slot = config.initial_slot,
                 .current_slot = config.initial_slot,
                 .last_header_hash = null,
                 .last_state_root = null,
@@ -381,6 +385,35 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             defer span.deinit();
             span.debug("Building next block at slot {d}", .{self.current_slot + 1});
 
+            // Progress time
+            // TODO: lets make it possible to skip random slots
+            self.current_slot = self.prior_slot + 1;
+            defer self.prior_slot = self.current_slot;
+
+            // Process epoch transition if needed
+            const current_time = time.Time(params.epoch_length, params.slot_period, params.ticket_submission_end_epoch_slot)
+                .init(self.prior_slot, self.current_slot);
+
+            span.debug("Building next block at slot {d} (epoch {d}, slot in epoch {d})", .{
+                current_time.current_slot,
+                current_time.current_epoch,
+                current_time.current_slot_in_epoch,
+            });
+
+            // Process epoch transition if needed
+            if (current_time.isNewEpoch()) {
+                span.debug("Processing epoch transition - {d} slots until next epoch", .{current_time.slotsUntilNextEpoch()});
+
+                // Swap ticket registry maps at epoch boundary
+                const previous = self.ticket_registry_previous;
+                self.ticket_registry_previous = self.ticket_registry_current;
+                self.ticket_registry_current = previous;
+                self.ticket_registry_current.clearRetainingCapacity();
+
+                // Reset ticket counts for next epoch
+                self.validator_tickets = std.mem.zeroes([params.validators_count]u8);
+            }
+
             // Select block producer for this slot
             const author_index = try self.selectBlockAuthor();
             span.debug("Selected block author index: {d}", .{author_index});
@@ -483,18 +516,16 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             }
 
             var tickets = types.TicketsExtrinsic{ .data = &[_]types.TicketEnvelope{} };
-            if (current_epoch_slot < params.ticket_submission_end_epoch_slot) {
-                tickets = .{ .data = try self.generateTickets(&eta_prime) }; // TODO: eta_prime
+            if (current_time.isInTicketSubmissionPeriod()) {
+                if (current_time.slotsUntilTicketSubmissionEnds()) |remaining_slots| {
+                    span.debug("Processing ticket submission - {d} slots remaining", .{remaining_slots});
+                    tickets = .{ .data = try self.generateTickets(&eta_prime) };
+                }
             } else {
                 span.debug("Outside ticket submission period", .{});
             }
 
-            // Reset ticket counts at epoch boundary, next blocks validators
-            // will be able to submit tickets
-            if (current_epoch > previous_epoch) {
-                span.debug("New epoch - resetting validator ticket counts", .{});
-                self.validator_tickets = std.mem.zeroes([params.validators_count]u8);
-            }
+            // Ticket counts are now reset in the epoch transition logic above</REPLACE>
 
             const extrinsic = types.Extrinsic{
                 .tickets = tickets,

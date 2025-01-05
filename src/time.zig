@@ -10,7 +10,6 @@ pub fn Time(comptime epoch_length: u32, comptime slot_period: u32, comptime tick
         current_slot_in_epoch: u32,
         is_new_epoch: bool,
         seconds: u64,
-
         ticket_submission_end_epoch_slot: u32,
         is_in_ticket_submission_period: bool,
 
@@ -37,6 +36,24 @@ pub fn Time(comptime epoch_length: u32, comptime slot_period: u32, comptime tick
             return self.is_new_epoch;
         }
 
+        pub inline fn isInTicketSubmissionPeriod(self: Self) bool {
+            return self.is_in_ticket_submission_period;
+        }
+
+        pub fn slotsUntilNextEpoch(self: Self) u32 {
+            return epoch_length - self.current_slot_in_epoch;
+        }
+
+        pub fn slotsUntilTicketSubmissionEnds(self: Self) ?u32 {
+            if (!self.is_in_ticket_submission_period) return null;
+            return ticket_submission_end_epoch_slot - self.current_slot_in_epoch;
+        }
+
+        // Calculate expected time for next epoch in seconds
+        pub fn secondsUntilNextEpoch(self: Self) u64 {
+            return @as(u64, self.slotsUntilNextEpoch()) * slot_period;
+        }
+
         pub fn format(
             self: Self,
             comptime fmt: []const u8,
@@ -57,6 +74,8 @@ pub fn Time(comptime epoch_length: u32, comptime slot_period: u32, comptime tick
                 \\  Seconds: {d}
                 \\  Is New Epoch: {}
                 \\  In Ticket Submission Period: {}
+                \\  Slots Until Next Epoch: {d}
+                \\  Time Until Next Epoch: {d}s
                 \\
             , .{
                 self.current_slot,
@@ -68,6 +87,8 @@ pub fn Time(comptime epoch_length: u32, comptime slot_period: u32, comptime tick
                 self.seconds,
                 self.is_new_epoch,
                 self.is_in_ticket_submission_period,
+                self.slotsUntilNextEpoch(),
+                self.secondsUntilNextEpoch(),
             });
         }
     };
