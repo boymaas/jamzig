@@ -2,14 +2,13 @@ const std = @import("std");
 
 const types = @import("../types.zig");
 const state = @import("../state.zig");
-const state_d = @import("../state_delta.zig");
 const ordering = @import("ordering.zig");
 const entropy = @import("../entropy.zig");
 
 const ring_vrf = @import("../ring_vrf.zig");
 
 const Params = @import("../jam_params.zig").Params;
-const StateTransition = state_d.StateTransition;
+const StateTransition = @import("../state_delta.zig").StateTransition;
 
 const trace = @import("../tracing.zig").scoped(.epoch_handler);
 
