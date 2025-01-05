@@ -6,7 +6,6 @@ const TestCase = safrole_test_vectors.TestCase;
 
 const tests = @import("../tests.zig");
 const safrole = @import("../safrole.zig");
-const safrole_types = @import("../safrole/types.zig");
 
 const adaptor = @import("adaptor.zig");
 
@@ -33,7 +32,7 @@ pub const Fixtures = struct {
 
     pub fn diffAgainstPostState(
         self: @This(),
-        state: *const safrole_types.State,
+        state: *const safrole_test_vectors.Gamma,
     ) !diff.DiffResult {
         return try diff.diffBasedOnFormat(
             self.allocator,
@@ -44,7 +43,7 @@ pub const Fixtures = struct {
 
     pub fn diffAgainstPostStateAndPrint(
         self: @This(),
-        state: *const safrole_types.State,
+        state: *const safrole_test_vectors.Gamma,
     ) !void {
         const diff_result = try self.diffAgainstPostState(state);
         defer diff_result.deinit(self.allocator);

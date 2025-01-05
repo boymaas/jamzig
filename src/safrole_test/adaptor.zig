@@ -3,7 +3,6 @@ const std = @import("std");
 
 const types = @import("../types.zig");
 const state = @import("../state.zig");
-const safrole_types = @import("../safrole/types.zig");
 const safrole_test_vector = @import("../jamtestvectors/safrole.zig");
 const stf = @import("../stf.zig");
 const safrole = @import("../safrole.zig");
@@ -157,7 +156,7 @@ fn GammaFromTestVectorState(
 fn JamStateToTestVectorState(comptime params: Params, allocator: std.mem.Allocator, post_state: *const state.JamState(params)) !safrole_test_vector.State {
     // Create test vector state with gamma from jam state
     return safrole_test_vector.State{
-        .gamma = safrole_types.State{
+        .gamma = .{
             .tau = post_state.tau.?,
             .eta = post_state.eta.?,
             .lambda = try post_state.lambda.?.deepClone(allocator),

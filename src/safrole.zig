@@ -2,7 +2,6 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 
 pub const types = @import("types.zig");
-pub const safrole_types = @import("safrole/types.zig");
 pub const state = @import("state.zig");
 pub const time = @import("time.zig");
 

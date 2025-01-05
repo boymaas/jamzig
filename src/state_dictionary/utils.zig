@@ -13,20 +13,12 @@
 const std = @import("std");
 
 fn ManagedPtr(comptime T: type) type {
-    // TODO: clean this up, match more generic on types and give compileError when not matches
-    const has_deinit = if (@hasDecl(T, "deinit"))
-        @TypeOf(@field(T, "deinit")) == fn (*T) void or
-            @TypeOf(@field(T, "deinit")) == fn (*T, std.mem.Allocator) void or
-            @TypeOf(@field(T, "deinit")) == fn (T) void or
-            @TypeOf(@field(T, "deinit")) == fn (T, std.mem.Allocator) void
-    else
-        false;
+    const has_deinit = @hasDecl(T, "deinit");
 
-    const needs_allocator_deinit = if (has_deinit)
-        @TypeOf(@field(T, "deinit")) == fn (*T, std.mem.Allocator) void or
-            @TypeOf(@field(T, "deinit")) == fn (T, std.mem.Allocator) void
-    else
-        false;
+    const needs_allocator_deinit = has_deinit and blk: {
+        const deinit_info = @typeInfo(@TypeOf(T.deinit));
+        break :blk (deinit_info == .@"fn" and deinit_info.@"fn".params.len > 1);
+    };
 
     return struct {
         ptr: *const T,
@@ -90,10 +82,10 @@ pub fn getOrInitManaged(
             @compileError("T.init must return type T: T = " ++ @typeName(T));
         }
 
+        // Create the value on the heap, handling both error union and direct return types
         const instance = try allocator.create(T);
         errdefer allocator.destroy(instance);
 
-        // Create the value on the heap, handling both error union and direct return types
         instance.* = if (comptime returns_error)
             try @call(.auto, T.init, init_args)
         else
