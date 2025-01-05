@@ -3,9 +3,8 @@ const ArrayList = std.ArrayList;
 
 const ring_vrf = @import("ring_vrf.zig");
 const state_delta = @import("state_delta.zig");
-
-pub const state = @import("state.zig");
-pub const types = @import("types.zig");
+const state = @import("state.zig");
+const types = @import("types.zig");
 
 pub const ticket_validation = @import("safrole/ticket_validation.zig");
 pub const ordering = @import("safrole/ordering.zig");
@@ -35,36 +34,6 @@ pub const Error = error{
     TooManyTicketsInExtrinsic,
 } || std.mem.Allocator.Error || ring_vrf.Error || state_delta.Error;
 
-pub const Result = struct {
-    epoch_marker: ?types.EpochMark,
-    ticket_marker: ?types.TicketsMark,
-
-    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        if (self.epoch_marker) |*marker| {
-            allocator.free(marker.validators);
-        }
-        if (self.ticket_marker) |*marker| {
-            allocator.free(marker.tickets);
-        }
-        self.* = undefined;
-    }
-
-    /// Takes ownership of the epoch marker and sets it to null
-    pub fn takeEpochMarker(self: *@This()) ?types.EpochMark {
-        const marker = self.epoch_marker;
-        self.epoch_marker = null;
-        return marker;
-    }
-
-    /// Takes ownership of the ticket marker and sets it to null
-    pub fn takeTicketMarker(self: *@This()) ?types.TicketsMark {
-        const marker = self.ticket_marker;
-        self.ticket_marker = null;
-        return marker;
-    }
-};
-
-// Main transition function using extracted components
 pub fn transition(
     comptime params: Params,
     stx: *StateTransition(params),
@@ -117,7 +86,7 @@ pub fn transition(
     var winning_ticket_marker: ?types.TicketsMark = null;
     if (stx.time.isSameEpoch() and
         stx.time.didCrossTicketSubmissionEnd() and
-        gamma_prime.a.len == params.epoch_length) // TODO: check if this should not be gamma_prime.a
+        gamma_prime.a.len == params.epoch_length)
     {
         winning_ticket_marker = .{
             .tickets = try ordering.outsideInOrdering(
@@ -187,3 +156,32 @@ fn mergeTicketsIntoTicketAccumulatorGammaA(
 
     return merged_tickets;
 }
+
+pub const Result = struct {
+    epoch_marker: ?types.EpochMark,
+    ticket_marker: ?types.TicketsMark,
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        if (self.epoch_marker) |*marker| {
+            allocator.free(marker.validators);
+        }
+        if (self.ticket_marker) |*marker| {
+            allocator.free(marker.tickets);
+        }
+        self.* = undefined;
+    }
+
+    /// Takes ownership of the epoch marker and sets it to null
+    pub fn takeEpochMarker(self: *@This()) ?types.EpochMark {
+        const marker = self.epoch_marker;
+        self.epoch_marker = null;
+        return marker;
+    }
+
+    /// Takes ownership of the ticket marker and sets it to null
+    pub fn takeTicketMarker(self: *@This()) ?types.TicketsMark {
+        const marker = self.ticket_marker;
+        self.ticket_marker = null;
+        return marker;
+    }
+};
