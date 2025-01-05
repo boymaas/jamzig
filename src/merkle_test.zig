@@ -4,7 +4,7 @@ const merkle = @import("merkle.zig");
 
 test "merkle:test_vectors" {
     const allocator = std.testing.allocator;
-    const vector = try TrieTestVector.build_from(allocator, "src/jamtestvectors/data/trie/trie.json");
+    var vector = try TrieTestVector.build_from(allocator, "src/jamtestvectors/data/trie/trie.json");
     defer vector.deinit();
 
     for (vector.tests, 0..) |trie_test, idx| {

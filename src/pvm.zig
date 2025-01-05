@@ -140,6 +140,7 @@ pub const PVM = struct {
         }
         self.allocator.free(self.page_map);
         self.host_call_map.deinit();
+        self.* = undefined;
     }
 
     pub fn setPageMap(self: *PVM, new_page_map: []const PageMapConfig) !void {

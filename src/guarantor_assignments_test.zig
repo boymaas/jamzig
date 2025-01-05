@@ -86,7 +86,7 @@ test "buildForTimeSlot" {
     }
 
     // Test with TINY_PARAMS
-    const result = try guarantor.buildForTimeSlot(
+    var result = try guarantor.buildForTimeSlot(
         PARAMS,
         allocator,
         entropy,

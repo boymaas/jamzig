@@ -13,10 +13,11 @@ pub const OrderedFileList = struct {
     }
 
     pub fn deinit(self: *OrderedFileList) void {
-        for (self.files.items) |entry| {
+        for (self.files.items) |*entry| {
             entry.deinit(self.allocator);
         }
         self.files.deinit();
+        self.* = undefined;
     }
 };
 
@@ -28,9 +29,10 @@ pub const Entry = struct {
         return @import("slurp.zig").slurpFile(allocator, self.path);
     }
 
-    pub fn deinit(self: *const Entry, allocator: Allocator) void {
+    pub fn deinit(self: *Entry, allocator: Allocator) void {
         allocator.free(self.name);
         allocator.free(self.path);
+        self.* = undefined;
     }
 
     pub fn deepClone(self: Entry, allocator: Allocator) !Entry {

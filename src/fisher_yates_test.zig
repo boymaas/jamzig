@@ -5,7 +5,7 @@ const fisher_yates = @import("fisher_yates.zig");
 
 test "entropy" {
     const allocator = std.testing.allocator;
-    const vector = try ShuffleTests.buildFrom(allocator, "src/jamtestvectors/pulls/fisher-yates/shuffle/shuffle_tests.json");
+    var vector = try ShuffleTests.buildFrom(allocator, "src/jamtestvectors/pulls/fisher-yates/shuffle/shuffle_tests.json");
     defer vector.deinit(allocator);
 
     std.debug.print("Loaded test vector with {} tests\n", .{vector.tests.len});

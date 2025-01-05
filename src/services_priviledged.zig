@@ -43,6 +43,7 @@ pub const Chi = struct {
 
     pub fn deinit(self: *Chi) void {
         self.always_accumulate.deinit();
+        self.* = undefined;
     }
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {

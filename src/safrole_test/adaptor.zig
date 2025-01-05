@@ -16,11 +16,12 @@ pub const TransitionResult = struct {
     output: safrole_test_vector.Output,
     state: ?safrole_test_vector.State,
 
-    pub fn deinit(self: TransitionResult, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *TransitionResult, allocator: std.mem.Allocator) void {
         if (self.state != null) {
             self.state.?.deinit(allocator);
         }
         self.output.deinit(allocator);
+        self.* = undefined;
     }
 };
 

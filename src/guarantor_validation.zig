@@ -50,7 +50,7 @@ pub fn validateGuarantorAssignment(
     const is_current_rotation = (current_rotation == report_rotation);
     span.debug("Building assignments using {s} rotation entropy", .{if (is_current_rotation) "current" else "previous"});
 
-    const result = if (is_current_rotation)
+    var result = if (is_current_rotation)
         try guarantor_assignments.buildForTimeSlot(params, allocator, current_entropy, current_slot)
     else
         try guarantor_assignments.buildForTimeSlot(params, allocator, previous_entropy, guarantee_slot);

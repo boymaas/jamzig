@@ -42,6 +42,7 @@ pub fn TestVectorList(comptime T: type) type {
                 std.log.warn("TestVectorList: type " ++ @typeName(T) ++ " does not have a deinit method");
             }
             self.vectors.deinit();
+            self.* = undefined;
         }
 
         /// Add a single test vector to the list

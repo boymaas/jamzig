@@ -11,9 +11,10 @@ pub const OutputFormats = struct {
     bin: ordered_files.Entry,
     json: ordered_files.Entry,
 
-    pub fn deinit(self: *const OutputFormats, allocator: Allocator) void {
+    pub fn deinit(self: *OutputFormats, allocator: Allocator) void {
         self.bin.deinit(allocator);
         self.json.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -48,6 +49,7 @@ pub const JamOutputs = struct {
             output.state_snapshot.deinit(allocator);
         }
         self.outputs.deinit();
+        self.* = undefined;
     }
 };
 
@@ -101,6 +103,7 @@ const FilteredFiles = struct {
 
     pub fn deinit(self: *FilteredFiles) void {
         self.entries.deinit();
+        self.* = undefined;
     }
 };
 

@@ -91,6 +91,7 @@ pub const RecentHistory = struct {
             self.allocator.free(block.work_reports);
         }
         self.blocks.deinit();
+        self.* = undefined;
     }
 
     /// Imports a new block into the recent history
@@ -131,7 +132,7 @@ pub const RecentHistory = struct {
     /// Adds a new BlockInfo to the recent history, removing the oldest if at capacity
     pub fn addBlockInfo(self: *Self, new_block: types.BlockInfo) !void {
         if (self.blocks.items.len == self.max_blocks) {
-            const oldest_block = self.blocks.orderedRemove(0);
+            var oldest_block = self.blocks.orderedRemove(0);
             oldest_block.deinit(self.allocator);
         }
 

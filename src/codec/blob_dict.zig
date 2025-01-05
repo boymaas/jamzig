@@ -39,6 +39,7 @@ pub const BlobDict = struct {
         }
         self.map.deinit();
         span.debug("Successfully freed all resources", .{});
+        self.* = undefined;
     }
 };
 

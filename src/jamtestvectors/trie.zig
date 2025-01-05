@@ -46,6 +46,7 @@ pub const ParsedTrieTest = struct {
             self.allocator.free(value.*);
         }
         self.input.deinit();
+        self.* = undefined;
     }
 };
 
@@ -103,17 +104,18 @@ pub const TrieTestVector = struct {
         };
     }
 
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: *@This()) void {
         for (self.tests) |*parsed_test| {
             parsed_test.deinit();
         }
         self.allocator.free(self.tests);
+        self.* = undefined;
     }
 };
 
 test "test:vectors:trie: parsing the test vector" {
     const allocator = std.heap.page_allocator;
-    const vector = try TrieTestVector.build_from(allocator, "src/jamtestvectors/data/trie/trie.json");
+    var vector = try TrieTestVector.build_from(allocator, "src/jamtestvectors/data/trie/trie.json");
     defer vector.deinit();
 
     std.debug.print("Loaded test vector with {} tests\n", .{vector.tests.len});

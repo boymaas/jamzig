@@ -26,6 +26,7 @@ const AllocType = struct {
 
     pub fn deinit(self: *AllocType) void {
         self.allocator.free(self.data);
+        self.* = undefined;
     }
 };
 
@@ -42,6 +43,7 @@ const AllocTypeWithAllocDeinit = struct {
 
     pub fn deinit(self: *AllocTypeWithAllocDeinit, allocator: std.mem.Allocator) void {
         allocator.free(self.data);
+        self.* = undefined;
     }
 };
 

@@ -86,8 +86,9 @@ pub fn Alpha(comptime core_count: u16) type {
             try @import("state_format/authorization.zig").format(core_count, self, fmt, options, writer);
         }
 
-        pub fn deinit(_: *@This()) void {
-            // No need to deinitialize self since it was stack-allocated
+        pub fn deinit(self: *@This()) void {
+            // No need to deallocate self since it was stack-allocated
+            self.* = undefined;
         }
     };
 }

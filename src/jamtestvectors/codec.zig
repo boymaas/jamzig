@@ -64,9 +64,10 @@ pub fn CodecTestVector(comptime T: type) type {
             };
         }
 
-        pub fn deinit(self: @This()) void {
+        pub fn deinit(self: *@This()) void {
             self.expected.deinit();
             self.allocator.free(self.binary);
+            self.* = undefined;
         }
     };
 }

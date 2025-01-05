@@ -12,7 +12,7 @@ pub fn runSafroleTest(
     var fixture = try fixtures.buildFixtures(params, allocator, bin_file_path);
     defer fixture.deinit();
 
-    const actual_result = try safrole_adaptor.transition(
+    var actual_result = try safrole_adaptor.transition(
         params,
         allocator,
         fixture.pre_state,

@@ -167,11 +167,12 @@ pub const Span = struct {
         return Span.init(self.scope, operation, self, self.enabled, self.min_level);
     }
 
-    pub fn deinit(self: *const Self) void {
+    pub fn deinit(self: *Self) void {
         if (self.depth) |depth| {
             current_depth = depth;
         }
         current_span = self.parent;
+        self.* = undefined;
     }
 
     pub inline fn trace(self: *Self, comptime fmt: []const u8, args: anytype) void {
@@ -278,9 +279,10 @@ pub const SpanUnion = union(enum) {
 
     pub fn deinit(self: *const SpanUnion) void {
         switch (self.*) {
-            .Enabled => |span| span.deinit(),
+            .Enabled => |*span| @constCast(span).deinit(), // TODO
             .Disabled => {},
         }
+        @constCast(self).* = undefined; // TODO
     }
 
     pub fn child(self: *const SpanUnion, operation: @Type(.enum_literal)) SpanUnion {

@@ -18,9 +18,10 @@ pub const StateTransitionPair = struct {
         return try state_transition_parser.loadTestVector(params, allocator, self.bin.path);
     }
 
-    pub fn deinit(self: *const StateTransitionPair, allocator: Allocator) void {
+    pub fn deinit(self: *StateTransitionPair, allocator: Allocator) void {
         self.bin.deinit(allocator);
         self.json.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -36,6 +37,7 @@ pub const StateTransitions = struct {
             transition.deinit(allocator);
         }
         self.transitions.deinit();
+        self.* = undefined;
     }
 };
 

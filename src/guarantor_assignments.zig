@@ -53,8 +53,9 @@ pub fn permuteAssignments(
 const Result = struct {
     assignments: []u32,
 
-    pub fn deinit(self: Result, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *Result, allocator: std.mem.Allocator) void {
         allocator.free(self.assignments);
+        self.* = undefined;
     }
 };
 

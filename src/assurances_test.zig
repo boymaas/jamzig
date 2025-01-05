@@ -98,7 +98,7 @@ pub const FULL_PARAMS = jam_params.FULL_PARAMS;
 fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, test_bin: []const u8) !void {
     std.debug.print("Running test: {s}\n", .{test_bin});
 
-    const test_vector = try loader.loadAndDeserializeTestVector(
+    var test_vector = try loader.loadAndDeserializeTestVector(
         tvector.TestCase,
         params,
         allocator,

@@ -44,14 +44,14 @@ pub fn runReportTest(comptime params: Params, allocator: std.mem.Allocator, test
     var expected_state = try converters.convertState(params, allocator, test_case.post_state);
     defer expected_state.deinit(allocator);
 
-    const process_result = validateAndProcessGuaranteeExtrinsic(
+    var process_result = validateAndProcessGuaranteeExtrinsic(
         params,
         allocator,
         &test_case,
         &pre_state,
     );
     defer {
-        if (process_result) |result| {
+        if (process_result) |*result| {
             result.deinit(allocator);
         } else |_| {}
     }

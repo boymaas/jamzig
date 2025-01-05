@@ -24,8 +24,8 @@ pub const Fixtures = struct {
         return try diff.diffBasedOnTypesFormat(self.allocator, &self.pre_state, &self.post_state);
     }
 
-    pub fn diffStatesAndPrint(self: @This()) !void {
-        const diff_result = try self.diffStates();
+    pub fn diffStatesAndPrint(self: *@This()) !void {
+        var diff_result = try self.diffStates();
         defer diff_result.deinit(self.allocator);
         diff_result.debugPrint();
     }
@@ -50,11 +50,12 @@ pub const Fixtures = struct {
         diff_result.debugPrint();
     }
 
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: *@This()) void {
         self.pre_state.deinit(self.allocator);
         self.input.deinit(self.allocator);
         self.post_state.deinit(self.allocator);
         self.output.deinit(self.allocator);
+        self.* = undefined;
     }
 
     pub fn expectPostState(self: @This(), actual_state: *const safrole_test_vectors.State) !void {

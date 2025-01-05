@@ -77,7 +77,7 @@ pub const PVMFixture = struct {
         return fixture;
     }
 
-    pub fn deinit(self: *const PVMFixture, allocator: Allocator) void {
+    pub fn deinit(self: *PVMFixture, allocator: Allocator) void {
         allocator.free(self.name);
         allocator.free(self.initial_page_map);
         for (self.initial_memory) |chunk| {
@@ -89,6 +89,7 @@ pub const PVMFixture = struct {
             allocator.free(chunk.contents);
         }
         allocator.free(self.expected_memory);
+        self.* = undefined;
     }
 };
 
@@ -219,7 +220,7 @@ pub fn runTestFixtureFromPath(allocator: Allocator, path: []const u8) !bool {
     const vector = try PVMLib.PVMTestVector.build_from(allocator, path);
     defer vector.deinit();
 
-    const fixture = try PVMFixture.from_vector(allocator, &vector.value);
+    var fixture = try PVMFixture.from_vector(allocator, &vector.value);
     defer fixture.deinit(allocator);
 
     return runTestFixture(allocator, &fixture, path);

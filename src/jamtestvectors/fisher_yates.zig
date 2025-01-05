@@ -14,8 +14,9 @@ pub const ShuffleTest = struct {
     entropy: [32]u8,
     output: []u32,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.output);
+        self.* = undefined;
     }
 };
 
@@ -23,7 +24,7 @@ pub const ShuffleTests = struct {
     tests: []ShuffleTest,
 
     pub fn buildFrom(allocator: std.mem.Allocator, path: []const u8) !@This() {
-        const vector = try json_utils.TestVector([]JsonShuffleTest).build_from(allocator, path);
+        var vector = try json_utils.TestVector([]JsonShuffleTest).build_from(allocator, path);
         defer vector.deinit();
 
         const tests = try allocator.alloc(ShuffleTest, vector.expected.value.len);
@@ -38,17 +39,18 @@ pub const ShuffleTests = struct {
         return .{ .tests = tests };
     }
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        for (self.tests) |t| {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        for (self.tests) |*t| {
             t.deinit(allocator);
         }
         allocator.free(self.tests);
+        self.* = undefined;
     }
 };
 
 test "test:vectors:trie: parsing the test vector" {
     const allocator = std.testing.allocator;
-    const vector = try ShuffleTests.buildFrom(allocator, "src/jamtestvectors/pulls/fisher-yates/shuffle/shuffle_tests.json");
+    var vector = try ShuffleTests.buildFrom(allocator, "src/jamtestvectors/pulls/fisher-yates/shuffle/shuffle_tests.json");
     defer vector.deinit(allocator);
 
     std.debug.print("Loaded test vector with {} tests\n", .{vector.tests.len});

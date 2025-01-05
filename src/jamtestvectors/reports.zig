@@ -11,11 +11,12 @@ pub const AuthPools = struct {
         return params.core_count;
     }
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.pools) |pool| {
             allocator.free(pool);
         }
         allocator.free(self.pools);
+        self.* = undefined;
     }
 };
 
@@ -46,7 +47,7 @@ pub const State = struct {
     /// [δ] Services dictionary
     services: []ServiceItem,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.avail_assignments.deinit(allocator);
         self.curr_validators.deinit(allocator);
         self.prev_validators.deinit(allocator);
@@ -54,15 +55,16 @@ pub const State = struct {
             _ = offender;
         }
         allocator.free(self.offenders);
-        for (self.recent_blocks) |block| {
+        for (self.recent_blocks) |*block| {
             block.deinit(allocator);
         }
         allocator.free(self.recent_blocks);
         self.auth_pools.deinit(allocator);
         for (self.services) |*service| {
-            _ = service;
+            _ = service; // TODO what here
         }
         allocator.free(self.services);
+        self.* = undefined;
     }
 };
 
@@ -77,8 +79,9 @@ pub const Input = struct {
     /// [H_t] Block's timeslot
     slot: types.TimeSlot,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.guarantees.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -88,9 +91,10 @@ pub const OutputData = struct {
     /// Reporters for reported packages
     reporters: []types.Ed25519Public,
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.reported);
         allocator.free(self.reporters);
+        self.* = undefined;
     }
 };
 
@@ -123,11 +127,12 @@ pub const Output = union(enum) {
     ok: OutputData,
     err: ErrorCode,
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        switch (self) {
-            .ok => |data| data.deinit(allocator),
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .ok => |*data| data.deinit(allocator),
             .err => {},
         }
+        self.* = undefined;
     }
 
     pub fn format(
@@ -149,10 +154,11 @@ pub const TestCase = struct {
     output: Output,
     post_state: State,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.input.deinit(allocator);
         self.pre_state.deinit(allocator);
         self.output.deinit(allocator);
         self.post_state.deinit(allocator);
+        self.* = undefined;
     }
 };

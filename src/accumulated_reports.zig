@@ -38,6 +38,7 @@ pub fn Xi(comptime epoch_size: usize) type {
             for (self.entries) |slot_entries| {
                 @constCast(&slot_entries).deinit(self.allocator);
             }
+            self.* = undefined;
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {

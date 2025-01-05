@@ -70,6 +70,7 @@ pub const RingProver = struct {
 
     pub fn deinit(self: *RingProver) void {
         free_ring_vrf_prover(self.ptr);
+        self.* = undefined;
     }
 
     pub fn sign(
@@ -183,6 +184,7 @@ pub const RingVerifier = struct {
 
     pub fn deinit(self: *RingVerifier) void {
         free_ring_vrf_verifier(self.ptr);
+        self.* = undefined;
     }
 
     pub fn verify(

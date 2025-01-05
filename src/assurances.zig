@@ -26,6 +26,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
 
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         self.inner.deinit(allocator);
+        self.* = undefined;
     }
 
     /// Validates the AssuranceExtrinsic according to protocol rules
@@ -120,11 +121,12 @@ pub const AvailableAssignments = struct {
         return self.inner;
     }
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.items()) |*assignment| {
             assignment.deinit(allocator);
         }
         allocator.free(self.inner);
+        self.* = undefined;
     }
 };
 
@@ -195,7 +197,7 @@ pub fn processAssuranceExtrinsic(
     // Track which cores have super-majority assurance
     var assured_reports = std.ArrayList(types.AvailabilityAssignment).init(allocator);
     errdefer {
-        for (assured_reports.items) |r| {
+        for (assured_reports.items) |*r| {
             r.deinit(allocator);
         }
         assured_reports.deinit();

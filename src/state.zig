@@ -245,6 +245,7 @@ pub fn JamState(comptime params: Params) type {
             inline for (std.meta.fields(@This())) |field| {
                 self.deinitField(&field, allocator);
             }
+            self.* = undefined;
         }
 
         /// Format

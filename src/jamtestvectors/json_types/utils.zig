@@ -39,8 +39,9 @@ pub fn TestVector(comptime T: type) type {
             };
         }
 
-        pub fn deinit(self: @This()) void {
+        pub fn deinit(self: *@This()) void {
             self.expected.deinit();
+            self.* = undefined;
         }
     };
 }
@@ -59,6 +60,7 @@ pub const SortedListOfJsonFiles = struct {
             self.allocator.free(item);
         }
         self.allocator.free(self.items);
+        self.* = undefined;
     }
 };
 

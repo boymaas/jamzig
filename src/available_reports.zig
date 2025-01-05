@@ -51,6 +51,7 @@ pub fn Theta(comptime epoch_size: usize) type {
                 }
                 @constCast(&slot_entries).deinit(self.allocator);
             }
+            self.* = undefined;
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
@@ -87,6 +88,7 @@ pub const Entry = struct {
 
     pub fn deinit(self: *Entry, allocator: std.mem.Allocator) void {
         self.dependencies.deinit(allocator);
+        self.* = undefined;
     }
 
     pub fn deepClone(self: Entry, allocator: std.mem.Allocator) !Entry {

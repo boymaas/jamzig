@@ -179,7 +179,7 @@ test "tiny/wrong_assignment-1.bin" {
 fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, test_bin: []const u8) !void {
     std.debug.print("\nRunning test: {s}\n", .{test_bin});
 
-    const test_vector = try @import("jamtestvectors/loader.zig").loadAndDeserializeTestVector(
+    var test_vector = try @import("jamtestvectors/loader.zig").loadAndDeserializeTestVector(
         tvector.TestCase,
         params,
         allocator,

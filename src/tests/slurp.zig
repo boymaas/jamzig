@@ -8,6 +8,7 @@ pub const SlurpedFile = struct {
 
     pub fn deinit(self: *SlurpedFile) void {
         self.allocator.free(self.buffer);
+        self.* = undefined;
     }
 };
 

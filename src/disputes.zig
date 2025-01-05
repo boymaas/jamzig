@@ -74,6 +74,7 @@ pub const Psi = struct {
         self.bad_set.deinit();
         self.wonky_set.deinit();
         self.punish_set.deinit();
+        self.* = undefined;
     }
 
     // JSON stringify implementation

@@ -11,19 +11,21 @@ pub const State = struct {
     kappa: types.ValidatorSet,
     lambda: types.ValidatorSet,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.psi.deinit(allocator);
         self.rho.deinit(allocator);
         self.kappa.deinit(allocator);
         self.lambda.deinit(allocator);
+        self.* = undefined;
     }
 };
 
 pub const Input = struct {
     disputes: types.DisputesExtrinsic,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.disputes.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -47,8 +49,9 @@ pub const ErrorCode = enum(u8) {
 pub const OutputData = struct {
     offenders_mark: types.OffendersMark,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.offenders_mark.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -56,11 +59,12 @@ pub const Output = union(enum) {
     ok: OutputData,
     err: ErrorCode,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         switch (self.*) {
             .ok => |*data| data.deinit(allocator),
             .err => {},
         }
+        self.* = undefined;
     }
 };
 
@@ -83,11 +87,12 @@ pub const TestCase = struct {
         );
     }
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.input.deinit(allocator);
         self.pre_state.deinit(allocator);
         self.output.deinit(allocator);
         self.post_state.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -99,7 +104,7 @@ test "Load and dump a tiny test vector, and check the outputs" {
     };
 
     for (test_jsons) |test_json| {
-        const test_vector = try TestCase.build_from(
+        var test_vector = try TestCase.build_from(
             jam_params.TINY_PARAMS,
             allocator,
             test_json,

@@ -114,6 +114,7 @@ pub const ServiceAccount = struct {
         self.preimages.deinit();
 
         self.preimage_lookups.deinit();
+        self.* = undefined;
     }
 
     // Functionality to read and write storage, reflecting access patterns in Section 4.9.2 on Service State.
@@ -353,6 +354,7 @@ pub const Delta = struct {
             entry.value_ptr.deinit();
         }
         self.accounts.deinit();
+        self.* = undefined;
     }
 };
 

@@ -48,7 +48,7 @@ pub const BASE_PATH = "src/jamtestvectors/data/history/data";
 
 test "history: parsing the test case" {
     const allocator = std.testing.allocator;
-    const vector = try HistoryTestVector(TestCase).build_from(allocator, BASE_PATH ++ "/progress_blocks_history-1.json");
+    var vector = try HistoryTestVector(TestCase).build_from(allocator, BASE_PATH ++ "/progress_blocks_history-1.json");
     defer vector.deinit();
 
     // Test if the vector contains the expected data
@@ -81,7 +81,7 @@ test "history: parsing all test cases" {
         const file_path = try std.fs.path.join(allocator, &[_][]const u8{ BASE_PATH, entry.name });
         defer allocator.free(file_path);
 
-        const vector = try HistoryTestVector(TestCase).build_from(allocator, file_path);
+        var vector = try HistoryTestVector(TestCase).build_from(allocator, file_path);
         defer vector.deinit();
     }
 }

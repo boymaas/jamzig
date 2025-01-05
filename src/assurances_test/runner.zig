@@ -58,7 +58,7 @@ pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, t
 
     // First validate the assurance extrinsic
 
-    const process_result = validateAndProcessAssuranceExtrinsic(
+    var process_result = validateAndProcessAssuranceExtrinsic(
         params,
         allocator,
         &test_case,
@@ -66,7 +66,7 @@ pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, t
         pre_state_validators,
     );
     defer {
-        if (process_result) |available_assignments| {
+        if (process_result) |*available_assignments| {
             available_assignments.deinit(allocator);
         } else |_| {}
     }

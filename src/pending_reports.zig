@@ -109,12 +109,13 @@ pub const RhoEntry = struct {
         };
     }
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         const span = trace.span(.deinit_entry);
         defer span.deinit();
         span.debug("Deinitializing RhoEntry for core {d}", .{self.core});
 
         self.assignment.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -273,7 +274,7 @@ pub fn Rho(comptime core_count: u16) type {
             return cloned;
         }
 
-        pub fn deinit(self: *const @This()) void {
+        pub fn deinit(self: *@This()) void {
             const span = trace.span(.deinit);
             defer span.deinit();
             span.debug("Deinitializing Rho state", .{});

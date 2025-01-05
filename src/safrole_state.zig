@@ -36,10 +36,11 @@ pub fn Gamma(comptime validators_count: u32, comptime epoch_length: u32) type {
             try @import("state_format/safrole_state.zig").format(validators_count, epoch_length, self, fmt, options, writer);
         }
 
-        pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
             self.k.deinit(allocator);
             self.s.deinit(allocator);
             allocator.free(self.a);
+            self.* = undefined;
         }
 
         pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !Gamma(validators_count, epoch_length) {

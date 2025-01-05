@@ -235,6 +235,7 @@ pub fn StateTransition(comptime params: Params) type {
             inline for (comptime dagger_states.keys()) |k| {
                 if (@field(self, k)) |*field| field.deinit();
             }
+            self.* = undefined;
         }
     };
 }

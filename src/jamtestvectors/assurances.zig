@@ -12,9 +12,10 @@ pub const State = struct {
     /// [κ'] Posterior active validators.
     curr_validators: types.ValidatorSet,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.avail_assignments.deinit(allocator);
         self.curr_validators.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -26,8 +27,9 @@ pub const Input = struct {
     /// [H_p] Parent hash.
     parent: types.HeaderHash,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.assurances.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -48,11 +50,12 @@ pub const OutputData = struct {
     /// Items removed from ρ† to get ρ'
     reported: []types.WorkReport,
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.reported) |*report| {
             report.deinit(allocator);
         }
         allocator.free(self.reported);
+        self.* = undefined;
     }
 };
 
@@ -60,11 +63,12 @@ pub const Output = union(enum) {
     ok: OutputData,
     err: ErrorCode,
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        switch (self) {
-            .ok => |data| data.deinit(allocator),
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .ok => |*data| data.deinit(allocator),
             .err => {},
         }
+        self.* = undefined;
     }
 
     pub fn format(
@@ -86,11 +90,12 @@ pub const TestCase = struct {
     output: Output,
     post_state: State,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.input.deinit(allocator);
         self.pre_state.deinit(allocator);
         self.output.deinit(allocator);
         self.post_state.deinit(allocator);
+        self.* = undefined;
     }
 };
 

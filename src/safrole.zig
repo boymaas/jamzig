@@ -49,6 +49,7 @@ pub const Result = struct {
         if (self.ticket_marker) |*marker| {
             allocator.free(marker.tickets);
         }
+        self.* = undefined;
     }
 
     /// Takes ownership of the epoch marker and sets it to null

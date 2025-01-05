@@ -72,6 +72,7 @@ pub const Program = struct {
         allocator.free(self.mask);
         allocator.free(self.basic_blocks);
         self.jump_table.deinit(allocator);
+        self.* = undefined;
     }
 
     pub fn format(

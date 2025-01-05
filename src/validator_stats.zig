@@ -150,6 +150,7 @@ pub const Pi = struct {
     pub fn deinit(self: *Pi) void {
         self.current_epoch_stats.deinit();
         self.previous_epoch_stats.deinit();
+        self.* = undefined;
     }
 
     pub fn jsonStringify(self: *const @This(), jw: anytype) !void {

@@ -25,11 +25,11 @@ pub const DiffResult = union(enum) {
         self.debugPrint();
     }
 
-    pub fn debugPrintDeinitAndReturnErrorOnDiff(self: @This(), allocator: std.mem.Allocator) !void {
+    pub fn debugPrintDeinitAndReturnErrorOnDiff(self: *@This(), allocator: std.mem.Allocator) !void {
         defer self.deinit(allocator);
         self.debugPrint();
 
-        switch (self) {
+        switch (self.*) {
             .Diff => {
                 return error.DiffMismatch;
             },
@@ -37,11 +37,12 @@ pub const DiffResult = union(enum) {
         }
     }
 
-    pub fn deinit(self: *const DiffResult, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *DiffResult, allocator: std.mem.Allocator) void {
         switch (self.*) {
             .Diff => allocator.free(self.Diff),
             else => {},
         }
+        self.* = undefined;
     }
 };
 
@@ -122,7 +123,8 @@ pub fn expectFormattedEqual(
     actual: T,
     expected: T,
 ) !void {
-    try (try diffBasedOnFormat(allocator, actual, expected)).debugPrintDeinitAndReturnErrorOnDiff(allocator);
+    var diff = try diffBasedOnFormat(allocator, actual, expected);
+    try diff.debugPrintDeinitAndReturnErrorOnDiff(allocator);
 }
 
 // Compare values using types/fmt formatting without requiring custom formatters
@@ -137,5 +139,6 @@ pub fn expectTypesFmtEqual(
     const expected_str = try tfmt.formatAlloc(allocator, expected);
     defer allocator.free(expected_str);
 
-    try (try diffBasedOnStrings(allocator, actual_str, expected_str)).debugPrintDeinitAndReturnErrorOnDiff(allocator);
+    var diff = try diffBasedOnStrings(allocator, actual_str, expected_str);
+    try diff.debugPrintDeinitAndReturnErrorOnDiff(allocator);
 }

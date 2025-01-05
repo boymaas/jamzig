@@ -31,6 +31,7 @@ pub const JumpTable = struct {
 
     pub fn deinit(self: *JumpTable, allocator: std.mem.Allocator) void {
         allocator.free(self.indices);
+        self.* = undefined;
     }
 };
 

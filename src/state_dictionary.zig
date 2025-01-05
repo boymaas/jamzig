@@ -357,6 +357,7 @@ pub const MerklizationDictionaryDiff = struct {
 
     pub fn deinit(self: *MerklizationDictionaryDiff) void {
         self.entries.deinit();
+        self.* = undefined;
     }
 
     pub fn format(
@@ -400,6 +401,7 @@ pub const MerklizationDictionary = struct {
             self.entries.allocator.free(entry.*);
         }
         self.entries.deinit();
+        self.* = undefined;
     }
 
     /// Compare this dictionary with another and return their differences

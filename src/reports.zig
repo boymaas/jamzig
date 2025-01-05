@@ -578,9 +578,10 @@ pub const Result = struct {
     /// Reporters for reported packages
     reporters: []types.Ed25519Public,
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.reported);
         allocator.free(self.reporters);
+        self.* = undefined;
     }
 };
 

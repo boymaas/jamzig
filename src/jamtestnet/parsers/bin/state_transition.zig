@@ -53,11 +53,12 @@ pub const KeyVal = struct {
         };
     }
 
-    pub fn deinit(self: *const KeyVal, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *KeyVal, allocator: std.mem.Allocator) void {
         allocator.free(self.key);
         allocator.free(self.val);
         allocator.free(self.id);
         allocator.free(self.desc);
+        self.* = undefined;
     }
 };
 
@@ -70,6 +71,7 @@ pub const StateSnapshotRaw = struct {
             keyval.deinit(allocator);
         }
         allocator.free(self.keyvals);
+        self.* = undefined;
     }
 };
 
@@ -82,6 +84,7 @@ pub const TestStateTransition = struct {
         self.pre_state.deinit(allocator);
         self.block.deinit(allocator);
         self.post_state.deinit(allocator);
+        self.* = undefined;
     }
 
     pub fn pre_state_as_merklization_dict(self: *const TestStateTransition, allocator: std.mem.Allocator) !state_dictionary.MerklizationDictionary {

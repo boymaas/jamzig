@@ -29,7 +29,7 @@ test "recent blocks: parsing all test cases" {
         const file_path = try std.fs.path.join(allocator, &[_][]const u8{ target_dir, entry });
         defer allocator.free(file_path);
 
-        const vector = try HistoryTestVector(TestCase).build_from(allocator, file_path);
+        var vector = try HistoryTestVector(TestCase).build_from(allocator, file_path);
         defer vector.deinit();
 
         // Test the RecentHistory implementation, H = 8 see GP

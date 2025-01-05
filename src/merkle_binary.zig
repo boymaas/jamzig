@@ -52,11 +52,12 @@ const Result = union(enum(u2)) {
         }
     }
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         switch (self.*) {
             .BlobAlloc => allocator.free(self.BlobAlloc),
             else => {},
         }
+        self.* = undefined;
     }
 };
 
@@ -120,11 +121,12 @@ const TraceResult = struct {
         return self.results.len;
     }
 
-    pub fn deinit(self: *const TraceResult, allocator: std.mem.Allocator) void {
-        for (self.results) |result| {
+    pub fn deinit(self: *TraceResult, allocator: std.mem.Allocator) void {
+        for (self.results) |*result| {
             result.deinit(allocator);
         }
         allocator.free(self.results);
+        self.* = undefined;
     }
 };
 
@@ -145,7 +147,7 @@ pub fn T(
         return TraceResult.empty();
     }
     const a = N(P_s(false, blobs, index), hasher);
-    const b = try T(allocator, P_s(true, blobs, index), index - P_i(blobs, index), hasher);
+    var b = try T(allocator, P_s(true, blobs, index), index - P_i(blobs, index), hasher);
     defer b.deinit(allocator);
 
     // Allocate a new slice with results which can hold both a and b
@@ -269,7 +271,7 @@ test "N_function_multiple_blobs" {
 test "T_function_empty_input" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{};
-    const result = try T(allocator, &blobs, 0, testHasher);
+    var result = try T(allocator, &blobs, 0, testHasher);
     defer result.deinit(allocator);
 
     try testing.expectEqualSlices(Result, result.results, &[_]Result{});
@@ -278,7 +280,7 @@ test "T_function_empty_input" {
 test "T_function_single_blob" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{"hello"};
-    const result = try T(allocator, &blobs, 0, testHasher);
+    var result = try T(allocator, &blobs, 0, testHasher);
     defer result.deinit(allocator);
 
     try testing.expect(result.results.len == 0);
@@ -287,7 +289,7 @@ test "T_function_single_blob" {
 test "T_function_multiple_blobs" {
     const allocator = std.testing.allocator;
     const blobs = [_][]const u8{ "hello", "world", "zig  " };
-    const result = try T(allocator, &blobs, 2, testHasher);
+    var result = try T(allocator, &blobs, 2, testHasher);
     defer result.deinit(allocator);
 
     var buffer: [32]u8 = undefined;

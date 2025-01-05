@@ -61,10 +61,11 @@ pub fn Phi(
         }
 
         // Deinitialize the AuthorizationQueue
-        pub fn deinit(self: *Phi(core_count, max_authorizations_queue_items)) void {
+        pub fn deinit(self: *@This()) void {
             for (0..core_count) |i| {
                 self.queue[i].deinit();
             }
+            self.* = undefined;
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {

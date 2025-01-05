@@ -42,7 +42,7 @@ pub const Gamma = struct {
     gamma_z: types.GammaZ,
 
     /// Frees all allocated memory in the State struct.
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.lambda.deinit(allocator);
         self.kappa.deinit(allocator);
         self.gamma_k.deinit(allocator);
@@ -51,6 +51,7 @@ pub const Gamma = struct {
         allocator.free(self.gamma_a);
 
         self.gamma_s.deinit(allocator);
+        self.* = undefined;
     }
 
     /// Creates a deep clone of the State struct.
@@ -79,9 +80,10 @@ pub const State = struct {
     /// [ψ_o'] Posterior offenders sequence.
     post_offenders: []types.Ed25519Public,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.gamma.deinit(allocator);
         allocator.free(self.post_offenders);
+        self.* = undefined;
     }
 };
 
@@ -90,8 +92,9 @@ pub const Input = struct {
     entropy: types.Entropy,
     extrinsic: types.TicketsExtrinsic,
 
-    pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.extrinsic.deinit(allocator);
+        self.* = undefined;
     }
 };
 
@@ -116,11 +119,12 @@ pub const Output = union(enum) {
     ok: OutputMarks,
     err: ErrorCode,
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        switch (self) {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        switch (self.*) {
             .ok => self.ok.deinit(allocator),
             .err => _ = self.err,
         }
+        self.* = undefined;
     }
 
     pub fn format(
@@ -142,9 +146,10 @@ pub const OutputMarks = struct {
     epoch_mark: ?types.EpochMark,
     tickets_mark: ?types.TicketsMark,
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        if (self.epoch_mark) |em| em.deinit(allocator);
-        if (self.tickets_mark) |tm| tm.deinit(allocator);
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        if (self.epoch_mark) |*em| em.deinit(allocator);
+        if (self.tickets_mark) |*tm| tm.deinit(allocator);
+        self.* = undefined;
     }
 
     pub fn format(
@@ -171,6 +176,7 @@ pub const TestCase = struct {
         self.pre_state.deinit(allocator);
         self.output.deinit(allocator);
         self.post_state.deinit(allocator);
+        self.* = undefined;
     }
 };
 

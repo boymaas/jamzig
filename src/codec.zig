@@ -20,10 +20,11 @@ pub fn Deserialized(T: anytype) type {
         value: T,
         arena: *std.heap.ArenaAllocator,
 
-        pub fn deinit(self: @This()) void {
+        pub fn deinit(self: *@This()) void {
             const allocator = self.arena.child_allocator;
             self.arena.deinit();
             allocator.destroy(self.arena);
+            self.* = undefined;
         }
     };
 }

@@ -139,6 +139,7 @@ pub fn GenesisConfig(params: jam_params.Params) type {
 
         pub fn deinit(self: *GenesisConfig(params), allocator: std.mem.Allocator) void {
             allocator.free(self.validator_keys);
+            self.* = undefined;
         }
     };
 }
@@ -226,6 +227,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             self.state.deinit(self.allocator);
             self.ticket_registry_current.deinit();
             self.ticket_registry_previous.deinit();
+            self.* = undefined;
         }
 
         fn generateVrfOutputFallback(author_keys: *const ValidatorKeySet, eta_prime: *const types.Eta) !types.BandersnatchVrfOutput {

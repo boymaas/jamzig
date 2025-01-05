@@ -36,6 +36,7 @@ fn ManagedPtr(comptime T: type) type {
                 }
                 allocator.destroy(self.ptr);
             }
+            self.* = undefined;
         }
     };
 }
