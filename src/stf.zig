@@ -92,23 +92,21 @@ pub fn stateTransition(
 
     std.debug.assert(current_state.ensureFullyInitialized() catch false);
 
-    const stx_time = params.Time().init(current_state.tau.?, new_block.header.slot);
-    var stx = try StateTransition(params).init(allocator, current_state, stx_time);
-    errdefer stx.deinit();
-
-    span.debug("Time: {s}", .{stx_time});
+    const transition_time = params.Time().init(current_state.tau.?, new_block.header.slot);
+    var state_transition = try StateTransition(params).init(allocator, current_state, transition_time);
+    errdefer state_transition.deinit();
 
     span.debug("Starting time transition (τ')", .{});
     try transitionTime(
         params,
-        &stx,
+        &state_transition,
         new_block.header.slot,
     );
 
     span.debug("Starting recent history transition (β')", .{});
     try transitionRecentHistory(
         params,
-        &stx,
+        &state_transition,
         new_block,
     );
 
@@ -138,12 +136,12 @@ pub fn stateTransition(
     span.trace("Block entropy={any}", .{std.fmt.fmtSliceHexLower(&entropy)});
 
     span.debug("Starting epoch transition", .{});
-    try transitionEta(params, &stx, entropy);
+    try transitionEta(params, &state_transition, entropy);
 
     span.debug("Starting safrole transition", .{});
     var markers = try transitionSafrole(
         params,
-        &stx,
+        &state_transition,
         new_block.extrinsic.tickets,
     );
 
@@ -260,7 +258,7 @@ pub fn stateTransition(
     //     &new_state.kappa,
     // );
 
-    return try stx.cloneBaseAndMerge();
+    return try state_transition.cloneBaseAndMerge();
 }
 
 pub fn transitionTime(
