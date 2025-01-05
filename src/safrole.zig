@@ -21,21 +21,21 @@ const trace = @import("tracing.zig").scoped(.safrole);
 
 pub const Error = error{
     /// Bad slot value.
-    bad_slot,
+    BadSlot,
     /// Received a ticket while in epoch's tail.
-    unexpected_ticket,
+    UnexpectedTicket,
     /// Tickets must be sorted.
-    bad_ticket_order,
+    BadTicketOrder,
     /// Invalid ticket ring proof.
-    bad_ticket_proof,
+    BadTicketProof,
     /// Invalid ticket attempt value.
-    bad_ticket_attempt,
+    BadTicketAttempt,
     /// Reserved
-    reserved,
+    Reserved,
     /// Found a ticket duplicate.
-    duplicate_ticket,
-    /// Too_many_tickets_in_extrinsic
-    too_many_tickets_in_extrinsic,
+    DuplicateTicket,
+    /// Too many tickets in extrinsic
+    TooManyTicketsInExtrinsic,
 } || std.mem.Allocator.Error || ring_vrf.Error || state_d.Error;
 
 pub const Result = struct {

@@ -35,7 +35,7 @@ pub fn processTicketExtrinsic(
     // Process tickets if not in epoch's tail
     if (stx.time.current_slot_in_epoch >= params.ticket_submission_end_epoch_slot) {
         span.err("Received ticket extrinsic in epoch's tail", .{});
-        return Error.unexpected_ticket;
+        return Error.UnexpectedTicket;
     }
 
     // Chapter 6.7 Ticketing and extrensics
@@ -43,13 +43,13 @@ pub fn processTicketExtrinsic(
     for (ticket_extrinsic.data) |extrinsic| {
         if (extrinsic.attempt >= params.max_ticket_entries_per_validator) {
             std.debug.print("attempt {d}\n", .{extrinsic.attempt});
-            return Error.bad_ticket_attempt;
+            return Error.BadTicketAttempt;
         }
     }
 
     // We should not have more than K tickets in the input
     if (ticket_extrinsic.data.len > params.epoch_length) {
-        return Error.too_many_tickets_in_extrinsic;
+        return Error.TooManyTicketsInExtrinsic;
     }
 
     // Verify ticket envelope
@@ -63,7 +63,7 @@ pub fn processTicketExtrinsic(
         ticket_extrinsic.data,
     ) catch |e| {
         if (e == error.SignatureVerificationFailed) {
-            return Error.bad_ticket_proof;
+            return Error.BadTicketProof;
         } else return e;
     };
     errdefer stx.allocator.free(verified_extrinsic);
@@ -77,8 +77,9 @@ pub fn processTicketExtrinsic(
         if (index > 0) {
             const order = std.mem.order(u8, &current_ticket.id, &verified_extrinsic[index - 1].id);
             switch (order) {
-                .lt => return Error.bad_ticket_order,
-                .eq => return Error.duplicate_ticket,
+                .lt => return Error.BadTicketOrder,
+                .eq => return Error.DuplicateTicket,
+
                 .gt => {},
             }
         }
@@ -105,7 +106,7 @@ pub fn processTicketExtrinsic(
             for (gamma.a, 0..) |ticket, idx| {
                 span.trace("  [{d}] ID: {s}", .{ idx, std.fmt.fmtSliceHexLower(&ticket.id) });
             }
-            return Error.duplicate_ticket;
+            return Error.DuplicateTicket;
         }
     }
 

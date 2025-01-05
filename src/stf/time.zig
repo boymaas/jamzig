@@ -23,7 +23,7 @@ pub fn transition(
     const current_tau = try stx.ensure(.tau);
     if (header_slot <= current_tau.*) {
         span.err("Invalid slot: new slot {d} <= current tau {d}", .{ header_slot, current_tau });
-        return error.bad_slot;
+        return error.BadSlot;
     }
 
     const tau_prime = try stx.ensure(.tau_prime);
