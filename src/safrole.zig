@@ -42,7 +42,6 @@ pub const Result = struct {
     epoch_marker: ?types.EpochMark,
     ticket_marker: ?types.TicketsMark,
 
-    // TODO: this can be removed
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         if (self.epoch_marker) |*marker| {
             allocator.free(marker.validators);
@@ -77,12 +76,16 @@ fn processTicketExtrinsic(
     defer span.deinit();
     span.debug("Processing ticket extrinsic", .{});
 
+    // in case we have no tickets leave early
+    if (ticket_extrinsic.data.len == 0) {
+        span.debug("No tickets in ticket extrinsic, leaving", .{});
+        return &[_]types.TicketBody{};
+    }
+
     // Process tickets if not in epoch's tail
-    if (stx.time.current_slot >= params.ticket_submission_end_epoch_slot) {
-        if (ticket_extrinsic.data.len > 0) {
-            span.err("Received ticket extrinsic in epoch's tail", .{});
-            return Error.unexpected_ticket;
-        }
+    if (stx.time.current_slot_in_epoch >= params.ticket_submission_end_epoch_slot) {
+        span.err("Received ticket extrinsic in epoch's tail", .{});
+        return Error.unexpected_ticket;
     }
 
     // Chapter 6.7 Ticketing and extrensics
@@ -467,7 +470,7 @@ fn phiZeroOutOffenders(data: types.ValidatorSet, offenders: []const types.Ed2551
     for (data.items()) |*validator_data| {
         // check if in offenders list
         for (offenders) |*offender| {
-            if (std.mem.eql(u8, offender, &validator_data.*.ed25519)) {
+            if (std.mem.eql(u8, offender, &validator_data.ed25519)) {
                 std.debug.print("Validator data to 0", .{});
                 validator_data.* = std.mem.zeroes(types.ValidatorData);
             }

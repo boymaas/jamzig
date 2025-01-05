@@ -425,13 +425,21 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 tickets_mark = .{ .tickets = try safrole.Z_outsideInOrdering(types.TicketBody, self.allocator, self.state.gamma.?.a) };
             }
 
-            // TODO: Get eta_prime for this slot
-            const eta_prime = &self.state.eta.?;
-
             const entropy_source = switch (self.state.gamma.?.s) {
                 .tickets => |tickets| try generateEntropySourceTicket(author_keys, tickets[current_epoch_slot]),
-                .keys => try generateEntropySourceFallback(author_keys, eta_prime),
+                .keys => try generateEntropySourceFallback(author_keys, &self.state.eta.?),
             };
+
+            // TODO: Get eta_prime for this slot
+            const eta_current = &self.state.eta.?;
+            var eta_prime = self.state.eta.?;
+            if (current_epoch > previous_epoch) {
+                // Rotate the entropy values
+                eta_prime[3] = eta_current[2];
+                eta_prime[2] = eta_current[1];
+                eta_prime[1] = eta_current[0];
+            }
+            eta_prime[0] = @import("entropy.zig").update(self.state.eta.?[0], try entropy_source.outputHash());
 
             // Create initial header without signatures
             var header = types.Header{
@@ -453,13 +461,13 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                     self.allocator,
                     &header,
                     author_keys,
-                    eta_prime,
+                    &eta_prime,
                 ),
                 .tickets => |tickets| try generateBlockSealTickets(
                     self.allocator,
                     &header,
                     author_keys,
-                    eta_prime,
+                    &eta_prime,
                     tickets[current_epoch_slot],
                 ),
             };
@@ -476,7 +484,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
 
             var tickets = types.TicketsExtrinsic{ .data = &[_]types.TicketEnvelope{} };
             if (current_epoch_slot < params.ticket_submission_end_epoch_slot) {
-                tickets = .{ .data = try self.generateTickets(&self.state.eta.?) }; // TODO: eta_prime
+                tickets = .{ .data = try self.generateTickets(&eta_prime) }; // TODO: eta_prime
             } else {
                 span.debug("Outside ticket submission period", .{});
             }
