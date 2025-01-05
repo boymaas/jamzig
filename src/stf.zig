@@ -8,20 +8,21 @@ const JamState = state.JamState;
 const Block = types.Block;
 const Header = types.Header;
 
-const state_d = @import("state_delta.zig");
-const StateTransition = state_d.StateTransition;
+const StateTransition = @import("state_delta.zig").StateTransition;
 const Params = @import("jam_params.zig").Params;
+
+pub const authorization = @import("stf/authorization.zig");
+pub const core_allocation = @import("stf/core_allocation.zig");
+pub const disputes = @import("stf/disputes.zig");
+pub const eta = @import("stf/eta.zig");
+pub const recent_history = @import("stf/recent_history.zig");
+pub const safrole = @import("stf/safrole.zig");
+pub const services = @import("stf/services.zig");
+pub const time = @import("stf/time.zig");
+pub const work_report = @import("stf/work_reports.zig");
 
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.stf);
-
-pub const time = @import("stf/time.zig");
-pub const recent_history = @import("stf/recent_history.zig");
-pub const eta = @import("stf/eta.zig");
-pub const safrole = @import("stf/safrole.zig");
-pub const disputes = @import("stf/disputes.zig");
-pub const services = @import("stf/services.zig");
-pub const authorization = @import("stf/authorization.zig");
 
 pub fn stateTransition(
     comptime params: Params,
@@ -49,15 +50,11 @@ pub fn stateTransition(
         new_block,
     );
 
-    // Extract entropy from block header's entropy source
-    span.debug("Extracting entropy from block header", .{});
-    const entropy = try @import("crypto/bandersnatch.zig")
-        .Bandersnatch.Signature
-        .fromBytes(new_block.header.entropy_source)
-        .outputHash();
-    span.trace("Block entropy={any}", .{std.fmt.fmtSliceHexLower(&entropy)});
-
-    try eta.transition(params, &state_transition, entropy);
+    try eta.transition(
+        params,
+        &state_transition,
+        try new_block.header.getEntropy(),
+    );
 
     var markers = try safrole.transition(
         params,
@@ -69,4 +66,11 @@ pub fn stateTransition(
     span.debug("State transition completed successfully", .{});
 
     return try state_transition.cloneBaseAndMerge();
+}
+
+fn extractBlockEntropy(header: *const Header) !types.Entropy {
+    return try @import("crypto/bandersnatch.zig")
+        .Bandersnatch.Signature
+        .fromBytes(header.entropy_source)
+        .outputHash();
 }

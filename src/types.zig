@@ -639,6 +639,13 @@ pub const Header = struct {
         return hash;
     }
 
+    pub fn getEntropy(self: *const @This()) !types.Entropy {
+        return try @import("crypto/bandersnatch.zig")
+            .Bandersnatch.Signature
+            .fromBytes(self.entropy_source)
+            .outputHash();
+    }
+
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         const epoch_mark = if (self.epoch_mark) |mark| try mark.deepClone(allocator) else null;
         const tickets_mark = if (self.tickets_mark) |mark| try mark.deepClone(allocator) else null;

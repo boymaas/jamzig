@@ -2,34 +2,25 @@ const std = @import("std");
 const state = @import("../state.zig");
 const types = @import("../types.zig");
 
+const Params = @import("../jam_params.zig").Params;
+const StateTransition = @import("../state_delta.zig").StateTransition;
+
 pub fn accumulateWorkReports(
-    allocator: std.mem.Allocator,
-    current_delta: *const state.Delta,
-    current_chi: *const state.Chi,
-    current_iota: *const state.Iota,
-    current_phi: *const state.Phi,
-    updated_rho: *const state.Rho,
-) !struct { delta: state.Delta, chi: state.Chi, iota: state.Iota, phi: state.Phi } {
-    _ = allocator;
-    _ = current_delta;
-    _ = current_chi;
-    _ = current_iota;
-    _ = current_phi;
-    _ = updated_rho;
+    comptime params: Params,
+    stx: *StateTransition(params),
+) !void {
+    _ = stx;
     // Process work reports and transition δ, χ, ι, and φ
     @panic("Not implemented");
 }
 
 pub fn transitionValidatorStatistics(
-    allocator: std.mem.Allocator,
-    current_pi: *const state.Pi,
+    comptime params: Params,
+    stx: *StateTransition(params),
     new_block: types.Block,
-    updated_kappa: *const state.Kappa,
 ) !state.Pi {
-    _ = allocator;
-    _ = current_pi;
+    _ = stx;
     _ = new_block;
-    _ = updated_kappa;
     // Transition π with new validator statistics
     @panic("Not implemented");
 }

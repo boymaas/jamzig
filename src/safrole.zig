@@ -259,7 +259,7 @@ pub fn transition(
     defer span.deinit();
     span.debug("Starting state transition", .{});
 
-    // Process ticket extrinsic
+    // Process and validate ticket extrinsic
     const verified_extrinsic = try processTicketExtrinsic(params, stx, ticket_extrinsic);
     defer stx.allocator.free(verified_extrinsic);
 
@@ -272,10 +272,10 @@ pub fn transition(
         );
     }
 
-    // Process tickets within submission window
+    // Acummulate tickets when within submission window
     const gamma = try stx.ensure(.gamma);
     const gamma_prime = try stx.ensure(.gamma_prime);
-    if (stx.time.is_in_ticket_submission_period) {
+    if (stx.time.isInTicketSubmissionPeriod()) {
         span.debug("Processing ticket submissions", .{});
         const merged_gamma_a = try mergeTicketsIntoTicketAccumulatorGammaA(
             stx.allocator,
@@ -288,19 +288,18 @@ pub fn transition(
     }
 
     // Generate markers
-    span.debug("Determining output markers", .{});
     var epoch_marker: ?types.EpochMark = null;
-    var winning_ticket_marker: ?types.TicketsMark = null;
-
     if (stx.time.isNewEpoch()) {
-        span.debug("Creating epoch marker", .{});
+        const eta_prime = try stx.ensure(.eta_prime);
         epoch_marker = .{
-            .entropy = (try stx.ensure(.eta_prime))[1],
-            .tickets_entropy = (try stx.ensure(.eta_prime))[2],
-            .validators = try extractBandersnatchKeys(stx.allocator, gamma_prime.k),
+            .entropy = eta_prime[1],
+            .tickets_entropy = eta_prime[2],
+            .validators = try gamma_prime.k
+                .getBandersnatchPublicKeys(stx.allocator),
         };
     }
 
+    var winning_ticket_marker: ?types.TicketsMark = null;
     if (stx.time.isSameEpoch() and
         stx.time.didCrossTicketSubmissionEnd() and
         gamma_prime.a.len == params.epoch_length) // TODO: check if this should not be gamma_prime.a
@@ -435,7 +434,7 @@ fn bandersnatchRingRoot(
     span.trace("Number of validator keys in gamma_k: {d}", .{gamma_k.len()});
 
     // Extract the Bandersnatch public keys
-    const keys = try extractBandersnatchKeys(allocator, gamma_k);
+    const keys = try gamma_k.getBandersnatchPublicKeys(allocator);
     defer {
         span.debug("Cleanup - freeing extracted keys", .{});
         allocator.free(keys);
@@ -448,17 +447,6 @@ fn bandersnatchRingRoot(
     // Get the commitment using the verifier
     const commitment = try verifier.get_commitment();
     return commitment;
-}
-
-// TODO: this can be placed on the ValidatorSet now
-fn extractBandersnatchKeys(allocator: std.mem.Allocator, gamma_k: types.GammaK) ![]types.BandersnatchPublic {
-    const keys = try allocator.alloc(types.BandersnatchPublic, gamma_k.len());
-
-    for (gamma_k.items(), 0..) |validator, i| {
-        keys[i] = validator.bandersnatch;
-    }
-
-    return keys;
 }
 
 // 58. PHI: Zero out any offenders on post_state.iota
@@ -494,7 +482,7 @@ pub fn gammaS_Fallback(
         kappa.len(),
     });
 
-    const keys = try extractBandersnatchKeys(allocator, kappa);
+    const keys = try kappa.getBandersnatchPublicKeys(allocator);
     defer {
         span.debug("Cleanup - freeing extracted keys", .{});
         allocator.free(keys);
