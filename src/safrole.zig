@@ -51,7 +51,6 @@ pub fn transition(
     if (stx.time.isNewEpoch()) {
         try epoch_handler.handleEpochTransition(
             params,
-            stx.allocator,
             stx,
         );
     }

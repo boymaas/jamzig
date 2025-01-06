@@ -281,6 +281,9 @@ pub const Chi = @import("services_priviledged.zig").Chi;
 pub const Psi = @import("disputes.zig").Psi;
 pub const Pi = @import("validator_stats.zig").Pi;
 
+// Helpers to init decoupled state object by params
+pub const init = @import("state_params_init.zig");
+
 // Helper functions that will be used by our comptime methods
 const StateHelpers = struct {
     // Helper for merging a single field

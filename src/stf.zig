@@ -27,43 +27,43 @@ pub fn stateTransition(
     allocator: Allocator,
     current_state: *const JamState(params),
     new_block: *const Block,
-) !JamState(params) {
+) !*StateTransition(params) {
     const span = trace.span(.state_transition);
     defer span.deinit();
     std.debug.assert(current_state.ensureFullyInitialized() catch false);
 
     const transition_time = params.Time().init(current_state.tau.?, new_block.header.slot);
-    var state_transition = try StateTransition(params).init(allocator, current_state, transition_time);
+    var state_transition = try StateTransition(params).initHeap(allocator, current_state, transition_time);
     errdefer state_transition.deinit();
 
     try time.transition(
         params,
-        &state_transition,
+        state_transition,
         new_block.header.slot,
     );
 
     try recent_history.transition(
         params,
-        &state_transition,
+        state_transition,
         new_block,
     );
 
     try eta.transition(
         params,
-        &state_transition,
+        state_transition,
         try new_block.header.getEntropy(),
     );
 
     var markers = try safrole.transition(
         params,
-        &state_transition,
+        state_transition,
         new_block.extrinsic.tickets,
     );
     defer markers.deinit(allocator);
 
     span.debug("State transition completed successfully", .{});
 
-    return try state_transition.cloneBaseAndMerge();
+    return state_transition;
 }
 
 fn extractBlockEntropy(header: *const Header) !types.Entropy {

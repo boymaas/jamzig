@@ -15,47 +15,46 @@ const trace = @import("../tracing.zig").scoped(.epoch_handler);
 /// Transitions the epoch, handling validator rotation and state updates
 pub fn handleEpochTransition(
     comptime params: Params,
-    allocator: std.mem.Allocator,
     stx: *StateTransition(params),
 ) !void {
     const span = trace.span(.transition_epoch);
     defer span.deinit();
     span.debug("Starting epoch transition", .{});
+
     // Get current states we need
-    const current_kappa = try stx.ensure(.kappa);
-    const current_gamma = try stx.ensure(.gamma);
-    const current_iota = try stx.ensure(.iota);
-    const eta_prime = try stx.ensure(.eta_prime);
+    const current_kappa = try stx.getT(*const types.Kappa, .kappa);
+    const current_gamma = try stx.getT(*const state.init.Gamma(params), .gamma);
+    const current_iota = try stx.getT(*const types.Iota, .iota);
+    const eta_prime = try stx.getT(*types.Eta, .eta_prime);
 
     // Rotate validator keys
     span.debug("Rotating validator keys", .{});
 
     // λ gets current κ
-    try stx.initialize(.lambda_prime, try current_kappa.deepClone(allocator));
+    try stx.createTransient(.lambda_prime, try current_kappa.deepClone(stx.allocator));
 
     // κ gets current γ.k
-    try stx.initialize(.kappa_prime, try current_gamma.k.deepClone(allocator));
+    try stx.createTransient(.kappa_prime, try current_gamma.k.deepClone(stx.allocator));
 
     // Create new gamma state
-    var gamma_prime: *state.Gamma(params.validators_count, params.epoch_length) //
-        = try stx.ensure(.gamma_prime);
+    var gamma_prime = try stx.initTransientWithBaseT(*state.init.Gamma(params), .gamma_prime);
 
     // γ.k gets ι (with offenders zeroed out)
-    const current_psi = try stx.ensure(.psi);
-    gamma_prime.k.deinit(allocator);
+    const current_psi = try stx.getT(*const state.Psi, .psi);
+    gamma_prime.k.deinit(stx.allocator);
     gamma_prime.k = zeroOutOffenders(
-        try current_iota.deepClone(allocator),
+        try current_iota.deepClone(stx.allocator),
         current_psi.offendersSlice(),
     );
 
     // Calculate new gamma_z
     span.debug("Calculating new gamma_z from gamma_k", .{});
-    gamma_prime.z = try buildBandersnatchRingRoot(allocator, gamma_prime.k);
+    gamma_prime.z = try buildBandersnatchRingRoot(stx.allocator, gamma_prime.k);
     span.trace("New gamma_z value: {any}", .{std.fmt.fmtSliceHexLower(&gamma_prime.z)});
 
     // Handle gamma_s transition
     const gamma_s = &gamma_prime.s;
-    gamma_s.deinit(allocator);
+    gamma_s.deinit(stx.allocator);
     _ = gamma_s.clearAndTakeOwnership();
 
     // Update gamma_s based on conditions
@@ -73,7 +72,7 @@ pub fn handleEpochTransition(
             stx.time.prior_epoch,
         });
         gamma_s.* = .{
-            .tickets = try ordering.outsideInOrdering(types.TicketBody, allocator, current_gamma.a),
+            .tickets = try ordering.outsideInOrdering(types.TicketBody, stx.allocator, current_gamma.a),
         };
     } else {
         span.warn("Falling back to key mode for gamma_s", .{});
@@ -87,14 +86,14 @@ pub fn handleEpochTransition(
 
         const kappa_prime = try stx.ensure(.kappa_prime);
         gamma_s.* = .{
-            .keys = try entropyBasedKeySelector(allocator, eta_prime[2], params.epoch_length, kappa_prime.*),
+            .keys = try entropyBasedKeySelector(stx.allocator, eta_prime[2], params.epoch_length, kappa_prime.*),
         };
     }
 
     // Reset gamma_a
     span.debug("Resetting gamma_a ticket accumulator at epoch boundary", .{});
     span.trace("Freeing previous gamma_a with {d} tickets", .{current_gamma.a.len});
-    allocator.free(gamma_prime.a);
+    stx.allocator.free(gamma_prime.a);
     gamma_prime.a = &[_]types.TicketBody{};
 }
 

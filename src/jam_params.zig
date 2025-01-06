@@ -91,6 +91,7 @@ pub const Params = struct {
     // -- (cores-count + 7) / 8
     avail_bitfield_bytes: usize = (341 + 7) / 8,
 
+    // Helpers for tast init based on params
     pub fn Time(comptime self: *const Params) type {
         return time.Time(self.epoch_length, self.slot_period, self.ticket_submission_end_epoch_slot);
     }

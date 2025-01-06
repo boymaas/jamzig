@@ -105,7 +105,7 @@ pub fn formatBlockEntropyDebug(
 ) !void {
     try formatBlockHeaderDebug(writer, params, block);
 
-    // Add entropy information if available
+    // Display entropy buffer if available
     if (state.eta) |eta| {
         try writer.print(" η=[", .{});
         for (eta[0..@min(4, eta.len)], 0..) |e, i| {
@@ -113,6 +113,18 @@ pub fn formatBlockEntropyDebug(
             try writer.print("{s}", .{std.fmt.fmtSliceHexLower(e[0..2])});
         }
         try writer.print("]", .{});
+    }
+
+    // Display Safrole consensus mode and ticket/key count
+    if (state.gamma) |gamma| {
+        switch (gamma.s) {
+            .tickets => |tickets| try writer.print(" γs=tickets({d})", .{tickets.len}),
+            .keys => |keys| try writer.print(" γs=keys({d})", .{keys.len}),
+        }
+        // Accumulator
+        try writer.print(" acc={d:0>4}", .{gamma.a.len});
+        // Show VRF root if present
+        try writer.print(" vrf={s}", .{std.fmt.fmtSliceHexLower(gamma.z[0..4])});
     }
     try writer.print("\n", .{});
 }

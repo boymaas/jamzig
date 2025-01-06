@@ -561,7 +561,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 }
 
                 // ~20% chance to submit a ticket per block if eligible
-                if (self.rng.intRangeAtMost(u8, 0, 10) < 5) {
+                if (self.rng.intRangeAtMost(u8, 0, 10) < 2) {
                     span.debug("Generating ticket for validator {d}", .{idx});
 
                     // Create prover for this validator
