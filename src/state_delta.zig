@@ -6,10 +6,11 @@ const Params = @import("jam_params.zig").Params;
 
 pub const Error = error{
     UninitializedBaseField,
+    UninitializedPrimeField,
     PreviousStateRequired,
     StateTransitioned,
     PrimeFieldAlreadySet,
-    CanOnlyModifyPrime,
+    CanOnlyModifyTransient,
 } || error{OutOfMemory};
 
 const DaggerState = enum {
@@ -105,8 +106,8 @@ pub fn StateTransition(comptime params: Params) type {
             return try self.ensure(field);
         }
 
-        /// Creates prime value. One-time operation, debug-mode enforced.
-        pub fn create(self: *Self, comptime field: STAccessors(State), value: STBaseType(State, field)) Error!void {
+        /// Creates transient value. One-time operation, debug-mode enforced. Transferring ownership
+        pub fn createTransient(self: *Self, comptime field: STAccessors(State), value: STBaseType(State, field)) Error!void {
             const builtin = @import("builtin");
 
             const name = @tagName(field);
@@ -129,8 +130,37 @@ pub fn StateTransition(comptime params: Params) type {
             prime_field.* = value;
         }
 
+        /// initialize the transient by deepCloning the base. Will return a pointer to the cloned value
+        pub fn initTransientWithBase(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(State, field) {
+            const builtin = @import("builtin");
+            const name = @tagName(field);
+
+            // Ensure we're only initializing prime states
+            if (!comptime std.mem.endsWith(u8, name, "_prime") and
+                builtin.mode == .Debug)
+            {
+                return Error.CanOnlyInializeTransient;
+            }
+
+            const base_name = name[0 .. name.len - 6];
+            const base_field = &@field(self.base, base_name);
+            const prime_field = &@field(self.prime, base_name);
+            if (comptime builtin.mode == .Debug) {
+                if (prime_field.* != null) return Error.PrimeFieldAlreadySet;
+                if (base_field.* == null) return Error.UninitializedBaseField;
+            }
+
+            prime_field.* = try self.cloneField(base_field.*);
+
+            return &prime_field.*.?;
+        }
+
+        pub fn initTransientWithBaseT(self: *Self, comptime T: type, comptime field: STAccessors(State)) Error!T {
+            return try self.initTransientWithBase(field);
+        }
+
         /// Returns field value. Debug mode enforces existence.
-        pub inline fn get(self: *Self, comptime field: STAccessors(State)) !STBaseType(State, field) {
+        pub inline fn get(self: *Self, comptime field: STAccessors(State)) !STAccessorPointerType(State, field) {
             const builtin = @import("builtin");
 
             const name = @tagName(field);
@@ -145,15 +175,15 @@ pub fn StateTransition(comptime params: Params) type {
                 if (is_prime) {
                     const prime_field = &@field(self.prime, base_name);
                     if (prime_field.* == null) {
-                        return Error.UnitializedPrimeField;
+                        return Error.UninitializedPrimeField;
                     }
-                    return prime_field.*.?;
+                    return &prime_field.*.?;
                 } else {
                     const base_field = &@field(self.base, base_name);
                     if (base_field.* == null) {
                         return error.UninitializedBaseField;
                     }
-                    return base_field.*.?;
+                    return &base_field.*.?;
                 }
             } else {
                 // In release mode, just get the field directly
@@ -164,8 +194,11 @@ pub fn StateTransition(comptime params: Params) type {
                 return field_ptr.*.?;
             }
         }
+        pub fn getT(self: *Self, comptime T: type, comptime field: STAccessors(State)) Error!T {
+            return try self.get(field);
+        }
 
-        fn cloneField(self: *Self, field: anytype) !@TypeOf(field.?) {
+        fn cloneField(self: *Self, field: anytype) error{OutOfMemory}!@TypeOf(field.?) {
             const T = @TypeOf(field.?);
             return switch (@typeInfo(T)) {
                 .@"struct", .@"union" => if (@hasDecl(T, "deepClone")) blk: {
