@@ -25,6 +25,8 @@ comptime {
     _ = @import("ring_vrf_test.zig");
 
     _ = @import("pvm_test.zig");
+    _ = @import("pvm_test/fuzzer/test.zig");
+    _ = @import("pvm_test/fuzzer/program_generator.zig");
     _ = @import("pvm/decoder/immediate.zig");
 
     _ = @import("merkle.zig");

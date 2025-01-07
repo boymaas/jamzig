@@ -8,19 +8,6 @@ const updatePc = @import("./pvm/utils.zig").updatePc;
 
 const trace = @import("tracing.zig").scoped(.pvm);
 
-pub const PVMErrorData = union(enum) {
-    // when a page fault occurs we whould return the lowest address which caused the fault
-    page_fault: u32,
-    host_call: u32,
-};
-
-pub const PMVHostCallResult = union(enum) {
-    play,
-    page_fault: u32,
-};
-
-const PMVHostCallFn = fn (*i64, *[13]u64, []PVM.PageMap) PMVHostCallResult;
-
 pub const PVM = struct {
     allocator: Allocator,
     program: Program,
@@ -29,8 +16,21 @@ pub const PVM = struct {
     pc: u32,
     page_map: []PageMap,
     gas: i64,
-    error_data: ?PVMErrorData,
-    host_call_map: std.AutoHashMap(u32, *const PMVHostCallFn),
+    error_data: ?ErrorData,
+    host_call_map: std.AutoHashMap(u32, *const HostCallFn),
+
+    pub const ErrorData = union(enum) {
+        // when a page fault occurs we whould return the lowest address which caused the fault
+        page_fault: u32,
+        host_call: u32,
+    };
+
+    pub const HostCallResult = union(enum) {
+        play,
+        page_fault: u32,
+    };
+
+    const HostCallFn = fn (*i64, *[13]u64, []PVM.PageMap) HostCallResult;
 
     pub fn hostCall(self: *PVM, host_call_idx: u32) !void {
         const span = trace.span(.host_call);
@@ -69,7 +69,7 @@ pub const PVM = struct {
         }
     }
 
-    pub fn registerHostCall(self: *PVM, host_call_idx: u32, host_func: PMVHostCallFn) !void {
+    pub fn registerHostCall(self: *PVM, host_call_idx: u32, host_func: HostCallFn) !void {
         const span = trace.span(.register_host_call);
         defer span.deinit();
 
@@ -125,7 +125,7 @@ pub const PVM = struct {
             .pc = 0,
             .page_map = &[_]PageMap{},
             .gas = initial_gas,
-            .host_call_map = std.AutoHashMap(u32, *const PMVHostCallFn).init(allocator),
+            .host_call_map = std.AutoHashMap(u32, *const HostCallFn).init(allocator),
         };
     }
 
