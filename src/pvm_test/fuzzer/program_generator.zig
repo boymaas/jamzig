@@ -224,7 +224,7 @@ test "ProgramGenerator - generates valid format" {
 
     var i: usize = 0;
     while (i < 100) : (i += 1) {
-        var program = try generator.generate(3);
+        var program = try generator.generate(seed_gen.randomByte());
         defer program.deinit(allocator);
 
         // Verify we can decode the generated program
