@@ -953,17 +953,17 @@ pub const PVM = struct {
         return is_start;
     }
 
-    fn loadMemory(self: *PVM, address: u32, size: u8) !u32 {
+    fn loadMemory(self: *PVM, address: u32, size: u8) !u64 {
         const span = trace.span(.load_memory);
         defer span.deinit();
 
         span.debug("Loading {d} bytes from address 0x{X:0>8}", .{ size, address });
 
         const data = try self.readMemory(address, size);
-        var result: u32 = 0;
+        var result: u64 = 0;
         var i: u8 = 0;
         while (i < size) : (i += 1) {
-            result |= @as(u32, @intCast(data[i])) << @intCast(i * 8);
+            result |= @as(u64, @intCast(data[i])) << @intCast(i * 8);
         }
 
         span.trace("Loaded value: 0x{X:0>8}", .{result});
