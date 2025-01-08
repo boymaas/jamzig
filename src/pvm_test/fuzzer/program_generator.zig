@@ -65,6 +65,22 @@ pub const BasicBlock = struct {
     instructions: std.ArrayList(u8),
     /// List of valid jump targets from this block
     jump_targets: std.ArrayList(u32),
+    /// Mask bits for the block's instructions
+    mask_bits: std.ArrayList(bool),
+
+    /// Add an instruction with its length to the block
+    pub fn addInstruction(self: *BasicBlock, bytes: []const u8, length: u8) !void {
+        try self.instructions.appendSlice(bytes);
+
+        // Set mask bit for instruction start
+        try self.mask_bits.append(true);
+
+        // Add false bits for the rest of the instruction
+        var i: usize = 1;
+        while (i < length) : (i += 1) {
+            try self.mask_bits.append(false);
+        }
+    }
 
     pub fn deinit(self: *BasicBlock) void {
         self.instructions.deinit();
@@ -161,6 +177,7 @@ pub const ProgramGenerator = struct {
             .address = self.next_address,
             .instructions = std.ArrayList(u8).init(self.allocator),
             .jump_targets = std.ArrayList(u32).init(self.allocator),
+            .mask_bits = std.ArrayList(bool).init(self.allocator),
         };
 
         // Generate a sequence of valid instructions
@@ -198,17 +215,14 @@ pub const ProgramGenerator = struct {
         var encoder = @import("instruction.zig").encoder(instruction_buffer.writer());
 
         const terminator_type = self.seed_gen.randomIntRange(u8, 0, 2);
-        switch (terminator_type) {
-            0 => _ = try encoder.encodeNoArgs(0), // trap
-            1 => _ = try encoder.encodeNoArgs(1), // fallthrough
-            2 => {
-                // Jump target will be filled in later during block linking
-                _ = try encoder.encodeJump(0);
-            },
+        const length = switch (terminator_type) {
+            0 => try encoder.encodeNoArgs(0), // trap
+            1 => try encoder.encodeNoArgs(1), // fallthrough
+            2 => try encoder.encodeJump(0), // Jump target will be filled in later during block linking
             else => unreachable,
-        }
+        };
 
-        try block.instructions.appendSlice(instruction_buffer.items);
+        try block.addInstruction(instruction_buffer.items, length);
     }
 
     /// Generate a regular (non-terminator) instruction
@@ -220,101 +234,81 @@ pub const ProgramGenerator = struct {
 
         // Select random instruction type (excluding NoArgs which is for terminators)
         const inst_type = @as(InstructionType, @enumFromInt(
-            self.seed_gen.randomIntRange(u8, 2, std.meta.fields(InstructionType).len - 1),
+            self.seed_gen.randomIntRange(u8, 3, std.meta.fields(InstructionType).len - 1),
         ));
         const range = instruction_ranges.get(@tagName(inst_type)).?;
         const opcode = self.seed_gen.randomIntRange(u8, range.start, range.end);
 
-        switch (inst_type) {
+        const length = switch (inst_type) {
             .NoArgs => unreachable, // Handled by generateTerminator
-
-            .OneImm => {
+            .OneImm => blk: {
                 const imm = self.seed_gen.randomImmediate();
-                _ = try encoder.encodeOneImm(opcode, imm);
+                break :blk try encoder.encodeOneImm(opcode, imm);
             },
-
-            .OneRegExtImm => {
+            .OneRegExtImm => blk: {
                 const reg = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const imm = self.seed_gen.randomImmediate();
-                _ = try encoder.encodeOneRegOneExtImm(opcode, reg, imm);
+                break :blk try encoder.encodeOneRegOneExtImm(opcode, reg, imm);
             },
-
-            .TwoImm => {
+            .TwoImm => blk: {
                 const imm1 = self.seed_gen.randomImmediate();
                 const imm2 = self.seed_gen.randomImmediate();
-                _ = try encoder.encodeTwoImm(opcode, imm1, imm2);
+                break :blk try encoder.encodeTwoImm(opcode, imm1, imm2);
             },
-
-            .OneOffset => {
-                // Generate random offset for branch/jump instructions
+            .OneOffset => blk: {
                 const offset = @as(i32, @bitCast(self.seed_gen.randomImmediate()));
-                _ = try encoder.encodeOneOffset(opcode, offset);
+                break :blk try encoder.encodeOneOffset(opcode, offset);
             },
-
-            .OneRegOneImm => {
+            .OneRegOneImm => blk: {
                 const reg = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const imm = self.seed_gen.randomImmediate();
-                _ = try encoder.encodeOneRegOneImm(opcode, reg, imm);
+                break :blk try encoder.encodeOneRegOneImm(opcode, reg, imm);
             },
-
-            .OneRegTwoImm => {
+            .OneRegTwoImm => blk: {
                 const reg = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const imm1 = self.seed_gen.randomImmediate();
                 const imm2 = self.seed_gen.randomImmediate();
-                _ = try encoder.encodeOneRegTwoImm(opcode, reg, imm1, imm2);
+                break :blk try encoder.encodeOneRegTwoImm(opcode, reg, imm1, imm2);
             },
-
-            .OneRegOneImmOneOffset => {
+            .OneRegOneImmOneOffset => blk: {
                 const reg = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const imm = self.seed_gen.randomImmediate();
                 const offset = @as(i32, @bitCast(self.seed_gen.randomImmediate()));
-                _ = try encoder.encodeOneRegOneImmOneOffset(opcode, reg, imm, offset);
+                break :blk try encoder.encodeOneRegOneImmOneOffset(opcode, reg, imm, offset);
             },
-
-            .TwoReg => {
+            .TwoReg => blk: {
                 const reg1 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const reg2 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
-                _ = try encoder.encodeTwoReg(opcode, reg1, reg2);
+                break :blk try encoder.encodeTwoReg(opcode, reg1, reg2);
             },
-
-            .TwoRegOneImm => {
+            .TwoRegOneImm => blk: {
                 const reg1 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const reg2 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const imm = self.seed_gen.randomImmediate();
-                _ = try encoder.encodeTwoRegOneImm(opcode, reg1, reg2, imm);
+                break :blk try encoder.encodeTwoRegOneImm(opcode, reg1, reg2, imm);
             },
-
-            .TwoRegOneOffset => {
+            .TwoRegOneOffset => blk: {
                 const reg1 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const reg2 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const offset = @as(i32, @bitCast(self.seed_gen.randomImmediate()));
-                _ = try encoder.encodeTwoRegOneOffset(opcode, reg1, reg2, offset);
+                break :blk try encoder.encodeTwoRegOneOffset(opcode, reg1, reg2, offset);
             },
-
-            .TwoRegTwoImm => {
+            .TwoRegTwoImm => blk: {
                 const reg1 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const reg2 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const imm1 = self.seed_gen.randomImmediate();
                 const imm2 = self.seed_gen.randomImmediate();
-                _ = try encoder.encodeTwoRegTwoImm(opcode, reg1, reg2, imm1, imm2);
+                break :blk try encoder.encodeTwoRegTwoImm(opcode, reg1, reg2, imm1, imm2);
             },
-
-            .ThreeReg => {
+            .ThreeReg => blk: {
                 const reg1 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const reg2 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
                 const reg3 = self.seed_gen.randomIntRange(u8, 0, MaxRegisterIndex);
-                _ = try encoder.encodeThreeReg(opcode, reg1, reg2, reg3);
+                break :blk try encoder.encodeThreeReg(opcode, reg1, reg2, reg3);
             },
-        }
+        };
 
-        try block.instructions.appendSlice(instruction_buffer.items);
-    }
-
-    /// Update a jump instruction's target in the instruction stream
-    /// The target will be encoded as a variable-length immediate
-    fn updateJumpTarget(instructions: []u8, offset: usize, target: u32) !void {
-        var fbs = std.io.fixedBufferStream(instructions[offset..]);
-        try codec.writeInteger(target, fbs.writer());
+        try block.addInstruction(instruction_buffer.items, length);
     }
 
     /// Create valid jump targets between blocks
@@ -354,38 +348,65 @@ pub const ProgramGenerator = struct {
         return code.toOwnedSlice();
     }
 
+    /// Build final mask from block mask bits
     fn buildMask(self: *Self, code_length: usize) ![]u8 {
         const mask_size = (code_length + 7) / 8;
         var mask = try self.allocator.alloc(u8, mask_size);
         @memset(mask, 0);
 
-        // Set mask bits for each basic block start
+        var bit_pos: usize = 0;
+
+        // Convert each block's mask bits to packed bytes
         for (self.basic_blocks.items) |block| {
-            const byte_index = block.address / 8;
-            const bit_index = @as(u3, @truncate(block.address % 8));
+            for (block.mask_bits.items) |is_start| {
+                if (is_start) {
+                    const byte_index = bit_pos / 8;
+                    const bit_index = @as(u3, @truncate(bit_pos % 8));
+                    mask[byte_index] |= @as(u8, 1) << bit_index;
+                }
+                bit_pos += 1;
+            }
+        }
+
+        // Add padding bits if needed for final instructions
+        while (bit_pos < code_length) {
+            const byte_index = bit_pos / 8;
+            const bit_index = @as(u3, @truncate(bit_pos % 8));
             mask[byte_index] |= @as(u8, 1) << bit_index;
+            bit_pos += 1;
         }
 
         return mask;
     }
 
+    const JumpAlignmentFactor = 2;
+
     fn buildJumpTable(self: *Self) ![]u32 {
-        // Collect all unique jump targets
+        // Collect all unique jump targets and convert to table indices
         var targets = std.ArrayList(u32).init(self.allocator);
         defer targets.deinit();
 
         for (self.basic_blocks.items) |block| {
             for (block.jump_targets.items) |target| {
-                // Check if target already exists
+                // Convert target address to jump table index
+                // Add 1 and multiply by alignment factor as per graypaper A.4
+                const table_index = (target + 1) * JumpAlignmentFactor;
+
+                // Check if target is aligned properly
+                if (table_index % JumpAlignmentFactor != 0) {
+                    return error.UnalignedJumpTarget;
+                }
+
+                // Check if target index already exists
                 var found = false;
                 for (targets.items) |existing| {
-                    if (existing == target) {
+                    if (existing == table_index) {
                         found = true;
                         break;
                     }
                 }
                 if (!found) {
-                    try targets.append(target);
+                    try targets.append(table_index);
                 }
             }
         }
@@ -393,7 +414,31 @@ pub const ProgramGenerator = struct {
         // Sort targets for deterministic output
         std.sort.insertion(u32, targets.items, {}, std.sort.asc(u32));
 
+        // Validate jump table constraints
+        if (targets.items.len > 0) {
+            // Verify no entry is 0 (would cause panic per graypaper)
+            if (targets.items[0] == 0) {
+                return error.InvalidJumpTableEntry;
+            }
+
+            // Verify all entries are properly aligned
+            for (targets.items) |entry| {
+                if (entry % JumpAlignmentFactor != 0) {
+                    return error.UnalignedJumpTableEntry;
+                }
+            }
+        }
+
         return try targets.toOwnedSlice();
+    }
+
+    // Update the jump instruction encoding to use table indices
+    fn updateJumpTarget(instructions: []u8, offset: usize, target: u32) !void {
+        // Convert target address to jump table index
+        const table_index = (target + 1) * JumpAlignmentFactor;
+
+        var fbs = std.io.fixedBufferStream(instructions[offset..]);
+        try codec.writeInteger(table_index, fbs.writer());
     }
 
     fn buildRawProgram(self: *Self, code: []const u8, mask: []const u8, jump_table: []const u32) ![]u8 {
@@ -459,10 +504,20 @@ fn verifyProgramStructure(program: GeneratedProgram) !void {
     for (program.jump_table) |target| {
         const byte_index = target / 8;
         const bit_index = @as(u3, @truncate(target % 8));
-        if (byte_index >= program.mask.len) return error.InvalidJumpTarget;
-        if ((program.mask[byte_index] & (@as(u8, 1) << bit_index)) == 0) {
+        std.debug.print("Validating jump target: {d} (byte: {d}, bit: {d})\n", .{ target, byte_index, bit_index });
+
+        if (byte_index >= program.mask.len) {
+            std.debug.print("ERROR: Jump target {d} exceeds mask length {d}\n", .{ target, program.mask.len });
             return error.InvalidJumpTarget;
         }
+
+        const mask_byte = program.mask[byte_index];
+        const bit_mask = @as(u8, 1) << bit_index;
+        if ((mask_byte & bit_mask) == 1) {
+            std.debug.print("ERROR: Invalid jump target {d} - mask byte 0x{x:0>2} doesn't have bit {d} set\n", .{ target, mask_byte, bit_index });
+            return error.InvalidJumpTarget;
+        }
+        std.debug.print("  -> Valid jump target (mask byte: 0x{x:0>2})\n", .{mask_byte});
     }
 
     // 3. Verify mask size matches code length

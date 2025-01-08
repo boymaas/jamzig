@@ -8,8 +8,9 @@ pub fn Encoder(comptime T: type) type {
     return struct {
         writer: T,
 
-        pub fn encodeNoArgs(self: *@This(), opcode: u8) !void {
+        pub fn encodeNoArgs(self: *@This(), opcode: u8) !u8 {
             try self.writer.writeByte(opcode);
+            return 1;
         }
 
         pub fn encodeOneImm(self: *@This(), opcode: u8, imm: u32) !u8 {

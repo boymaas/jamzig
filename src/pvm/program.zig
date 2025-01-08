@@ -16,6 +16,9 @@ pub const ProgramError = error{
     OutOfBoundsJumpTarget,
     IncompleteProgram,
     AllocationTooLarge,
+    UnalignedJumpTarget,
+    UnalignedJumpTableEntry,
+    InvalidJumpTableEntry,
 };
 
 pub const Program = struct {
