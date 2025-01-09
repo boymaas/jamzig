@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn encoder(writer: anytype) Encoder(@TypeOf(writer)) {
+pub fn buildEncoder(writer: anytype) Encoder(@TypeOf(writer)) {
     return .{ .writer = writer };
 }
 
@@ -31,14 +31,14 @@ pub fn Encoder(comptime T: type) type {
             const l_x = calcLengthNeeded(imm1);
             const l_y = calcLengthNeeded(imm2);
             try self.writer.writeByte(opcode);
-            try self.writer.writeByte(l_x << 4);
+            try self.writer.writeByte(l_x); // NOTE: mod 8 not really necessary, decoder should handle this. Leaving it in for fuzzing
             try self.writeImm(imm1, l_x);
             try self.writeImm(imm2, l_y);
             return l_x + l_y + 1;
         }
 
         pub fn encodeOneOffset(self: *@This(), opcode: u8, offset: i32) !u8 {
-            const l_x = calcLengthNeeded(@bitCast(offset));
+            const l_x = calcLengthNeeded(@bitCast(offset)); // TODO: use a signed variant here
             try self.writer.writeByte(opcode);
             try self.writeImm(@as(u32, @bitCast(offset)), l_x);
             return l_x + 1;
@@ -59,7 +59,7 @@ pub fn Encoder(comptime T: type) type {
             try self.writer.writeByte(opcode);
             try self.writer.writeByte(reg_a);
             try self.writeImm(imm, l_x);
-            return l_x + 1;
+            return l_x + 2;
         }
 
         pub fn encodeOneRegOneImmOneOffset(self: *@This(), opcode: u8, reg_a: u8, imm: u32, offset: i32) !u8 {

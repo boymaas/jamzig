@@ -1,6 +1,6 @@
 const std = @import("std");
-const Instruction = @import("instruction.zig").Instruction;
-const ArgumentType = @import("./decoder/types.zig").ArgumentType;
+pub const Instruction = @import("instruction.zig").Instruction;
+pub const ArgumentType = @import("./decoder/types.zig").ArgumentType;
 
 const Immediate = @import("./decoder/immediate.zig");
 const Nibble = @import("./decoder/nibble.zig");
@@ -79,8 +79,8 @@ pub const Decoder = struct {
 
     fn decodeTwoImmediates(self: *const Decoder, pc: u32) !InstructionArgs {
         const l = self.skip_l(pc + 1);
-        const l_x = @min(4, self.decodeHighNibble(pc + 1));
-        const l_y = @min(4, @max(0, l - l_x - 1));
+        const l_x = self.decodeLowNibble(pc + 1) % 8;
+        const l_y = @min(4, l -| l_x -| 1);
         return .{
             .two_immediates = .{
                 .no_of_bytes_to_skip = 1 + l_x + l_y,
@@ -99,7 +99,6 @@ pub const Decoder = struct {
         return .{
             .one_offset = .{
                 .no_of_bytes_to_skip = l_x,
-                .next_pc = try updatePc(pc, offset),
                 .offset = offset,
             },
         };
@@ -108,7 +107,7 @@ pub const Decoder = struct {
     fn decodeOneRegisterOneImmediate(self: *const Decoder, pc: u32) !InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const l_x = @min(4, l - 1);
+        const l_x = @min(4, l -| 1);
         return .{
             .one_register_one_immediate = .{
                 .no_of_bytes_to_skip = l,
@@ -144,7 +143,6 @@ pub const Decoder = struct {
                 .no_of_bytes_to_skip = l,
                 .register_index = r_a,
                 .immediate = try self.decodeImmediate(pc + 2, l_x),
-                .next_pc = try updatePc(pc, offset),
                 .offset = offset,
             },
         };
@@ -200,7 +198,6 @@ pub const Decoder = struct {
                 .no_of_bytes_to_skip = l,
                 .first_register_index = r_a,
                 .second_register_index = r_b,
-                .next_pc = try updatePc(pc, offset),
                 .offset = offset,
             },
         };
@@ -317,7 +314,6 @@ pub const InstructionArgs = union(ArgumentType) {
     one_immediate: struct { no_of_bytes_to_skip: u32, immediate: u64 },
     one_offset: struct {
         no_of_bytes_to_skip: u32,
-        next_pc: u32,
         offset: i32,
     },
     one_register_one_immediate: struct {
@@ -329,7 +325,6 @@ pub const InstructionArgs = union(ArgumentType) {
         no_of_bytes_to_skip: u32,
         register_index: u8,
         immediate: u64,
-        next_pc: u32,
         offset: i32,
     },
     one_register_one_extended_immediate: struct {
@@ -369,7 +364,6 @@ pub const InstructionArgs = union(ArgumentType) {
         no_of_bytes_to_skip: u32,
         first_register_index: u8,
         second_register_index: u8,
-        next_pc: u32,
         offset: i32,
     },
     two_registers_two_immediates: struct {
