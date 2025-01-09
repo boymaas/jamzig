@@ -109,14 +109,18 @@ pub const ProgramGenerator = struct {
         @memset(mask, 0);
 
         var block_mask = mask[0..];
-        for (self.basic_blocks.items) |block| {
+        var total_offset: usize = 0;
+        for (self.basic_blocks.items, 0..) |block, block_idx| {
+            std.debug.print("\nProcessing Block {d} at offset {d}\n", .{ block_idx, total_offset });
             var set_bits = block.mask_bits.iterator(.{});
             while (set_bits.next()) |set_bit_idx| {
+                std.debug.print("  Setting mask bit {d} (byte: {d}, bit: {d})\n", .{ set_bit_idx + total_offset, set_bit_idx / 8, set_bit_idx % 8 });
                 const mask_idx = set_bit_idx / 8;
                 const mask_byte_bit_idx: u3 = @truncate(set_bit_idx % 8);
-                const mask_byte_mask = @as(u8, 0x80) >> mask_byte_bit_idx;
+                const mask_byte_mask = @as(u8, 0x01) << mask_byte_bit_idx;
                 block_mask[mask_idx] |= mask_byte_mask;
             }
+            total_offset += block.instructions.items.len;
             block_mask = block_mask[block.instructions.items.len..];
         }
 
@@ -144,12 +148,13 @@ test "simple" {
     const Decoder = @import("../../pvm/decoder.zig").Decoder;
     const decoder = Decoder.init(program.code, program.mask);
 
-    std.debug.print("\n\n", .{});
+    std.debug.print("\n\nCode.len: {d}\n", .{program.code.len});
+    std.debug.print("Mask.len: {d}\n\n\n", .{program.mask.len});
 
     var pc: u32 = 0;
     while (pc < program.code.len) {
         const i = try decoder.decodeInstruction(pc);
-        std.debug.print("{d:0>4}: {any}\n", .{ pc, i });
+        std.debug.print("{d:0>4}: {any} len: {d}\n", .{ pc, i, i.skip_l() });
         pc += i.skip_l() + 1;
     }
 }

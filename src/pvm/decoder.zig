@@ -238,15 +238,16 @@ pub const Decoder = struct {
     /// (215)@0.3.8 Skip function
     fn skip_l(self: *const Decoder, pc: u32) u32 {
         var count: u32 = 0;
-        const mask_index = pc / 8;
+        var mask_index = pc / 8;
         const bit_offset: u3 = @intCast(pc % 8);
         var mask_byte = self.getMaskAt(mask_index) >> bit_offset;
 
         while (mask_byte & 1 == 0) {
             count += 1;
             mask_byte >>= 1;
-            if (bit_offset + count == 8) {
-                mask_byte = self.getMaskAt(mask_index + 1);
+            if ((bit_offset + count) % 8 == 0) {
+                mask_index += 1;
+                mask_byte = self.getMaskAt(mask_index);
             }
         }
 
@@ -278,9 +279,9 @@ pub const Decoder = struct {
         return self.code[pc..end][0..len];
     }
 
-    pub fn getMaskAt(self: *const @This(), pc: u32) u8 {
-        if (pc < self.mask.len) {
-            return self.mask[pc];
+    pub fn getMaskAt(self: *const @This(), mask_index: u32) u8 {
+        if (mask_index < self.mask.len) {
+            return self.mask[mask_index];
         }
 
         return 0xFF;
