@@ -37,7 +37,10 @@ pub const Program = struct {
         program.code = try allocator.dupe(u8, raw_program[code_first_index..][0..code_length]);
 
         const mask_first_index = code_first_index + code_length;
-        const mask_length_in_bytes = (code_length + 7) / 8;
+        const mask_length_in_bytes = @max(
+            (code_length + 7) / 8,
+            raw_program.len - mask_first_index,
+        );
         program.mask = try allocator.dupe(u8, raw_program[mask_first_index..][0..mask_length_in_bytes]);
 
         // fill the mask_block_starts

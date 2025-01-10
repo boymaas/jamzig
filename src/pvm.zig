@@ -998,6 +998,33 @@ pub const PVM = struct {
         return error.MemoryPageFault;
     }
 
+    /// No page checking, only bounds are checked
+    pub fn initMemory(self: *PVM, address: u32, data: []u8) !void {
+        const span = trace.span(.init_memory);
+        defer span.deinit();
+
+        span.debug("Initializing {d} bytes at address 0x{X:0>8}", .{ data.len, address });
+
+        for (self.page_map) |page| {
+            if (address >= page.address and address < page.address + page.length) {
+                if (address + data.len > page.address + page.length) {
+                    span.err("Memory access out of bounds: address=0x{X:0>8}, size={d}, page_end=0x{X:0>8}", .{ address, data.len, page.address + page.length });
+                    self.error_data = .{ .page_fault = page.address + page.length };
+                    return error.MemoryAccessOutOfBounds;
+                }
+
+                const offset = address - page.address;
+                @memcpy(page.data[offset..][0..data.len], data);
+                span.trace("Initialization successful - offset: {d}, data: {any}", .{ offset, data });
+                return;
+            }
+        }
+
+        span.err("Page fault at address 0x{X:0>8}", .{address});
+        self.error_data = .{ .page_fault = address };
+        return error.MemoryPageFault;
+    }
+
     pub fn writeMemory(self: *PVM, address: u32, data: []u8) !void {
         const span = trace.span(.write_memory);
         defer span.deinit();

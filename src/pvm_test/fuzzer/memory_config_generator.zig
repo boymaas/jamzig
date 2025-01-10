@@ -73,18 +73,7 @@ pub const MemoryConfigGenerator = struct {
                 };
             }
         }
-
-        // If we couldn't find a non-overlapping range after many attempts,
-        // generate a page at a high memory address
-        const base = 0x10000000 + (existing_ranges.items.len * 0x1000000);
-        const length = self.seed_gen.randomMemorySize();
-        const aligned_length = (length + 7) & ~@as(u32, 7);
-
-        return PVM.PageMapConfig{
-            .address = @intCast(base),
-            .length = aligned_length,
-            .is_writable = self.generatePagePermissions(),
-        };
+        return error.CouldNotGenerateANonOverlappingConfig;
     }
 
     fn generatePagePermissions(self: *Self) bool {

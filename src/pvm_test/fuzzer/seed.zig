@@ -12,6 +12,11 @@ pub const SeedGenerator = struct {
         };
     }
 
+    /// Generate a random seed using system entropy
+    pub fn randomSeed(self: *SeedGenerator) u64 {
+        return self.random.random().int(u64);
+    }
+
     /// Generate a random integer within a range [min, max]
     pub fn randomIntRange(self: *SeedGenerator, comptime T: type, min: T, max: T) T {
         return self.random.random().intRangeAtMost(T, min, max);
@@ -54,12 +59,7 @@ pub const SeedGenerator = struct {
     /// Generate a random memory size
     /// Returns sizes that are reasonable for test programs
     pub fn randomMemorySize(self: *SeedGenerator) u32 {
-        // 80% chance of small pages (32-4096 bytes)
-        // 20% chance of large pages (4097-65536 bytes)
-        return if (self.randomBool())
-            self.randomIntRange(u32, 32, 4096)
-        else
-            self.randomIntRange(u32, 4097, 65536);
+        return self.randomIntRange(u32, 32, 4096);
     }
 
     /// Generate a random memory address

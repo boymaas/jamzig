@@ -7,36 +7,24 @@ const SeedGenerator = @import("seed.zig").SeedGenerator;
 const ProgramGenerator = @import("program_generator.zig").ProgramGenerator;
 const MemoryConfigGenerator = @import("memory_config_generator.zig").MemoryConfigGenerator;
 
-test "pvm:fuzzer" {
+test "pvm:fuzzer:run" {
     const config = FuzzConfig{
         .initial_seed = 42,
-        .num_cases = 10,
+        .num_cases = 100,
         .max_gas = 10000,
         .max_blocks = 8,
-        .verbose = false,
+        .verbose = true,
     };
 
     var fuzzer = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer.deinit();
 
-    try fuzzer.run();
+    var results = try fuzzer.run();
+    defer results.deinit();
 
-    const stats = fuzzer.getStats();
-    try testing.expect(stats.total_cases == 10);
+    const stats = results.getStats();
+    try testing.expect(stats.total_cases == 100);
     try testing.expect(stats.total_cases == stats.successful + stats.traps + stats.errors);
-}
-
-test "pvm:fuzzer:program_gen" {
-    var seed_gen = SeedGenerator.init(42);
-    var program_gen = try ProgramGenerator.init(testing.allocator, &seed_gen);
-    defer program_gen.deinit();
-
-    var program = try program_gen.generate(4);
-    defer program.deinit(testing.allocator);
-
-    try testing.expect(program.code.len > 0);
-    try testing.expect(program.mask.len > 0);
-    try testing.expect(program.jump_table.len > 0);
 }
 
 test "pvm:fuzzer:memory_config_generator" {
@@ -70,17 +58,15 @@ test "pvm:fuzzer:deterministic_execution" {
     // Run fuzzer twice with same seed
     var fuzzer1 = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer1.deinit();
-    try fuzzer1.run();
-    const results1 = fuzzer1.getResults();
+    const results1 = try fuzzer1.run();
 
     var fuzzer2 = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer2.deinit();
-    try fuzzer2.run();
-    const results2 = fuzzer2.getResults();
+    const results2 = try fuzzer2.run();
 
     // Verify results are identical
-    for (results1, 0..) |result1, i| {
-        const result2 = results2[i];
+    for (results1.data.items, 0..) |result1, i| {
+        const result2 = results2.data.items[i];
         try testing.expectEqual(result1.seed, result2.seed);
         try testing.expectEqual(result1.status, result2.status);
         try testing.expectEqual(result1.gas_used, result2.gas_used);

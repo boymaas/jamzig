@@ -1,20 +1,83 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const codec = @import("../../codec.zig");
+
 const SeedGenerator = @import("seed.zig").SeedGenerator;
 const BasicBlock = @import("program_generator/basic_block.zig").BasicBlock;
 
 /// Represents the complete encoded PVM program
 pub const GeneratedProgram = struct {
     /// Complete raw encoded program bytes
-    raw_bytes: []u8,
+    raw_bytes: ?[]u8 = null,
     /// Component parts for verification/testing
     code: []u8,
     mask: []u8,
     jump_table: []u32,
 
+    pub fn getRawBytes(self: *@This(), allocator: std.mem.Allocator) ![]u8 {
+        // If we already have the raw bytes computed, return them
+        if (self.raw_bytes) |bytes| {
+            return bytes;
+        }
+
+        // Create an ArrayList to build our output buffer
+        var list = std.ArrayList(u8).init(allocator);
+        errdefer list.deinit();
+
+        // Get a writer for our list
+        const writer = list.writer();
+
+        // 1. Write jump table length using variable-length encoding
+        // The length is the number of entries in the jump table
+        try codec.writeInteger(self.jump_table.len, writer);
+
+        // 2. Write jump table item length (single byte)
+        // Calculate the minimum bytes needed to store the largest jump target
+        const max_jump_target = blk: {
+            var max: u32 = 0;
+            for (self.jump_table) |target| {
+                max = @max(max, target);
+            }
+            break :blk max;
+        };
+        const item_length = calculateMinimumBytes(max_jump_target);
+        try writer.writeByte(item_length);
+
+        // 3. Write code length using variable-length encoding
+        try codec.writeInteger(self.code.len, writer);
+
+        // 4. Write jump table entries
+        // Each entry is written using the calculated item_length
+        for (self.jump_table) |target| {
+            var buf: [4]u8 = undefined; // Maximum 4 bytes for u32
+            std.mem.writeInt(u32, &buf, target, .little);
+            try writer.writeAll(buf[0..item_length]);
+        }
+
+        // 5. Write code section
+        try writer.writeAll(self.code);
+
+        // 6. Write mask section
+        try writer.writeAll(self.mask);
+
+        // Store and return the final byte array
+        self.raw_bytes = try list.toOwnedSlice();
+        return self.raw_bytes.?;
+    }
+
+    /// Calculates the minimum number of bytes needed to store a value
+    fn calculateMinimumBytes(value: u32) u8 {
+        if (value <= 0xFF) return 1;
+        if (value <= 0xFFFF) return 2;
+        if (value <= 0xFFFFFF) return 3;
+        return 4;
+    }
+
     pub fn deinit(self: *GeneratedProgram, allocator: Allocator) void {
-        allocator.free(self.raw_bytes);
+        if (self.raw_bytes) |bytes| {
+            allocator.free(bytes);
+        }
         allocator.free(self.code);
         allocator.free(self.mask);
         allocator.free(self.jump_table);
@@ -66,8 +129,6 @@ pub const ProgramGenerator = struct {
         const code = try self.buildCode();
         errdefer self.allocator.free(code);
 
-        std.debug.print("code_len {d}", .{code.len});
-
         const mask = try self.buildMask(code.len);
         errdefer self.allocator.free(mask);
 
@@ -78,7 +139,6 @@ pub const ProgramGenerator = struct {
         // const program = try self.buildRawProgram(code, mask, jump_table);
 
         return GeneratedProgram{
-            .raw_bytes = &[_]u8{},
             .code = code,
             .mask = mask,
             .jump_table = jump_table,
@@ -111,9 +171,7 @@ pub const ProgramGenerator = struct {
         @memset(mask, 0);
 
         var block_mask = mask[0..];
-        var total_offset: usize = 0;
-        for (self.basic_blocks.items, 0..) |block, block_idx| {
-            std.debug.print("\nProcessing Block {d} at offset {d}\n", .{ block_idx, total_offset });
+        for (self.basic_blocks.items) |block| {
             var set_bits = block.mask_bits.iterator(.{});
             while (set_bits.next()) |set_bit_idx| {
                 const mask_idx = set_bit_idx / 8;
@@ -121,8 +179,6 @@ pub const ProgramGenerator = struct {
                 const mask_byte_mask = @as(u8, 0x01) << mask_byte_bit_idx;
                 block_mask[mask_idx] |= mask_byte_mask;
             }
-            std.debug.print("block instruction len {d}", .{block.instructions.items.len});
-            total_offset += block.instructions.items.len / 8;
             block_mask = block_mask[block.instructions.items.len / 8 ..];
         }
 
@@ -132,8 +188,21 @@ pub const ProgramGenerator = struct {
     const JumpAlignmentFactor = 2;
 
     fn buildJumpTable(self: *Self) ![]u32 {
-        _ = self;
-        return &[_]u32{};
+        // calculate the starting addressses by taking all the starts of the basic blocks
+        // determine the length of the jump table
+        // and determine the size of the entries of the jump table
+
+        // 1. codec.encodeInteger the length of the jump table
+        // 2. byte encode the size of the items
+        // 3. encode the items with that size.
+        const block_addrs = try self.allocator.alloc(u32, self.basic_blocks.items.len);
+        var offset: u32 = 0;
+        for (self.basic_blocks.items, 0..) |basic_block, i| {
+            block_addrs[i] = offset + @as(u32, @intCast(basic_block.instructions.items.len));
+            offset = block_addrs[i];
+        }
+
+        return block_addrs;
     }
 };
 
@@ -158,5 +227,32 @@ test "simple" {
         const i = try decoder.decodeInstruction(pc);
         std.debug.print("{d:0>4}: {any} len: {d}\n", .{ pc, i, i.skip_l() });
         pc += i.skip_l() + 1;
+    }
+}
+
+test "getRawBytes" {
+    // Create test data
+    const allocator = std.testing.allocator;
+
+    var program = GeneratedProgram{
+        .code = try allocator.dupe(u8, &[_]u8{ 0x01, 0x02, 0x03 }),
+        .mask = try allocator.dupe(u8, &[_]u8{ 0xFF, 0x0F }),
+        .jump_table = try allocator.dupe(u32, &[_]u32{ 10, 20, 30 }),
+        .raw_bytes = null,
+    };
+    defer program.deinit(allocator);
+
+    // Get raw bytes
+    const raw = try program.getRawBytes(allocator);
+
+    // Verify the encoded data can be decoded back
+    var decoded = try @import("../../pvm/program.zig").Program.decode(allocator, raw);
+    defer decoded.deinit(allocator);
+
+    // Verify contents match
+    try std.testing.expectEqualSlices(u8, program.code, decoded.code);
+    try std.testing.expectEqualSlices(u8, program.mask, decoded.mask);
+    for (program.jump_table, 0..) |target, i| {
+        try std.testing.expectEqual(target, decoded.jump_table.getDestination(i));
     }
 }
