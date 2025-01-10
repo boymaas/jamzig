@@ -40,9 +40,11 @@ pub const BasicBlock = struct {
         }
 
         // End with a valid terminator
-        const inst = try igen.generateTerminator(seed_gen);
-        try self.instructions.appendSlice(self.allocator, inst.toSlice());
-        self.mask_bits.set(pc + inst.len);
+        while (self.instructions.items.len % 8 != 0) {
+            const inst = try igen.generateTerminator(seed_gen);
+            try self.instructions.appendSlice(self.allocator, inst.toSlice());
+            self.mask_bits.set(pc + inst.len);
+        }
     }
 
     pub fn deinit(self: *Self) void {

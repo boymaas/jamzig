@@ -34,7 +34,7 @@ pub fn Encoder(comptime T: type) type {
             try self.writer.writeByte(l_x); // NOTE: mod 8 not really necessary, decoder should handle this. Leaving it in for fuzzing
             try self.writeImm(imm1, l_x);
             try self.writeImm(imm2, l_y);
-            return l_x + l_y + 1;
+            return l_x + l_y + 2;
         }
 
         pub fn encodeOneOffset(self: *@This(), opcode: u8, offset: i32) !u8 {
@@ -96,6 +96,7 @@ pub fn Encoder(comptime T: type) type {
 
         pub fn encodeTwoRegTwoImm(self: *@This(), opcode: u8, reg_a: u8, reg_b: u8, imm1: u32, imm2: u32) !u8 {
             const l_x = calcLengthNeeded(imm1);
+
             const l_y = calcLengthNeeded(imm2);
             try self.writer.writeByte(opcode);
             try self.writer.writeByte(reg_a | (reg_b << 4));

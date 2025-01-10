@@ -80,7 +80,7 @@ pub const Decoder = struct {
     fn decodeTwoImmediates(self: *const Decoder, pc: u32) !InstructionArgs {
         const l = self.skip_l(pc + 1);
         const l_x = self.decodeLowNibble(pc + 1) % 8;
-        const l_y = @min(4, l -| l_x -| 1);
+        const l_y = @min(4, l - l_x - 1);
         return .{
             .two_immediates = .{
                 .no_of_bytes_to_skip = 1 + l_x + l_y,
@@ -188,6 +188,8 @@ pub const Decoder = struct {
     }
 
     fn decodeTwoRegistersOneOffset(self: *const Decoder, pc: u32) !InstructionArgs {
+        const l_prev = self.skip_l(pc + 1);
+        _ = l_prev;
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));

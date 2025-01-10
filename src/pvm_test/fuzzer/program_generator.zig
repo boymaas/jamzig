@@ -66,6 +66,8 @@ pub const ProgramGenerator = struct {
         const code = try self.buildCode();
         errdefer self.allocator.free(code);
 
+        std.debug.print("code_len {d}", .{code.len});
+
         const mask = try self.buildMask(code.len);
         errdefer self.allocator.free(mask);
 
@@ -105,7 +107,7 @@ pub const ProgramGenerator = struct {
 
     /// Build final mask from block mask bits
     fn buildMask(self: *Self, code_length: usize) ![]u8 {
-        const mask = try self.allocator.alloc(u8, code_length);
+        const mask = try self.allocator.alloc(u8, try std.math.divCeil(usize, code_length, 8) + 1);
         @memset(mask, 0);
 
         var block_mask = mask[0..];
@@ -114,14 +116,14 @@ pub const ProgramGenerator = struct {
             std.debug.print("\nProcessing Block {d} at offset {d}\n", .{ block_idx, total_offset });
             var set_bits = block.mask_bits.iterator(.{});
             while (set_bits.next()) |set_bit_idx| {
-                std.debug.print("  Setting mask bit {d} (byte: {d}, bit: {d})\n", .{ set_bit_idx + total_offset, set_bit_idx / 8, set_bit_idx % 8 });
                 const mask_idx = set_bit_idx / 8;
                 const mask_byte_bit_idx: u3 = @truncate(set_bit_idx % 8);
                 const mask_byte_mask = @as(u8, 0x01) << mask_byte_bit_idx;
                 block_mask[mask_idx] |= mask_byte_mask;
             }
-            total_offset += block.instructions.items.len;
-            block_mask = block_mask[block.instructions.items.len..];
+            std.debug.print("block instruction len {d}", .{block.instructions.items.len});
+            total_offset += block.instructions.items.len / 8;
+            block_mask = block_mask[block.instructions.items.len / 8 ..];
         }
 
         return mask;
@@ -142,14 +144,14 @@ test "simple" {
     defer generator.deinit();
 
     // Generate multiple programs of varying sizes
-    var program = try generator.generate(2);
+    var program = try generator.generate(128);
     defer program.deinit(allocator);
 
     const Decoder = @import("../../pvm/decoder.zig").Decoder;
     const decoder = Decoder.init(program.code, program.mask);
 
     std.debug.print("\n\nCode.len: {d}\n", .{program.code.len});
-    std.debug.print("Mask.len: {d}\n\n\n", .{program.mask.len});
+    std.debug.print("Mask.len: {d}\n", .{program.mask.len});
 
     var pc: u32 = 0;
     while (pc < program.code.len) {
