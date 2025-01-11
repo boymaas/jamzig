@@ -233,6 +233,11 @@ pub fn StateTransition(comptime params: Params) type {
             self.prime.deinit(self.allocator);
             self.* = undefined;
         }
+
+        pub fn deinitHeap(self: *Self) void {
+            self.prime.deinit(self.allocator);
+            self.allocator.destroy(self);
+        }
     };
 }
 

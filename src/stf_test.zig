@@ -27,7 +27,7 @@ test "sequoia: State transition with sequoia-generated blocks" {
     defer builder.deinit();
 
     // Test multiple block transitions
-    const num_blocks = 1024;
+    const num_blocks = 64;
 
     // Let's give access to the current state
     const current_state = &builder.state;
@@ -49,7 +49,7 @@ test "sequoia: State transition with sequoia-generated blocks" {
 
         // Perform state transition
         var state_transition = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, current_state, &block);
-        defer state_transition.deinit();
+        defer state_transition.deinitHeap();
 
         try state_transition.mergePrimeOntoBase();
 

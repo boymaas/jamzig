@@ -58,11 +58,13 @@ test "pvm:fuzzer:deterministic_execution" {
     // Run fuzzer twice with same seed
     var fuzzer1 = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer1.deinit();
-    const results1 = try fuzzer1.run();
+    var results1 = try fuzzer1.run();
+    defer results1.deinit();
 
     var fuzzer2 = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer2.deinit();
-    const results2 = try fuzzer2.run();
+    var results2 = try fuzzer2.run();
+    defer results2.deinit();
 
     // Verify results are identical
     for (results1.data.items, 0..) |result1, i| {
