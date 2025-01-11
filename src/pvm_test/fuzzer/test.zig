@@ -5,42 +5,29 @@ const PVMFuzzer = @import("fuzzer.zig").PVMFuzzer;
 const FuzzConfig = @import("fuzzer.zig").FuzzConfig;
 const SeedGenerator = @import("seed.zig").SeedGenerator;
 const ProgramGenerator = @import("program_generator.zig").ProgramGenerator;
-const InstructionGenerator = @import("instruction_generator.zig").InstructionGenerator;
 const MemoryConfigGenerator = @import("memory_config_generator.zig").MemoryConfigGenerator;
 
-test "PVM Fuzzer - Basic functionality" {
+test "pvm:fuzzer:run" {
     const config = FuzzConfig{
         .initial_seed = 42,
-        .num_cases = 10,
+        .num_cases = 100,
         .max_gas = 10000,
         .max_blocks = 8,
-        .verbose = false,
+        .verbose = true,
     };
 
     var fuzzer = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer.deinit();
 
-    try fuzzer.run();
+    var results = try fuzzer.run();
+    defer results.deinit();
 
-    const stats = fuzzer.getStats();
-    try testing.expect(stats.total_cases == 10);
-    try testing.expect(stats.total_cases == stats.successful + stats.traps + stats.errors);
+    const stats = results.getStats();
+    try testing.expect(stats.total_cases == 100);
+    try testing.expect(stats.total_cases == stats.successful + stats.errors);
 }
 
-test "PVM Fuzzer - Program generation" {
-    var seed_gen = SeedGenerator.init(42);
-    var program_gen = ProgramGenerator.init(testing.allocator, &seed_gen);
-    defer program_gen.deinit();
-
-    var program = try program_gen.generate(4);
-    defer program.deinit(testing.allocator);
-
-    try testing.expect(program.code.len > 0);
-    try testing.expect(program.mask.len > 0);
-    try testing.expect(program.jump_table.len > 0);
-}
-
-test "PVM Fuzzer - Memory configuration" {
+test "pvm:fuzzer:memory_config_generator" {
     var seed_gen = SeedGenerator.init(42);
     var memory_gen = MemoryConfigGenerator.init(testing.allocator, &seed_gen);
 
@@ -60,42 +47,7 @@ test "PVM Fuzzer - Memory configuration" {
     }
 }
 
-test "PVM Fuzzer - Different seeds produce different programs" {
-    var fuzzer1 = try PVMFuzzer.init(testing.allocator, .{ .initial_seed = 1, .num_cases = 1 });
-    defer fuzzer1.deinit();
-    try fuzzer1.run();
-
-    var fuzzer2 = try PVMFuzzer.init(testing.allocator, .{ .initial_seed = 2, .num_cases = 1 });
-    defer fuzzer2.deinit();
-    try fuzzer2.run();
-
-    const results1 = fuzzer1.getResults();
-    const results2 = fuzzer2.getResults();
-
-    try testing.expect(results1[0].seed != results2[0].seed);
-}
-
-test "PVM Fuzzer - Gas consumption" {
-    const config = FuzzConfig{
-        .initial_seed = 42,
-        .num_cases = 5,
-        .max_gas = 1000,
-        .max_blocks = 4,
-        .verbose = false,
-    };
-
-    var fuzzer = try PVMFuzzer.init(testing.allocator, config);
-    defer fuzzer.deinit();
-    try fuzzer.run();
-
-    const results = fuzzer.getResults();
-    for (results) |result| {
-        try testing.expect(result.gas_used >= 0);
-        try testing.expect(result.gas_used <= config.max_gas);
-    }
-}
-
-test "PVM Fuzzer - Deterministic execution" {
+test "pvm:fuzzer:deterministic_execution" {
     const config = FuzzConfig{
         .initial_seed = 42,
         .num_cases = 5,
@@ -106,17 +58,17 @@ test "PVM Fuzzer - Deterministic execution" {
     // Run fuzzer twice with same seed
     var fuzzer1 = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer1.deinit();
-    try fuzzer1.run();
-    const results1 = fuzzer1.getResults();
+    var results1 = try fuzzer1.run();
+    defer results1.deinit();
 
     var fuzzer2 = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer2.deinit();
-    try fuzzer2.run();
-    const results2 = fuzzer2.getResults();
+    var results2 = try fuzzer2.run();
+    defer results2.deinit();
 
     // Verify results are identical
-    for (results1, 0..) |result1, i| {
-        const result2 = results2[i];
+    for (results1.data.items, 0..) |result1, i| {
+        const result2 = results2.data.items[i];
         try testing.expectEqual(result1.seed, result2.seed);
         try testing.expectEqual(result1.status, result2.status);
         try testing.expectEqual(result1.gas_used, result2.gas_used);

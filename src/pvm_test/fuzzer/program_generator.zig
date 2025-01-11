@@ -1,25 +1,83 @@
 const std = @import("std");
-const codec = @import("../../codec.zig");
 const Allocator = std.mem.Allocator;
+
+const codec = @import("../../codec.zig");
+
 const SeedGenerator = @import("seed.zig").SeedGenerator;
+const BasicBlock = @import("program_generator/basic_block.zig").BasicBlock;
 
-pub const BasicBlock = struct {
-    address: u32,
-    size: u32,
-    instructions: std.ArrayList(u8),
-};
-
-/// Represents a complete PVM program in its raw encoded format
+/// Represents the complete encoded PVM program
 pub const GeneratedProgram = struct {
-    /// The complete raw encoded program bytes
-    raw_bytes: []u8,
-    /// For debugging/testing: the component parts
+    /// Complete raw encoded program bytes
+    raw_bytes: ?[]u8 = null,
+    /// Component parts for verification/testing
     code: []u8,
     mask: []u8,
     jump_table: []u32,
 
+    pub fn getRawBytes(self: *@This(), allocator: std.mem.Allocator) ![]u8 {
+        // If we already have the raw bytes computed, return them
+        if (self.raw_bytes) |bytes| {
+            return bytes;
+        }
+
+        // Create an ArrayList to build our output buffer
+        var list = std.ArrayList(u8).init(allocator);
+        errdefer list.deinit();
+
+        // Get a writer for our list
+        const writer = list.writer();
+
+        // 1. Write jump table length using variable-length encoding
+        // The length is the number of entries in the jump table
+        try codec.writeInteger(self.jump_table.len, writer);
+
+        // 2. Write jump table item length (single byte)
+        // Calculate the minimum bytes needed to store the largest jump target
+        const max_jump_target = blk: {
+            var max: u32 = 0;
+            for (self.jump_table) |target| {
+                max = @max(max, target);
+            }
+            break :blk max;
+        };
+        const item_length = calculateMinimumBytes(max_jump_target);
+        try writer.writeByte(item_length);
+
+        // 3. Write code length using variable-length encoding
+        try codec.writeInteger(self.code.len, writer);
+
+        // 4. Write jump table entries
+        // Each entry is written using the calculated item_length
+        for (self.jump_table) |target| {
+            var buf: [4]u8 = undefined; // Maximum 4 bytes for u32
+            std.mem.writeInt(u32, &buf, target, .little);
+            try writer.writeAll(buf[0..item_length]);
+        }
+
+        // 5. Write code section
+        try writer.writeAll(self.code);
+
+        // 6. Write mask section
+        try writer.writeAll(self.mask);
+
+        // Store and return the final byte array
+        self.raw_bytes = try list.toOwnedSlice();
+        return self.raw_bytes.?;
+    }
+
+    /// Calculates the minimum number of bytes needed to store a value
+    fn calculateMinimumBytes(value: u32) u8 {
+        if (value <= 0xFF) return 1;
+        if (value <= 0xFFFF) return 2;
+        if (value <= 0xFFFFFF) return 3;
+        return 4;
+    }
+
     pub fn deinit(self: *GeneratedProgram, allocator: Allocator) void {
-        allocator.free(self.raw_bytes);
+        if (self.raw_bytes) |bytes| {
+            allocator.free(bytes);
+        }
         allocator.free(self.code);
         allocator.free(self.mask);
         allocator.free(self.jump_table);
@@ -30,210 +88,170 @@ pub const GeneratedProgram = struct {
 pub const ProgramGenerator = struct {
     allocator: Allocator,
     seed_gen: *SeedGenerator,
-    basic_blocks: std.ArrayList(BasicBlock),
 
     const Self = @This();
+    const MaxBlockSize = 32; // Maximum instructions in a block
+    const MinBlockSize = 4; // Minimum instructions in a block
+    const MaxRegisterIndex = 12; // Maximum valid register index
 
-    pub fn init(allocator: Allocator, seed_gen: *SeedGenerator) Self {
+    const BasicBlocks = std.ArrayList(BasicBlock);
+
+    pub fn init(allocator: Allocator, seed_gen: *SeedGenerator) !Self {
         return .{
             .allocator = allocator,
             .seed_gen = seed_gen,
-            .basic_blocks = std.ArrayList(BasicBlock).init(allocator),
         };
     }
 
     pub fn deinit(self: *Self) void {
-        for (self.basic_blocks.items) |*block| {
-            block.instructions.deinit();
-        }
-        self.basic_blocks.deinit();
+        self.* = undefined;
     }
 
-    /// Generate a complete PVM program with the specified number of basic blocks
-    /// The generated program will be in the exact format expected by PVM.decode()
+    /// Generate a valid PVM program with the specified number of basic blocks
     pub fn generate(self: *Self, num_blocks: u32) !GeneratedProgram {
-        // Clear any existing blocks
-        self.deinit();
-        self.basic_blocks = std.ArrayList(BasicBlock).init(self.allocator);
-
         // Generate basic blocks
-        var current_address: u32 = 0;
+        var basic_blocks = try BasicBlocks.initCapacity(self.allocator, num_blocks);
+        defer {
+            for (basic_blocks.items) |*block| {
+                block.deinit();
+            }
+            basic_blocks.deinit();
+        }
+
         var i: u32 = 0;
         while (i < num_blocks) : (i += 1) {
-            const block = try self.generateBasicBlock(current_address);
-            try self.basic_blocks.append(block);
-            current_address += block.size;
+            const block = try self.generateBasicBlock();
+            try basic_blocks.append(block);
         }
 
         // Build the component parts
-        const code = try self.buildCode();
+        const code = try self.buildCode(basic_blocks);
         errdefer self.allocator.free(code);
 
-        const mask = try self.buildMask(code.len);
+        const mask = try self.buildMask(basic_blocks, code.len);
         errdefer self.allocator.free(mask);
 
-        const jump_table = try self.buildJumpTable();
+        const jump_table = try self.buildJumpTable(basic_blocks);
         errdefer self.allocator.free(jump_table);
 
-        // Now build the complete raw program
-        const program = try self.buildRawProgram(code, mask, jump_table);
+        // Build the complete raw program
+        // const program = try self.buildRawProgram(code, mask, jump_table);
 
         return GeneratedProgram{
-            .raw_bytes = program,
             .code = code,
             .mask = mask,
             .jump_table = jump_table,
         };
     }
 
-    fn generateBasicBlock(self: *Self, address: u32) !BasicBlock {
-        var block = BasicBlock{
-            .address = address,
-            .size = self.seed_gen.randomIntRange(u32, 4, 32), // Random block size
-            .instructions = std.ArrayList(u8).init(self.allocator),
-        };
-
-        // Generate random instructions for the block
-        const num_instructions = self.seed_gen.randomIntRange(u32, 1, 8);
-        var i: u32 = 0;
-        while (i < num_instructions) : (i += 1) {
-            try self.generateInstruction(&block);
-        }
-
-        // End block with a control flow instruction
-        try self.generateBlockTerminator(&block);
+    /// Generate a single valid basic block
+    fn generateBasicBlock(self: *Self) !BasicBlock {
+        var block = try BasicBlock.init(self.allocator, self.seed_gen.randomIntRange(usize, 8, 64));
+        try block.generate(self.seed_gen);
 
         return block;
     }
 
-    fn generateInstruction(self: *Self, block: *BasicBlock) !void {
-        // For now, generate simple arithmetic or load immediate instructions
-        const opcode = self.seed_gen.randomIntRange(u8, 0, 255);
-        try block.instructions.append(opcode);
-
-        // Add random operands
-        const num_operands = self.seed_gen.randomIntRange(u8, 0, 3);
-        var i: u8 = 0;
-        while (i < num_operands) : (i += 1) {
-            try block.instructions.append(self.seed_gen.randomByte());
-        }
-    }
-
-    fn generateBlockTerminator(self: *Self, block: *BasicBlock) !void {
-        // End block with jump, trap, or fallthrough
-        const terminator_type = self.seed_gen.randomIntRange(u8, 0, 2);
-        switch (terminator_type) {
-            0 => try block.instructions.append(0), // trap
-            1 => try block.instructions.append(1), // fallthrough
-            2 => { // jump
-                try block.instructions.append(40); // jump opcode
-                // Add random jump target - we'll fix this up later
-                try block.instructions.append(self.seed_gen.randomByte());
-            },
-            else => unreachable,
-        }
-    }
-
-    fn buildCode(self: *Self) ![]u8 {
+    fn buildCode(self: *Self, basic_blocks: BasicBlocks) ![]u8 {
+        // FIXME: initCapacity
         var code = std.ArrayList(u8).init(self.allocator);
         defer code.deinit();
 
-        for (self.basic_blocks.items) |block| {
+        for (basic_blocks.items) |block| {
             try code.appendSlice(block.instructions.items);
         }
 
         return code.toOwnedSlice();
     }
 
-    fn buildMask(self: *Self, code_length: usize) ![]u8 {
-        // Find the highest block address to determine mask size
-        var max_address: usize = 0;
-        for (self.basic_blocks.items) |block| {
-            max_address = @max(max_address, block.address + block.size);
-        }
-        // Ensure mask covers both the code length and all block addresses
-        const mask_size = (@max(code_length, max_address) + 7) / 8;
-        var mask = try self.allocator.alloc(u8, mask_size);
+    /// Build final mask from block mask bits
+    fn buildMask(self: *Self, basic_blocks: BasicBlocks, code_length: usize) ![]u8 {
+        const mask = try self.allocator.alloc(u8, try std.math.divCeil(usize, code_length, 8) + 1);
         @memset(mask, 0);
 
-        // Set mask bits for each basic block start
-        for (self.basic_blocks.items) |block| {
-            const byte_index = block.address / 8;
-            const bit_index = @as(u3, @truncate(block.address % 8));
-            mask[byte_index] |= @as(u8, 1) << bit_index;
+        var block_mask = mask[0..];
+        for (basic_blocks.items) |block| {
+            var set_bits = block.mask_bits.iterator(.{});
+            while (set_bits.next()) |set_bit_idx| {
+                const mask_idx = set_bit_idx / 8;
+                const mask_byte_bit_idx: u3 = @truncate(set_bit_idx % 8);
+                const mask_byte_mask = @as(u8, 0x01) << mask_byte_bit_idx;
+                block_mask[mask_idx] |= mask_byte_mask;
+            }
+            block_mask = block_mask[block.instructions.items.len / 8 ..];
         }
 
         return mask;
     }
 
-    fn buildJumpTable(self: *Self) ![]u32 {
-        var jump_table = try self.allocator.alloc(u32, self.basic_blocks.items.len);
-        for (self.basic_blocks.items, 0..) |block, i| {
-            jump_table[i] = block.address;
-        }
-        return jump_table;
-    }
+    const JumpAlignmentFactor = 2;
 
-    fn buildRawProgram(self: *Self, code: []const u8, mask: []const u8, jump_table: []const u32) ![]u8 {
-        var program = std.ArrayList(u8).init(self.allocator);
-        defer program.deinit();
+    fn buildJumpTable(self: *Self, basic_blocks: BasicBlocks) ![]u32 {
+        // calculate the starting addressses by taking all the starts of the basic blocks
+        // determine the length of the jump table
+        // and determine the size of the entries of the jump table
 
-        // 1. Jump table length (encoded integer)
-        try codec.writeInteger(jump_table.len, program.writer());
-
-        // 2. Jump table item length (single byte)
-        // Calculate minimum bytes needed to store largest jump target
-        var max_jump_target: u32 = 0;
-        for (jump_table) |target| {
-            max_jump_target = @max(max_jump_target, target);
-        }
-        const item_length: u8 = switch (max_jump_target) {
-            0...0xFF => 1,
-            0x100...0xFFFF => 2,
-            0x10000...0xFFFFFF => 3,
-            else => 4,
-        };
-        try program.append(item_length);
-
-        // 3. Code length (encoded integer)
-        try codec.writeInteger(code.len, program.writer());
-
-        // 4. Jump table bytes
-        // Write each jump target using the calculated item_length
-        for (jump_table) |target| {
-            var buf: [4]u8 = undefined;
-            std.mem.writeInt(u32, &buf, target, .little);
-            try program.appendSlice(buf[0..item_length]);
+        // 1. codec.encodeInteger the length of the jump table
+        // 2. byte encode the size of the items
+        // 3. encode the items with that size.
+        const block_addrs = try self.allocator.alloc(u32, basic_blocks.items.len);
+        var offset: u32 = 0;
+        for (basic_blocks.items, 0..) |basic_block, i| {
+            block_addrs[i] = offset + @as(u32, @intCast(basic_block.instructions.items.len));
+            offset = block_addrs[i];
         }
 
-        // 5. Code section
-        try program.appendSlice(code);
-
-        // 6. Mask section
-        try program.appendSlice(mask);
-
-        return program.toOwnedSlice();
+        return block_addrs;
     }
 };
 
-test "ProgramGenerator - generates valid format" {
+test "simple" {
     const allocator = std.testing.allocator;
     var seed_gen = SeedGenerator.init(42);
-    var generator = ProgramGenerator.init(allocator, &seed_gen);
+    var generator = try ProgramGenerator.init(allocator, &seed_gen);
     defer generator.deinit();
 
-    var i: usize = 0;
-    while (i < 100) : (i += 1) {
-        var program = try generator.generate(seed_gen.randomByte());
-        defer program.deinit(allocator);
+    // Generate multiple programs of varying sizes
+    var program = try generator.generate(128);
+    defer program.deinit(allocator);
 
-        // Verify we can decode the generated program
-        var decoded = try @import("../../pvm/program.zig").Program.decode(allocator, program.raw_bytes);
-        defer decoded.deinit(allocator);
+    const Decoder = @import("../../pvm/decoder.zig").Decoder;
+    const decoder = Decoder.init(program.code, program.mask);
 
-        // Basic sanity checks
-        try std.testing.expect(decoded.code.len > 0);
-        try std.testing.expect(decoded.mask.len > 0);
-        try std.testing.expect(decoded.jump_table.indices.len > 0);
+    std.debug.print("\n\nCode.len: {d}\n", .{program.code.len});
+    std.debug.print("Mask.len: {d}\n", .{program.mask.len});
+
+    var pc: u32 = 0;
+    while (pc < program.code.len) {
+        const i = try decoder.decodeInstruction(pc);
+        std.debug.print("{d:0>4}: {any} len: {d}\n", .{ pc, i, i.skip_l() });
+        pc += i.skip_l() + 1;
+    }
+}
+
+test "getRawBytes" {
+    // Create test data
+    const allocator = std.testing.allocator;
+
+    var program = GeneratedProgram{
+        .code = try allocator.dupe(u8, &[_]u8{ 0x01, 0x02, 0x03 }),
+        .mask = try allocator.dupe(u8, &[_]u8{ 0xFF, 0x0F }),
+        .jump_table = try allocator.dupe(u32, &[_]u32{ 10, 20, 30 }),
+        .raw_bytes = null,
+    };
+    defer program.deinit(allocator);
+
+    // Get raw bytes
+    const raw = try program.getRawBytes(allocator);
+
+    // Verify the encoded data can be decoded back
+    var decoded = try @import("../../pvm/program.zig").Program.decode(allocator, raw);
+    defer decoded.deinit(allocator);
+
+    // Verify contents match
+    try std.testing.expectEqualSlices(u8, program.code, decoded.code);
+    try std.testing.expectEqualSlices(u8, program.mask, decoded.mask);
+    for (program.jump_table, 0..) |target, i| {
+        try std.testing.expectEqual(target, decoded.jump_table.getDestination(i));
     }
 }

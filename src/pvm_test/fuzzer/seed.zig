@@ -1,6 +1,5 @@
 const std = @import("std");
 
-/// SeedGenerator provides deterministic random number generation for the fuzzer
 pub const SeedGenerator = struct {
     random: std.Random.DefaultPrng,
     seed: u64,
@@ -11,6 +10,11 @@ pub const SeedGenerator = struct {
             .seed = seed,
             .random = std.Random.DefaultPrng.init(seed),
         };
+    }
+
+    /// Generate a random seed using system entropy
+    pub fn randomSeed(self: *SeedGenerator) u64 {
+        return self.random.random().int(u64);
     }
 
     /// Generate a random integer within a range [min, max]
@@ -40,27 +44,22 @@ pub const SeedGenerator = struct {
 
     /// Generate a random u64 immediate value
     /// Uses a weighted distribution to favor smaller values
-    pub fn randomImmediate(self: *SeedGenerator) u64 {
+    pub fn randomImmediate(self: *SeedGenerator) u32 {
         // 70% chance of small value (0-255)
         // 20% chance of medium value (256-65535)
-        // 10% chance of large value (65536-u64.max)
+        // 10% chance of large value (65536-u32.max)
         const roll = self.randomIntRange(u8, 0, 99);
         return switch (roll) {
-            0...69 => self.randomIntRange(u64, 0, 255),
-            70...89 => self.randomIntRange(u64, 256, 65535),
-            else => self.randomIntRange(u64, 65536, std.math.maxInt(u64)),
+            0...69 => self.randomIntRange(u32, 0, 255),
+            70...89 => self.randomIntRange(u32, 256, 65535),
+            else => self.randomIntRange(u32, 65536, std.math.maxInt(u32)),
         };
     }
 
     /// Generate a random memory size
     /// Returns sizes that are reasonable for test programs
     pub fn randomMemorySize(self: *SeedGenerator) u32 {
-        // 80% chance of small pages (32-4096 bytes)
-        // 20% chance of large pages (4097-65536 bytes)
-        return if (self.randomBool())
-            self.randomIntRange(u32, 32, 4096)
-        else
-            self.randomIntRange(u32, 4097, 65536);
+        return self.randomIntRange(u32, 32, 4096);
     }
 
     /// Generate a random memory address

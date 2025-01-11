@@ -4,7 +4,7 @@ const ArrayList = std.ArrayList;
 const ring_vrf = @import("ring_vrf.zig");
 const state_delta = @import("state_delta.zig");
 const state = @import("state.zig");
-const types = @import("types.zig");
+pub const types = @import("types.zig");
 
 pub const ticket_validation = @import("safrole/ticket_validation.zig");
 pub const ordering = @import("safrole/ordering.zig");

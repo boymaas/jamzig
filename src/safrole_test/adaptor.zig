@@ -79,7 +79,7 @@ pub fn transition(
     defer result.deinit(allocator);
 
     // merge the stx into
-    try stx.takeBaseAndMerge();
+    try stx.mergePrimeOntoBase();
 
     const test_vector_post_state = try JamStateToTestVectorState(
         params,

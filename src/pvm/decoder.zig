@@ -1,6 +1,7 @@
 const std = @import("std");
-const Instruction = @import("instruction.zig").Instruction;
-const ArgumentType = @import("./decoder/types.zig").ArgumentType;
+pub const Instruction = @import("instruction.zig").Instruction;
+
+pub const ArgumentType = @import("./decoder/types.zig").ArgumentType;
 
 const Immediate = @import("./decoder/immediate.zig");
 const Nibble = @import("./decoder/nibble.zig");
@@ -30,6 +31,13 @@ pub const Decoder = struct {
     code: []const u8,
     mask: []const u8,
 
+    pub const Error = error{
+        invalid_instruction,
+        out_of_bounds,
+        invalid_immediate_length,
+        invalid_register_index,
+    };
+
     pub fn init(code: []const u8, mask: []const u8) Decoder {
         return Decoder{
             .code = code,
@@ -37,11 +45,12 @@ pub const Decoder = struct {
         };
     }
 
-    pub fn decodeInstruction(self: *const Decoder, pc: u32) !InstructionWithArgs {
+    pub fn decodeInstruction(self: *const Decoder, pc: u32) Error!InstructionWithArgs {
         const instruction = std.meta.intToEnum(Instruction, self.getCodeAt(pc)) catch {
             std.debug.print("Error decoding instruction at pc {}: code 0x{X:0>2} ({d})\n", .{ pc, self.getCodeAt(pc), self.getCodeAt(pc) });
-            return error.InvalidInstruction;
+            return Error.invalid_instruction;
         };
+
         const args_type = ArgumentType.lookup(instruction);
 
         const args = switch (args_type) {
@@ -67,7 +76,7 @@ pub const Decoder = struct {
         };
     }
 
-    fn decodeOneImmediate(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeOneImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = @min(4, self.skip_l(pc + 1));
         return .{
             .one_immediate = .{
@@ -77,10 +86,10 @@ pub const Decoder = struct {
         };
     }
 
-    fn decodeTwoImmediates(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeTwoImmediates(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
-        const l_x = @min(4, self.decodeHighNibble(pc + 1));
-        const l_y = @min(4, @max(0, l - l_x - 1));
+        const l_x = self.decodeLowNibble(pc + 1) % 8;
+        const l_y = @min(4, l - l_x - 1);
         return .{
             .two_immediates = .{
                 .no_of_bytes_to_skip = 1 + l_x + l_y,
@@ -90,19 +99,21 @@ pub const Decoder = struct {
         };
     }
 
-    fn decodeOneOffset(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l_x = @min(4, self.skip_l(pc + 1));
-        const offset = @as(i32, @intCast(try self.decodeImmediateSigned(pc + 1, l_x)));
+        const offset = @as(
+            i32,
+            @intCast(try self.decodeImmediateSigned(pc + 1, l_x)),
+        );
         return .{
             .one_offset = .{
                 .no_of_bytes_to_skip = l_x,
-                .next_pc = try updatePc(pc, offset),
                 .offset = offset,
             },
         };
     }
 
-    fn decodeOneRegisterOneImmediate(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeOneRegisterOneImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const l_x = @min(4, l - 1);
@@ -115,7 +126,7 @@ pub const Decoder = struct {
         };
     }
 
-    fn decodeOneRegisterTwoImmediates(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeOneRegisterTwoImmediates(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const l_x = @min(4, self.decodeHighNibble(pc + 1) % 8);
@@ -130,7 +141,7 @@ pub const Decoder = struct {
         };
     }
 
-    fn decodeOneRegisterOneImmediateOneOffset(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeOneRegisterOneImmediateOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const l_x = @min(4, self.decodeHighNibble(pc + 1) % 8);
@@ -141,24 +152,23 @@ pub const Decoder = struct {
                 .no_of_bytes_to_skip = l,
                 .register_index = r_a,
                 .immediate = try self.decodeImmediate(pc + 2, l_x),
-                .next_pc = try updatePc(pc, offset),
                 .offset = offset,
             },
         };
     }
 
-    fn decodeOneRegisterOneExtendedImmediate(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeOneRegisterOneExtendedImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         return .{
             .one_register_one_extended_immediate = .{
                 .no_of_bytes_to_skip = 9, // 1 byte opcode + 8 bytes immediate
                 .register_index = r_a,
-                .immediate = std.mem.readInt(u64, try self.getCodeSliceAtFixed(pc + 2, 8), .little),
+                .immediate = try self.decodeInt(u64, pc + 2),
             },
         };
     }
 
-    fn decodeTwoRegisters(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeTwoRegisters(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_d = @min(12, self.decodeLowNibble(pc + 1));
         const r_a = @min(12, self.decodeHighNibble(pc + 1));
@@ -171,7 +181,7 @@ pub const Decoder = struct {
         };
     }
 
-    fn decodeTwoRegistersOneImmediate(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeTwoRegistersOneImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));
@@ -186,7 +196,9 @@ pub const Decoder = struct {
         };
     }
 
-    fn decodeTwoRegistersOneOffset(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeTwoRegistersOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs {
+        const l_prev = self.skip_l(pc + 1);
+        _ = l_prev;
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));
@@ -197,13 +209,12 @@ pub const Decoder = struct {
                 .no_of_bytes_to_skip = l,
                 .first_register_index = r_a,
                 .second_register_index = r_b,
-                .next_pc = try updatePc(pc, offset),
                 .offset = offset,
             },
         };
     }
 
-    fn decodeTwoRegistersTwoImmediates(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeTwoRegistersTwoImmediates(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));
@@ -220,7 +231,7 @@ pub const Decoder = struct {
         };
     }
 
-    fn decodeThreeRegisters(self: *const Decoder, pc: u32) !InstructionArgs {
+    fn decodeThreeRegisters(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));
@@ -238,15 +249,16 @@ pub const Decoder = struct {
     /// (215)@0.3.8 Skip function
     fn skip_l(self: *const Decoder, pc: u32) u32 {
         var count: u32 = 0;
-        const mask_index = pc / 8;
+        var mask_index = pc / 8;
         const bit_offset: u3 = @intCast(pc % 8);
         var mask_byte = self.getMaskAt(mask_index) >> bit_offset;
 
         while (mask_byte & 1 == 0) {
             count += 1;
             mask_byte >>= 1;
-            if (bit_offset + count == 8) {
-                mask_byte = self.getMaskAt(mask_index + 1);
+            if ((bit_offset + count) % 8 == 0) {
+                mask_index += 1;
+                mask_byte = self.getMaskAt(mask_index);
             }
         }
 
@@ -262,37 +274,49 @@ pub const Decoder = struct {
         return 0;
     }
 
-    pub fn getCodeSliceAt(self: *const @This(), pc: u32, len: u32) ![]const u8 {
+    const MaxImmediateSizeInByte = 8;
+    pub fn getCodeSliceAt(self: *const @This(), buffer: *[MaxImmediateSizeInByte]u8, pc: u32, len: u32) []const u8 {
+        std.debug.assert(len <= MaxImmediateSizeInByte);
         const end = pc + len;
-        if (end > self.code.len) {
-            return error.OutOfBounds;
+        if (pc <= self.code.len and end > self.code.len) {
+            // we are extending the code, return 0 buffer
+            std.mem.copyForwards(u8, buffer[0 .. self.code.len - pc], self.code[pc..self.code.len]);
+            return buffer[0..len];
+        } else if (pc > self.code.len) {
+            // if pc is outside of code.len
+            return buffer[0..len];
         }
-        return self.code[pc..end];
+        // just return the code slice
+        return self.code[pc..][0..len];
     }
 
-    pub fn getCodeSliceAtFixed(self: *const @This(), pc: u32, comptime len: u32) !*const [len]u8 {
-        const end = pc + len;
-        if (end > self.code.len) {
-            return error.OutOfBounds;
-        }
-        return self.code[pc..end][0..len];
+    pub fn getCodeSliceAtFixed(self: *const @This(), buffer: *[MaxImmediateSizeInByte]u8, pc: u32, comptime len: u32) *const [len]u8 {
+        return getCodeSliceAt(self, buffer, pc, len)[0..len];
     }
 
-    pub fn getMaskAt(self: *const @This(), pc: u32) u8 {
-        if (pc < self.mask.len) {
-            return self.mask[pc];
+    pub fn getMaskAt(self: *const @This(), mask_index: u32) u8 {
+        if (mask_index < self.mask.len) {
+            return self.mask[mask_index];
         }
 
         return 0xFF;
     }
 
-    inline fn decodeImmediate(self: *const Decoder, pc: u32, length: u32) !u64 {
-        const slice = try self.getCodeSliceAt(pc, length);
+    inline fn decodeInt(self: *const Decoder, comptime T: type, pc: u32) Error!T {
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
+        const slice = self.getCodeSliceAtFixed(&overflow_buffer, pc, @sizeOf(T));
+        return std.mem.readInt(T, slice, .little);
+    }
+
+    inline fn decodeImmediate(self: *const Decoder, pc: u32, length: u32) Error!u64 {
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
+        const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
         return Immediate.decodeUnsigned(slice);
     }
 
-    inline fn decodeImmediateSigned(self: *const Decoder, pc: u32, length: u32) !i64 {
-        const slice = try self.getCodeSliceAt(pc, length);
+    inline fn decodeImmediateSigned(self: *const Decoder, pc: u32, length: u32) Error!i64 {
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
+        const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
         return Immediate.decodeSigned(slice);
     }
 
@@ -309,7 +333,6 @@ pub const InstructionArgs = union(ArgumentType) {
     one_immediate: struct { no_of_bytes_to_skip: u32, immediate: u64 },
     one_offset: struct {
         no_of_bytes_to_skip: u32,
-        next_pc: u32,
         offset: i32,
     },
     one_register_one_immediate: struct {
@@ -321,7 +344,6 @@ pub const InstructionArgs = union(ArgumentType) {
         no_of_bytes_to_skip: u32,
         register_index: u8,
         immediate: u64,
-        next_pc: u32,
         offset: i32,
     },
     one_register_one_extended_immediate: struct {
@@ -361,7 +383,6 @@ pub const InstructionArgs = union(ArgumentType) {
         no_of_bytes_to_skip: u32,
         first_register_index: u8,
         second_register_index: u8,
-        next_pc: u32,
         offset: i32,
     },
     two_registers_two_immediates: struct {
