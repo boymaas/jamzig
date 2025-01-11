@@ -25,15 +25,16 @@ pub const PVMFixture = struct {
         length: u32,
         is_writable: bool,
     };
-
     pub const MemoryChunk = struct {
         address: u32,
         contents: []u8,
     };
 
     pub const Status = enum {
-        trap,
-        halt,
+        trap, // the execution ended with a trap (the `trap` instruction was
+        // executed, the execution went "out of bounds", an invalid jump was made, or
+        // an invalid instruction was executed)
+        halt, // The program terminated normally.
     };
 
     pub fn from_vector(allocator: Allocator, vector: *const PVMLib.PVMTestVector) !PVMFixture {
@@ -125,23 +126,15 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
     // Write debug info to buffers
     try pvm.debugWriteRegisters(debug_registers_buffer.writer());
 
-    const result = pvm.run();
+    const result: PVMFixture.Status = if (pvm.run())
+        .halt
+    else |_|
+        .trap;
 
     // Check if the execution status matches the expected status
     const status_matches: bool = switch (result) {
-        // Program executed successfully
-        .halt => test_vector.expected_status == PVMFixture.Status.halt,
-        // Something happened
-        .trap => test_vector.expected_status == PVMFixture.Status.trap,
-
-        // Here we have some mappings that are not present in the
-
-        // NOTE: In the graypaper this is a seperate status which should include the
-        // lowest address which caused the page_fault. In the test vectors these are
-        // represented as traps.
-        .page_fault => test_vector.expected_status == PVMFixture.Status.trap,
-        // NOTE: In the graypaper this is a seperate status which should include the
-        .panic => test_vector.expected_status == PVMFixture.Status.trap,
+        .halt => test_vector.expected_status == .halt,
+        .trap => test_vector.expected_status == .trap,
         else => false,
     };
 

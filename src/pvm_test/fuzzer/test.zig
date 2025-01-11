@@ -24,7 +24,7 @@ test "pvm:fuzzer:run" {
 
     const stats = results.getStats();
     try testing.expect(stats.total_cases == 100);
-    try testing.expect(stats.total_cases == stats.successful + stats.traps + stats.errors);
+    try testing.expect(stats.total_cases == stats.successful + stats.errors);
 }
 
 test "pvm:fuzzer:memory_config_generator" {

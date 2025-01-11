@@ -20,7 +20,7 @@ pub const FuzzConfig = struct {
 
 pub const FuzzResult = struct {
     seed: u64,
-    status: PVM.Status,
+    status: ?PVM.Error,
     gas_used: i64,
     error_data: ?PVM.ErrorData,
 };
@@ -31,7 +31,6 @@ pub const FuzzResults = struct {
     const Stats = struct {
         total_cases: usize,
         successful: usize,
-        traps: usize,
         errors: usize,
         avg_gas: i64,
     };
@@ -47,17 +46,16 @@ pub const FuzzResults = struct {
         var stats = Stats{
             .total_cases = self.data.items.len,
             .successful = 0,
-            .traps = 0,
             .errors = 0,
             .avg_gas = 0,
         };
 
         var total_gas: i64 = 0;
         for (self.data.items) |result| {
-            switch (result.status) {
-                .play, .halt => stats.successful += 1,
-                .trap => stats.traps += 1,
-                else => stats.errors += 1,
+            if (result.status) |_| {
+                stats.errors += 1;
+            } else {
+                stats.successful += 1;
             }
             total_gas += result.gas_used;
         }
@@ -156,20 +154,25 @@ pub const PVMFuzzer = struct {
 
         return FuzzResult{
             .seed = seed,
-            .status = status,
+            .status = if (status) null else |err| err,
             .gas_used = gas_used,
             .error_data = pvm.error_data,
         };
     }
 
     fn printTestResult(_: *Self, test_number: u32, result: FuzzResult) void {
-        const color = switch (result.status) {
-            .play, .halt => "\x1b[32m", // green
-            .trap => "\x1b[33m", // yellow
-            else => "\x1b[31m", // red
-        };
+        const color = if (result.status) |_|
+            "\x1b[31m"
+        else
+            "\x1b[32m";
 
-        std.debug.print("{s}Test {d}: Status={any}, Gas={d}, Seed={d}\x1b[0m\n", .{ color, test_number + 1, result.status, result.gas_used, result.seed });
+        std.debug.print("{s}Test {d}: Status={any}, Gas={d}, Seed={d}\x1b[0m\n", .{
+            color,
+            test_number + 1,
+            result.status,
+            result.gas_used,
+            result.seed,
+        });
 
         if (result.error_data) |error_data| {
             std.debug.print("  Error data: {any}\n", .{error_data});

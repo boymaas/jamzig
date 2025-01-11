@@ -1,7 +1,7 @@
 const std = @import("std");
 const pvmlib = @import("../pvm.zig");
 
-const fixtures = @import("pvm_test/fixtures.zig");
+const fixtures = @import("fixtures.zig");
 
 // Get all files from the test directory
 const BASE_PATH = fixtures.BASE_PATH;
