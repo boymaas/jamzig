@@ -7,21 +7,16 @@ pub fn build(b: *std.Build) !void {
     // Existing options
     const tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
     const tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{};
-    const tracy = b.option([]const u8, "tracy", "Enable Tracy integration. Supply path to Tracy source");
-    const tracy_callstack = b.option(bool, "tracy-callstack", "Include callstack information with Tracy data") orelse (tracy != null);
-    const tracy_allocation = b.option(bool, "tracy-allocation", "Include allocation information with Tracy data") orelse (tracy != null);
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
 
     const build_options = b.addOptions();
     build_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
     build_options.addOption([]const u8, "enable_tracing_level", tracing_level);
-    build_options.addOption(bool, "enable_tracy", tracy != null);
-    build_options.addOption(bool, "enable_tracy_callstack", tracy_callstack);
-    build_options.addOption(bool, "enable_tracy_allocation", tracy_allocation);
 
     // Dependencies
     const pretty_module = b.dependency("pretty", .{ .target = target, .optimize = optimize }).module("pretty");
     const diffz_module = b.dependency("diffz", .{ .target = target, .optimize = optimize }).module("diffz");
+    const clap_module = b.dependency("clap", .{ .target = target, .optimize = optimize }).module("clap");
     const tmpfile_module = b.dependency("tmpfile", .{}).module("tmpfile");
 
     // Rest of the existing build.zig implementation...
@@ -34,57 +29,37 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-
-    if (tracy) |tracy_path| {
-        const client_cpp = b.pathJoin(
-            &[_][]const u8{ tracy_path, "public", "TracyClient.cpp" },
-        );
-
-        // On mingw, we need to opt into windows 7+ to get some features required by tracy.
-        const tracy_c_flags: []const []const u8 = &[_][]const u8{ "-DTRACY_ENABLE=1", "-fno-sanitize=undefined" };
-
-        exe.addIncludePath(.{ .cwd_relative = tracy_path });
-        exe.addCSourceFile(.{ .file = .{ .cwd_relative = client_cpp }, .flags = tracy_c_flags });
-
-        // exe.root_module.linkSystemLibrary("c++", .{ .use_pkg_config = .no });
-        exe.linkLibCpp();
-        exe.linkLibC();
-    }
-
-    // Resister the dependencies
-    // exe.root_module.addImport("diffz", diffz_dependency.module("diffz"));
-    // exe.root_module.addImport("pretty", pretty_module);
-
-    // Statically link our rust_deps to the executable
     rust_deps.statically_link_to(exe);
-
-    // This declares intent for the executable to be installed into the
-    // standard location when the user invokes the "install" step (the default
-    // step when running `zig build`).
     b.installArtifact(exe);
 
-    // This *creates* a Run step in the build graph, to be executed when another
-    // step is evaluated that depends on it. The next line below will establish
-    // such a dependency.
+    const pvm_fuzzer = b.addExecutable(.{
+        .name = "jamzig-pvm-fuzzer",
+        .root_source_file = b.path("src/pvm_fuzzer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    pvm_fuzzer.root_module.addOptions("build_options", build_options);
+    pvm_fuzzer.root_module.addImport("clap", clap_module);
+    // pvm_fuzzer.linkLibCpp();
+    b.installArtifact(pvm_fuzzer);
+
+    // Run Steps
     const run_cmd = b.addRunArtifact(exe);
-
-    // By making the run step depend on the install step, it will be run from the
-    // installation directory rather than directly from within the cache directory.
-    // This is not necessary, however, if the application depends on other installed
-    // files, this ensures they will be present and in the expected location.
     run_cmd.step.dependOn(b.getInstallStep());
-
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
-
-    // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build run`
-    // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const run_pvm_fuzzer = b.addRunArtifact(pvm_fuzzer);
+    run_pvm_fuzzer.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_pvm_fuzzer.addArgs(args);
+    }
+    const run_pvm_fuzzer_step = b.step("pvm_fuzz", "Run the pvm fuzzer");
+    run_pvm_fuzzer_step.dependOn(&run_pvm_fuzzer.step);
 
     // This creates the test step
     const unit_tests = b.addTest(.{

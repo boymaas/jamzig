@@ -42,7 +42,7 @@ pub const FuzzResults = struct {
     }
 
     /// Get statistics about the test results
-    pub fn getStats(self: *@This()) Stats {
+    pub fn getStats(self: *const @This()) Stats {
         var stats = Stats{
             .total_cases = self.data.items.len,
             .successful = 0,

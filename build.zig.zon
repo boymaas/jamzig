@@ -27,6 +27,10 @@
             .url = "https://github.com/jamzig/tmpfile.zig/archive/ae9b03377ee74348ded1785fa9a05050b41c5ff9.zip",
             .hash = "1220539d4f1e7476034cb732b9008144090938c9c78dd332d28cfd48851be2558cd7",
         },
+        .clap = .{
+            .url = "git+https://github.com/Hejsil/zig-clap#560c8dd72ab25d556123846254040c5bf9ad3ba4",
+            .hash = "12200abadc141099ff2ba5098f7eca9bf84d548dd92ec5827ef323d813d59b049780",
+        },
     },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally
