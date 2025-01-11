@@ -88,51 +88,50 @@ pub const GeneratedProgram = struct {
 pub const ProgramGenerator = struct {
     allocator: Allocator,
     seed_gen: *SeedGenerator,
-    basic_blocks: std.ArrayListUnmanaged(BasicBlock),
 
     const Self = @This();
     const MaxBlockSize = 32; // Maximum instructions in a block
     const MinBlockSize = 4; // Minimum instructions in a block
     const MaxRegisterIndex = 12; // Maximum valid register index
 
+    const BasicBlocks = std.ArrayList(BasicBlock);
+
     pub fn init(allocator: Allocator, seed_gen: *SeedGenerator) !Self {
         return .{
             .allocator = allocator,
-            .basic_blocks = try std.ArrayListUnmanaged(BasicBlock).initCapacity(allocator, 64),
             .seed_gen = seed_gen,
         };
     }
 
-    pub fn deinit_basic_blocks(self: *Self) void {
-        for (self.basic_blocks.items) |*block| {
-            block.deinit();
-        }
-        self.basic_blocks.deinit(self.allocator);
-    }
-
     pub fn deinit(self: *Self) void {
-        self.deinit_basic_blocks();
         self.* = undefined;
     }
 
     /// Generate a valid PVM program with the specified number of basic blocks
     pub fn generate(self: *Self, num_blocks: u32) !GeneratedProgram {
         // Generate basic blocks
-        errdefer self.deinit_basic_blocks();
+        var basic_blocks = try BasicBlocks.initCapacity(self.allocator, num_blocks);
+        defer {
+            for (basic_blocks.items) |*block| {
+                block.deinit();
+            }
+            basic_blocks.deinit();
+        }
+
         var i: u32 = 0;
         while (i < num_blocks) : (i += 1) {
             const block = try self.generateBasicBlock();
-            try self.basic_blocks.append(self.allocator, block);
+            try basic_blocks.append(block);
         }
 
         // Build the component parts
-        const code = try self.buildCode();
+        const code = try self.buildCode(basic_blocks);
         errdefer self.allocator.free(code);
 
-        const mask = try self.buildMask(code.len);
+        const mask = try self.buildMask(basic_blocks, code.len);
         errdefer self.allocator.free(mask);
 
-        const jump_table = try self.buildJumpTable();
+        const jump_table = try self.buildJumpTable(basic_blocks);
         errdefer self.allocator.free(jump_table);
 
         // Build the complete raw program
@@ -153,12 +152,12 @@ pub const ProgramGenerator = struct {
         return block;
     }
 
-    fn buildCode(self: *Self) ![]u8 {
+    fn buildCode(self: *Self, basic_blocks: BasicBlocks) ![]u8 {
         // FIXME: initCapacity
         var code = std.ArrayList(u8).init(self.allocator);
         defer code.deinit();
 
-        for (self.basic_blocks.items) |block| {
+        for (basic_blocks.items) |block| {
             try code.appendSlice(block.instructions.items);
         }
 
@@ -166,12 +165,12 @@ pub const ProgramGenerator = struct {
     }
 
     /// Build final mask from block mask bits
-    fn buildMask(self: *Self, code_length: usize) ![]u8 {
+    fn buildMask(self: *Self, basic_blocks: BasicBlocks, code_length: usize) ![]u8 {
         const mask = try self.allocator.alloc(u8, try std.math.divCeil(usize, code_length, 8) + 1);
         @memset(mask, 0);
 
         var block_mask = mask[0..];
-        for (self.basic_blocks.items) |block| {
+        for (basic_blocks.items) |block| {
             var set_bits = block.mask_bits.iterator(.{});
             while (set_bits.next()) |set_bit_idx| {
                 const mask_idx = set_bit_idx / 8;
@@ -187,7 +186,7 @@ pub const ProgramGenerator = struct {
 
     const JumpAlignmentFactor = 2;
 
-    fn buildJumpTable(self: *Self) ![]u32 {
+    fn buildJumpTable(self: *Self, basic_blocks: BasicBlocks) ![]u32 {
         // calculate the starting addressses by taking all the starts of the basic blocks
         // determine the length of the jump table
         // and determine the size of the entries of the jump table
@@ -195,9 +194,9 @@ pub const ProgramGenerator = struct {
         // 1. codec.encodeInteger the length of the jump table
         // 2. byte encode the size of the items
         // 3. encode the items with that size.
-        const block_addrs = try self.allocator.alloc(u32, self.basic_blocks.items.len);
+        const block_addrs = try self.allocator.alloc(u32, basic_blocks.items.len);
         var offset: u32 = 0;
-        for (self.basic_blocks.items, 0..) |basic_block, i| {
+        for (basic_blocks.items, 0..) |basic_block, i| {
             block_addrs[i] = offset + @as(u32, @intCast(basic_block.instructions.items.len));
             offset = block_addrs[i];
         }

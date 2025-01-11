@@ -313,26 +313,26 @@ pub const PVM = struct {
 
             // A.5.3 Instructions with Arguments of One Register and One Extended Width Immediate
             .load_imm_64 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.one_register_one_extended_immediate;
                 self.registers[args.register_index] = args.immediate;
             },
 
             // A.5.4 Instructions with Arguments of Two Immediates
             .store_imm_u8 => {
                 const args = i.args.two_immediates;
-                try self.storeMemory(@intCast(args.first_immediate), @intCast(args.second_immediate), 1);
+                try self.storeMemory(@truncate(args.first_immediate), @intCast(args.second_immediate), 1);
             },
             .store_imm_u16 => {
                 const args = i.args.two_immediates;
-                try self.storeMemory(@intCast(args.first_immediate), @intCast(args.second_immediate), 2);
+                try self.storeMemory(@truncate(args.first_immediate), @intCast(args.second_immediate), 2);
             },
             .store_imm_u32 => {
                 const args = i.args.two_immediates;
-                try self.storeMemory(@intCast(args.first_immediate), args.second_immediate, 4);
+                try self.storeMemory(@truncate(args.first_immediate), args.second_immediate, 4);
             },
             .store_imm_u64 => {
                 const args = i.args.two_immediates;
-                try self.storeMemory(@intCast(args.first_immediate), args.second_immediate, 8);
+                try self.storeMemory(@truncate(args.first_immediate), args.second_immediate, 8);
             },
 
             // A.5.5 Instructions with Arguments of One Offset
@@ -353,12 +353,12 @@ pub const PVM = struct {
             },
             .load_i8 => {
                 const args = i.args.one_register_one_immediate;
-                const value = try self.loadMemory(@intCast(args.immediate), 1);
+                const value = try self.loadMemory(@truncate(args.immediate), 1);
                 self.registers[args.register_index] = @as(u64, @bitCast(@as(i64, @intCast(@as(i8, @bitCast(@as(u8, @truncate(value))))))));
             },
             .load_u16 => {
                 const args = i.args.one_register_one_immediate;
-                self.registers[args.register_index] = try self.loadMemory(@intCast(args.immediate), 2);
+                self.registers[args.register_index] = try self.loadMemory(@truncate(args.immediate), 2);
             },
             .load_i16 => {
                 const args = i.args.one_register_one_immediate;
@@ -367,7 +367,7 @@ pub const PVM = struct {
             },
             .load_u32 => {
                 const args = i.args.one_register_one_immediate;
-                self.registers[args.register_index] = try self.loadMemory(@intCast(args.immediate), 4);
+                self.registers[args.register_index] = try self.loadMemory(@truncate(args.immediate), 4);
             },
             .load_i32 => {
                 const args = i.args.one_register_one_immediate;
@@ -387,7 +387,7 @@ pub const PVM = struct {
                     .store_u64 => 8,
                     else => unreachable,
                 };
-                try self.storeMemory(@intCast(args.immediate), self.registers[args.register_index], size);
+                try self.storeMemory(@truncate(args.immediate), self.registers[args.register_index], size);
             },
 
             // A.5.7 Instructions with Arguments of One Register & Two Immediates
@@ -448,7 +448,8 @@ pub const PVM = struct {
                 self.registers[args.first_register_index] = self.registers[args.second_register_index];
             },
             .sbrk => {
-                @panic("Implement");
+                // @panic("Implement");
+                std.debug.print("Implement sbrk", .{});
                 // const args = i.args.two_registers;
                 // self.registers[args.first_register_index] = try self.sbrk(self.registers[args.second_register_index]);
             },
@@ -826,9 +827,9 @@ pub const PVM = struct {
                 const value = switch (i.instruction) {
                     .shar_r_imm_32 => @as(i32, @bitCast(@as(u32, @truncate(self.registers[args.second_register_index])))),
                     .shar_r_imm_64 => @as(i64, @bitCast(self.registers[args.second_register_index])),
-                    // TODO: check this
-                    // .shar_r_imm_alt_32 => @as(i32, @bitCast(@as(u32, @truncate(args.immediate)))),
-                    // .shar_r_imm_alt_64 => @as(i64, @bitCast(args.immediate)),
+                    // FIXME: check this
+                    .shar_r_imm_alt_32 => @as(i32, @bitCast(@as(u32, @truncate(args.immediate)))),
+                    .shar_r_imm_alt_64 => @as(i64, @bitCast(args.immediate)),
                     else => unreachable,
                 };
                 self.registers[args.first_register_index] = @bitCast(value >> @intCast(shift));
