@@ -119,6 +119,92 @@ pub const PVM = struct {
         contents: []u8,
     };
 
+    /// Represents the possible completion states of PVM execution as defined in the graypaper section 4.6
+    pub const Status = union(enum) {
+        const PageFault = struct {
+            /// The address that caused the fault
+            address: u32,
+        };
+
+        const HostCall = struct {
+            /// The idx of the hostcall
+            id: u32,
+        };
+
+        /// Regular program termination (∎) caused by explicit halt instruction
+        halt: void,
+
+        /// Irregular program termination (☇) due to exceptional circumstances
+        panic: void,
+
+        /// Gas exhaustion (∞) when running out of allocated gas
+        out_of_gas: void,
+
+        /// Page fault (F) when attempting to access inaccessible memory
+        page_fault: PageFault,
+
+        /// Host call invocation (̵h) for system call processing
+        host_call: HostCall,
+
+        /// Returns true if this is a successful termination state (halt)
+        pub fn isSuccess(self: Status) bool {
+            return self == .halt;
+        }
+
+        /// Returns true if this is a terminal state that cannot be resumed
+        pub fn isTerminal(self: Status) bool {
+            return switch (self) {
+                .halt, .panic, .out_of_gas => true,
+                .page_fault, .host_call => false,
+            };
+        }
+
+        pub fn fromResult(result: PVM.Error!void, error_data: ?ErrorData) Status {
+            // If result is null, execution was successful (no error)
+            if (result) {
+                return Status{ .halt = {} };
+            } else |err| {
+                // Handle different error cases
+                return switch (err) {
+                    // Explicit halt condition from djump
+                    Error.JumpAddressHalt => .{ .halt = {} },
+
+                    // Memory-related errors map to page fault
+                    Error.MemoryPageFault, Error.MemoryAccessOutOfBounds, Error.MemoryWriteProtected => .{
+                        .page_fault = .{
+                            // Get the address from PVM's error_data
+                            .address = error_data.?.page_fault,
+                        },
+                    },
+
+                    // Gas exhaustion
+                    Error.OutOfGas => .{ .out_of_gas = {} },
+
+                    // Host call related
+                    Error.NonExistentHostCall => .{
+                        .host_call = .{
+                            .id = error_data.?.host_call,
+                        },
+                    },
+
+                    // All other errors map to panic
+                    Error.PcUnderflow,
+                    Error.JumpAddressZero,
+                    Error.JumpAddressOutOfRange,
+                    Error.JumpAddressNotAligned,
+                    Error.JumpAddressNotInBasicBlock,
+                    Error.Trap,
+                    Error.OutOfMemory,
+                    Error.invalid_instruction,
+                    Error.out_of_bounds,
+                    Error.invalid_immediate_length,
+                    Error.invalid_register_index,
+                    => .{ .panic = {} },
+                };
+            }
+        }
+    };
+
     pub fn init(allocator: Allocator, raw_program: []const u8, initial_gas: i64) !PVM {
         const span = trace.span(.init);
         defer span.deinit();
@@ -244,11 +330,15 @@ pub const PVM = struct {
         const span = trace.span(.execute_step);
         defer span.deinit();
 
-        const i = try self.decoder.decodeInstruction(self.pc);
-        span.debug("Executing instruction at PC={X:0>4}: {any}", .{ self.pc, i.instruction });
-        span.trace("Full instruction with args: {any}", .{i});
+        const decoded = try self.decoder.decodeInstruction(self.pc);
+        span.debug("Executing instruction at PC={X:0>4}: {any}", .{ self.pc, decoded.instruction });
+        span.trace("Full instruction with args: {any}", .{decoded});
 
-        const gas_cost = getGasCost(i);
+        if (decoded.instruction == .trap) {
+            return Error.Trap;
+        }
+
+        const gas_cost = getGasCost(decoded);
         if (self.gas < gas_cost) {
             span.err("Out of gas: required={d}, remaining={d}", .{ gas_cost, self.gas });
             return Error.OutOfGas;
@@ -260,7 +350,7 @@ pub const PVM = struct {
         const execution_span = span.child(.instruction_execution);
         defer execution_span.deinit();
 
-        self.pc = try updatePc(self.pc, self.executeInstruction(i) catch |err| {
+        self.pc = try updatePc(self.pc, self.executeInstruction(decoded) catch |err| {
             execution_span.err("Instruction execution failed: {any}", .{err});
             // Charge one extra gas for error handling
             // NOTE: this is in here to be compatible with
@@ -269,7 +359,7 @@ pub const PVM = struct {
                 Error.JumpAddressZero => 0,
                 else => 1,
             };
-            return Error.PcUnderflow;
+            return err;
         });
 
         execution_span.debug("Updated PC to {X:0>4}", .{self.pc});

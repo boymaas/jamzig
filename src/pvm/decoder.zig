@@ -50,6 +50,7 @@ pub const Decoder = struct {
             std.debug.print("Error decoding instruction at pc {}: code 0x{X:0>2} ({d})\n", .{ pc, self.getCodeAt(pc), self.getCodeAt(pc) });
             return Error.invalid_instruction;
         };
+
         const args_type = ArgumentType.lookup(instruction);
 
         const args = switch (args_type) {
@@ -115,7 +116,7 @@ pub const Decoder = struct {
     fn decodeOneRegisterOneImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const l_x = @min(4, l -| 1);
+        const l_x = @min(4, l - 1);
         return .{
             .one_register_one_immediate = .{
                 .no_of_bytes_to_skip = l,
@@ -273,20 +274,24 @@ pub const Decoder = struct {
         return 0;
     }
 
-    pub fn getCodeSliceAt(self: *const @This(), pc: u32, len: u32) ![]const u8 {
+    const MaxImmediateSizeInByte = 8;
+    pub fn getCodeSliceAt(self: *const @This(), buffer: *[MaxImmediateSizeInByte]u8, pc: u32, len: u32) []const u8 {
+        std.debug.assert(len <= MaxImmediateSizeInByte);
         const end = pc + len;
-        if (end > self.code.len) {
-            return Error.out_of_bounds;
+        if (pc <= self.code.len and end > self.code.len) {
+            // we are extending the code, return 0 buffer
+            std.mem.copyForwards(u8, buffer[0 .. self.code.len - pc], self.code[pc..self.code.len]);
+            return buffer[0..len];
+        } else if (pc > self.code.len) {
+            // if pc is outside of code.len
+            return buffer[0..len];
         }
-        return self.code[pc..end];
+        // just return the code slice
+        return self.code[pc..][0..len];
     }
 
-    pub fn getCodeSliceAtFixed(self: *const @This(), pc: u32, comptime len: u32) Error!*const [len]u8 {
-        const end = pc + len;
-        if (end > self.code.len) {
-            return Error.out_of_bounds;
-        }
-        return self.code[pc..end][0..len];
+    pub fn getCodeSliceAtFixed(self: *const @This(), buffer: *[MaxImmediateSizeInByte]u8, pc: u32, comptime len: u32) *const [len]u8 {
+        return getCodeSliceAt(self, buffer, pc, len)[0..len];
     }
 
     pub fn getMaskAt(self: *const @This(), mask_index: u32) u8 {
@@ -298,17 +303,20 @@ pub const Decoder = struct {
     }
 
     inline fn decodeInt(self: *const Decoder, comptime T: type, pc: u32) Error!T {
-        const slice = try self.getCodeSliceAtFixed(pc, @sizeOf(T));
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
+        const slice = self.getCodeSliceAtFixed(&overflow_buffer, pc, @sizeOf(T));
         return std.mem.readInt(T, slice, .little);
     }
 
     inline fn decodeImmediate(self: *const Decoder, pc: u32, length: u32) Error!u64 {
-        const slice = try self.getCodeSliceAt(pc, length);
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
+        const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
         return Immediate.decodeUnsigned(slice);
     }
 
     inline fn decodeImmediateSigned(self: *const Decoder, pc: u32, length: u32) Error!i64 {
-        const slice = try self.getCodeSliceAt(pc, length);
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
+        const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
         return Immediate.decodeSigned(slice);
     }
 

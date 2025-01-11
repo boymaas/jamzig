@@ -14,10 +14,27 @@ test "pvm:simple" {
     const allocator = std.testing.allocator;
 
     const raw_program = [_]u8{
-        0,   0,   33,  51, 8,  1,   51,  9,   1,   40, 3,   0,   121,
-        119, 255, 81,  7,  12, 100, 138, 170, 152, 8,  100, 169, 40,
-        243, 100, 135, 51, 8,  51,  9,   1,   50,  0,  73,  147, 82,
-        213, 0,
+        // Header
+        0, 0, 33,
+        // Code
+        51, 8, 1, //
+        51, 9, 1, //
+        40, 3, //
+        0, //
+        121, 119, 255, //
+        81, 7, 12, //
+        100, 138, //
+        170, 152, 8, //
+        100, 169, //
+        40, 243, //
+        100, 135, //
+        51, 8, //
+        51, 9, //
+        1, //
+        50, 0, //
+
+        // Mask
+        73, 147, 82, 213, 0, //
     };
 
     var pvm = try pvmlib.PVM.init(allocator, &raw_program, std.math.maxInt(u32));
@@ -28,11 +45,10 @@ test "pvm:simple" {
 
     // std.debug.print("Program: {any}\n", .{pvm.program});
 
-    const result = pvm.run();
+    const status = pvmlib.PVM.Status.fromResult(pvm.run(), pvm.error_data);
 
-    if (result) |_| {} else |err| {
-        std.debug.print("Expected .trap got {any}\n", .{result});
-        return err;
+    if (status != .halt) {
+        std.debug.print("Expected .halt got {any}\n", .{status});
     }
 
     // Check final register values
