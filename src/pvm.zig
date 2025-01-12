@@ -47,7 +47,7 @@ pub const PVM = struct {
         // Execution related errors
         OutOfGas,
         Trap,
-    } || Decoder.Error || error{OutOfMemory};
+    } || Decoder.Error || Program.Error || error{ OutOfMemory, EmptyBuffer, InsufficientData };
 
     pub const HostCallResult = union(enum) {
         play,
@@ -205,7 +205,7 @@ pub const PVM = struct {
         }
     };
 
-    pub fn init(allocator: Allocator, raw_program: []const u8, initial_gas: i64) !PVM {
+    pub fn init(allocator: Allocator, raw_program: []const u8, initial_gas: i64) Error!PVM {
         const span = trace.span(.init);
         defer span.deinit();
 

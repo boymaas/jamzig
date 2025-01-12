@@ -10,7 +10,20 @@ pub const Program = struct {
     basic_blocks: []u32,
     jump_table: JumpTable,
 
+    pub const Error = error{
+        InvalidJumpTableLength,
+        InvalidJumpTableItemLength,
+        InvalidCodeLength,
+        HeaderSizeMismatch,
+        ProgramTooShort,
+    };
+
     pub fn decode(allocator: Allocator, raw_program: []const u8) !Program {
+        // Validate minimum header size (jump table length + item length + code length)
+        if (raw_program.len < 3) {
+            return Error.ProgramTooShort;
+        }
+
         var program = Program{
             .code = undefined,
             .mask = undefined,
@@ -20,13 +33,43 @@ pub const Program = struct {
 
         var index: usize = 0;
         const jump_table_length = try parseIntAndUpdateIndex(raw_program, &index);
+
+        // Validate jump table length isn't absurdly large
+        if (jump_table_length > raw_program.len) {
+            return Error.InvalidJumpTableLength;
+        }
+
         const jump_table_item_length = raw_program[index];
+        // Validate jump table item length (should be 1-4 bytes typically)
+        if (jump_table_item_length == 0 or jump_table_item_length > 4) {
+            return Error.InvalidJumpTableItemLength;
+        }
         index += 1;
+
+        // Validate we can read code length
+        if (index >= raw_program.len) {
+            return Error.ProgramTooShort;
+        }
 
         const code_length = try parseIntAndUpdateIndex(raw_program[index..], &index);
 
+        // Calculate required mask length (rounded up to nearest byte)
+        const required_mask_bytes = (code_length + 7) / 8;
+
+        // Validate total required size (header + jump table + code + mask)
+        const total_required_size = index +
+            (jump_table_length * jump_table_item_length) +
+            code_length +
+            required_mask_bytes;
+
+        if (total_required_size > raw_program.len) {
+            return Error.InvalidCodeLength;
+        }
+
         const jump_table_first_byte_index = index;
         const jump_table_length_in_bytes = jump_table_length * jump_table_item_length;
+
+        // Initialize jump table
         program.jump_table = try JumpTable.init(
             allocator,
             jump_table_item_length,

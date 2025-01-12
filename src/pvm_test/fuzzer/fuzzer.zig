@@ -61,6 +61,7 @@ pub const FuzzResult = struct {
     gas_used: i64,
     was_mutated: bool,
     error_data: ?PVM.ErrorData,
+    init_failed: bool = false,
 };
 
 pub const FuzzResults = struct {
@@ -72,6 +73,7 @@ pub const FuzzResults = struct {
         errors: usize,
         avg_gas: i64,
         mutated_cases: usize,
+        init_failures: usize,
     };
 
     pub fn init(allocator: std.mem.Allocator) @This() {
@@ -88,11 +90,15 @@ pub const FuzzResults = struct {
             .errors = 0,
             .avg_gas = 0,
             .mutated_cases = 0,
+            .init_failures = 0,
         };
 
         var total_gas: i64 = 0;
         for (self.data.items) |result| {
-            if (result.status) |_| {
+            if (result.init_failed) {
+                stats.init_failures += 1;
+                stats.errors += 1;
+            } else if (result.status) |_| {
                 stats.errors += 1;
             } else {
                 stats.successful += 1;
@@ -187,12 +193,21 @@ pub const PVMFuzzer = struct {
             mutateProgramBytes(program_bytes, self.config.mutation, &seed_gen);
         }
 
-        // Initialize PVM
-        var pvm = try PVM.init(
+        // Initialize PVM with error handling
+        var pvm = PVM.init(
             self.allocator,
             program_bytes,
             self.config.max_gas,
-        );
+        ) catch |err| {
+            return FuzzResult{
+                .seed = seed,
+                .status = err,
+                .gas_used = 0,
+                .error_data = null,
+                .was_mutated = will_mutate,
+                .init_failed = true,
+            };
+        };
         defer pvm.deinit();
 
         // Set up memory pages
@@ -216,22 +231,33 @@ pub const PVMFuzzer = struct {
             .gas_used = gas_used,
             .error_data = pvm.error_data,
             .was_mutated = will_mutate,
+            .init_failed = false,
         };
     }
 
     fn printTestResult(_: *Self, test_number: u32, result: FuzzResult) void {
-        const color = if (result.status) |_|
-            "\x1b[31m"
+        const color = if (result.init_failed)
+            "\x1b[33m" // Yellow for init failures
+        else if (result.status) |_|
+            "\x1b[31m" // Red for other errors
         else
-            "\x1b[32m";
+            "\x1b[32m"; // Green for success
 
-        std.debug.print("{s}Test {d}: Status={any}, Gas={d}, Seed={d}\x1b[0m\n", .{
-            color,
-            test_number + 1,
-            result.status,
-            result.gas_used,
-            result.seed,
-        });
+        if (result.init_failed) {
+            std.debug.print("{s}Test {d}: PVM Initialization Failed, Seed={d}\x1b[0m\n", .{
+                color,
+                test_number + 1,
+                result.seed,
+            });
+        } else {
+            std.debug.print("{s}Test {d}: Status={any}, Gas={d}, Seed={d}\x1b[0m\n", .{
+                color,
+                test_number + 1,
+                result.status,
+                result.gas_used,
+                result.seed,
+            });
+        }
 
         if (result.error_data) |error_data| {
             std.debug.print("  Error data: {any}\n", .{error_data});
