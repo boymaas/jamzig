@@ -426,7 +426,9 @@ pub const PVM = struct {
             },
 
             // A.5.5 Instructions with Arguments of One Offset
-            .jump => return i.args.one_offset.offset,
+            .jump => {
+                return try self.branch(@truncate(i.args.one_offset.offset)); // FIXME: branch
+            },
 
             // A.5.6 Instructions with Arguments of One Register & One Immediate
             .jump_ind => {
@@ -439,7 +441,7 @@ pub const PVM = struct {
             },
             .load_u8 => {
                 const args = i.args.one_register_one_immediate;
-                self.registers[args.register_index] = try self.loadMemory(@intCast(args.immediate), 1);
+                self.registers[args.register_index] = try self.loadMemory(@truncate(args.immediate), 1);
             },
             .load_i8 => {
                 const args = i.args.one_register_one_immediate;
@@ -452,7 +454,7 @@ pub const PVM = struct {
             },
             .load_i16 => {
                 const args = i.args.one_register_one_immediate;
-                const value = try self.loadMemory(@intCast(args.immediate), 2);
+                const value = try self.loadMemory(@truncate(args.immediate), 2);
                 self.registers[args.register_index] = @as(u64, @bitCast(@as(i64, @intCast(@as(i16, @bitCast(@as(u16, @truncate(value))))))));
             },
             .load_u32 => {
@@ -461,12 +463,12 @@ pub const PVM = struct {
             },
             .load_i32 => {
                 const args = i.args.one_register_one_immediate;
-                const value = try self.loadMemory(@intCast(args.immediate), 4);
+                const value = try self.loadMemory(@truncate(args.immediate), 4);
                 self.registers[args.register_index] = @as(u64, @bitCast(@as(i64, @intCast(@as(i32, @bitCast(@as(u32, @truncate(value))))))));
             },
             .load_u64 => {
                 const args = i.args.one_register_one_immediate;
-                self.registers[args.register_index] = try self.loadMemory(@intCast(args.immediate), 8);
+                self.registers[args.register_index] = try self.loadMemory(@truncate(args.immediate), 8);
             },
             .store_u8, .store_u16, .store_u32, .store_u64 => {
                 const args = i.args.one_register_one_immediate;
@@ -539,7 +541,8 @@ pub const PVM = struct {
             },
             .sbrk => {
                 // @panic("Implement");
-                std.debug.print("Implement sbrk", .{});
+                //std.debug.print("Implement sbrk", .{});
+                // FIXME: implement
                 // const args = i.args.two_registers;
                 // self.registers[args.first_register_index] = try self.sbrk(self.registers[args.second_register_index]);
             },

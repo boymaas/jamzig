@@ -68,7 +68,8 @@ pub fn main() !void {
     var fuzzer = try PVMFuzzer.init(allocator, config);
     defer fuzzer.deinit();
 
-    const result = try fuzzer.run();
+    var result = try fuzzer.run();
+    defer result.deinit();
 
     // Print results
     const stats = result.getStats();

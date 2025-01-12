@@ -58,7 +58,10 @@ pub const MemoryConfigGenerator = struct {
             // Check for overlaps with existing ranges
             var has_overlap = false;
             for (existing_ranges.items) |range| {
-                const new_end = address + aligned_length;
+                const new_end = std.math.add(u32, address, aligned_length) catch {
+                    has_overlap = true;
+                    break;
+                };
                 if (address < range.end and new_end > range.start) {
                     has_overlap = true;
                     break;

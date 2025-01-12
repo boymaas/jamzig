@@ -97,18 +97,20 @@ pub const PVMFuzzer = struct {
 
     pub fn run(self: *Self) !FuzzResults {
         var results = FuzzResults.init(self.allocator);
+        errdefer results.deinit();
+
         var test_count: u32 = 0;
         while (test_count < self.config.num_cases) : (test_count += 1) {
             if (self.config.verbose) {
-                std.debug.print("Running test case {d}/{d} with seed {d}\n", .{ test_count + 1, self.config.num_cases, self.seed_gen.seed });
+                std.debug.print("Running test case {d}/{d} with seed {d}\r", .{ test_count + 1, self.config.num_cases, self.seed_gen.seed });
             }
 
             const result = try self.runSingleTest(self.seed_gen.randomSeed());
             try results.data.append(result);
 
-            if (self.config.verbose) {
-                self.printTestResult(test_count, result);
-            }
+            // if (self.config.verbose) {
+            //     self.printTestResult(test_count, result);
+            // }
         }
         return results;
     }
