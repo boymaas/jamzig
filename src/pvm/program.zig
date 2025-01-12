@@ -143,7 +143,7 @@ pub const Program = struct {
                 .branch_ge_s_imm,
                 .branch_gt_u_imm,
                 .branch_gt_s_imm,
-                => {
+                => |opcode| {
                     // For branches, the next instruction starts a new basic block
                     const next_pc = pc + 1 + instruction.args.skip_l();
                     // Allow 8 byte padding for possible final instruction's immediate value
@@ -151,6 +151,19 @@ pub const Program = struct {
                         try basic_blocks.append(next_pc);
                     } else {
                         return Error.ProgramTooShort;
+                    }
+                    switch (opcode) {
+                        .jump => {},
+                        .jump_ind => {
+                            _ = instruction.args.one_register_one_immediate;
+                            // Skip validation - jump target is computed at runtime from registers and immediates
+                        },
+                        .load_imm_jump_ind => {
+                            _ = instruction.args.two_registers_two_immediates;
+                            // Skip validation - jump target is computed at runtime from registers and immediates
+
+                        },
+                        else => {},
                     }
                 },
                 else => {},

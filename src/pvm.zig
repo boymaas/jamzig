@@ -983,9 +983,7 @@ pub const PVM = struct {
         }
 
         // Calculate the offset to the target address
-        const offset: i32 = @as(i32, @intCast(b)) - @as(i32, @intCast(self.pc));
-        span.trace("Branch offset calculated: {d}", .{offset});
-        return offset;
+        return o;
     }
 
     pub fn djump(self: *PVM, a: u32) !PcOffset {
@@ -1036,6 +1034,7 @@ pub const PVM = struct {
         const span = trace.span(.check_basic_block);
         defer span.deinit();
 
+        // FIXME: binary search
         const is_start = std.mem.indexOfScalar(u32, self.program.basic_blocks, address) != null;
         span.trace("Address 0x{X:0>8} basic block start: {}", .{ address, is_start });
         return is_start;
