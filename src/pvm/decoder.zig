@@ -47,7 +47,7 @@ pub const Decoder = struct {
 
     pub fn decodeInstruction(self: *const Decoder, pc: u32) Error!InstructionWithArgs {
         const instruction = std.meta.intToEnum(Instruction, self.getCodeAt(pc)) catch {
-            std.debug.print("Error decoding instruction at pc {}: code 0x{X:0>2} ({d})\n", .{ pc, self.getCodeAt(pc), self.getCodeAt(pc) });
+            // std.debug.print("Error decoding instruction at pc {}: code 0x{X:0>2} ({d})\n", .{ pc, self.getCodeAt(pc), self.getCodeAt(pc) });
             return Error.invalid_instruction;
         };
 
@@ -89,7 +89,7 @@ pub const Decoder = struct {
     fn decodeTwoImmediates(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const l_x = self.decodeLowNibble(pc + 1) % 8;
-        const l_y = @min(4, l - l_x - 1);
+        const l_y = @min(4, try safeSubstract(u32, l, .{ l_x, 1 }));
         return .{
             .two_immediates = .{
                 .no_of_bytes_to_skip = 1 + l_x + l_y,
@@ -116,7 +116,7 @@ pub const Decoder = struct {
     fn decodeOneRegisterOneImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const l_x = @min(4, l - 1);
+        const l_x = @min(4, try safeSubstract(u32, l, .{1}));
         return .{
             .one_register_one_immediate = .{
                 .no_of_bytes_to_skip = l,
@@ -130,7 +130,7 @@ pub const Decoder = struct {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const l_x = @min(4, self.decodeHighNibble(pc + 1) % 8);
-        const l_y = @min(4, @max(0, l - l_x - 1));
+        const l_y = @min(4, @max(0, try safeSubstract(u32, l, .{ l_x, 1 })));
         return .{
             .one_register_two_immediates = .{
                 .no_of_bytes_to_skip = l,
@@ -145,7 +145,7 @@ pub const Decoder = struct {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const l_x = @min(4, self.decodeHighNibble(pc + 1) % 8);
-        const l_y = @min(4, @max(0, l - l_x - 1));
+        const l_y = @min(4, @max(0, try safeSubstract(u32, l, .{ l_x, 1 })));
         const offset = @as(i32, @intCast(try self.decodeImmediateSigned(pc + 2 + l_x, l_y)));
         return .{
             .one_register_one_immediate_one_offset = .{
@@ -185,7 +185,7 @@ pub const Decoder = struct {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));
-        const l_x = @min(4, l - 1);
+        const l_x = @min(4, try safeSubstract(u32, l, .{1}));
         return .{
             .two_registers_one_immediate = .{
                 .no_of_bytes_to_skip = l,
@@ -202,7 +202,7 @@ pub const Decoder = struct {
         const l = self.skip_l(pc + 1);
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));
-        const l_x = @min(4, l - 1);
+        const l_x = @min(4, try safeSubstract(u32, l, .{1}));
         const offset = @as(i32, @intCast(try self.decodeImmediateSigned(pc + 2, l_x)));
         return .{
             .two_registers_one_offset = .{
@@ -219,7 +219,7 @@ pub const Decoder = struct {
         const r_a = @min(12, self.decodeLowNibble(pc + 1));
         const r_b = @min(12, self.decodeHighNibble(pc + 1));
         const l_x = @min(4, self.decodeLowNibble(pc + 2) % 8);
-        const l_y = @min(4, @max(0, l - l_x - 2));
+        const l_y = @min(4, try safeSubstract(u32, l, .{ l_x, 2 }));
         return .{
             .two_registers_two_immediates = .{
                 .no_of_bytes_to_skip = l,
@@ -411,3 +411,45 @@ pub const InstructionArgs = union(ArgumentType) {
         };
     }
 };
+
+inline fn safeSubstract(comptime T: type, initial: T, values: anytype) !T {
+    // This function body will be evaluated at comptime for each unique set of values
+    if (values.len == 0) {
+        return initial;
+    } else {
+        var result: T = initial;
+        inline for (values) |value| {
+            if (result >= value) {
+                result = result - value;
+            } else {
+                return Decoder.Error.invalid_immediate_length;
+            }
+        }
+        return result;
+    }
+}
+
+test "safeSubstract - basic subtraction" {
+    try std.testing.expectEqual(@as(u32, 5), try safeSubstract(u32, 10, .{ 3, 2 }));
+}
+
+test "safeSubstract - empty values returns initial" {
+    try std.testing.expectEqual(@as(u32, 10), try safeSubstract(u32, 10, .{}));
+}
+
+test "safeSubstract - single value" {
+    try std.testing.expectEqual(@as(u32, 7), try safeSubstract(u32, 10, .{3}));
+}
+
+test "safeSubstract - error on underflow" {
+    try std.testing.expectError(Decoder.Error.invalid_immediate_length, safeSubstract(u32, 5, .{ 3, 3 }));
+}
+
+test "safeSubstract - different types" {
+    try std.testing.expectEqual(@as(u8, 2), try safeSubstract(u8, 5, .{ 2, 1 }));
+    try std.testing.expectEqual(@as(i32, 2), try safeSubstract(i32, 10, .{ 5, 3 }));
+}
+
+test "safeSubstract - zero result" {
+    try std.testing.expectEqual(@as(u32, 0), try safeSubstract(u32, 10, .{ 5, 5 }));
+}

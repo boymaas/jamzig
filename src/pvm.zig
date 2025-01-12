@@ -195,10 +195,23 @@ pub const PVM = struct {
                     Error.JumpAddressNotInBasicBlock,
                     Error.Trap,
                     Error.OutOfMemory,
+                    // FIXME: CamelCase
                     Error.invalid_instruction,
                     Error.out_of_bounds,
                     Error.invalid_immediate_length,
                     Error.invalid_register_index,
+                    Error.InvalidJumpTableLength,
+                    Error.InvalidJumpTableItemLength,
+                    Error.InvalidCodeLength,
+                    Error.HeaderSizeMismatch,
+                    Error.ProgramTooShort,
+                    Error.InvalidInstruction,
+                    Error.InvalidJumpDestination,
+                    Error.InvalidProgramCounter,
+                    Error.InvalidRegisterIndex,
+                    Error.InvalidImmediateLength,
+                    Error.EmptyBuffer,
+                    Error.InsufficientData,
                     => .{ .panic = {} },
                 };
             }
