@@ -1,43 +1,28 @@
 const std = @import("std");
 
 pub const Instruction = @import("instruction.zig").Instruction;
-pub const ArgumentType = @import("./decoder/types.zig").ArgumentType;
+pub const InstructionType = @import("instruction.zig").InstructionType;
+pub const InstructionArgs = @import("instruction.zig").InstructionArgs;
+pub const InstructionWithArgs = @import("instruction.zig").InstructionWithArgs;
 
-pub const jumptable = @import("decoder/jumptable.zig");
-const Immediate = @import("./decoder/immediate.zig");
-const Nibble = @import("./decoder/nibble.zig");
+const immediate = @import("./instruction/immediate.zig");
+const nibble = @import("./instruction/nibble.zig");
+const decoder = @import("./instruction/decoder.zig");
 
 const updatePc = @import("./utils.zig").updatePc;
-
-pub const InstructionWithArgs = struct {
-    instruction: Instruction,
-    args_type: ArgumentType,
-    args: InstructionArgs,
-
-    pub fn skip_l(self: *const @This()) u32 {
-        return self.args.skip_l();
-    }
-
-    pub fn format(
-        self: *const @This(),
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        try @import("./decoder/format.zig").formatInstructionWithArgs(self, fmt, options, writer);
-    }
-};
 
 pub const Decoder = struct {
     code: []const u8,
     mask: []const u8,
 
+    pub const MaxImmediateSizeInBytes = 8;
+
     pub const Error = error{
-        invalid_instruction,
-        out_of_bounds,
-        invalid_immediate_length,
-        invalid_register_index,
-    };
+        InvalidInstruction,
+        OutOfBounds,
+        InvalidImmediateLength,
+        InvalidRegisterIndex,
+    } || decoder.Error;
 
     pub fn init(code: []const u8, mask: []const u8) Decoder {
         return Decoder{
@@ -47,204 +32,98 @@ pub const Decoder = struct {
     }
 
     pub fn decodeInstruction(self: *const Decoder, pc: u32) Error!InstructionWithArgs {
-        const instruction = std.meta.intToEnum(Instruction, self.getCodeAt(pc)) catch {
+        const inst = std.meta.intToEnum(Instruction, self.getCodeAt(pc)) catch {
             // std.debug.print("Error decoding instruction at pc {}: code 0x{X:0>2} ({d})\n", .{ pc, self.getCodeAt(pc), self.getCodeAt(pc) });
-            return Error.invalid_instruction;
+            return Error.InvalidInstruction;
         };
 
-        const args_type = ArgumentType.lookup(instruction);
-
+        const args_type = InstructionType.lookUp(inst);
         const args = switch (args_type) {
-            .no_arguments => InstructionArgs{ .no_arguments = .{ .no_of_bytes_to_skip = 0 } },
-            .one_immediate => try self.decodeOneImmediate(pc),
-            .one_offset => try self.decodeOneOffset(pc),
-            .one_register_one_immediate => try self.decodeOneRegisterOneImmediate(pc),
-            .one_register_one_immediate_one_offset => try self.decodeOneRegisterOneImmediateOneOffset(pc),
-            .one_register_one_extended_immediate => try self.decodeOneRegisterOneExtendedImmediate(pc),
-            .one_register_two_immediates => try self.decodeOneRegisterTwoImmediates(pc),
-            .three_registers => try self.decodeThreeRegisters(pc),
-            .two_immediates => try self.decodeTwoImmediates(pc),
-            .two_registers => try self.decodeTwoRegisters(pc),
-            .two_registers_one_immediate => try self.decodeTwoRegistersOneImmediate(pc),
-            .two_registers_one_offset => try self.decodeTwoRegistersOneOffset(pc),
-            .two_registers_two_immediates => try self.decodeTwoRegistersTwoImmediates(pc),
+            .NoArgs => InstructionArgs{ .NoArgs = .{ .no_of_bytes_to_skip = 0 } },
+            .OneImm => InstructionArgs{ .OneImm = try self.decodeOneImm(pc + 1) },
+            .OneOffset => InstructionArgs{ .OneOffset = try self.decodeOneOffset(pc + 1) },
+            .OneRegOneImm => InstructionArgs{ .OneRegOneImm = try self.decodeOneRegOneImm(pc + 1) },
+            .OneRegOneImmOneOffset => InstructionArgs{ .OneRegOneImmOneOffset = try self.decodeOneRegOneImmOneOffset(pc + 1) },
+            .OneRegOneExtImm => InstructionArgs{ .OneRegOneExtImm = try self.decodeOneRegOneExtImm(pc + 1) },
+            .OneRegTwoImm => InstructionArgs{ .OneRegTwoImm = try self.decodeOneRegTwoImm(pc + 1) },
+            .ThreeReg => InstructionArgs{ .ThreeReg = try self.decodeThreeReg(pc + 1) },
+            .TwoImm => InstructionArgs{ .TwoImm = try self.decodeTwoImm(pc + 1) },
+            .TwoReg => InstructionArgs{ .TwoReg = try self.decodeTwoReg(pc + 1) },
+            .TwoRegOneImm => InstructionArgs{ .TwoRegOneImm = try self.decodeTwoRegOneImm(pc + 1) },
+            .TwoRegOneOffset => InstructionArgs{ .TwoRegOneOffset = try self.decodeTwoRegOneOffset(pc + 1) },
+            .TwoRegTwoImm => InstructionArgs{ .TwoRegTwoImm = try self.decodeTwoRegTwoImm(pc + 1) },
         };
 
         return InstructionWithArgs{
-            .instruction = instruction,
+            .instruction = inst,
             .args_type = args_type,
             .args = args,
         };
     }
 
-    fn decodeOneImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
+    fn decodeOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneImmType {
         const l = @min(4, self.skip_l(pc + 1));
-        return .{
-            .one_immediate = .{
-                .no_of_bytes_to_skip = l,
-                .immediate = try self.decodeImmediate(pc + 1, l),
-            },
-        };
-    }
-
-    fn decodeTwoImmediates(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l = self.skip_l(pc + 1);
-        const l_x = self.decodeLowNibble(pc + 1) % 8;
-        const l_y = @min(4, try safeSubstract(u32, l, .{ l_x, 1 }));
-        return .{
-            .two_immediates = .{
-                .no_of_bytes_to_skip = 1 + l_x + l_y,
-                .first_immediate = try self.decodeImmediate(pc + 2, l_x),
-                .second_immediate = try self.decodeImmediate(pc + 2 + l_x, l_y),
-            },
-        };
-    }
-
-    fn decodeOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l_x = @min(4, self.skip_l(pc + 1));
-        const offset = @as(
-            i32,
-            @intCast(try self.decodeImmediateSigned(pc + 1, l_x)),
+        return try decoder.decodeOneImm(
+            self.getCodeSliceAt(
+                pc,
+                l,
+            ).asSlice(),
         );
-        return .{
-            .one_offset = .{
-                .no_of_bytes_to_skip = l_x,
-                .offset = offset,
-            },
-        };
     }
 
-    fn decodeOneRegisterOneImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l = self.skip_l(pc + 1);
-        const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const l_x = @min(4, try safeSubstract(u32, l, .{1}));
-        return .{
-            .one_register_one_immediate = .{
-                .no_of_bytes_to_skip = l,
-                .register_index = r_a,
-                .immediate = try self.decodeImmediate(pc + 2, l_x),
-            },
-        };
+    fn decodeTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoImmType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeTwoImm(bytes);
     }
 
-    fn decodeOneRegisterTwoImmediates(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l = self.skip_l(pc + 1);
-        const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const l_x = @min(4, self.decodeHighNibble(pc + 1) % 8);
-        const l_y = @min(4, @max(0, try safeSubstract(u32, l, .{ l_x, 1 })));
-        return .{
-            .one_register_two_immediates = .{
-                .no_of_bytes_to_skip = l,
-                .register_index = r_a,
-                .first_immediate = try self.decodeImmediate(pc + 2, l_x),
-                .second_immediate = try self.decodeImmediate(pc + 2 + l_x, l_y),
-            },
-        };
+    fn decodeOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.OneOffsetType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeOneOffset(bytes);
     }
 
-    fn decodeOneRegisterOneImmediateOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l = self.skip_l(pc + 1);
-        const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const l_x = @min(4, self.decodeHighNibble(pc + 1) % 8);
-        const l_y = @min(4, @max(0, try safeSubstract(u32, l, .{ l_x, 1 })));
-        const offset = @as(i32, @intCast(try self.decodeImmediateSigned(pc + 2 + l_x, l_y)));
-        return .{
-            .one_register_one_immediate_one_offset = .{
-                .no_of_bytes_to_skip = l,
-                .register_index = r_a,
-                .immediate = try self.decodeImmediate(pc + 2, l_x),
-                .offset = offset,
-            },
-        };
+    fn decodeOneRegOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneImmType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeOneRegOneImm(bytes);
     }
 
-    fn decodeOneRegisterOneExtendedImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        return .{
-            .one_register_one_extended_immediate = .{
-                .no_of_bytes_to_skip = 9, // 1 byte opcode + 8 bytes immediate
-                .register_index = r_a,
-                .immediate = try self.decodeInt(u64, pc + 2),
-            },
-        };
+    fn decodeOneRegTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegTwoImmType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeOneRegTwoImm(bytes);
     }
 
-    fn decodeTwoRegisters(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l = self.skip_l(pc + 1);
-        const r_d = @min(12, self.decodeLowNibble(pc + 1));
-        const r_a = @min(12, self.decodeHighNibble(pc + 1));
-        return .{
-            .two_registers = .{
-                .no_of_bytes_to_skip = l,
-                .first_register_index = r_d,
-                .second_register_index = r_a,
-            },
-        };
+    fn decodeOneRegOneImmOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneImmOneOffsetType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeOneRegOneImmOneOffset(bytes);
     }
 
-    fn decodeTwoRegistersOneImmediate(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l = self.skip_l(pc + 1);
-        const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const r_b = @min(12, self.decodeHighNibble(pc + 1));
-        const l_x = @min(4, try safeSubstract(u32, l, .{1}));
-        return .{
-            .two_registers_one_immediate = .{
-                .no_of_bytes_to_skip = l,
-                .first_register_index = r_a,
-                .second_register_index = r_b,
-                .immediate = try self.decodeImmediate(pc + 2, l_x),
-            },
-        };
+    fn decodeOneRegOneExtImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneExtImmType {
+        const bytes = self.getCodeSliceAt(pc, 10).asSlice(); // 1 byte opcode + 1 byte reg + 8 bytes immediate
+        return try decoder.decodeOneRegOneExtImm(bytes);
     }
 
-    fn decodeTwoRegistersOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l_prev = self.skip_l(pc + 1);
-        _ = l_prev;
-        const l = self.skip_l(pc + 1);
-        const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const r_b = @min(12, self.decodeHighNibble(pc + 1));
-        const l_x = @min(4, try safeSubstract(u32, l, .{1}));
-        const offset = @as(i32, @intCast(try self.decodeImmediateSigned(pc + 2, l_x)));
-        return .{
-            .two_registers_one_offset = .{
-                .no_of_bytes_to_skip = l,
-                .first_register_index = r_a,
-                .second_register_index = r_b,
-                .offset = offset,
-            },
-        };
+    fn decodeTwoReg(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeTwoReg(bytes);
     }
 
-    fn decodeTwoRegistersTwoImmediates(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l = self.skip_l(pc + 1);
-        const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const r_b = @min(12, self.decodeHighNibble(pc + 1));
-        const l_x = @min(4, self.decodeLowNibble(pc + 2) % 8);
-        const l_y = @min(4, try safeSubstract(u32, l, .{ l_x, 2 }));
-        return .{
-            .two_registers_two_immediates = .{
-                .no_of_bytes_to_skip = l,
-                .first_register_index = r_a,
-                .second_register_index = r_b,
-                .first_immediate = try self.decodeImmediate(pc + 2, l_x),
-                .second_immediate = try self.decodeImmediate(pc + 2 + l_x, l_y),
-            },
-        };
+    fn decodeTwoRegOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegOneImmType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeTwoRegOneImm(bytes);
     }
 
-    fn decodeThreeRegisters(self: *const Decoder, pc: u32) Error!InstructionArgs {
-        const l = self.skip_l(pc + 1);
-        const r_a = @min(12, self.decodeLowNibble(pc + 1));
-        const r_b = @min(12, self.decodeHighNibble(pc + 1));
-        const r_d = @min(12, self.getCodeAt(pc + 2));
-        return .{
-            .three_registers = .{
-                .no_of_bytes_to_skip = l,
-                .first_register_index = r_a,
-                .second_register_index = r_b,
-                .third_register_index = r_d,
-            },
-        };
+    fn decodeTwoRegOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegOneOffsetType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeTwoRegOneOffset(bytes);
+    }
+
+    fn decodeTwoRegTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegTwoImmType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeTwoRegTwoImm(bytes);
+    }
+
+    fn decodeThreeReg(self: *const Decoder, pc: u32) Error!InstructionArgs.ThreeRegType {
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        return try decoder.decodeThreeReg(bytes);
     }
 
     /// (215)@0.3.8 Skip function
@@ -275,24 +154,60 @@ pub const Decoder = struct {
         return 0;
     }
 
-    pub const MaxImmediateSizeInByte = 8;
-    pub fn getCodeSliceAt(self: *const @This(), buffer: *[MaxImmediateSizeInByte]u8, pc: u32, len: u32) []const u8 {
-        std.debug.assert(len <= MaxImmediateSizeInByte);
+    const CodeSlice = struct {
+        buffer: [MaxImmediateSizeInBytes]u8 = undefined,
+        len: u8,
+
+        pub fn asSlice(self: *const @This()) []const u8 {
+            return self.buffer[0..self.len];
+        }
+
+        pub inline fn zeroes(len: u8) CodeSlice {
+            var self = CodeSlice{ .len = len };
+
+            // fill the length with 0
+            for (0..len) |idx| {
+                self.buffer[idx] = 0x00;
+            }
+            return self;
+        }
+
+        // Initialize from slice
+        pub inline fn fromSlice(slice: []const u8) CodeSlice {
+            std.debug.assert(slice.len < MaxImmediateSizeInBytes);
+            var self = CodeSlice{ .len = @intCast(slice.len) };
+            std.mem.copyForwards(u8, self.buffer[0..slice.len], slice);
+            return self;
+        }
+
+        // Initialize from slice, when len extends code slice
+        pub inline fn fromSliceExtended(slice: []const u8, len: u8) CodeSlice {
+            std.debug.assert(len > slice.len);
+            var self = CodeSlice{ .len = len };
+            // copy slice into buffer
+            for (slice, &self.buffer) |s, *b| {
+                b.* = s;
+            }
+            // fill the extended length with 0
+            for (slice.len..len) |idx| {
+                self.buffer[idx] = 0x00;
+            }
+            return self;
+        }
+    };
+
+    pub fn getCodeSliceAt(self: *const @This(), pc: u32, len: u32) CodeSlice {
+        std.debug.assert(len <= MaxImmediateSizeInBytes);
         const end = pc + len;
         if (pc <= self.code.len and end > self.code.len) {
             // we are extending the code, return 0 buffer
-            std.mem.copyForwards(u8, buffer[0 .. self.code.len - pc], self.code[pc..self.code.len]);
-            return buffer[0..len];
+            return CodeSlice.fromSliceExtended(self.code[pc..], @intCast(len));
         } else if (pc > self.code.len) {
             // if pc is outside of code.len
-            return buffer[0..len];
+            return CodeSlice.zeroes(@intCast(len));
         }
         // just return the code slice
-        return self.code[pc..][0..len];
-    }
-
-    pub fn getCodeSliceAtFixed(self: *const @This(), buffer: *[MaxImmediateSizeInByte]u8, pc: u32, comptime len: u32) *const [len]u8 {
-        return getCodeSliceAt(self, buffer, pc, len)[0..len];
+        return CodeSlice.fromSlice(self.code[pc..][0..len]);
     }
 
     pub fn getMaskAt(self: *const @This(), mask_index: u32) u8 {
@@ -304,112 +219,28 @@ pub const Decoder = struct {
     }
 
     inline fn decodeInt(self: *const Decoder, comptime T: type, pc: u32) Error!T {
-        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
-        const slice = self.getCodeSliceAtFixed(&overflow_buffer, pc, @sizeOf(T));
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInBytes]u8);
+        const slice: *const [@sizeOf(T)]u8 = self.getCodeSliceAt(&overflow_buffer, pc, @sizeOf(T)).asSlice()[0..@sizeOf(T)];
         return std.mem.readInt(T, slice, .little);
     }
 
     inline fn decodeImmediate(self: *const Decoder, pc: u32, length: u32) Error!u64 {
-        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInBytes]u8);
         const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
-        return Immediate.decodeUnsigned(slice);
+        return immediate.decodeUnsigned(slice);
     }
 
     inline fn decodeImmediateSigned(self: *const Decoder, pc: u32, length: u32) Error!i64 {
-        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInByte]u8);
+        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInBytes]u8);
         const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
-        return Immediate.decodeSigned(slice);
+        return immediate.decodeSigned(slice);
     }
 
     inline fn decodeHighNibble(self: *const Decoder, pc: u32) u4 {
-        return Nibble.getHighNibble(self.getCodeAt(pc));
+        return nibble.getHighNibble(self.getCodeAt(pc));
     }
     inline fn decodeLowNibble(self: *const Decoder, pc: u32) u4 {
-        return Nibble.getLowNibble(self.getCodeAt(pc));
-    }
-};
-
-pub const InstructionArgs = union(ArgumentType) {
-    no_arguments: struct { no_of_bytes_to_skip: u32 },
-    one_immediate: struct { no_of_bytes_to_skip: u32, immediate: u64 },
-    one_offset: struct {
-        no_of_bytes_to_skip: u32,
-        offset: i32,
-    },
-    one_register_one_immediate: struct {
-        no_of_bytes_to_skip: u32,
-        register_index: u8,
-        immediate: u64,
-    },
-    one_register_one_immediate_one_offset: struct {
-        no_of_bytes_to_skip: u32,
-        register_index: u8,
-        immediate: u64,
-        offset: i32,
-    },
-    one_register_one_extended_immediate: struct {
-        no_of_bytes_to_skip: u32,
-        register_index: u8,
-        immediate: u64,
-    },
-    one_register_two_immediates: struct {
-        no_of_bytes_to_skip: u32,
-        register_index: u8,
-        first_immediate: u64,
-        second_immediate: u64,
-    },
-    three_registers: struct {
-        no_of_bytes_to_skip: u32,
-        first_register_index: u8,
-        second_register_index: u8,
-        third_register_index: u8,
-    },
-    two_immediates: struct {
-        no_of_bytes_to_skip: u32,
-        first_immediate: u64,
-        second_immediate: u64,
-    },
-    two_registers: struct {
-        no_of_bytes_to_skip: u32,
-        first_register_index: u8,
-        second_register_index: u8,
-    },
-    two_registers_one_immediate: struct {
-        no_of_bytes_to_skip: u32,
-        first_register_index: u8,
-        second_register_index: u8,
-        immediate: u64,
-    },
-    two_registers_one_offset: struct {
-        no_of_bytes_to_skip: u32,
-        first_register_index: u8,
-        second_register_index: u8,
-        offset: i32,
-    },
-    two_registers_two_immediates: struct {
-        no_of_bytes_to_skip: u32,
-        first_register_index: u8,
-        second_register_index: u8,
-        first_immediate: u64,
-        second_immediate: u64,
-    },
-
-    pub fn skip_l(self: *const @This()) u32 {
-        return switch (self.*) {
-            .no_arguments => |v| v.no_of_bytes_to_skip,
-            .one_immediate => |v| v.no_of_bytes_to_skip,
-            .one_offset => |v| v.no_of_bytes_to_skip,
-            .one_register_one_immediate => |v| v.no_of_bytes_to_skip,
-            .one_register_one_immediate_one_offset => |v| v.no_of_bytes_to_skip,
-            .one_register_two_immediates => |v| v.no_of_bytes_to_skip,
-            .one_register_one_extended_immediate => |v| v.no_of_bytes_to_skip,
-            .three_registers => |v| v.no_of_bytes_to_skip,
-            .two_immediates => |v| v.no_of_bytes_to_skip,
-            .two_registers => |v| v.no_of_bytes_to_skip,
-            .two_registers_one_immediate => |v| v.no_of_bytes_to_skip,
-            .two_registers_one_offset => |v| v.no_of_bytes_to_skip,
-            .two_registers_two_immediates => |v| v.no_of_bytes_to_skip,
-        };
+        return nibble.getLowNibble(self.getCodeAt(pc));
     }
 };
 

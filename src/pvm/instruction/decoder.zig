@@ -206,7 +206,7 @@ pub fn decodeThreeReg(bytes: []const u8) Error!InstructionArgs.ThreeRegType {
     };
 }
 
-inline fn safeSubstract(comptime T: type, initial: T, values: anytype) !T {
+inline fn safeSubstract(comptime T: type, initial: T, values: anytype) Error!T {
     // This function body will be evaluated at comptime for each unique set of values
     if (values.len == 0) {
         return initial;

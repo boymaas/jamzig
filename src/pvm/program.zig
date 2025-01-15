@@ -120,54 +120,15 @@ pub const Program = struct {
 
             // Check if this instruction terminates a basic block
             // const inst_type = instruction.args_type;
-            switch (instruction.instruction) {
-                .trap,
-                .fallthrough,
-                .jump,
-                .jump_ind,
-                .load_imm_jump,
-                .load_imm_jump_ind,
-                .branch_eq,
-                .branch_ne,
-                .branch_ge_u,
-                .branch_ge_s,
-                .branch_lt_u,
-                .branch_lt_s,
-                .branch_eq_imm,
-                .branch_ne_imm,
-                .branch_lt_u_imm,
-                .branch_lt_s_imm,
-                .branch_le_u_imm,
-                .branch_le_s_imm,
-                .branch_ge_u_imm,
-                .branch_ge_s_imm,
-                .branch_gt_u_imm,
-                .branch_gt_s_imm,
-                => |opcode| {
-                    // For branches, the next instruction starts a new basic block
-                    const next_pc = pc + 1 + instruction.args.skip_l();
-                    // Allow 8 byte padding for possible final instruction's immediate value
-                    if (next_pc < program.code.len + Decoder.MaxImmediateSizeInByte) {
-                        try basic_blocks.append(next_pc);
-                    } else {
-                        return Error.ProgramTooShort;
-                    }
-                    // TODO: remove this empty code if we do not do .jump validation
-                    switch (opcode) {
-                        .jump => {},
-                        .jump_ind => {
-                            _ = instruction.args.one_register_one_immediate;
-                            // Skip validation - jump target is computed at runtime from registers and immediates
-                        },
-                        .load_imm_jump_ind => {
-                            _ = instruction.args.two_registers_two_immediates;
-                            // Skip validation - jump target is computed at runtime from registers and immediates
-
-                        },
-                        else => {},
-                    }
-                },
-                else => {},
+            if (instruction.isTerminationInstruction()) {
+                // For branches, the next instruction starts a new basic block
+                const next_pc = pc + 1 + instruction.args.skip_l();
+                // Allow 8 byte padding for possible final instruction's immediate value
+                if (next_pc < program.code.len + Decoder.MaxImmediateSizeInBytes) {
+                    try basic_blocks.append(next_pc);
+                } else {
+                    return Error.ProgramTooShort;
+                }
             }
 
             pc += 1 + instruction.args.skip_l();

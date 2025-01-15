@@ -223,6 +223,7 @@ pub const InstructionRanges = std.StaticStringMap(InstructionRange)
 pub const InstructionArgs = union(InstructionType) {
 
     // Instruction argument types
+    // TODO: rename ..Type to ..Args
     pub const NoArgsType = struct { no_of_bytes_to_skip: u32 };
     pub const OneImmType = struct { no_of_bytes_to_skip: u32, immediate: u64 };
     pub const OneRegOneExtImmType = struct {
