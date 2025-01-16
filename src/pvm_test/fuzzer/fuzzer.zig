@@ -48,7 +48,7 @@ pub const FuzzConfig = struct {
     /// Maximum gas for each test case
     max_gas: i64 = 1000000,
     /// Maximum number of basic blocks per program
-    max_blocks: u32 = 32,
+    max_instruction_count: u32 = 32,
     /// Whether to print verbose output
     verbose: bool = false,
     /// Configuration for program mutations
@@ -176,7 +176,7 @@ pub const PVMFuzzer = struct {
         var memory_gen = MemoryConfigGenerator.init(self.allocator, &seed_gen);
 
         // Generate program
-        const num_blocks = seed_gen.randomIntRange(u32, 1, self.config.max_blocks);
+        const num_blocks = seed_gen.randomIntRange(u32, 1, self.config.max_instruction_count);
 
         var program = try program_gen.generate(num_blocks);
         defer program.deinit(self.allocator);

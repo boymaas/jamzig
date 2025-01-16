@@ -55,7 +55,7 @@ pub fn main() !void {
         .initial_seed = if (res.args.seed) |seed| seed else @as(u64, @intCast(std.time.timestamp())),
         .num_cases = if (res.args.cases) |cases| cases else 50000,
         .max_gas = if (res.args.@"max-gas") |gas| gas else 1000000,
-        .max_blocks = if (res.args.@"max-blocks") |blocks| blocks else 32,
+        .max_instruction_count = if (res.args.@"max-blocks") |blocks| blocks else 32,
         .verbose = res.args.verbose != 0,
         .mutation = .{
             .program_mutation_probability = if (res.args.@"mut-prob") |prob| prob else 10,
@@ -79,7 +79,7 @@ pub fn main() !void {
     std.debug.print("Initial Seed: {d}\n", .{config.initial_seed});
     std.debug.print("Number of Cases: {d}\n", .{config.num_cases});
     std.debug.print("Max Gas: {d}\n", .{config.max_gas});
-    std.debug.print("Max Blocks: {d}\n", .{config.max_blocks});
+    std.debug.print("Max Blocks: {d}\n", .{config.max_instruction_count});
     std.debug.print("Verbose: {}\n", .{config.verbose});
     std.debug.print("Mutation Probability: {d}%\n", .{config.mutation.program_mutation_probability});
     std.debug.print("Bit Flip Probability: {d}%\n\n", .{config.mutation.bit_flip_probability});
