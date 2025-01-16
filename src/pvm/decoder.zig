@@ -72,27 +72,27 @@ pub const Decoder = struct {
     }
 
     fn decodeTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeTwoImm(bytes);
     }
 
     fn decodeOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.OneOffsetType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeOneOffset(bytes);
     }
 
     fn decodeOneRegOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeOneRegOneImm(bytes);
     }
 
     fn decodeOneRegTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegTwoImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeOneRegTwoImm(bytes);
     }
 
     fn decodeOneRegOneImmOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneImmOneOffsetType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeOneRegOneImmOneOffset(bytes);
     }
 
@@ -102,27 +102,27 @@ pub const Decoder = struct {
     }
 
     fn decodeTwoReg(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeTwoReg(bytes);
     }
 
     fn decodeTwoRegOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegOneImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeTwoRegOneImm(bytes);
     }
 
     fn decodeTwoRegOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegOneOffsetType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeTwoRegOneOffset(bytes);
     }
 
     fn decodeTwoRegTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegTwoImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeTwoRegTwoImm(bytes);
     }
 
     fn decodeThreeReg(self: *const Decoder, pc: u32) Error!InstructionArgs.ThreeRegType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc + 1)).asSlice();
+        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
         return try decoder.decodeThreeReg(bytes);
     }
 
@@ -185,7 +185,7 @@ pub const Decoder = struct {
             std.debug.assert(len > slice.len);
             var self = CodeSlice{ .len = len };
             // copy slice into buffer
-            for (slice, &self.buffer) |s, *b| {
+            for (slice, self.buffer[0..slice.len]) |s, *b| {
                 b.* = s;
             }
             // fill the extended length with 0

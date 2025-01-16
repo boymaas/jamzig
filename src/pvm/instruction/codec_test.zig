@@ -8,6 +8,11 @@ const InstructionArgs = @import("../instruction.zig").InstructionArgs;
 const InstructionType = @import("../instruction.zig").InstructionType;
 const InstructionRanges = @import("../instruction.zig").InstructionRanges;
 
+fn blah(T: type, arg: T) T {
+    //
+    _ = arg;
+}
+
 test "instruction encoding <==> decoding roundtrip tests" {
     var prng = std.Random.DefaultPrng.init(0);
     var random = prng.random();
