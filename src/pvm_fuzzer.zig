@@ -55,7 +55,7 @@ pub fn main() !void {
         .initial_seed = if (res.args.seed) |seed| seed else @as(u64, @intCast(std.time.timestamp())),
         .num_cases = if (res.args.cases) |cases| cases else 50000,
         .max_gas = if (res.args.@"max-gas") |gas| gas else 1000000,
-        .max_blocks = if (res.args.@"max-blocks") |blocks| blocks else 32,
+        .max_instruction_count = if (res.args.@"max-blocks") |blocks| blocks else 32,
         .verbose = res.args.verbose != 0,
         .mutation = .{
             .program_mutation_probability = if (res.args.@"mut-prob") |prob| prob else 10,
@@ -79,13 +79,12 @@ pub fn main() !void {
     std.debug.print("Initial Seed: {d}\n", .{config.initial_seed});
     std.debug.print("Number of Cases: {d}\n", .{config.num_cases});
     std.debug.print("Max Gas: {d}\n", .{config.max_gas});
-    std.debug.print("Max Blocks: {d}\n", .{config.max_blocks});
+    std.debug.print("Max Instructions: {d}\n", .{config.max_instruction_count});
     std.debug.print("Verbose: {}\n", .{config.verbose});
-    std.debug.print("Mutation Probability: {d}%\n", .{config.mutation.program_mutation_probability});
-    std.debug.print("Bit Flip Probability: {d}%\n\n", .{config.mutation.bit_flip_probability});
+    std.debug.print("Mutation Probability: {d}/1_000_000\n", .{config.mutation.program_mutation_probability});
+    std.debug.print("Bit Flip Probability: {d}/1_000\n\n", .{config.mutation.bit_flip_probability});
 
     var result = try fuzzer.run();
-    defer result.deinit();
 
     // Print results
     const stats = result.getStats();
@@ -94,5 +93,6 @@ pub fn main() !void {
     std.debug.print("  Total Cases: {d}\n", .{stats.total_cases});
     std.debug.print("  Successful: {d} ({d}%)\n", .{ stats.successful, (stats.successful * 100) / stats.total_cases });
     std.debug.print("  Errors: {d} ({d}%)\n", .{ stats.errors, (stats.errors * 100) / stats.total_cases });
-    std.debug.print("  Average Gas Used: {d}\n", .{stats.avg_gas});
+    try stats.error_stats.writeErrorCounts(std.io.getStdErr().writer());
+    std.debug.print("  Average Gas Used: {d}\n", .{stats.avgGas()});
 }

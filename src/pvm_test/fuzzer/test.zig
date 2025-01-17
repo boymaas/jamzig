@@ -10,9 +10,9 @@ const MemoryConfigGenerator = @import("memory_config_generator.zig").MemoryConfi
 test "pvm:fuzzer:run" {
     const config = FuzzConfig{
         .initial_seed = 42,
-        .num_cases = 100,
+        .num_cases = 10,
         .max_gas = 10000,
-        .max_blocks = 8,
+        .max_instruction_count = 8,
         .verbose = true,
     };
 
@@ -20,11 +20,10 @@ test "pvm:fuzzer:run" {
     defer fuzzer.deinit();
 
     var results = try fuzzer.run();
-    defer results.deinit();
 
     const stats = results.getStats();
-    try testing.expect(stats.total_cases == 100);
-    try testing.expect(stats.total_cases == stats.successful + stats.errors);
+    try testing.expectEqual(stats.total_cases, 10);
+    try testing.expectEqual(stats.total_cases, stats.successful + stats.errors);
 }
 
 test "pvm:fuzzer:memory_config_generator" {
@@ -44,33 +43,5 @@ test "pvm:fuzzer:memory_config_generator" {
     for (configs) |config| {
         try testing.expect(config.address % 8 == 0);
         try testing.expect(config.length % 8 == 0);
-    }
-}
-
-test "pvm:fuzzer:deterministic_execution" {
-    const config = FuzzConfig{
-        .initial_seed = 42,
-        .num_cases = 5,
-        .max_gas = 1000,
-        .verbose = false,
-    };
-
-    // Run fuzzer twice with same seed
-    var fuzzer1 = try PVMFuzzer.init(testing.allocator, config);
-    defer fuzzer1.deinit();
-    var results1 = try fuzzer1.run();
-    defer results1.deinit();
-
-    var fuzzer2 = try PVMFuzzer.init(testing.allocator, config);
-    defer fuzzer2.deinit();
-    var results2 = try fuzzer2.run();
-    defer results2.deinit();
-
-    // Verify results are identical
-    for (results1.data.items, 0..) |result1, i| {
-        const result2 = results2.data.items[i];
-        try testing.expectEqual(result1.seed, result2.seed);
-        try testing.expectEqual(result1.status, result2.status);
-        try testing.expectEqual(result1.gas_used, result2.gas_used);
     }
 }

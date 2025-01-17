@@ -188,31 +188,7 @@ pub const PVM = struct {
                     },
 
                     // All other errors map to panic
-                    Error.PcUnderflow,
-                    Error.JumpAddressZero,
-                    Error.JumpAddressOutOfRange,
-                    Error.JumpAddressNotAligned,
-                    Error.JumpAddressNotInBasicBlock,
-                    Error.Trap,
-                    Error.OutOfMemory,
-                    // FIXME: CamelCase
-                    Error.invalid_instruction,
-                    Error.out_of_bounds,
-                    Error.invalid_immediate_length,
-                    Error.invalid_register_index,
-                    Error.InvalidJumpTableLength,
-                    Error.InvalidJumpTableItemLength,
-                    Error.InvalidCodeLength,
-                    Error.HeaderSizeMismatch,
-                    Error.ProgramTooShort,
-                    Error.InvalidInstruction,
-                    Error.InvalidJumpDestination,
-                    Error.InvalidProgramCounter,
-                    Error.InvalidRegisterIndex,
-                    Error.InvalidImmediateLength,
-                    Error.EmptyBuffer,
-                    Error.InsufficientData,
-                    => .{ .panic = {} },
+                    else => .{ .panic = {} },
                 };
             }
         }
@@ -412,79 +388,79 @@ pub const PVM = struct {
             .fallthrough => {},
 
             // A.5.2 Instructions with Arguments of One Immediate
-            .ecalli => try self.hostCall(@truncate(i.args.one_immediate.immediate)),
+            .ecalli => try self.hostCall(@truncate(i.args.OneImm.immediate)),
 
             // A.5.3 Instructions with Arguments of One Register and One Extended Width Immediate
             .load_imm_64 => {
-                const args = i.args.one_register_one_extended_immediate;
+                const args = i.args.OneRegOneExtImm;
                 self.registers[args.register_index] = args.immediate;
             },
 
             // A.5.4 Instructions with Arguments of Two Immediates
             .store_imm_u8 => {
-                const args = i.args.two_immediates;
+                const args = i.args.TwoImm;
                 try self.storeMemory(@truncate(args.first_immediate), @intCast(args.second_immediate), 1);
             },
             .store_imm_u16 => {
-                const args = i.args.two_immediates;
+                const args = i.args.TwoImm;
                 try self.storeMemory(@truncate(args.first_immediate), @intCast(args.second_immediate), 2);
             },
             .store_imm_u32 => {
-                const args = i.args.two_immediates;
+                const args = i.args.TwoImm;
                 try self.storeMemory(@truncate(args.first_immediate), args.second_immediate, 4);
             },
             .store_imm_u64 => {
-                const args = i.args.two_immediates;
+                const args = i.args.TwoImm;
                 try self.storeMemory(@truncate(args.first_immediate), args.second_immediate, 8);
             },
 
             // A.5.5 Instructions with Arguments of One Offset
             .jump => {
-                return try self.branch(@truncate(i.args.one_offset.offset)); // FIXME: branch
+                return try self.branch(@truncate(i.args.OneOffset.offset)); // FIXME: branch
             },
 
             // A.5.6 Instructions with Arguments of One Register & One Immediate
             .jump_ind => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 return self.djump(@truncate(self.registers[args.register_index] +% args.immediate));
             },
             .load_imm => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 self.registers[args.register_index] = args.immediate;
             },
             .load_u8 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 self.registers[args.register_index] = try self.loadMemory(@truncate(args.immediate), 1);
             },
             .load_i8 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 const value = try self.loadMemory(@truncate(args.immediate), 1);
                 self.registers[args.register_index] = @as(u64, @bitCast(@as(i64, @intCast(@as(i8, @bitCast(@as(u8, @truncate(value))))))));
             },
             .load_u16 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 self.registers[args.register_index] = try self.loadMemory(@truncate(args.immediate), 2);
             },
             .load_i16 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 const value = try self.loadMemory(@truncate(args.immediate), 2);
                 self.registers[args.register_index] = @as(u64, @bitCast(@as(i64, @intCast(@as(i16, @bitCast(@as(u16, @truncate(value))))))));
             },
             .load_u32 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 self.registers[args.register_index] = try self.loadMemory(@truncate(args.immediate), 4);
             },
             .load_i32 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 const value = try self.loadMemory(@truncate(args.immediate), 4);
                 self.registers[args.register_index] = @as(u64, @bitCast(@as(i64, @intCast(@as(i32, @bitCast(@as(u32, @truncate(value))))))));
             },
             .load_u64 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 self.registers[args.register_index] = try self.loadMemory(@truncate(args.immediate), 8);
             },
             .store_u8, .store_u16, .store_u32, .store_u64 => {
-                const args = i.args.one_register_one_immediate;
+                const args = i.args.OneRegOneImm;
                 const size: u8 = switch (i.instruction) {
                     .store_u8 => 1,
                     .store_u16 => 2,
@@ -497,7 +473,7 @@ pub const PVM = struct {
 
             // A.5.7 Instructions with Arguments of One Register & Two Immediates
             .store_imm_ind_u8, .store_imm_ind_u16, .store_imm_ind_u32, .store_imm_ind_u64 => {
-                const args = i.args.one_register_two_immediates;
+                const args = i.args.OneRegTwoImm;
                 const size: u8 = switch (i.instruction) {
                     .store_imm_ind_u8 => 1,
                     .store_imm_ind_u16 => 2,
@@ -510,7 +486,7 @@ pub const PVM = struct {
 
             // A.5.8 Instructions with Arguments of One Register, One Immediate and One Offset
             .load_imm_jump => {
-                const args = i.args.one_register_one_immediate_one_offset;
+                const args = i.args.OneRegOneImmOneOffset;
                 self.registers[args.register_index] = args.immediate;
                 return try self.branch(args.offset);
             },
@@ -526,7 +502,7 @@ pub const PVM = struct {
             .branch_ge_s_imm,
             .branch_gt_s_imm,
             => {
-                const args = i.args.one_register_one_immediate_one_offset;
+                const args = i.args.OneRegOneImmOneOffset;
                 const reg = self.registers[args.register_index];
                 const imm = args.immediate;
                 const should_branch = switch (i.instruction) {
@@ -549,7 +525,7 @@ pub const PVM = struct {
 
             // A.5.9 Instructions with Arguments of Two Registers
             .move_reg => {
-                const args = i.args.two_registers;
+                const args = i.args.TwoReg;
                 self.registers[args.first_register_index] = self.registers[args.second_register_index];
             },
             .sbrk => {
@@ -562,7 +538,7 @@ pub const PVM = struct {
 
             // A.5.10 Instructions with Arguments of Two Registers & One Immediate
             .add_imm_32, .add_imm_64 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 self.registers[args.first_register_index] = self.registers[args.second_register_index] +% args.immediate;
                 if (i.instruction == .add_imm_32) {
                     self.registers[args.first_register_index] = @as(u32, @truncate(self.registers[args.first_register_index]));
@@ -570,7 +546,7 @@ pub const PVM = struct {
             },
 
             .mul_imm_32, .mul_imm_64 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 self.registers[args.first_register_index] = self.registers[args.second_register_index] *% args.immediate;
                 if (i.instruction == .mul_imm_32) {
                     self.registers[args.first_register_index] = @as(u32, @truncate(self.registers[args.first_register_index]));
@@ -579,7 +555,7 @@ pub const PVM = struct {
 
             // A.5.11 Instructions with Arguments of Two Registers & One Offset
             .branch_eq, .branch_ne, .branch_lt_u, .branch_lt_s, .branch_ge_u, .branch_ge_s => {
-                const args = i.args.two_registers_one_offset;
+                const args = i.args.TwoRegOneOffset;
                 const reg1 = self.registers[args.first_register_index];
                 const reg2 = self.registers[args.second_register_index];
                 const should_branch = switch (i.instruction) {
@@ -598,14 +574,14 @@ pub const PVM = struct {
 
             // A.5.12 Instructions with Arguments of Two Registers and Two Immediates
             .load_imm_jump_ind => {
-                const args = i.args.two_registers_two_immediates;
+                const args = i.args.TwoRegTwoImm;
                 self.registers[args.first_register_index] = args.first_immediate;
                 return self.djump(@truncate(self.registers[args.second_register_index] +% args.second_immediate));
             },
 
             // A.5.13 Instructions with Arguments of Three Registers
             .add_32, .add_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 self.registers[args.third_register_index] =
                     self.registers[args.first_register_index] +%
                     self.registers[args.second_register_index];
@@ -615,7 +591,7 @@ pub const PVM = struct {
             },
 
             .sub_32, .sub_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 self.registers[args.third_register_index] =
                     self.registers[args.first_register_index] -%
                     self.registers[args.second_register_index];
@@ -625,7 +601,7 @@ pub const PVM = struct {
             },
 
             .mul_32, .mul_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 self.registers[args.third_register_index] =
                     self.registers[args.first_register_index] *%
                     self.registers[args.second_register_index];
@@ -635,7 +611,7 @@ pub const PVM = struct {
             },
 
             .div_u_32, .div_u_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 if (self.registers[args.second_register_index] == 0) {
                     self.registers[args.third_register_index] = if (i.instruction == .div_u_32) 0xFFFFFFFF else 0xFFFFFFFFFFFFFFFF;
                 } else {
@@ -647,7 +623,7 @@ pub const PVM = struct {
             },
 
             .div_s_32, .div_s_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 if (self.registers[args.second_register_index] == 0) {
                     self.registers[args.third_register_index] = if (i.instruction == .div_s_32) 0xFFFFFFFF else 0xFFFFFFFFFFFFFFFF;
                 } else {
@@ -665,7 +641,7 @@ pub const PVM = struct {
             },
 
             .rem_u_32, .rem_u_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 if (self.registers[args.second_register_index] == 0) {
                     self.registers[args.third_register_index] = self.registers[args.first_register_index];
                 } else {
@@ -677,7 +653,7 @@ pub const PVM = struct {
             },
 
             .rem_s_32, .rem_s_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 if (self.registers[args.second_register_index] == 0) {
                     self.registers[args.third_register_index] = self.registers[args.first_register_index];
                 } else {
@@ -695,7 +671,7 @@ pub const PVM = struct {
             },
 
             .shlo_l_32, .shlo_l_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 const mask: u64 = if (i.instruction == .shlo_l_32) 0x1F else 0x3F;
                 self.registers[args.third_register_index] =
                     self.registers[args.first_register_index] << @intCast(self.registers[args.second_register_index] & mask);
@@ -705,7 +681,7 @@ pub const PVM = struct {
             },
 
             .shlo_r_32, .shlo_r_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 const mask: u64 = if (i.instruction == .shlo_r_32) 0x1F else 0x3F;
                 self.registers[args.third_register_index] =
                     self.registers[args.first_register_index] >> @intCast(self.registers[args.second_register_index] & mask);
@@ -715,7 +691,7 @@ pub const PVM = struct {
             },
 
             .shar_r_32, .shar_r_64 => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 const mask: u64 = if (i.instruction == .shar_r_32) 0x1F else 0x3F;
                 const shift = self.registers[args.second_register_index] & mask;
                 if (i.instruction == .shar_r_32) {
@@ -728,69 +704,69 @@ pub const PVM = struct {
             },
 
             .@"and" => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 self.registers[args.third_register_index] =
                     self.registers[args.first_register_index] &
                     self.registers[args.second_register_index];
             },
 
             .xor => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 self.registers[args.third_register_index] =
                     self.registers[args.first_register_index] ^
                     self.registers[args.second_register_index];
             },
 
             .@"or" => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 self.registers[args.third_register_index] =
                     self.registers[args.first_register_index] |
                     self.registers[args.second_register_index];
             },
 
             .mul_upper_s_s => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 const result = @as(i128, @intCast(@as(i64, @bitCast(self.registers[args.first_register_index])))) *
                     @as(i128, @intCast(@as(i64, @bitCast(self.registers[args.second_register_index]))));
                 self.registers[args.third_register_index] = @as(u64, @bitCast(@as(i64, @intCast(result >> 64))));
             },
 
             .mul_upper_u_u => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 const result = @as(u128, self.registers[args.first_register_index]) *
                     @as(u128, self.registers[args.second_register_index]);
                 self.registers[args.third_register_index] = @intCast(result >> 64);
             },
 
             .mul_upper_s_u => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 const result = @as(i128, @intCast(@as(i64, @bitCast(self.registers[args.first_register_index])))) *
                     @as(i128, @intCast(self.registers[args.second_register_index]));
                 self.registers[args.third_register_index] = @as(u64, @bitCast(@as(i64, @intCast(result >> 64))));
             },
 
             .set_lt_u => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 self.registers[args.third_register_index] =
                     if (self.registers[args.first_register_index] < self.registers[args.second_register_index]) 1 else 0;
             },
 
             .set_lt_s => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 self.registers[args.third_register_index] =
                     if (@as(i64, @bitCast(self.registers[args.first_register_index])) <
                     @as(i64, @bitCast(self.registers[args.second_register_index]))) 1 else 0;
             },
 
             .cmov_iz => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 if (self.registers[args.second_register_index] == 0) {
                     self.registers[args.third_register_index] = self.registers[args.first_register_index];
                 }
             },
 
             .cmov_nz => {
-                const args = i.args.three_registers;
+                const args = i.args.ThreeReg;
                 if (self.registers[args.second_register_index] != 0) {
                     self.registers[args.third_register_index] = self.registers[args.first_register_index];
                 }
@@ -798,7 +774,7 @@ pub const PVM = struct {
 
             // A.5.10 Instructions with Arguments of Two Registers & One Immediate (continued)
             .store_ind_u8, .store_ind_u16, .store_ind_u32, .store_ind_u64 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 const size: u8 = switch (i.instruction) {
                     .store_ind_u8 => 1,
                     .store_ind_u16 => 2,
@@ -814,7 +790,7 @@ pub const PVM = struct {
             },
 
             .load_ind_u8, .load_ind_u16, .load_ind_u32, .load_ind_u64 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 const size: u8 = switch (i.instruction) {
                     .load_ind_u8 => 1,
                     .load_ind_u16 => 2,
@@ -829,7 +805,7 @@ pub const PVM = struct {
             },
 
             .load_ind_i8, .load_ind_i16, .load_ind_i32 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 const size: u8 = switch (i.instruction) {
                     .load_ind_i8 => 1,
                     .load_ind_i16 => 2,
@@ -846,22 +822,22 @@ pub const PVM = struct {
             },
 
             .and_imm => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 self.registers[args.first_register_index] = self.registers[args.second_register_index] & args.immediate;
             },
 
             .xor_imm => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 self.registers[args.first_register_index] = self.registers[args.second_register_index] ^ args.immediate;
             },
 
             .or_imm => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 self.registers[args.first_register_index] = self.registers[args.second_register_index] | args.immediate;
             },
 
             .set_lt_u_imm, .set_lt_s_imm, .set_gt_u_imm, .set_gt_s_imm => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 const result = switch (i.instruction) {
                     .set_lt_u_imm => self.registers[args.second_register_index] < args.immediate,
                     .set_lt_s_imm => @as(i64, @bitCast(self.registers[args.second_register_index])) < @as(i64, @bitCast(args.immediate)),
@@ -873,7 +849,7 @@ pub const PVM = struct {
             },
 
             .shlo_l_imm_32, .shlo_l_imm_64, .shlo_l_imm_alt_32, .shlo_l_imm_alt_64 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 const mask: u64 = switch (i.instruction) {
                     .shlo_l_imm_32, .shlo_l_imm_alt_32 => 0x1F,
                     .shlo_l_imm_64, .shlo_l_imm_alt_64 => 0x3F,
@@ -896,7 +872,7 @@ pub const PVM = struct {
             },
 
             .shlo_r_imm_32, .shlo_r_imm_64, .shlo_r_imm_alt_32, .shlo_r_imm_alt_64 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 const mask: u64 = switch (i.instruction) {
                     .shlo_r_imm_32, .shlo_r_imm_alt_32 => 0x1F,
                     .shlo_r_imm_64, .shlo_r_imm_alt_64 => 0x3F,
@@ -919,7 +895,7 @@ pub const PVM = struct {
             },
 
             .shar_r_imm_32, .shar_r_imm_64, .shar_r_imm_alt_32, .shar_r_imm_alt_64 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 const mask: u64 = switch (i.instruction) {
                     .shar_r_imm_32, .shar_r_imm_alt_32 => 0x1F,
                     .shar_r_imm_64, .shar_r_imm_alt_64 => 0x3F,
@@ -942,21 +918,21 @@ pub const PVM = struct {
             },
 
             .cmov_iz_imm => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 if (self.registers[args.second_register_index] == 0) {
                     self.registers[args.first_register_index] = args.immediate;
                 }
             },
 
             .cmov_nz_imm => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 if (self.registers[args.second_register_index] != 0) {
                     self.registers[args.first_register_index] = args.immediate;
                 }
             },
 
             .neg_add_imm_32, .neg_add_imm_64 => {
-                const args = i.args.two_registers_one_immediate;
+                const args = i.args.TwoRegOneImm;
                 self.registers[args.first_register_index] = args.immediate -% self.registers[args.second_register_index];
                 if (i.instruction == .neg_add_imm_32) {
                     self.registers[args.first_register_index] = @as(u32, @truncate(self.registers[args.first_register_index]));
@@ -1075,7 +1051,7 @@ pub const PVM = struct {
 
                 const offset = address - page.address;
                 @memcpy(page.data[offset..][0..data.len], data);
-                span.trace("Initialization successful - offset: {d}, data: {any}", .{ offset, data });
+                // span.trace("Initialization successful - offset: {d}, data: {any}", .{ offset, data });
                 return;
             }
         }

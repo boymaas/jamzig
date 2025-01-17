@@ -1,20 +1,6 @@
 const std = @import("std");
 
-const MAX_SIZE_IN_BYTES: usize = 4;
-
-fn buildBuffer(bytes: []const u8) [MAX_SIZE_IN_BYTES]u8 {
-    var buffer: [MAX_SIZE_IN_BYTES]u8 = undefined;
-    const n = @min(bytes.len, MAX_SIZE_IN_BYTES);
-
-    if (n > 0) {
-        @memcpy(buffer[0..n], bytes[0..n]);
-        @memset(buffer[n..], 0);
-    } else {
-        @memset(&buffer, 0);
-    }
-
-    return buffer;
-}
+const MAX_SIZE_IN_BYTES: usize = 8;
 
 fn buildBufferSignExtend(bytes: []const u8) [MAX_SIZE_IN_BYTES]u8 {
     var buffer: [MAX_SIZE_IN_BYTES]u8 = undefined;
@@ -33,14 +19,17 @@ fn buildBufferSignExtend(bytes: []const u8) [MAX_SIZE_IN_BYTES]u8 {
 
 pub fn decodeUnsigned(bytes: []const u8) u64 {
     const buffer = buildBufferSignExtend(bytes);
-    const value: i32 = std.mem.readInt(i32, &buffer, .little);
-    return @bitCast(@as(i64, @intCast(value)));
+    return std.mem.readInt(u64, &buffer, .little);
 }
 
 pub fn decodeSigned(bytes: []const u8) i64 {
     const buffer = buildBufferSignExtend(bytes);
-    const value: i32 = std.mem.readInt(i32, &buffer, .little);
-    return @as(i64, value);
+    return std.mem.readInt(i64, &buffer, .little);
+}
+
+pub fn decodeOffset(bytes: []const u8) i32 {
+    const buffer = buildBufferSignExtend(bytes);
+    return std.mem.readInt(i32, buffer[0..4], .little);
 }
 
 test "pvm:args:immediate - empty input" {
@@ -122,7 +111,7 @@ test "pvm:args:immediate - max negative value" {
 
 test "pvm:args:immediate - truncate long input" {
     const testing = std.testing;
-    const input = &[_]u8{ 0x11, 0x22, 0x33, 0x44, 0x55 };
-    try testing.expectEqual(@as(i64, 0x44332211), decodeSigned(input));
-    try testing.expectEqual(@as(u64, 0x44332211), decodeUnsigned(input));
+    const input = &[_]u8{ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C };
+    try testing.expectEqual(@as(i64, 0x0807060504030201), decodeSigned(input));
+    try testing.expectEqual(@as(u64, 0x0807060504030201), decodeUnsigned(input));
 }

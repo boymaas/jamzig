@@ -6,6 +6,8 @@ const codec = @import("../codec.zig");
 const Decoder = @import("decoder.zig").Decoder;
 const JumpTable = @import("decoder/jumptable.zig").JumpTable;
 
+const trace = @import("../tracing.zig").scoped(.pvm);
+
 pub const Program = struct {
     code: []const u8,
     mask: []const u8,
@@ -34,8 +36,14 @@ pub const Program = struct {
     };
 
     pub fn decode(allocator: Allocator, raw_program: []const u8) !Program {
+        const span = trace.span(.decode);
+        defer span.deinit();
+        span.debug("Starting program decoding, raw size: {d} bytes", .{raw_program.len});
+        span.trace("Raw program bytes: {any}", .{std.fmt.fmtSliceHexLower(raw_program)});
+
         // Validate minimum header size (jump table length + item length + code length)
         if (raw_program.len < 3) {
+            span.err("Program too short: {d} bytes, minimum required: 3", .{raw_program.len});
             return Error.ProgramTooShort;
         }
 
@@ -48,19 +56,25 @@ pub const Program = struct {
 
         var index: usize = 0;
         const jump_table_length = try parseIntAndUpdateIndex(raw_program, &index);
+        span.debug("Jump table length: {d}, index after parsing: {d}", .{ jump_table_length, index });
 
         // Validate jump table length isn't absurdly large
         if (jump_table_length > raw_program.len) {
+            span.err("Invalid jump table length: {d} exceeds program size: {d}", .{ jump_table_length, raw_program.len });
             return Error.InvalidJumpTableLength;
         }
 
         const jump_table_item_length = raw_program[index];
+        span.debug("Jump table item length: {d}", .{jump_table_item_length});
+
         // Validate jump table item length (should be 1-4 bytes typically)
         if ((jump_table_length > 0 and jump_table_item_length == 0) or
             jump_table_item_length > 4)
         {
+            span.err("Invalid jump table item length: {d}", .{jump_table_item_length});
             return Error.InvalidJumpTableItemLength;
         }
+
         index += 1;
 
         // Validate we can read code length
@@ -69,9 +83,11 @@ pub const Program = struct {
         }
 
         const code_length = try parseIntAndUpdateIndex(raw_program[index..], &index);
+        span.debug("Code length: {d} bytes", .{code_length});
 
         // Calculate required mask length (rounded up to nearest byte)
         const required_mask_bytes = (code_length + 7) / 8;
+        span.debug("Required mask bytes: {d}", .{required_mask_bytes});
 
         // Validate total required size (header + jump table + code + mask)
         const total_required_size = index +
@@ -115,59 +131,28 @@ pub const Program = struct {
         try basic_blocks.append(0);
 
         var pc: u32 = 0;
+        const basic_span = span.child(.basic_blocks);
+        defer basic_span.deinit();
+        basic_span.debug("Starting basic block analysis", .{});
+
         while (pc < program.code.len) {
-            const instruction = try decoder.decodeInstruction(pc);
+            const instruction = decoder.decodeInstruction(pc) catch |err| {
+                basic_span.err("PC {d:0>4}: error decoding instruction {d}: {any}", .{ pc, decoder.getCodeAt(pc), err });
+                return err;
+            };
+            basic_span.trace("PC {d:0>4}: Instruction: {}", .{ pc, instruction });
 
             // Check if this instruction terminates a basic block
             // const inst_type = instruction.args_type;
-            switch (instruction.instruction) {
-                .trap,
-                .fallthrough,
-                .jump,
-                .jump_ind,
-                .load_imm_jump,
-                .load_imm_jump_ind,
-                .branch_eq,
-                .branch_ne,
-                .branch_ge_u,
-                .branch_ge_s,
-                .branch_lt_u,
-                .branch_lt_s,
-                .branch_eq_imm,
-                .branch_ne_imm,
-                .branch_lt_u_imm,
-                .branch_lt_s_imm,
-                .branch_le_u_imm,
-                .branch_le_s_imm,
-                .branch_ge_u_imm,
-                .branch_ge_s_imm,
-                .branch_gt_u_imm,
-                .branch_gt_s_imm,
-                => |opcode| {
-                    // For branches, the next instruction starts a new basic block
-                    const next_pc = pc + 1 + instruction.args.skip_l();
-                    // Allow 8 byte padding for possible final instruction's immediate value
-                    if (next_pc < program.code.len + Decoder.MaxImmediateSizeInByte) {
-                        try basic_blocks.append(next_pc);
-                    } else {
-                        return Error.ProgramTooShort;
-                    }
-                    // TODO: remove this empty code if we do not do .jump validation
-                    switch (opcode) {
-                        .jump => {},
-                        .jump_ind => {
-                            _ = instruction.args.one_register_one_immediate;
-                            // Skip validation - jump target is computed at runtime from registers and immediates
-                        },
-                        .load_imm_jump_ind => {
-                            _ = instruction.args.two_registers_two_immediates;
-                            // Skip validation - jump target is computed at runtime from registers and immediates
-
-                        },
-                        else => {},
-                    }
-                },
-                else => {},
+            if (instruction.isTerminationInstruction()) {
+                // For branches, the next instruction starts a new basic block
+                const next_pc = pc + 1 + instruction.args.skip_l();
+                // Allow 8 byte padding for possible final instruction's immediate value
+                if (next_pc < program.code.len + Decoder.MaxInstructionSizeInBytes) {
+                    try basic_blocks.append(next_pc);
+                } else {
+                    return Error.ProgramTooShort;
+                }
             }
 
             pc += 1 + instruction.args.skip_l();
@@ -177,9 +162,14 @@ pub const Program = struct {
         errdefer allocator.free(program.basic_blocks);
 
         // Validate that all jump table destinations point to valid basic blocks
+        const jump_span = span.child(.jump_validation);
+        defer jump_span.deinit();
+        jump_span.debug("Validating jump table destinations", .{});
+
         var i: usize = 0;
         while (i < program.jump_table.len()) : (i += 1) {
             const destination = program.jump_table.getDestination(i);
+            jump_span.trace("Jump table entry {d}: destination = {d:0>4}", .{ i, destination });
 
             // Check if destination is within code bounds
             if (destination >= program.code.len) {
@@ -214,6 +204,10 @@ pub const Program = struct {
     /// - Alignment check (must be aligned to ZA)
     /// - Basic block validation
     pub fn validateJumpAddress(self: *const Program, address: u32) JumpError!u32 {
+        const span = trace.span(.validate_jump);
+        defer span.deinit();
+        span.debug("Validating jump address: {d:0>8}", .{address});
+
         const halt_pc = 0xFFFF0000;
         const ZA = 2; // Alignment requirement
 

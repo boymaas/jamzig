@@ -1,3 +1,16 @@
+const std = @import("std");
+
+// each instruction's 'length' (defined as the number of contiguous octets
+// starting with the opcode which are needed to fully define the instruction's
+// semantics) is left implicit though limited to being at most 16.
+pub const MaxInstructionSizeInBytes = 16;
+
+//  ___           _                   _   _
+// |_ _|_ __  ___| |_ _ __ _   _  ___| |_(_) ___  _ __
+//  | || '_ \/ __| __| '__| | | |/ __| __| |/ _ \| '_ \
+//  | || | | \__ \ |_| |  | |_| | (__| |_| | (_) | | | |
+// |___|_| |_|___/\__|_|   \__,_|\___|\__|_|\___/|_| |_|
+
 pub const Instruction = enum(u8) {
     // A.5.1. Instructions without Arguments
     trap = 0,
@@ -139,3 +152,421 @@ pub const Instruction = enum(u8) {
     cmov_iz = 198,
     cmov_nz = 199,
 };
+
+//     _                                         _  _____
+//    / \   _ __ __ _ _   _ _ __ ___   ___ _ __ | ||_   _|   _ _ __   ___
+//   / _ \ | '__/ _` | | | | '_ ` _ \ / _ \ '_ \| __|| || | | | '_ \ / _ \
+//  / ___ \| | | (_| | |_| | | | | | |  __/ | | | |_ | || |_| | |_) |  __/
+// /_/   \_\_|  \__, |\__,_|_| |_| |_|\___|_| |_|\__||_| \__, | .__/ \___|
+//              |___/                                    |___/|_|
+
+/// Represents a PVM instruction type with its opcode range and operand structure
+pub const InstructionType = enum {
+    // Instructions with no arguments (A.5.1)
+    NoArgs, // 0-1: trap, fallthrough
+    // Instructions with one immediate (A.5.2)
+    OneImm, // 10: ecalli
+    // Instructions with one register and one extended width immediate (A.5.3)
+    OneRegOneExtImm, // 20: load_imm_64
+    // Instructions with two immediates (A.5.4)
+    TwoImm, // 30-33: store_imm_u8, store_imm_u16, etc.
+    // Instructions with one offset (A.5.5)
+    OneOffset, // 40: jump
+    // Instructions with one register and one immediate (A.5.6)
+    OneRegOneImm, // 50-62: jump_ind, load_imm, load_u8, etc.
+    // Instructions with one register and two immediates (A.5.7)
+    OneRegTwoImm, // 70-73: store_imm_ind_u8, store_imm_ind_u16, etc.
+    // Instructions with one register, one immediate and one offset (A.5.8)
+    OneRegOneImmOneOffset, // 80-90: load_imm_jump, branch_eq_imm, etc.
+    // Instructions with two registers (A.5.9)
+    TwoReg, // 100-101: move_reg, sbrk
+    // Instructions with two registers and one immediate (A.5.10)
+    TwoRegOneImm, // 110-147: store_ind_u8, load_ind_u8, add_imm_32, etc.
+    // Instructions with two registers and one offset (A.5.11)
+    TwoRegOneOffset, // 150-155: branch_eq, branch_ne, etc.
+    // Instructions with two registers and two immediates (A.5.12)
+    TwoRegTwoImm, // 160: load_imm_jump_ind
+    // Instructions with three registers (A.5.13)
+    ThreeReg, // 170-199: add_32, sub_32, mul_32, etc.
+
+    pub fn lookUp(inst: Instruction) InstructionType {
+        return lookupInstructionType(inst);
+    }
+};
+
+/// Maps instruction types to their valid opcode ranges
+const InstructionRange = struct {
+    start: u8,
+    end: u8,
+};
+
+/// Valid opcode ranges for each instruction type
+pub const InstructionRanges = std.StaticStringMap(InstructionRange)
+    .initComptime(.{
+    .{ "NoArgs", .{ .start = 0, .end = 1 } },
+    .{ "OneImm", .{ .start = 10, .end = 10 } },
+    .{ "OneRegOneExtImm", .{ .start = 20, .end = 20 } },
+    .{ "TwoImm", .{ .start = 30, .end = 33 } },
+    .{ "OneOffset", .{ .start = 40, .end = 40 } },
+    .{ "OneRegOneImm", .{ .start = 50, .end = 62 } },
+    .{ "OneRegTwoImm", .{ .start = 70, .end = 73 } },
+    .{ "OneRegOneImmOneOffset", .{ .start = 80, .end = 90 } },
+    .{ "TwoReg", .{ .start = 100, .end = 101 } },
+    .{ "TwoRegOneImm", .{ .start = 110, .end = 147 } },
+    .{ "TwoRegOneOffset", .{ .start = 150, .end = 155 } },
+    .{ "TwoRegTwoImm", .{ .start = 160, .end = 160 } },
+    .{ "ThreeReg", .{ .start = 170, .end = 199 } },
+});
+
+//  ___           _                   _   _                _
+// |_ _|_ __  ___| |_ _ __ _   _  ___| |_(_) ___  _ __    / \   _ __ __ _ ___
+//  | || '_ \/ __| __| '__| | | |/ __| __| |/ _ \| '_ \  / _ \ | '__/ _` / __|
+//  | || | | \__ \ |_| |  | |_| | (__| |_| | (_) | | | |/ ___ \| | | (_| \__ \
+// |___|_| |_|___/\__|_|   \__,_|\___|\__|_|\___/|_| |_/_/   \_\_|  \__, |___/
+//                                                                  |___/
+
+pub const InstructionArgs = union(InstructionType) {
+
+    // Instruction argument types
+    // TODO: rename ..Type to ..Args
+    pub const NoArgsType = struct { no_of_bytes_to_skip: u32 };
+    pub const OneImmType = struct { no_of_bytes_to_skip: u32, immediate: u64 };
+    pub const OneRegOneExtImmType = struct {
+        no_of_bytes_to_skip: u32,
+        register_index: u8,
+        immediate: u64,
+    };
+    pub const TwoImmType = struct {
+        no_of_bytes_to_skip: u32,
+        first_immediate: u64,
+        second_immediate: u64,
+    };
+    pub const OneOffsetType = struct {
+        no_of_bytes_to_skip: u32,
+        offset: i32,
+    };
+    pub const OneRegOneImmType = struct {
+        no_of_bytes_to_skip: u32,
+        register_index: u8,
+        immediate: u64,
+    };
+    pub const OneRegTwoImmType = struct {
+        no_of_bytes_to_skip: u32,
+        register_index: u8,
+        first_immediate: u64,
+        second_immediate: u64,
+    };
+    pub const OneRegOneImmOneOffsetType = struct {
+        no_of_bytes_to_skip: u32,
+        register_index: u8,
+        immediate: u64,
+        offset: i32,
+    };
+    pub const TwoRegType = struct {
+        no_of_bytes_to_skip: u32,
+        first_register_index: u8,
+        second_register_index: u8,
+    };
+    pub const TwoRegOneImmType = struct {
+        no_of_bytes_to_skip: u32,
+        first_register_index: u8,
+        second_register_index: u8,
+        immediate: u64,
+    };
+    pub const TwoRegOneOffsetType = struct {
+        no_of_bytes_to_skip: u32,
+        first_register_index: u8,
+        second_register_index: u8,
+        offset: i32,
+    };
+    pub const TwoRegTwoImmType = struct {
+        no_of_bytes_to_skip: u32,
+        first_register_index: u8,
+        second_register_index: u8,
+        first_immediate: u64,
+        second_immediate: u64,
+    };
+    pub const ThreeRegType = struct {
+        no_of_bytes_to_skip: u32,
+        first_register_index: u8,
+        second_register_index: u8,
+        third_register_index: u8,
+    };
+
+    // A.5.1
+    NoArgs: NoArgsType,
+    // A.5.2
+    OneImm: OneImmType,
+    // A.5.3
+    OneRegOneExtImm: OneRegOneExtImmType,
+    // A.5.4
+    TwoImm: TwoImmType,
+    // A.5.5
+    OneOffset: OneOffsetType,
+    // A.5.6
+    OneRegOneImm: OneRegOneImmType,
+    // A.5.7
+    OneRegTwoImm: OneRegTwoImmType,
+    // A.5.8
+    OneRegOneImmOneOffset: OneRegOneImmOneOffsetType,
+    // A.5.9
+    TwoReg: TwoRegType,
+    // A.5.10
+    TwoRegOneImm: TwoRegOneImmType,
+    // A.5.11
+    TwoRegOneOffset: TwoRegOneOffsetType,
+    // A.5.12
+    TwoRegTwoImm: TwoRegTwoImmType,
+    // A.5.13
+    ThreeReg: ThreeRegType,
+
+    pub fn skip_l(self: *const @This()) u32 {
+        return switch (self.*) {
+            .NoArgs => |v| v.no_of_bytes_to_skip,
+            .OneImm => |v| v.no_of_bytes_to_skip,
+            .OneOffset => |v| v.no_of_bytes_to_skip,
+            .OneRegOneImm => |v| v.no_of_bytes_to_skip,
+            .OneRegOneImmOneOffset => |v| v.no_of_bytes_to_skip,
+            .OneRegTwoImm => |v| v.no_of_bytes_to_skip,
+            .OneRegOneExtImm => |v| v.no_of_bytes_to_skip,
+            .ThreeReg => |v| v.no_of_bytes_to_skip,
+            .TwoImm => |v| v.no_of_bytes_to_skip,
+            .TwoReg => |v| v.no_of_bytes_to_skip,
+            .TwoRegOneImm => |v| v.no_of_bytes_to_skip,
+            .TwoRegOneOffset => |v| v.no_of_bytes_to_skip,
+            .TwoRegTwoImm => |v| v.no_of_bytes_to_skip,
+        };
+    }
+};
+
+pub const InstructionWithArgs = struct {
+    instruction: Instruction,
+    args: InstructionArgs,
+
+    pub fn encode(self: *const @This(), writer: anytype) !u8 {
+        return try @import("instruction/encoder.zig").encodeInstruction(writer, self);
+    }
+
+    pub fn isTerminationInstruction(self: *const @This()) bool {
+        return switch (self.instruction) {
+            .trap,
+            .fallthrough,
+            .jump,
+            .jump_ind,
+            .load_imm_jump,
+            .load_imm_jump_ind,
+            .branch_eq,
+            .branch_ne,
+            .branch_ge_u,
+            .branch_ge_s,
+            .branch_lt_u,
+            .branch_lt_s,
+            .branch_eq_imm,
+            .branch_ne_imm,
+            .branch_lt_u_imm,
+            .branch_lt_s_imm,
+            .branch_le_u_imm,
+            .branch_le_s_imm,
+            .branch_ge_u_imm,
+            .branch_ge_s_imm,
+            .branch_gt_u_imm,
+            .branch_gt_s_imm,
+            => true,
+            else => false,
+        };
+    }
+
+    pub fn instructionType(self: *@This()) InstructionType {
+        return @as(InstructionType, self.args);
+    }
+
+    pub fn setSkipBytes(self: *@This(), skip_bytes: u32) void {
+        switch (self.args) {
+            .NoArgs => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneOffset => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneRegOneImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneRegOneImmOneOffset => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneRegTwoImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneRegOneExtImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .ThreeReg => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoReg => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoRegOneImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoRegOneOffset => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoRegTwoImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+        }
+    }
+
+    pub fn setSkipBytesC(self: *@This(), skip_bytes: u32) void {
+        const Tag = std.meta.Tag(InstructionArgs);
+        inline for (comptime std.meta.fields(Tag)) |field| {
+            if (@as(Tag, self.args) == @field(Tag, field.name)) {
+                @field(self.args, field.name).no_of_bytes_to_skip = skip_bytes;
+                return;
+            }
+        }
+    }
+
+    pub fn skip_l(self: *const @This()) u32 {
+        return self.args.skip_l();
+    }
+
+    pub fn format(
+        self: *const @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try @import("./decoder/format.zig").formatInstructionWithArgs(self, fmt, options, writer);
+    }
+};
+
+pub fn lookupInstructionType(instruction: Instruction) InstructionType {
+    return switch (instruction) {
+        // No argument instructions
+        .trap, .fallthrough => .NoArgs,
+
+        // One immediate instructions
+        .ecalli => .OneImm,
+
+        // One register and extended width immediate instructions
+        .load_imm_64 => .OneRegOneExtImm,
+
+        // Two immediate instructions
+        .store_imm_u8,
+        .store_imm_u16,
+        .store_imm_u32,
+        .store_imm_u64,
+        => .TwoImm,
+
+        // One offset instructions
+        .jump => .OneOffset,
+
+        // One register and one immediate instructions
+        .jump_ind,
+        .load_imm,
+        .load_u8,
+        .load_i8,
+        .load_u16,
+        .load_i16,
+        .load_u32,
+        .load_i32,
+        .load_u64,
+        .store_u8,
+        .store_u16,
+        .store_u32,
+        .store_u64,
+        => .OneRegOneImm,
+
+        // One register and two immediates instructions
+        .store_imm_ind_u8,
+        .store_imm_ind_u16,
+        .store_imm_ind_u32,
+        .store_imm_ind_u64,
+        => .OneRegTwoImm,
+
+        // One register, one immediate and one offset instructions
+        .load_imm_jump,
+        .branch_eq_imm,
+        .branch_ne_imm,
+        .branch_lt_u_imm,
+        .branch_le_u_imm,
+        .branch_ge_u_imm,
+        .branch_gt_u_imm,
+        .branch_lt_s_imm,
+        .branch_le_s_imm,
+        .branch_ge_s_imm,
+        .branch_gt_s_imm,
+        => .OneRegOneImmOneOffset,
+
+        // Two registers instructions
+        .move_reg, .sbrk => .TwoReg,
+
+        // Two registers and one immediate instructions
+        .store_ind_u8,
+        .store_ind_u16,
+        .store_ind_u32,
+        .store_ind_u64,
+        .load_ind_u8,
+        .load_ind_u16,
+        .load_ind_u32,
+        .load_ind_u64,
+        .load_ind_i8,
+        .load_ind_i16,
+        .load_ind_i32,
+        .and_imm,
+        .xor_imm,
+        .or_imm,
+        .set_lt_u_imm,
+        .set_lt_s_imm,
+        .set_gt_u_imm,
+        .set_gt_s_imm,
+        .shlo_l_imm_32,
+        .shlo_l_imm_64,
+        .shlo_l_imm_alt_32,
+        .shlo_l_imm_alt_64,
+        .shlo_r_imm_32,
+        .shlo_r_imm_64,
+        .shlo_r_imm_alt_32,
+        .shlo_r_imm_alt_64,
+        .shar_r_imm_32,
+        .shar_r_imm_64,
+        .shar_r_imm_alt_32,
+        .shar_r_imm_alt_64,
+        .cmov_iz_imm,
+        .cmov_nz_imm,
+        .neg_add_imm_32,
+        .neg_add_imm_64,
+        .add_imm_32,
+        .mul_imm_32,
+        .add_imm_64,
+        .mul_imm_64,
+        => .TwoRegOneImm,
+
+        // Two registers and one offset instructions
+        .branch_eq,
+        .branch_ne,
+        .branch_lt_u,
+        .branch_lt_s,
+        .branch_ge_u,
+        .branch_ge_s,
+        => .TwoRegOneOffset,
+
+        // Two registers and two immediates instructions
+        .load_imm_jump_ind => .TwoRegTwoImm,
+
+        // Three registers instructions
+        .add_32,
+        .sub_32,
+        .mul_32,
+        .div_u_32,
+        .div_s_32,
+        .rem_u_32,
+        .rem_s_32,
+        .shlo_l_32,
+        .shlo_r_32,
+        .shar_r_32,
+        .add_64,
+        .sub_64,
+        .mul_64,
+        .div_u_64,
+        .div_s_64,
+        .rem_u_64,
+        .rem_s_64,
+        .shlo_l_64,
+        .shlo_r_64,
+        .shar_r_64,
+        .@"and",
+        .xor,
+        .@"or",
+        .mul_upper_s_s,
+        .mul_upper_u_u,
+        .mul_upper_s_u,
+        .set_lt_u,
+        .set_lt_s,
+        .cmov_iz,
+        .cmov_nz,
+        => .ThreeReg,
+    };
+}
