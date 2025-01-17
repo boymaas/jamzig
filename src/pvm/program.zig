@@ -136,7 +136,10 @@ pub const Program = struct {
         basic_span.debug("Starting basic block analysis", .{});
 
         while (pc < program.code.len) {
-            const instruction = try decoder.decodeInstruction(pc);
+            const instruction = decoder.decodeInstruction(pc) catch |err| {
+                basic_span.err("PC 0x{X:0>4}: unknown instruction {d}: {any}", .{ pc, decoder.getCodeAt(pc), err });
+                return err;
+            };
             basic_span.trace("PC 0x{X:0>4}: Instruction: {}", .{ pc, instruction });
 
             // Check if this instruction terminates a basic block
@@ -145,7 +148,7 @@ pub const Program = struct {
                 // For branches, the next instruction starts a new basic block
                 const next_pc = pc + 1 + instruction.args.skip_l();
                 // Allow 8 byte padding for possible final instruction's immediate value
-                if (next_pc < program.code.len + Decoder.MaxImmediateSizeInBytes) {
+                if (next_pc < program.code.len + Decoder.MaxInstructionSizeInBytes) {
                     try basic_blocks.append(next_pc);
                 } else {
                     return Error.ProgramTooShort;

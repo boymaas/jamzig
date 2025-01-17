@@ -1,5 +1,10 @@
 const std = @import("std");
 
+// each instruction's 'length' (defined as the number of contiguous octets
+// starting with the opcode which are needed to fully define the instruction's
+// semantics) is left implicit though limited to being at most 16.
+pub const MaxInstructionSizeInBytes = 16;
+
 //  ___           _                   _   _
 // |_ _|_ __  ___| |_ _ __ _   _  ___| |_(_) ___  _ __
 //  | || '_ \/ __| __| '__| | | |/ __| __| |/ _ \| '_ \
@@ -337,6 +342,10 @@ pub const InstructionArgs = union(InstructionType) {
 pub const InstructionWithArgs = struct {
     instruction: Instruction,
     args: InstructionArgs,
+
+    pub fn encode(self: *const @This(), writer: anytype) !u8 {
+        return try @import("instruction/encoder.zig").encodeInstruction(writer, self);
+    }
 
     pub fn isTerminationInstruction(self: *const @This()) bool {
         return switch (self.instruction) {

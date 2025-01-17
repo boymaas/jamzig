@@ -15,7 +15,7 @@ pub const Decoder = struct {
     code: []const u8,
     mask: []const u8,
 
-    pub const MaxImmediateSizeInBytes = 8;
+    pub const MaxInstructionSizeInBytes = @import("instruction.zig").MaxInstructionSizeInBytes;
 
     pub const Error = error{
         InvalidInstruction,
@@ -154,7 +154,7 @@ pub const Decoder = struct {
     }
 
     const CodeSlice = struct {
-        buffer: [MaxImmediateSizeInBytes]u8 = undefined,
+        buffer: [MaxInstructionSizeInBytes]u8 = undefined,
         len: u8,
 
         pub fn asSlice(self: *const @This()) []const u8 {
@@ -173,7 +173,7 @@ pub const Decoder = struct {
 
         // Initialize from slice
         pub inline fn fromSlice(slice: []const u8) CodeSlice {
-            std.debug.assert(slice.len < MaxImmediateSizeInBytes);
+            std.debug.assert(slice.len < MaxInstructionSizeInBytes);
             var self = CodeSlice{ .len = @intCast(slice.len) };
             std.mem.copyForwards(u8, self.buffer[0..slice.len], slice);
             return self;
@@ -196,7 +196,7 @@ pub const Decoder = struct {
     };
 
     pub fn getCodeSliceAt(self: *const @This(), pc: u32, len: u32) CodeSlice {
-        std.debug.assert(len <= MaxImmediateSizeInBytes);
+        std.debug.assert(len <= MaxInstructionSizeInBytes);
         const end = pc + len;
         if (pc <= self.code.len and end > self.code.len) {
             // we are extending the code, return 0 buffer
@@ -218,19 +218,19 @@ pub const Decoder = struct {
     }
 
     inline fn decodeInt(self: *const Decoder, comptime T: type, pc: u32) Error!T {
-        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInBytes]u8);
+        var overflow_buffer = std.mem.zeroes([MaxInstructionSizeInBytes]u8);
         const slice: *const [@sizeOf(T)]u8 = self.getCodeSliceAt(&overflow_buffer, pc, @sizeOf(T)).asSlice()[0..@sizeOf(T)];
         return std.mem.readInt(T, slice, .little);
     }
 
     inline fn decodeImmediate(self: *const Decoder, pc: u32, length: u32) Error!u64 {
-        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInBytes]u8);
+        var overflow_buffer = std.mem.zeroes([MaxInstructionSizeInBytes]u8);
         const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
         return immediate.decodeUnsigned(slice);
     }
 
     inline fn decodeImmediateSigned(self: *const Decoder, pc: u32, length: u32) Error!i64 {
-        var overflow_buffer = std.mem.zeroes([MaxImmediateSizeInBytes]u8);
+        var overflow_buffer = std.mem.zeroes([MaxInstructionSizeInBytes]u8);
         const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
         return immediate.decodeSigned(slice);
     }

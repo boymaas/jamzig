@@ -1,7 +1,33 @@
 const std = @import("std");
 
+const InstructionWithArgs = @import("../instruction.zig").InstructionWithArgs;
+
 // Immediates: encoded as 32-bit, sign-extended to 64-bit on decode
 const ImmediateSizeInBytes: usize = 4;
+
+pub fn encodeInstruction(writer: anytype, iwa: *const InstructionWithArgs) !u8 {
+    // First encode the instruction opcode
+    try writer.writeByte(@intFromEnum(iwa.instruction));
+
+    // Then encode the arguments based on instruction type
+    const arg_length = switch (iwa.args) {
+        .NoArgs => |_| try encodeNoArgs(writer),
+        .OneImm => |args| try encodeOneImm(writer, @truncate(args.immediate)),
+        .OneRegOneExtImm => |args| try encodeOneRegOneExtImm(writer, args.register_index, args.immediate),
+        .TwoImm => |args| try encodeTwoImm(writer, @truncate(args.first_immediate), @truncate(args.second_immediate)),
+        .OneOffset => |args| try encodeOneOffset(writer, args.offset),
+        .OneRegOneImm => |args| try encodeOneRegOneImm(writer, args.register_index, @truncate(args.immediate)),
+        .OneRegTwoImm => |args| try encodeOneRegTwoImm(writer, args.register_index, @truncate(args.first_immediate), @truncate(args.second_immediate)),
+        .OneRegOneImmOneOffset => |args| try encodeOneRegOneImmOneOffset(writer, args.register_index, @truncate(args.immediate), args.offset),
+        .TwoReg => |args| try encodeTwoReg(writer, args.first_register_index, args.second_register_index),
+        .TwoRegOneImm => |args| try encodeTwoRegOneImm(writer, args.first_register_index, args.second_register_index, @truncate(args.immediate)),
+        .TwoRegOneOffset => |args| try encodeTwoRegOneOffset(writer, args.first_register_index, args.second_register_index, args.offset),
+        .TwoRegTwoImm => |args| try encodeTwoRegTwoImm(writer, args.first_register_index, args.second_register_index, @truncate(args.first_immediate), @truncate(args.second_immediate)),
+        .ThreeReg => |args| try encodeThreeReg(writer, args.first_register_index, args.second_register_index, args.third_register_index),
+    };
+
+    return 1 + arg_length;
+}
 
 pub fn encodeNoArgs(writer: anytype) !u8 {
     _ = writer;
@@ -14,7 +40,7 @@ pub fn encodeOneImm(writer: anytype, imm: u32) !u8 {
     return l_x;
 }
 
-pub fn encodeOneRegOneExtImm(writer: anytype, reg_a: u8, imm: u32) !u8 {
+pub fn encodeOneRegOneExtImm(writer: anytype, reg_a: u8, imm: u64) !u8 {
     try writer.writeByte(reg_a & 0x0F);
     try writer.writeInt(u64, imm, .little);
     return 1 + 8;

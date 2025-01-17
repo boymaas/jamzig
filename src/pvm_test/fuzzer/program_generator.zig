@@ -2,9 +2,14 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const codec = @import("../../codec.zig");
+const InstructionWithArgs = @import("../../pvm/instruction.zig").InstructionWithArgs;
+const InstructionType = @import("../../pvm/instruction.zig").InstructionType;
+const MaxInstructionSizeInBytes = @import("../../pvm/instruction.zig").MaxInstructionSizeInBytes;
 
 const SeedGenerator = @import("seed.zig").SeedGenerator;
 const code_gen = @import("program_generator/code_generator.zig");
+
+const JumpAlignmentFactor = 2; // ZA = 2 as per spec
 
 /// Represents the complete encoded PVM program
 pub const GeneratedProgram = struct {
@@ -109,13 +114,47 @@ pub const ProgramGenerator = struct {
         const instructions = try code_gen.generate(self.allocator, self.seed_gen, instruction_count);
         defer self.allocator.free(instructions);
 
-        // Now we have a randomly generated program, we need to walk it to
-        // find the termination expressions to build the basic blocks
+        var code = try std.ArrayList(u8).initCapacity(self.allocator, instruction_count * MaxInstructionSizeInBytes);
+        defer code.deinit();
+        var mask_bitset = try std.DynamicBitSet.initEmpty(self.allocator, instruction_count * MaxInstructionSizeInBytes);
+        defer mask_bitset.deinit();
+        var basic_blocks = std.ArrayList(u32).init(self.allocator);
+        defer basic_blocks.deinit();
+
+        var jump_table = std.ArrayList(u32).init(self.allocator);
+        errdefer jump_table.deinit();
+
+        // always start with pos0
+        try basic_blocks.append(0);
+        try jump_table.append(0);
+
+        var pc: u32 = 0;
+        const code_writer = code.writer();
+        for (instructions) |inst| {
+            pc += try inst.encode(code_writer);
+            if (inst.isTerminationInstruction()) {
+                try basic_blocks.append(pc);
+                try jump_table.append(pc);
+            }
+            mask_bitset.set(pc);
+        }
+
+        // generate the mask, we allocate ceil + 1 as the mask could possible end
+        const mask = try self.allocator.alloc(u8, try std.math.divCeil(usize, pc, 8) + 1);
+        @memset(mask, 0);
+        var mask_iter = mask_bitset.iterator(.{});
+        while (mask_iter.next()) |bidx| {
+            mask[bidx / 8] |= @as(u8, 1) << @intCast(bidx % 8);
+        }
+
+        // On the second pass of our program we need to find the dynamic jumps
+        // and let them jump to any of the elements in our jump table to make
+        // these jumps valid
 
         return GeneratedProgram{
-            .code = undefined,
-            .mask = undefined,
-            .jump_table = undefined,
+            .code = try code.toOwnedSlice(),
+            .mask = mask,
+            .jump_table = try jump_table.toOwnedSlice(),
         };
     }
 };
