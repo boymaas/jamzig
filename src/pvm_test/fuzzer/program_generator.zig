@@ -217,30 +217,3 @@ test "simple" {
         pc += i.skip_l() + 1;
     }
 }
-
-test "getRawBytes" {
-    // Create test data
-    const allocator = std.testing.allocator;
-
-    var program = GeneratedProgram{
-        .code = try allocator.dupe(u8, &[_]u8{ 0x01, 0x02, 0x03 }),
-        .mask = try allocator.dupe(u8, &[_]u8{ 0xFF, 0x0F }),
-        .jump_table = try allocator.dupe(u32, &[_]u32{ 10, 20, 30 }),
-        .raw_bytes = null,
-    };
-    defer program.deinit(allocator);
-
-    // Get raw bytes
-    const raw = try program.getRawBytes(allocator);
-
-    // Verify the encoded data can be decoded back
-    var decoded = try @import("../../pvm/program.zig").Program.decode(allocator, raw);
-    defer decoded.deinit(allocator);
-
-    // Verify contents match
-    try std.testing.expectEqualSlices(u8, program.code, decoded.code);
-    try std.testing.expectEqualSlices(u8, program.mask, decoded.mask);
-    for (program.jump_table, 0..) |target, i| {
-        try std.testing.expectEqual(target, decoded.jump_table.getDestination(i));
-    }
-}

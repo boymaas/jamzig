@@ -111,7 +111,7 @@ test "pvm:args:immediate - max negative value" {
 
 test "pvm:args:immediate - truncate long input" {
     const testing = std.testing;
-    const input = &[_]u8{ 0x11, 0x22, 0x33, 0x44, 0x55 };
-    try testing.expectEqual(@as(i64, 0x44332211), decodeSigned(input));
-    try testing.expectEqual(@as(u64, 0x44332211), decodeUnsigned(input));
+    const input = &[_]u8{ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C };
+    try testing.expectEqual(@as(i64, 0x0807060504030201), decodeSigned(input));
+    try testing.expectEqual(@as(u64, 0x0807060504030201), decodeUnsigned(input));
 }

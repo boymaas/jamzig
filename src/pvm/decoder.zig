@@ -253,7 +253,7 @@ inline fn safeSubstract(comptime T: type, initial: T, values: anytype) !T {
             if (result >= value) {
                 result = result - value;
             } else {
-                return Decoder.Error.invalid_immediate_length;
+                return Decoder.Error.InvalidImmediateLength;
             }
         }
         return result;
@@ -273,7 +273,7 @@ test "safeSubstract - single value" {
 }
 
 test "safeSubstract - error on underflow" {
-    try std.testing.expectError(Decoder.Error.invalid_immediate_length, safeSubstract(u32, 5, .{ 3, 3 }));
+    try std.testing.expectError(Decoder.Error.InvalidImmediateLength, safeSubstract(u32, 5, .{ 3, 4 }));
 }
 
 test "safeSubstract - different types" {
