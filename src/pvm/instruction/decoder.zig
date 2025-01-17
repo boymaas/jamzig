@@ -3,7 +3,7 @@ const std = @import("std");
 const Instruction = @import("../instruction.zig").Instruction;
 const InstructionType = @import("../instruction.zig").InstructionType;
 const InstructionArgs = @import("../instruction.zig").InstructionArgs;
-const InstructionWithArgs = @import("../instruction.zig").InstructionArgs;
+const InstructionWithArgs = @import("../instruction.zig").InstructionWithArgs;
 
 const Immediate = @import("immediate.zig");
 const Nibble = @import("nibble.zig");
@@ -16,7 +16,7 @@ pub const Error = error{
 };
 
 /// Takes a byte slice containing instruction opcode and arguments. Slice length determines argument size.
-pub fn decodeInstruction(bytes: []u8) Error!InstructionWithArgs {
+pub fn decodeInstruction(bytes: []const u8) Error!InstructionWithArgs {
     const inst = std.meta.intToEnum(Instruction, bytes[0]) catch {
         // std.debug.print("Error decoding instruction at pc {}: code 0x{X:0>2} ({d})\n", .{ pc, self.getCodeAt(pc), self.getCodeAt(pc) });
         return Error.InvalidInstruction;
@@ -41,7 +41,6 @@ pub fn decodeInstruction(bytes: []u8) Error!InstructionWithArgs {
 
     return InstructionWithArgs{
         .instruction = inst,
-        .args_type = inst_type,
         .args = inst_args,
     };
 }
@@ -142,7 +141,7 @@ pub fn decodeOneRegOneImmOneOffset(bytes: []const u8) Error!InstructionArgs.OneR
         .no_of_bytes_to_skip = 1 + l_x + l_y,
         .register_index = r_a,
         .immediate = Immediate.decodeUnsigned(bytes[1..][0..l_x]),
-        .offset = @intCast(Immediate.decodeSigned(bytes[1..][l_x..][0..l_y])),
+        .offset = @intCast(Immediate.decodeOffset(bytes[1..][l_x..][0..l_y])),
     };
 }
 

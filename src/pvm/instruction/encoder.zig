@@ -29,6 +29,32 @@ pub fn encodeInstruction(writer: anytype, iwa: *const InstructionWithArgs) !u8 {
     return 1 + arg_length;
 }
 
+pub const MaxInstructionSizeInBytes = @import("../instruction.zig").MaxInstructionSizeInBytes;
+const EncodedInstruction = struct {
+    buffer: [MaxInstructionSizeInBytes]u8,
+    len: u8,
+
+    pub fn asSlice(self: *const EncodedInstruction) []const u8 {
+        return self.buffer[0..self.len];
+    }
+};
+
+pub fn encodeInstructionOwned(iwa: *const InstructionWithArgs) !EncodedInstruction {
+    var result = EncodedInstruction{
+        .buffer = undefined,
+        .len = 0,
+    };
+
+    // Create a fixed buffer writer
+    var fbs = std.io.fixedBufferStream(&result.buffer);
+    const writer = fbs.writer();
+
+    // Encode the instruction into the buffer
+    result.len = try encodeInstruction(writer, iwa);
+
+    return result;
+}
+
 pub fn encodeNoArgs(writer: anytype) !u8 {
     _ = writer;
     return 0;
@@ -67,23 +93,23 @@ pub fn encodeOneRegTwoImm(writer: anytype, reg_a: u8, imm1: u32, imm2: u32) !u8 
     try writer.writeByte((reg_a & 0x0F) | (l_x << 4));
     try writeImm(writer, imm1, l_x);
     try writeImm(writer, imm2, l_y);
-    return l_x + l_y + 2;
+    return l_x + l_y + 1;
 }
 
 pub fn encodeOneRegOneImm(writer: anytype, reg_a: u8, imm: u32) !u8 {
     const l_x = calcLengthNeeded(imm);
     try writer.writeByte(reg_a & 0x0F);
     try writeImm(writer, imm, l_x);
-    return l_x + 2;
+    return l_x + 1;
 }
 
 pub fn encodeOneRegOneImmOneOffset(writer: anytype, reg_a: u8, imm: u32, offset: i32) !u8 {
     const l_x = calcLengthNeeded(imm);
-    const l_y = calcLengthNeeded(@as(u32, @bitCast(offset)));
+    const l_y = calcLengthNeeded(@bitCast(offset));
     try writer.writeByte((reg_a & 0x0F) | (l_x << 4));
     try writeImm(writer, imm, l_x);
-    try writeImm(writer, @as(u32, @bitCast(offset)), l_y);
-    return l_x + l_y + 2;
+    try writeImm(writer, @bitCast(offset), l_y);
+    return l_x + l_y + 1;
 }
 
 pub fn encodeTwoReg(writer: anytype, reg_a: u8, reg_b: u8) !u8 {
@@ -95,14 +121,14 @@ pub fn encodeTwoRegOneImm(writer: anytype, reg_a: u8, reg_b: u8, imm: u32) !u8 {
     const l_x = calcLengthNeeded(imm);
     try writer.writeByte((reg_a & 0x0F) | (reg_b << 4));
     try writeImm(writer, imm, l_x);
-    return l_x + 2;
+    return l_x + 1;
 }
 
 pub fn encodeTwoRegOneOffset(writer: anytype, reg_a: u8, reg_b: u8, offset: i32) !u8 {
     const l_x = calcLengthNeeded(@bitCast(offset));
     try writer.writeByte((reg_a & 0x0F) | (reg_b << 4));
     try writeImm(writer, @bitCast(offset), l_x);
-    return l_x + 2;
+    return l_x + 1;
 }
 
 pub fn encodeTwoRegTwoImm(writer: anytype, reg_a: u8, reg_b: u8, imm1: u32, imm2: u32) !u8 {
@@ -112,7 +138,7 @@ pub fn encodeTwoRegTwoImm(writer: anytype, reg_a: u8, reg_b: u8, imm1: u32, imm2
     try writer.writeByte(l_x);
     try writeImm(writer, imm1, l_x);
     try writeImm(writer, imm2, l_y);
-    return l_x + l_y + 3;
+    return l_x + l_y + 2;
 }
 
 pub fn encodeThreeReg(writer: anytype, reg_a: u8, reg_b: u8, reg_d: u8) !u8 {

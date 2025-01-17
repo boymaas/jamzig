@@ -380,6 +380,34 @@ pub const InstructionWithArgs = struct {
         return @as(InstructionType, self.args);
     }
 
+    pub fn setSkipBytes(self: *@This(), skip_bytes: u32) void {
+        switch (self.args) {
+            .NoArgs => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneOffset => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneRegOneImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneRegOneImmOneOffset => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneRegTwoImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .OneRegOneExtImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .ThreeReg => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoReg => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoRegOneImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoRegOneOffset => |*args| args.no_of_bytes_to_skip = skip_bytes,
+            .TwoRegTwoImm => |*args| args.no_of_bytes_to_skip = skip_bytes,
+        }
+    }
+
+    pub fn setSkipBytesC(self: *@This(), skip_bytes: u32) void {
+        const Tag = std.meta.Tag(InstructionArgs);
+        inline for (comptime std.meta.fields(Tag)) |field| {
+            if (@as(Tag, self.args) == @field(Tag, field.name)) {
+                @field(self.args, field.name).no_of_bytes_to_skip = skip_bytes;
+                return;
+            }
+        }
+    }
+
     pub fn skip_l(self: *const @This()) u32 {
         return self.args.skip_l();
     }

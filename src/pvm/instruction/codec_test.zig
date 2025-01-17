@@ -4,16 +4,33 @@ const testing = std.testing;
 const decoder = @import("decoder.zig");
 const encoder = @import("encoder.zig");
 
+const InstructionWithArgs = @import("../instruction.zig").InstructionWithArgs;
 const InstructionArgs = @import("../instruction.zig").InstructionArgs;
 const InstructionType = @import("../instruction.zig").InstructionType;
 const InstructionRanges = @import("../instruction.zig").InstructionRanges;
 
-fn blah(T: type, arg: T) T {
-    //
-    _ = arg;
+test "encodeInstruction <==> decodeInstruction roundtrip" {
+    std.debug.print("Performing roundtrip {{decode,encode}}Instruction\n\n", .{});
+    var prng = std.Random.DefaultPrng.init(0);
+    var random = prng.random();
+    for (0..1_000_000) |_| {
+        // Generate a random instruction, please not
+        // we do note generate a correct no_of_bytes_to_skip
+        var rinst = randomInstruction(&random);
+
+        const encoded = try encoder.encodeInstructionOwned(&rinst);
+        const decoded = try decoder.decodeInstruction(encoded.asSlice());
+
+        // set the rinst bytes to skip the same for the comparison, since
+        // randomInstruction put this to 0
+        rinst.setSkipBytes(decoded.skip_l());
+
+        // std.debug.print("{s} == {s}\r", .{ rinst, decoded });
+        try std.testing.expectEqualDeep(rinst, decoded);
+    }
 }
 
-test "instruction encoding <==> decoding roundtrip tests" {
+test " encodeXXXX <==> decodXXX roundtrip tests" {
     var prng = std.Random.DefaultPrng.init(0);
     var random = prng.random();
     inline for (std.meta.fields(InstructionType)) |field| {
@@ -27,7 +44,7 @@ test "instruction encoding <==> decoding roundtrip tests" {
 
         const PGen = makeParamGenerator(@TypeOf(encodeFn));
 
-        for (0..10_000_001) |i| {
+        for (0..10_000) |i| {
             std.debug.print("Testing instruction: {s}  ==> iteration {d:>6}\r", .{ field.name, i });
             const encode_fn_params = PGen.generateParams(&random);
 
@@ -79,6 +96,7 @@ fn makeParamGenerator(comptime encodeFn: type) type {
                 params[i] = switch (comptime param_type) {
                     u8 => random.int(u8), // Register index (0-11)
                     u32 => random.int(u32), // Immediate value
+                    u64 => random.int(u64), // Extended Immediate
                     i32 => random.int(i32), // Offset
                     else => @compileError("Unexpected parameter type: " ++ @typeName(param_type)),
                 };
@@ -231,4 +249,49 @@ fn verifyInstructionArgs(
             unreachable;
         },
     }
+}
+
+/// Generates a random instruction
+pub fn randomInstruction(random: *std.Random) InstructionWithArgs {
+    var inst_with_args: InstructionWithArgs = undefined;
+
+    // Select random instruction type (excluding NoArgs which is for terminators)
+    const inst_type = @as(InstructionType, @enumFromInt(
+        random.intRangeAtMost(u8, 0, std.meta.fields(InstructionType).len - 1),
+    ));
+
+    const range = InstructionRanges.get(@tagName(inst_type)).?;
+    inst_with_args.instruction = @enumFromInt(random.intRangeAtMost(u8, range.start, range.end));
+
+    inline for (std.meta.fields(InstructionType)) |inst_type_field| {
+        if (inst_type == @as(InstructionType, @enumFromInt(inst_type_field.value))) {
+            //
+            const InstArgs = @FieldType(InstructionArgs, inst_type_field.name);
+
+            var inst_args: InstArgs = undefined;
+            inline for (std.meta.fields(InstArgs)) |inst_args_field| {
+                @field(inst_args, inst_args_field.name) = switch (inst_args_field.type) {
+                    u8 => random.int(u8) % 12, // Register index (0-11)
+                    u32 => random.int(u32), // Immediate value
+                    // Since immediate values are 32 bit values sign extended to u64
+                    // we simulate this by generating the instructions as follows
+                    u64 => @bitCast( // bitcast to u64 to get an valid encoded immediat
+                        @as(
+                            i64, // sign exted to i64
+                            @intCast(
+                                random.int(i32), // generate a i32 value
+                            ),
+                        ),
+                    ), //  Immediate
+                    i32 => random.int(i32), // Offset
+                    else => @compileError("Unexpected parameter type for field: " ++ inst_type_field.name ++ " == " ++ @typeName(inst_type_field.type)),
+                };
+            }
+            // NOTE: set to 0 as we did not calculate how much space this thing will be.
+            inst_args.no_of_bytes_to_skip = 0;
+            inst_with_args.args = @unionInit(InstructionArgs, inst_type_field.name, inst_args);
+        }
+    }
+
+    return inst_with_args;
 }

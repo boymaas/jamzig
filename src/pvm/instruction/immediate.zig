@@ -27,6 +27,11 @@ pub fn decodeSigned(bytes: []const u8) i64 {
     return std.mem.readInt(i64, &buffer, .little);
 }
 
+pub fn decodeOffset(bytes: []const u8) i32 {
+    const buffer = buildBufferSignExtend(bytes);
+    return std.mem.readInt(i32, buffer[0..4], .little);
+}
+
 test "pvm:args:immediate - empty input" {
     const testing = std.testing;
     const input = &[_]u8{};
