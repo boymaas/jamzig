@@ -5,6 +5,10 @@ const InstructionWithArgs = @import("../instruction.zig").InstructionWithArgs;
 // Immediates: encoded as 32-bit, sign-extended to 64-bit on decode
 const ImmediateSizeInBytes: usize = 4;
 
+pub fn sizeOfInstruction(iwa: *const InstructionWithArgs) !u8 {
+    return try encodeInstruction(NullWriter, iwa);
+}
+
 pub fn encodeInstruction(writer: anytype, iwa: *const InstructionWithArgs) !u8 {
     // First encode the instruction opcode
     try writer.writeByte(@intFromEnum(iwa.instruction));
@@ -54,6 +58,8 @@ pub fn encodeInstructionOwned(iwa: *const InstructionWithArgs) !EncodedInstructi
 
     return result;
 }
+
+const NullWriter = struct {};
 
 pub fn encodeNoArgs(writer: anytype) !u8 {
     _ = writer;
@@ -189,6 +195,8 @@ test calcLengthNeeded {
 }
 
 fn writeImm(writer: anytype, value: u32, len: u8) !void {
+    if (@TypeOf(writer) == NullWriter) return;
+
     var buffer: [ImmediateSizeInBytes]u8 = undefined;
     std.mem.writeInt(u32, &buffer, value, .little);
 

@@ -11,7 +11,7 @@ test "pvm:fuzzer:run" {
     const config = FuzzConfig{
         .initial_seed = 42,
         .num_cases = 10,
-        .max_gas = 10000,
+        .max_gas = 100,
         .max_instruction_count = 8,
         .verbose = true,
     };

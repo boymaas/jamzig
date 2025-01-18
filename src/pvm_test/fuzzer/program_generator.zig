@@ -145,11 +145,16 @@ pub const ProgramGenerator = struct {
         const encode_span = span.child(.encode_instructions);
         defer encode_span.deinit();
 
-        for (instructions, 0..) |inst, i| {
+        // We have the instructions and sizes. We can find the indexes to the
+        // instructions of the basic blocks by looping.
+        for (instructions, 0..) |*inst, i| {
             const inst_span = encode_span.child(.encode_instruction);
             defer inst_span.deinit();
             inst_span.debug("Encoding instruction {d}/{d} at pc: {d}", .{ i + 1, instructions.len, pc });
             inst_span.trace("Instruction: {any}", .{inst});
+
+            // Pre-encode jumps with 0xaaaaaaaa to ensure max immediate size, allowing safe rewrites later
+            try inst.setBranchOrJumpTargetTo(0xaaaaaaaa);
 
             const bytes_written = try inst.encode(code_writer);
             pc += bytes_written;
@@ -185,7 +190,29 @@ pub const ProgramGenerator = struct {
         // On the second pass of our program we need to find the dynamic jumps
         // and let them jump to any of the elements in our jump table to make
         // these jumps valid
+        var prgdec = @import("../../pvm/decoder.zig").Decoder.init(code.items, mask);
+        var iter = prgdec.iterator();
+        while (try iter.next()) |entry| {
+            if (entry.inst.isBranch() or entry.inst.instruction == .jump) {
+                // Select a random jump target from our jump table
+                const target_idx = self.seed_gen.randomIntRange(usize, 0, basic_blocks.items.len - 1);
+                const target_pc = basic_blocks.items[target_idx];
 
+                // Calculate the relative offset from current position
+                // Need to account for instruction size in offset calculation
+                const current_pos = entry.pc;
+                const offset: i32 = @intCast(@as(i64, target_pc) - @as(i64, current_pos));
+
+                // Update the branch instruction with the new target
+                // the offset are always the last 4 bytes of te instruction
+                // which we maximized in the first pass
+                var buffer: [4]u8 = undefined;
+                std.mem.writeInt(i32, &buffer, offset, .little);
+
+                // Update the code buffer with the modified instruction
+                @memcpy(code.items[entry.next_pc - 4 ..][0..4], &buffer);
+            }
+        }
         return GeneratedProgram{
             .code = try code.toOwnedSlice(),
             .mask = mask,

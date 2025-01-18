@@ -217,6 +217,10 @@ pub const Decoder = struct {
         return 0xFF;
     }
 
+    pub fn iterator(self: *@This()) Iterator {
+        return .{ .decoder = self };
+    }
+
     inline fn decodeInt(self: *const Decoder, comptime T: type, pc: u32) Error!T {
         var overflow_buffer = std.mem.zeroes([MaxInstructionSizeInBytes]u8);
         const slice: *const [@sizeOf(T)]u8 = self.getCodeSliceAt(&overflow_buffer, pc, @sizeOf(T)).asSlice()[0..@sizeOf(T)];
@@ -240,6 +244,30 @@ pub const Decoder = struct {
     }
     inline fn decodeLowNibble(self: *const Decoder, pc: u32) u4 {
         return nibble.getLowNibble(self.getCodeAt(pc));
+    }
+};
+
+const Iterator = struct {
+    decoder: *const Decoder,
+    pc: u32 = 0,
+
+    const Entry = struct {
+        pc: u32,
+        next_pc: u32,
+        inst: InstructionWithArgs,
+    };
+
+    pub fn next(self: *@This()) !?Entry {
+        if (self.pc >= self.decoder.code.len) return null;
+
+        const current_pc = self.pc;
+        const inst = try self.decoder.decodeInstruction(current_pc);
+        self.pc += inst.skip_l() + 1; // TODO: the +1 is becuse the skip_l is from the args. This should be in the skip_l
+        return .{
+            .pc = current_pc,
+            .next_pc = self.pc,
+            .inst = inst,
+        };
     }
 };
 

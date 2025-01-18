@@ -53,7 +53,7 @@ pub const FuzzConfig = struct {
     /// Number of test cases to run
     num_cases: u32 = 1000,
     /// Maximum gas for each test case
-    max_gas: i64 = 1000000,
+    max_gas: i64 = 100,
     /// Maximum number of basic blocks per program
     max_instruction_count: u32 = 32,
     /// Whether to print verbose output

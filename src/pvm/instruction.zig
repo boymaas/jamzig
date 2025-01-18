@@ -347,14 +347,50 @@ pub const InstructionWithArgs = struct {
         return try @import("instruction/encoder.zig").encodeInstruction(writer, self);
     }
 
+    pub fn encodeOwned(self: *const @This()) !@import("instruction/encoder.zig").EncodedInstruction {
+        return try @import("instruction/encoder.zig").encodeInstructionOwned(self);
+    }
+
+    pub fn size(self: *const @This()) !u8 {
+        return try @import("instruction/encoder.zig").sizeOfInstruction(self);
+    }
+
     pub fn isTerminationInstruction(self: *const @This()) bool {
+        return self.isTrap() or self.isFallthrough() or
+            self.isJump() or
+            self.isLoadAndJump() or
+            self.isBranch() or
+            self.isBranchWithImm();
+    }
+
+    pub fn isTrap(self: *const @This()) bool {
+        return self.instruction == .trap;
+    }
+
+    pub fn isFallthrough(self: *const @This()) bool {
+        return self.instruction == .fallthrough;
+    }
+
+    pub fn isJump(self: *const @This()) bool {
         return switch (self.instruction) {
-            .trap,
-            .fallthrough,
             .jump,
             .jump_ind,
+            => true,
+            else => false,
+        };
+    }
+
+    pub fn isLoadAndJump(self: *const @This()) bool {
+        return switch (self.instruction) {
             .load_imm_jump,
             .load_imm_jump_ind,
+            => true,
+            else => false,
+        };
+    }
+
+    pub fn isBranch(self: *const @This()) bool {
+        return switch (self.instruction) {
             .branch_eq,
             .branch_ne,
             .branch_ge_u,
@@ -363,6 +399,13 @@ pub const InstructionWithArgs = struct {
             .branch_lt_s,
             .branch_eq_imm,
             .branch_ne_imm,
+            => true,
+            else => false,
+        };
+    }
+
+    pub fn isBranchWithImm(self: *const @This()) bool {
+        return switch (self.instruction) {
             .branch_lt_u_imm,
             .branch_lt_s_imm,
             .branch_le_u_imm,
@@ -398,18 +441,46 @@ pub const InstructionWithArgs = struct {
         }
     }
 
-    pub fn setSkipBytesC(self: *@This(), skip_bytes: u32) void {
-        const Tag = std.meta.Tag(InstructionArgs);
-        inline for (comptime std.meta.fields(Tag)) |field| {
-            if (@as(Tag, self.args) == @field(Tag, field.name)) {
-                @field(self.args, field.name).no_of_bytes_to_skip = skip_bytes;
-                return;
-            }
+    pub fn skip_l(self: *const @This()) u32 {
+        return self.args.skip_l();
+    }
+
+    pub fn setOffset(self: *@This(), offset: i32) !void {
+        switch (self.args) {
+            .OneOffset => |*args| args.offset = offset,
+            .OneRegOneImmOneOffset => |*args| args.offset = offset,
+            .TwoRegOneOffset => |*args| args.offset = offset,
+            else => {
+                std.debug.print("Instruction '{s}' does not have an offset field\n", .{@tagName(self.instruction)});
+                return error.InstructionDoesNotHaveOffset;
+            },
         }
     }
 
-    pub fn skip_l(self: *const @This()) u32 {
-        return self.args.skip_l();
+    pub fn setBranchOrJumpTargetTo(self: *@This(), value: u32) !void {
+        // As these all work with an offset
+        if (self.isBranch() or self.isBranchWithImm()) {
+            // ensure offset is not compressed
+            try self.setOffset(@bitCast(@as(u32, value)));
+        } else {
+            switch (self.instruction) {
+                .load_imm_jump => {
+                    //
+                    try self.setOffset(@bitCast(@as(u32, value)));
+                },
+                .load_imm_jump_ind => {
+                    //
+                    self.args.TwoRegTwoImm.second_immediate = value;
+                },
+                .jump => {
+                    try self.setOffset(@bitCast(@as(u32, value)));
+                },
+                .jump_ind => {
+                    self.args.OneRegOneImm.immediate = value;
+                },
+                else => {},
+            }
+        }
     }
 
     pub fn format(
