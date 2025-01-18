@@ -288,7 +288,7 @@ pub const PVMFuzzer = struct {
         });
 
         // Generate memory configuration
-        const page_configs = try memory_gen.generatePageConfigs();
+        const page_configs = try memory_gen.generatePageConfigs(program.memory_accesses);
         defer self.allocator.free(page_configs);
 
         // Get raw program bytes and potentially mutate them

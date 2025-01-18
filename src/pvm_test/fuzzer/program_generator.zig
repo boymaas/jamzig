@@ -21,6 +21,7 @@ pub const GeneratedProgram = struct {
     code: []u8,
     mask: []u8,
     jump_table: []u32,
+    memory_accesses: []u32,
 
     pub fn getRawBytes(self: *@This(), allocator: std.mem.Allocator) ![]u8 {
         const span = trace.span(.get_raw_bytes);
@@ -93,6 +94,7 @@ pub const GeneratedProgram = struct {
         allocator.free(self.code);
         allocator.free(self.mask);
         allocator.free(self.jump_table);
+        allocator.free(self.memory_accesses);
         self.* = undefined;
     }
 };
@@ -213,10 +215,69 @@ pub const ProgramGenerator = struct {
                 @memcpy(code.items[entry.next_pc - 4 ..][0..4], &buffer);
             }
         }
+
+        // Analyze memory accesses from decoded instructions
+        var prgdec_mem = @import("../../pvm/decoder.zig").Decoder.init(code.items, mask);
+        var iter_mem = prgdec_mem.iterator();
+
+        var memory_accesses = std.ArrayList(u32).init(self.allocator);
+        defer memory_accesses.deinit();
+        while (try iter_mem.next()) |entry| {
+            const inst = entry.inst;
+
+            // Check for memory access instructions
+            switch (inst.instruction) {
+                // Memory load instructions
+                .load_u8, .load_i8, .load_u16, .load_i16, .load_u32, .load_i32, .load_u64 => {
+                    if (inst.args == .OneRegOneImm) {
+                        try memory_accesses.append(@truncate(inst.args.OneRegOneImm.immediate));
+                    }
+                },
+
+                // Indirect memory load instructions
+                .load_ind_u8, .load_ind_i8, .load_ind_u16, .load_ind_i16, .load_ind_u32, .load_ind_i32, .load_ind_u64 => {
+                    if (inst.args == .TwoRegOneImm) {
+                        try memory_accesses.append(@truncate(inst.args.TwoRegOneImm.immediate));
+                    }
+                },
+
+                // Memory store instructions
+                .store_u8, .store_u16, .store_u32, .store_u64 => {
+                    if (inst.args == .OneRegOneImm) {
+                        try memory_accesses.append(@truncate(inst.args.OneRegOneImm.immediate));
+                    }
+                },
+
+                // Store with immediate value
+                .store_imm_u8, .store_imm_u16, .store_imm_u32, .store_imm_u64 => {
+                    if (inst.args == .TwoImm) {
+                        try memory_accesses.append(@truncate(inst.args.TwoImm.first_immediate));
+                    }
+                },
+
+                // Indirect store instructions
+                .store_ind_u8, .store_ind_u16, .store_ind_u32, .store_ind_u64 => {
+                    if (inst.args == .TwoRegOneImm) {
+                        try memory_accesses.append(@truncate(inst.args.TwoRegOneImm.immediate));
+                    }
+                },
+
+                // Store immediate indirect
+                .store_imm_ind_u8, .store_imm_ind_u16, .store_imm_ind_u32, .store_imm_ind_u64 => {
+                    if (inst.args == .OneRegTwoImm) {
+                        try memory_accesses.append(@truncate(inst.args.OneRegTwoImm.first_immediate));
+                    }
+                },
+
+                else => {},
+            }
+        }
+
         return GeneratedProgram{
             .code = try code.toOwnedSlice(),
             .mask = mask,
             .jump_table = try jump_table.toOwnedSlice(),
+            .memory_accesses = try memory_accesses.toOwnedSlice(),
         };
     }
 };
