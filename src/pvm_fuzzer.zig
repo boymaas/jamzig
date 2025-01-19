@@ -31,8 +31,8 @@ pub fn main() !void {
         \\-g, --max-gas <i64>       Maximum gas per test case (default: 1000000)
         \\-b, --max-blocks <u32>    Maximum number of basic blocks per program (default: 32)
         \\-S, --test-seed <u64>     Rerun a single testcase with this seed
-        \\-m, --mut-prob <u8>       Program mutation probability (0-1M, default: 10)
-        \\-f, --flip-prob <u8>      Bit flip probability (0-1K, default: 1)
+        \\-m, --mut-prob <usize>       Program mutation probability (0-1M, default: 10)
+        \\-f, --flip-prob <usize>      Bit flip probability (0-1K, default: 1)
     );
 
     var diag = clap.Diagnostic{};

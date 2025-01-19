@@ -10,9 +10,9 @@ const trace = @import("../../tracing.zig").scoped(.pvm);
 /// Configuration for program mutations
 pub const MutationConfig = struct {
     /// Probability (0-1_000_000) that any given program will be mutated
-    program_mutation_probability: u8 = 10,
+    program_mutation_probability: usize = 10,
     /// For programs selected for mutation, probability (0-1_000) of each bit being flipped
-    bit_flip_probability: u8 = 1,
+    bit_flip_probability: usize = 1,
 };
 
 /// Mutates a program's raw bytes in-place according to the given configuration
