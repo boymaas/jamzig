@@ -37,15 +37,15 @@ test "pvm:simple" {
         73, 147, 82, 213, 0, //
     };
 
-    var pvm = try pvmlib.PVM.init(allocator, &raw_program, std.math.maxInt(u32));
-    defer pvm.deinit();
+    var execution_context = try pvmlib.PVM.ExecutionContext.initSimple(allocator, &raw_program, 1024, 4, std.math.maxInt(u32));
+    defer execution_context.deinit(allocator);
 
-    pvm.registers[0] = 4294901760;
-    pvm.registers[7] = 9;
+    execution_context.registers[0] = 4294901760;
+    execution_context.registers[7] = 9;
 
     // std.debug.print("Program: {any}\n", .{pvm.program});
 
-    const status = pvmlib.PVM.Status.fromResult(pvm.run(), pvm.error_data);
+    const status = try pvmlib.PVM.execute(&execution_context);
 
     if (status != .halt) {
         std.debug.print("Expected .halt got {any}\n", .{status});
@@ -55,8 +55,8 @@ test "pvm:simple" {
     const expected_registers = [_]u32{ 4294901760, 0, 0, 0, 0, 0, 0, 55, 0, 0, 34, 0, 0 };
 
     for (expected_registers, 0..) |expected, i| {
-        if (pvm.registers[i] != expected) {
-            std.debug.print("Register r{} mismatch. Expected: {}, Got: {}\n", .{ i, expected, pvm.registers[i] });
+        if (execution_context.registers[i] != expected) {
+            std.debug.print("Register r{} mismatch. Expected: {}, Got: {}\n", .{ i, expected, execution_context.registers[i] });
             return error.TestFailed;
         }
     }

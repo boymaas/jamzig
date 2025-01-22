@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const codec = @import("../../codec.zig");
 const InstructionWithArgs = @import("../../pvm/instruction.zig").InstructionWithArgs;
 const InstructionType = @import("../../pvm/instruction.zig").InstructionType;
+const Memory = @import("../../pvm/memory.zig").Memory;
 const MaxInstructionSizeInBytes = @import("../../pvm/instruction.zig").MaxInstructionSizeInBytes;
 
 const SeedGenerator = @import("seed.zig").SeedGenerator;
@@ -21,7 +22,6 @@ pub const GeneratedProgram = struct {
     code: []u8,
     mask: []u8,
     jump_table: []u32,
-    memory_accesses: []u32,
 
     pub fn getRawBytes(self: *@This(), allocator: std.mem.Allocator) ![]u8 {
         const span = trace.span(.get_raw_bytes);
@@ -79,6 +79,44 @@ pub const GeneratedProgram = struct {
         return self.raw_bytes.?;
     }
 
+    pub fn rewriteMemoryAccesses(
+        self: *GeneratedProgram,
+        seed_gen: *SeedGenerator,
+        heap_start: u32,
+        heap_len: u32,
+    ) !void {
+        const span = trace.span(.rewrite_memory);
+        defer span.deinit();
+
+        var decoder = @import("../../pvm/decoder.zig").Decoder.init(self.code, self.mask);
+        var iter = decoder.iterator();
+
+        span.debug("Rewriting memory accesses - heap base: 0x{X}, size: 0x{X}", .{ heap_start, heap_len });
+
+        while (try iter.next()) |entry| {
+            if (entry.inst.getMemoryAccess()) |access| {
+                const inst_span = span.child(.rewrite_instruction);
+                defer inst_span.deinit();
+
+                // Generate a deterministic offset using the seed generator
+                const random_offset = seed_gen.randomIntRange(u32, 0, heap_len - access.size);
+                const offset = heap_start + random_offset;
+                inst_span.debug("Rewriting memory access at pc {d} to address 0x{X}", .{ entry.pc, offset });
+
+                // Create a modified instruction with the new address
+                var modified_inst = entry.inst;
+                try modified_inst.setMemoryAddress(offset);
+
+                // Encode the modified instruction
+                const encoded = try modified_inst.encodeOwned();
+                const encoded_bytes = encoded.asSlice();
+
+                // Update the code buffer with the modified instruction
+                @memcpy(self.code[entry.pc..][0..encoded_bytes.len], encoded_bytes);
+            }
+        }
+    }
+
     /// Calculates the minimum number of bytes needed to store a value
     fn calculateMinimumBytes(value: u32) u8 {
         if (value <= 0xFF) return 1;
@@ -94,7 +132,6 @@ pub const GeneratedProgram = struct {
         allocator.free(self.code);
         allocator.free(self.mask);
         allocator.free(self.jump_table);
-        allocator.free(self.memory_accesses);
         self.* = undefined;
     }
 };
@@ -152,12 +189,20 @@ pub const ProgramGenerator = struct {
         for (instructions, 0..) |*inst, i| {
             const inst_span = encode_span.child(.encode_instruction);
             defer inst_span.deinit();
-            inst_span.debug("Encoding instruction {d}/{d} at pc: {d}", .{ i + 1, instructions.len, pc });
-            inst_span.trace("Instruction: {any}", .{inst});
 
             // Pre-encode jumps with 0xaaaaaaaa to ensure max immediate size, allowing safe rewrites later
-            try inst.setBranchOrJumpTargetTo(0xaaaaaaaa);
+            inst.setBranchOrJumpTargetTo(0xaaaaaaaa) catch {};
+            // Pre-encode memory accesses with the 0xaaaaaaaa to ensure max immediate size, allowing safe rewrites later
+            inst.setMemoryAddress(0xaaaaaaaa) catch {};
 
+            // if the instruction is a host call, set it to 0 so we can always provide a valid host
+            // call
+            if (inst.instruction == .ecalli) {
+                inst.args.OneImm.immediate = 0x00;
+            }
+
+            inst_span.debug("Encoding instruction {d}/{d} at pc: {d}", .{ i + 1, instructions.len, pc });
+            inst_span.trace("Instruction: {any}", .{inst});
             const bytes_written = try inst.encode(code_writer);
             pc += bytes_written;
 
@@ -227,7 +272,13 @@ pub const ProgramGenerator = struct {
                 entry.inst.instruction == .load_imm_jump_ind)
             {
                 // Select a random jump target index
-                const target_idx = self.seed_gen.randomIntRange(usize, 0, jump_table.items.len - 1);
+                var target_idx = self.seed_gen.randomIntRange(usize, 0, jump_table.items.len - 1);
+
+                // If the target is the same as our position and there's a next target available,
+                // use the next target instead
+                if (jump_table.items[target_idx] == entry.pc and jump_table.items.len > 1) {
+                    target_idx = (target_idx + 1) % jump_table.items.len;
+                }
 
                 // Update the instruction's immediate value with the jump table index
                 var buffer: [4]u8 = undefined;
@@ -239,68 +290,10 @@ pub const ProgramGenerator = struct {
             }
         }
 
-        // Analyze memory accesses from decoded instructions
-        var prgdec_mem = @import("../../pvm/decoder.zig").Decoder.init(code.items, mask);
-        var iter_mem = prgdec_mem.iterator();
-
-        var memory_accesses = std.ArrayList(u32).init(self.allocator);
-        defer memory_accesses.deinit();
-        while (try iter_mem.next()) |entry| {
-            const inst = entry.inst;
-
-            // Check for memory access instructions
-            switch (inst.instruction) {
-                // Memory load instructions
-                .load_u8, .load_i8, .load_u16, .load_i16, .load_u32, .load_i32, .load_u64 => {
-                    if (inst.args == .OneRegOneImm) {
-                        try memory_accesses.append(@truncate(inst.args.OneRegOneImm.immediate));
-                    }
-                },
-
-                // Indirect memory load instructions
-                .load_ind_u8, .load_ind_i8, .load_ind_u16, .load_ind_i16, .load_ind_u32, .load_ind_i32, .load_ind_u64 => {
-                    if (inst.args == .TwoRegOneImm) {
-                        try memory_accesses.append(@truncate(inst.args.TwoRegOneImm.immediate));
-                    }
-                },
-
-                // Memory store instructions
-                .store_u8, .store_u16, .store_u32, .store_u64 => {
-                    if (inst.args == .OneRegOneImm) {
-                        try memory_accesses.append(@truncate(inst.args.OneRegOneImm.immediate));
-                    }
-                },
-
-                // Store with immediate value
-                .store_imm_u8, .store_imm_u16, .store_imm_u32, .store_imm_u64 => {
-                    if (inst.args == .TwoImm) {
-                        try memory_accesses.append(@truncate(inst.args.TwoImm.first_immediate));
-                    }
-                },
-
-                // Indirect store instructions
-                .store_ind_u8, .store_ind_u16, .store_ind_u32, .store_ind_u64 => {
-                    if (inst.args == .TwoRegOneImm) {
-                        try memory_accesses.append(@truncate(inst.args.TwoRegOneImm.immediate));
-                    }
-                },
-
-                // Store immediate indirect
-                .store_imm_ind_u8, .store_imm_ind_u16, .store_imm_ind_u32, .store_imm_ind_u64 => {
-                    if (inst.args == .OneRegTwoImm) {
-                        try memory_accesses.append(@truncate(inst.args.OneRegTwoImm.first_immediate));
-                    }
-                },
-
-                else => {},
-            }
-        }
-
         return GeneratedProgram{
             .code = try code.toOwnedSlice(),
             .mask = mask,
             .jump_table = try jump_table.toOwnedSlice(),
-            .memory_accesses = try memory_accesses.toOwnedSlice(),
         };
     }
 };

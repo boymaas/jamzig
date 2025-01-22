@@ -28,7 +28,7 @@ pub fn main() !void {
         \\-s, --seed <u64>          Initial random seed (default: timestamp)
         \\-c, --cases <u32>         Number of test cases to run (default: 50000)
         \\-C, --start-case <u32>    First case to run
-        \\-g, --max-gas <i64>       Maximum gas per test case (default: 1000000)
+        \\-g, --max-gas <u32>       Maximum gas per test case (default: 1000000)
         \\-b, --max-blocks <u32>    Maximum number of basic blocks per program (default: 32)
         \\-S, --test-seed <u64>     Rerun a single testcase with this seed
         \\-m, --mut-prob <usize>       Program mutation probability (0-1M, default: 10)

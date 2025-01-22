@@ -3,7 +3,6 @@ const Allocator = std.mem.Allocator;
 const PVM = @import("../../pvm.zig").PVM;
 const SeedGenerator = @import("seed.zig").SeedGenerator;
 const ProgramGenerator = @import("program_generator.zig").ProgramGenerator;
-const MemoryConfigGenerator = @import("memory_config_generator.zig").MemoryConfigGenerator;
 
 const trace = @import("../../tracing.zig").scoped(.pvm);
 
@@ -55,7 +54,7 @@ pub const FuzzConfig = struct {
     /// Start art
     start_case: u32 = 0,
     /// Maximum gas for each test case
-    max_gas: i64 = 100,
+    max_gas: u32 = 100,
     /// Maximum number of basic blocks per program
     max_instruction_count: u32 = 32,
     /// Whether to print verbose output
@@ -66,10 +65,10 @@ pub const FuzzConfig = struct {
 
 pub const FuzzResult = struct {
     seed: u64,
-    status: PVM.Error!void,
+    status: PVM.Error!PVM.Result,
     gas_used: i64,
     was_mutated: bool,
-    error_data: ?PVM.ErrorData,
+    // error_data: ?PVM.ErrorData,
     init_failed: bool = false,
 };
 
@@ -197,7 +196,7 @@ pub const FuzzResults = struct {
             span.debug("Test case failed during initialization", .{});
         }
 
-        if (result.status) {
+        if (result.status) |_| {
             self.accumulated.successful += 1;
         } else |err| {
             self.accumulated.errors += 1;
@@ -278,7 +277,6 @@ pub const PVMFuzzer = struct {
         var seed_gen = SeedGenerator.init(seed);
 
         var program_gen = try ProgramGenerator.init(self.allocator, &seed_gen);
-        var memory_gen = MemoryConfigGenerator.init(self.allocator, &seed_gen);
 
         // Generate program
         const num_instructions = seed_gen.randomIntRange(u32, 1, self.config.max_instruction_count);
@@ -297,13 +295,17 @@ pub const PVMFuzzer = struct {
             program.jump_table.len,
         });
 
-        // Generate memory configuration
-        const page_configs = try memory_gen.generatePageConfigs(program.memory_accesses);
-        defer self.allocator.free(page_configs);
-
         // Get raw program bytes and potentially mutate them
         const mutation_span = span.child(.mutation);
         defer mutation_span.deinit();
+
+        // write the memory access in program, since we have no readonly data we can calculate the start
+        // of the heap and we set a HEAP_SIZE of 4 pages
+        try program.rewriteMemoryAccesses(
+            &seed_gen,
+            try PVM.Memory.HEAP_BASE_ADDRESS(0),
+            PVM.Memory.Z_P * 4,
+        );
 
         const program_bytes = try program.getRawBytes(self.allocator);
         const will_mutate = seed_gen.randomIntRange(u8, 0, 99) < self.config.mutation.program_mutation_probability;
@@ -320,66 +322,74 @@ pub const PVMFuzzer = struct {
         defer init_span.deinit();
         init_span.debug("Initializing PVM with {d} bytes, {d} initial gas", .{ program_bytes.len, self.config.max_gas });
 
-        var pvm = PVM.init(
+        var exec_ctx = PVM.ExecutionContext.initSimple(
             self.allocator,
             program_bytes,
+            1, // Stack size
+            4, // Heap size
             self.config.max_gas,
         ) catch |err| {
-            init_span.err("PVM initialization failed: {s}", .{@errorName(err)});
+            init_span.err("ExecutionContext initialization failed: {s}", .{@errorName(err)});
 
             return FuzzResult{
                 .seed = seed,
                 .status = err,
                 .gas_used = 0,
-                .error_data = null,
                 .was_mutated = will_mutate,
                 .init_failed = true,
             };
         };
-        defer pvm.deinit();
+        defer exec_ctx.deinit(self.allocator);
 
-        // Set up memory pages
-        const memory_span = span.child(.memory_setup);
-        defer memory_span.deinit();
-        memory_span.debug("Setting up {d} memory pages", .{page_configs.len});
-
-        try pvm.setPageMap(page_configs);
-
-        // Initialize memory contents
-        for (page_configs, 0..) |config, i| {
-            memory_span.trace("Initializing page {d}: address=0x{X:0>8}, length={d}, writable={}", .{
-                i, config.address, config.length, config.is_writable,
-            });
-
-            const contents = try memory_gen.generatePageContents(config.length);
-            defer self.allocator.free(contents);
-            try pvm.initMemory(config.address, contents);
-        }
+        // pub const HostCallFn = *const fn (gas: *i64, registers: *[13]u64, memory: *Memory) HostCallResult;
+        try exec_ctx.registerHostCall(0, struct {
+            pub fn func(gas: *i64, registers: *[13]u64, memory: *PVM.Memory) PVM.HostCallResult {
+                _ = gas;
+                _ = registers;
+                _ = memory;
+                // std.debug.print("Host call called!", .{});
+                return .play;
+            }
+        }.func);
 
         // Run program and collect results
         const execution_span = span.child(.execution);
         defer execution_span.deinit();
 
-        const initial_gas = pvm.gas;
+        const initial_gas = exec_ctx.gas;
         execution_span.debug("Starting program execution with {d} gas", .{initial_gas});
 
-        const status = pvm.run();
-        const gas_used = initial_gas - pvm.gas;
+        const status = PVM.execute(&exec_ctx);
+        const gas_used = initial_gas - exec_ctx.gas;
 
-        if (status) |_| {
-            execution_span.debug("Program completed successfully. Gas used: {d}", .{gas_used});
+        if (status) |result| {
+            switch (result) {
+                .halt => |output| {
+                    execution_span.debug("Program halted normally PC {d}. Output size: {d} bytes. Gas used: {d}", .{ exec_ctx.pc, output.len, gas_used });
+                    if (output.len > 0) {
+                        execution_span.trace("Program output: {s}", .{output});
+                    }
+                },
+                .err => |error_type| switch (error_type) {
+                    .panic => execution_span.err("Program panicked at PC 0x{X:0>8}. Gas used: {d}", .{ exec_ctx.pc, gas_used }),
+                    .out_of_gas => execution_span.err("Program ran out of gas at PC 0x{X:0>8} after using {d} units", .{ exec_ctx.pc, gas_used }),
+                    .page_fault => |addr| execution_span.err("Program encountered page fault at PC 0x{X:0>8}, address 0x{X:0>8}. Gas used: {d}", .{ exec_ctx.pc, addr, gas_used }),
+                    .host_call => |idx| execution_span.err("Program attempted invalid host call {d} at PC 0x{X:0>8}. Gas used: {d}", .{ idx, exec_ctx.pc, gas_used }),
+                },
+            }
         } else |err| {
-            execution_span.debug("Program terminated with error: {s}. Gas used: {d}", .{ @errorName(err), gas_used });
-            if (pvm.error_data) |error_data| {
+            execution_span.debug("Program execution failed with error: {s}. Gas used: {d}", .{ @errorName(err), gas_used });
+            if (exec_ctx.error_data) |error_data| {
                 execution_span.trace("Error data: {any}", .{error_data});
             }
+            // we should never leak any errors unless its a memory allocation error.
+            return error.PvmErroredInNormalOperation;
         }
 
         return FuzzResult{
             .seed = seed,
             .status = status,
             .gas_used = gas_used,
-            .error_data = pvm.error_data,
             .was_mutated = will_mutate,
             .init_failed = false,
         };

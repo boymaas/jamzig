@@ -34,7 +34,7 @@ pub fn encodeInstruction(writer: anytype, iwa: *const InstructionWithArgs) !u8 {
 }
 
 pub const MaxInstructionSizeInBytes = @import("../instruction.zig").MaxInstructionSizeInBytes;
-const EncodedInstruction = struct {
+pub const EncodedInstruction = struct {
     buffer: [MaxInstructionSizeInBytes]u8,
     len: u8,
 
