@@ -85,6 +85,7 @@ pub const PVM = struct {
         PageFault,
         AccessViolation,
         NonAllocatedMemoryAccess,
+        DivisionByZero,
     };
 
     pub fn executeStep(context: *ExecutionContext) Error!ExecutionStepResult {

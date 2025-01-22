@@ -419,6 +419,110 @@ pub const InstructionWithArgs = struct {
         };
     }
 
+    pub const MemoryAccess = struct {
+        address: u64,
+        size: u8,
+        isWrite: bool,
+    };
+
+    pub fn getMemoryAccess(self: *const InstructionWithArgs) ?MemoryAccess {
+        return switch (self.instruction) {
+            // Load operations
+            .load_u8, .load_i8 => .{ .address = self.args.OneRegOneImm.immediate, .size = 1, .isWrite = false },
+            .load_u16, .load_i16 => .{ .address = self.args.OneRegOneImm.immediate, .size = 2, .isWrite = false },
+            .load_u32, .load_i32 => .{ .address = self.args.OneRegOneImm.immediate, .size = 4, .isWrite = false },
+            .load_u64 => .{ .address = self.args.OneRegOneImm.immediate, .size = 8, .isWrite = false },
+
+            // Indirect load operations
+            .load_ind_u8, .load_ind_i8 => .{ .address = self.args.TwoRegOneImm.immediate, .size = 1, .isWrite = false },
+            .load_ind_u16, .load_ind_i16 => .{ .address = self.args.TwoRegOneImm.immediate, .size = 2, .isWrite = false },
+            .load_ind_u32, .load_ind_i32 => .{ .address = self.args.TwoRegOneImm.immediate, .size = 4, .isWrite = false },
+            .load_ind_u64 => .{ .address = self.args.TwoRegOneImm.immediate, .size = 8, .isWrite = false },
+
+            // Store operations
+            .store_u8 => .{ .address = self.args.OneRegOneImm.immediate, .size = 1, .isWrite = true },
+            .store_u16 => .{ .address = self.args.OneRegOneImm.immediate, .size = 2, .isWrite = true },
+            .store_u32 => .{ .address = self.args.OneRegOneImm.immediate, .size = 4, .isWrite = true },
+            .store_u64 => .{ .address = self.args.OneRegOneImm.immediate, .size = 8, .isWrite = true },
+
+            // Immediate store operations
+            .store_imm_u8 => .{ .address = self.args.TwoImm.first_immediate, .size = 1, .isWrite = true },
+            .store_imm_u16 => .{ .address = self.args.TwoImm.first_immediate, .size = 2, .isWrite = true },
+            .store_imm_u32 => .{ .address = self.args.TwoImm.first_immediate, .size = 4, .isWrite = true },
+            .store_imm_u64 => .{ .address = self.args.TwoImm.first_immediate, .size = 8, .isWrite = true },
+
+            // Indirect store operations
+            .store_ind_u8 => .{ .address = self.args.TwoRegOneImm.immediate, .size = 1, .isWrite = true },
+            .store_ind_u16 => .{ .address = self.args.TwoRegOneImm.immediate, .size = 2, .isWrite = true },
+            .store_ind_u32 => .{ .address = self.args.TwoRegOneImm.immediate, .size = 4, .isWrite = true },
+            .store_ind_u64 => .{ .address = self.args.TwoRegOneImm.immediate, .size = 8, .isWrite = true },
+
+            // Indirect immediate store operations
+            .store_imm_ind_u8 => .{ .address = self.args.OneRegTwoImm.first_immediate, .size = 1, .isWrite = true },
+            .store_imm_ind_u16 => .{ .address = self.args.OneRegTwoImm.first_immediate, .size = 2, .isWrite = true },
+            .store_imm_ind_u32 => .{ .address = self.args.OneRegTwoImm.first_immediate, .size = 4, .isWrite = true },
+            .store_imm_ind_u64 => .{ .address = self.args.OneRegTwoImm.first_immediate, .size = 8, .isWrite = true },
+
+            // Non-memory instructions
+            else => null,
+        };
+    }
+
+    pub fn setMemoryAddress(self: *InstructionWithArgs, new_address: u64) !void {
+        switch (self.instruction) {
+            // Load operations
+            .load_u8,
+            .load_i8,
+            .load_u16,
+            .load_i16,
+            .load_u32,
+            .load_i32,
+            .load_u64,
+            => self.args.OneRegOneImm.immediate = new_address,
+
+            // Indirect load operations
+            .load_ind_u8,
+            .load_ind_i8,
+            .load_ind_u16,
+            .load_ind_i16,
+            .load_ind_u32,
+            .load_ind_i32,
+            .load_ind_u64,
+            => self.args.TwoRegOneImm.immediate = new_address,
+
+            // Store operations
+            .store_u8,
+            .store_u16,
+            .store_u32,
+            .store_u64,
+            => self.args.OneRegOneImm.immediate = new_address,
+
+            // Immediate store operations
+            .store_imm_u8,
+            .store_imm_u16,
+            .store_imm_u32,
+            .store_imm_u64,
+            => self.args.TwoImm.first_immediate = new_address,
+
+            // Indirect store operations
+            .store_ind_u8,
+            .store_ind_u16,
+            .store_ind_u32,
+            .store_ind_u64,
+            => self.args.TwoRegOneImm.immediate = new_address,
+
+            // Indirect immediate store operations
+            .store_imm_ind_u8,
+            .store_imm_ind_u16,
+            .store_imm_ind_u32,
+            .store_imm_ind_u64,
+            => self.args.OneRegTwoImm.first_immediate = new_address,
+
+            // Non-memory instructions
+            else => return error.NotAMemoryInstruction,
+        }
+    }
+
     pub fn instructionType(self: *@This()) InstructionType {
         return @as(InstructionType, self.args);
     }
@@ -478,7 +582,7 @@ pub const InstructionWithArgs = struct {
                 .jump_ind => {
                     self.args.OneRegOneImm.immediate = value;
                 },
-                else => {},
+                else => return error.InstructionDoesNotHaveOffset,
             }
         }
     }

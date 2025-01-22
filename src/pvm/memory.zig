@@ -9,6 +9,14 @@ pub const Memory = struct {
     pub const Z_P: u32 = 0x1000; // 2^12 = 4,096 - Page size
     pub const Z_I: u32 = 0x1000000; // 2^24 - Standard input data size
 
+    // Memory section addresses
+    pub const READ_ONLY_BASE_ADDRESS: u32 = Z_Z;
+    pub fn HEAP_BASE_ADDRESS(code_size: u32) u32 {
+        return 2 * Z_Z + code_size;
+    }
+    pub const INPUT_ADDRESS: u32 = 0xFFFFFFFF - Z_Z - Z_I;
+    pub const STACK_ADDRESS: u32 = 0xFFFFFFFF - Z_Z;
+
     pub const PageMap = struct {
         address: u32,
         length: u32,
@@ -31,36 +39,57 @@ pub const Memory = struct {
         address: u32,
         size: usize,
         state: AccessState,
+        data: ?[]const u8,
 
-        pub fn init(address: u32, size: usize, state: AccessState) Section {
+        pub fn init(address: u32, size: usize, data: ?[]const u8, state: AccessState) Section {
             return .{
                 .address = address,
                 .size = size,
                 .state = state,
+                .data = data,
             };
         }
     };
 
     // Standard memory layout configuration
     pub const Layout = struct {
-        code: Section,
+        read_only: Section,
         heap: Section,
         input: Section,
         stack: Section,
 
-        /// Create a standard memory layout with owned slices
-        /// Takes ownership of the provided code and input slices and places them in the layout.
-        /// The memory pages for these sections will only be allocated when they are accessed.
-        ///
-        /// Parameters:
-        ///   code: Code section slice that will be owned by the layout
-        ///   input: Optional input data slice that will be owned by the layout
-        pub fn standard(code_len: usize, input_len: usize) Layout {
+        pub fn standard(
+            read_only: []const u8,
+            read_write: []const u8,
+            input: []const u8,
+            stack_size: u24,
+            heap_size_in_pages: u16,
+        ) !Layout {
             return .{
-                .code = Section.init(Z_Z, code_len, .ReadOnly),
-                .heap = Section.init(2 * Z_Z + @as(u32, @intCast(code_len)), Z_Z, .ReadWrite),
-                .input = Section.init(0xFFFFFFFF - Z_Z - Z_I, input_len, .ReadOnly),
-                .stack = Section.init(0xFFFFFFFF - Z_Z, Z_Z, .ReadWrite),
+                .read_only = Section.init(
+                    READ_ONLY_BASE_ADDRESS,
+                    try std.math.divCeil(usize, read_only.len * Z_P, Z_P), // ALIGN TO PAGE
+                    read_only,
+                    .ReadOnly,
+                ),
+                .heap = Section.init(
+                    HEAP_BASE_ADDRESS(@as(u32, @intCast(read_only.len))),
+                    heap_size_in_pages * Z_P,
+                    read_write,
+                    .ReadWrite,
+                ),
+                .input = Section.init(
+                    INPUT_ADDRESS,
+                    try std.math.divCeil(usize, input.len * Z_P, Z_P),
+                    input,
+                    .ReadOnly,
+                ),
+                .stack = Section.init(
+                    STACK_ADDRESS - (Z_P * try std.math.divCeil(u24, stack_size, Z_P)),
+                    Z_Z,
+                    null,
+                    .ReadWrite,
+                ),
             };
         }
     };
@@ -79,12 +108,12 @@ pub const Memory = struct {
         }
 
         // Add sections in order, but only allocate for sections with data
-        inline for (.{ layout.code, layout.heap, layout.input, layout.stack }) |section| {
+        inline for (.{ layout.read_only, layout.heap, layout.input, layout.stack }) |section| {
             try page_maps.append(.{
                 .address = section.address,
                 .length = @intCast(section.size),
                 .state = section.state,
-                .data = &[_]u8{},
+                .data = try allocator.alloc(u8, section.size),
             });
         }
 
@@ -142,7 +171,9 @@ pub const Memory = struct {
         for (self.page_maps) |*page| {
             if (page.address == address) {
                 if (data.len > page.length) return error.OutOfBounds;
-                std.debug.assert(page.data.len == 0); // Assert section is empty
+                if (page.data.len > 0) {
+                    self.allocator.free(page.data);
+                }
                 page.data = try self.allocator.dupe(u8, data);
                 return;
             }
@@ -151,16 +182,16 @@ pub const Memory = struct {
     }
 
     pub fn initSectionByName(self: *Memory, section: enum {
-        code,
+        read_only,
         heap,
         input,
         stack,
     }, data: []const u8) !void {
         const address = switch (section) {
-            .code => self.layout.code.address,
-            .heap => self.layout.heap.address,
+            .read_only => self.layout.read_only.address,
+            .heap => @panic("heap cannot be initialized"),
             .input => self.layout.input.address,
-            .stack => self.layout.stack.address,
+            .stack => @panic("stack cannot be initialized"),
         };
         try self.initSection(address, data);
     }

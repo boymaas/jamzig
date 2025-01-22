@@ -314,9 +314,11 @@ pub const PVMFuzzer = struct {
         defer init_span.deinit();
         init_span.debug("Initializing PVM with {d} bytes, {d} initial gas", .{ program_bytes.len, self.config.max_gas });
 
-        var exec_ctx = PVM.ExecutionContext.initWithRawProgram(
+        var exec_ctx = PVM.ExecutionContext.initSimple(
             self.allocator,
             program_bytes,
+            1, // Stack size
+            4, // Heap size
             self.config.max_gas,
         ) catch |err| {
             init_span.err("ExecutionContext initialization failed: {s}", .{@errorName(err)});

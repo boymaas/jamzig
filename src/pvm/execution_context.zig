@@ -26,9 +26,11 @@ pub const ExecutionContext = struct {
     };
 
     // simple initialization using only the program
-    pub fn initWithRawProgram(
+    pub fn initSimple(
         allocator: Allocator,
         raw_program: []const u8,
+        stack_size: u24,
+        heap_size_in_pages: u16,
         max_gas: u32,
     ) !ExecutionContext {
         // Decode program
@@ -36,14 +38,14 @@ pub const ExecutionContext = struct {
         errdefer program.deinit(allocator);
 
         // Configure memory layout using Memory's standard layout
-        var memory = try Memory.init(allocator, Memory.Layout.standard(
-            program.code.len,
-            0,
+        var memory = try Memory.init(allocator, try Memory.Layout.standard(
+            &[_]u8{},
+            &[_]u8{},
+            &[_]u8{},
+            stack_size,
+            heap_size_in_pages,
         ));
         errdefer memory.deinit();
-
-        // Initialize code section
-        try memory.initSectionByName(.code, program.code);
 
         return ExecutionContext{
             .memory = memory,
