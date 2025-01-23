@@ -68,89 +68,114 @@ pub const Instruction = enum(u8) {
     // A.5.9. Instructions with Arguments of Two Registers
     move_reg = 100,
     sbrk = 101,
+    count_set_bits_64 = 102, // New
+    count_set_bits_32 = 103, // New
+    leading_zero_bits_64 = 104, // New
+    leading_zero_bits_32 = 105, // New
+    trailing_zero_bits_64 = 106, // New
+    trailing_zero_bits_32 = 107, // New
+    sign_extend_8 = 108, // New
+    sign_extend_16 = 109, // New
+    zero_extend_16 = 110, // New
+    reverse_bytes = 111, // New
 
     // A.5.10. Instructions with Arguments of Two Registers & One Immediate
-    store_ind_u8 = 110,
-    store_ind_u16 = 111,
-    store_ind_u32 = 112,
-    store_ind_u64 = 113,
-    load_ind_u8 = 114,
-    load_ind_i8 = 115,
-    load_ind_u16 = 116,
-    load_ind_i16 = 117,
-    load_ind_u32 = 118,
-    load_ind_i32 = 119,
-    load_ind_u64 = 120,
-    add_imm_32 = 121,
-    and_imm = 122,
-    xor_imm = 123,
-    or_imm = 124,
-    mul_imm_32 = 125,
-    set_lt_u_imm = 126,
-    set_lt_s_imm = 127,
-    shlo_l_imm_32 = 128,
-    shlo_r_imm_32 = 129,
-    shar_r_imm_32 = 130,
-    neg_add_imm_32 = 131,
-    set_gt_u_imm = 132,
-    set_gt_s_imm = 133,
-    shlo_l_imm_alt_32 = 134,
-    shlo_r_imm_alt_32 = 135,
-    shar_r_imm_alt_32 = 136,
-    cmov_iz_imm = 137,
-    cmov_nz_imm = 138,
-    add_imm_64 = 139,
-    mul_imm_64 = 140,
-    shlo_l_imm_64 = 141,
-    shlo_r_imm_64 = 142,
-    shar_r_imm_64 = 143,
-    neg_add_imm_64 = 144,
-    shlo_l_imm_alt_64 = 145,
-    shlo_r_imm_alt_64 = 146,
-    shar_r_imm_alt_64 = 147,
+    store_ind_u8 = 120, // ID changed
+    store_ind_u16 = 121, // ID changed
+    store_ind_u32 = 122, // ID changed
+    store_ind_u64 = 123, // ID changed
+    load_ind_u8 = 124, // ID changed
+    load_ind_i8 = 125, // ID changed
+    load_ind_u16 = 126, // ID changed
+    load_ind_i16 = 127, // ID changed
+    load_ind_u32 = 128, // ID changed
+    load_ind_i32 = 129, // ID changed
+    load_ind_u64 = 130, // ID changed
+    add_imm_32 = 131,
+    and_imm = 132,
+    xor_imm = 133,
+    or_imm = 134,
+    mul_imm_32 = 135,
+    set_lt_u_imm = 136,
+    set_lt_s_imm = 137,
+    shlo_l_imm_32 = 138,
+    shlo_r_imm_32 = 139,
+    shar_r_imm_32 = 140,
+    neg_add_imm_32 = 141,
+    set_gt_u_imm = 142,
+    set_gt_s_imm = 143,
+    shlo_l_imm_alt_32 = 144,
+    shlo_r_imm_alt_32 = 145,
+    shar_r_imm_alt_32 = 146,
+    cmov_iz_imm = 147,
+    cmov_nz_imm = 148,
+    add_imm_64 = 149,
+    mul_imm_64 = 150,
+    shlo_l_imm_64 = 151,
+    shlo_r_imm_64 = 152,
+    shar_r_imm_64 = 153,
+    neg_add_imm_64 = 154,
+    shlo_l_imm_alt_64 = 155,
+    shlo_r_imm_alt_64 = 156,
+    shar_r_imm_alt_64 = 157,
+    rot_r_64_imm = 158, // New
+    rot_r_64_imm_alt = 159, // New
+    rot_r_32_imm = 160, // New
+    rot_r_32_imm_alt = 161, // New
 
     // A.5.11. Instructions with Arguments of Two Registers & One Offset
-    branch_eq = 150,
-    branch_ne = 151,
-    branch_lt_u = 152,
-    branch_lt_s = 153,
-    branch_ge_u = 154,
-    branch_ge_s = 155,
+    branch_eq = 170, // ID changed
+    branch_ne = 171, // ID changed
+    branch_lt_u = 172, // ID changed
+    branch_lt_s = 173, // ID changed
+    branch_ge_u = 174, // ID changed
+    branch_ge_s = 175, // ID changed
 
     // A.5.12. Instructions with Arguments of Two Registers and Two Immediates
-    load_imm_jump_ind = 160,
+    load_imm_jump_ind = 180, // ID changed
 
     // A.5.13. Instructions with Arguments of Three Registers
-    add_32 = 170,
-    sub_32 = 171,
-    mul_32 = 172,
-    div_u_32 = 173,
-    div_s_32 = 174,
-    rem_u_32 = 175,
-    rem_s_32 = 176,
-    shlo_l_32 = 177,
-    shlo_r_32 = 178,
-    shar_r_32 = 179,
-    add_64 = 180,
-    sub_64 = 181,
-    mul_64 = 182,
-    div_u_64 = 183,
-    div_s_64 = 184,
-    rem_u_64 = 185,
-    rem_s_64 = 186,
-    shlo_l_64 = 187,
-    shlo_r_64 = 188,
-    shar_r_64 = 189,
-    @"and" = 190,
-    xor = 191,
-    @"or" = 192,
-    mul_upper_s_s = 193,
-    mul_upper_u_u = 194,
-    mul_upper_s_u = 195,
-    set_lt_u = 196,
-    set_lt_s = 197,
-    cmov_iz = 198,
-    cmov_nz = 199,
+    add_32 = 190, // ID changed
+    sub_32 = 191, // ID changed
+    mul_32 = 192, // ID changed
+    div_u_32 = 193, // ID changed
+    div_s_32 = 194, // ID changed
+    rem_u_32 = 195, // ID changed
+    rem_s_32 = 196, // ID changed
+    shlo_l_32 = 197, // ID changed
+    shlo_r_32 = 198, // ID changed
+    shar_r_32 = 199, // ID changed
+    add_64 = 200, // ID changed
+    sub_64 = 201, // ID changed
+    mul_64 = 202, // ID changed
+    div_u_64 = 203, // ID changed
+    div_s_64 = 204, // ID changed
+    rem_u_64 = 205, // ID changed
+    rem_s_64 = 206, // ID changed
+    shlo_l_64 = 207, // ID changed
+    shlo_r_64 = 208, // ID changed
+    shar_r_64 = 209, // ID changed
+    @"and" = 210, // ID changed
+    xor = 211, // ID changed
+    @"or" = 212, // ID changed
+    mul_upper_s_s = 213, // ID changed
+    mul_upper_u_u = 214, // ID changed
+    mul_upper_s_u = 215, // ID changed
+    set_lt_u = 216, // ID changed
+    set_lt_s = 217, // ID changed
+    cmov_iz = 218, // ID changed
+    cmov_nz = 219, // ID changed
+    rot_l_64 = 220, // New
+    rot_l_32 = 221, // New
+    rot_r_64 = 222, // New
+    rot_r_32 = 223, // New
+    and_inv = 224, // New
+    or_inv = 225, // New
+    xnor = 226, // New
+    max = 227, // New
+    max_u = 228, // New
+    min = 229, // New
+    min_u = 230, // New
 };
 
 //     _                                         _  _____
@@ -190,7 +215,17 @@ pub const InstructionType = enum {
     ThreeReg, // 170-199: add_32, sub_32, mul_32, etc.
 
     pub fn lookUp(inst: Instruction) InstructionType {
-        return lookupInstructionType(inst);
+        const opcode = @intFromEnum(inst);
+        inline for (std.meta.fields(InstructionType)) |field| {
+            if (comptime InstructionRanges.get(field.name)) |range| {
+                if (opcode >= range.start and opcode <= range.end) {
+                    return @enumFromInt(field.value);
+                }
+            } else {
+                @compileError("Missing range definition in InstructionRanges for instruction type '" ++ field.name ++ "'");
+            }
+        }
+        unreachable;
     }
 };
 
@@ -200,22 +235,46 @@ const InstructionRange = struct {
     end: u8,
 };
 
-/// Valid opcode ranges for each instruction type
 pub const InstructionRanges = std.StaticStringMap(InstructionRange)
     .initComptime(.{
+    // A.5.1 - No arguments instructions (trap, fallthrough)
     .{ "NoArgs", .{ .start = 0, .end = 1 } },
+
+    // A.5.2 - Instructions with one immediate (ecalli)
     .{ "OneImm", .{ .start = 10, .end = 10 } },
+
+    // A.5.3 - Instructions with one register and one extended immediate (load_imm_64)
     .{ "OneRegOneExtImm", .{ .start = 20, .end = 20 } },
+
+    // A.5.4 - Instructions with two immediates (store_imm_* family)
     .{ "TwoImm", .{ .start = 30, .end = 33 } },
+
+    // A.5.5 - Instructions with one offset (jump)
     .{ "OneOffset", .{ .start = 40, .end = 40 } },
+
+    // A.5.6 - Instructions with one register and one immediate (jump_ind through store_u64)
     .{ "OneRegOneImm", .{ .start = 50, .end = 62 } },
+
+    // A.5.7 - Instructions with one register and two immediates (store_imm_ind_* family)
     .{ "OneRegTwoImm", .{ .start = 70, .end = 73 } },
+
+    // A.5.8 - Instructions with one register, one immediate and one offset (load_imm_jump through branch_gt_s_imm)
     .{ "OneRegOneImmOneOffset", .{ .start = 80, .end = 90 } },
-    .{ "TwoReg", .{ .start = 100, .end = 101 } },
-    .{ "TwoRegOneImm", .{ .start = 110, .end = 147 } },
-    .{ "TwoRegOneOffset", .{ .start = 150, .end = 155 } },
-    .{ "TwoRegTwoImm", .{ .start = 160, .end = 160 } },
-    .{ "ThreeReg", .{ .start = 170, .end = 199 } },
+
+    // A.5.9 - Instructions with two registers (move_reg through reverse_bytes)
+    .{ "TwoReg", .{ .start = 100, .end = 111 } }, // Updated end to include new instructions
+
+    // A.5.10 - Instructions with two registers and one immediate (store_ind_* through rot_r_32_imm_alt)
+    .{ "TwoRegOneImm", .{ .start = 120, .end = 161 } }, // Updated range to reflect new IDs and instructions
+
+    // A.5.11 - Instructions with two registers and one offset (branch_* family)
+    .{ "TwoRegOneOffset", .{ .start = 170, .end = 175 } }, // Updated range to match new IDs
+
+    // A.5.12 - Instructions with two registers and two immediates (load_imm_jump_ind)
+    .{ "TwoRegTwoImm", .{ .start = 180, .end = 180 } }, // Updated start to match new ID
+
+    // A.5.13 - Instructions with three registers (add_32 through min_u)
+    .{ "ThreeReg", .{ .start = 190, .end = 230 } }, // Updated range to include new instructions
 });
 
 //  ___           _                   _   _                _

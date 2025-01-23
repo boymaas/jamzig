@@ -148,6 +148,7 @@ pub const PVM = struct {
     }
 
     const PcOffset = i32;
+    const signExtendToU64 = @import("./pvm/sign_extention.zig").signExtendToU64;
     fn executeInstruction(context: *ExecutionContext, i: InstructionWithArgs) Error!ExecutionStepResult {
         switch (i.instruction) {
             // A.5.1 Instructions without Arguments
@@ -360,257 +361,78 @@ pub const PVM = struct {
 
             .sbrk => {
                 // Memory allocation is handled by the Memory implementation
+                // TODO: implement this
+            },
+
+            // Bit counting and manipulation instructions
+            .count_set_bits_64 => {
+                const args = i.args.TwoReg;
+                // Count the 1 bits in register A using Brian Kernighan's algorithm
+                context.registers[args.first_register_index] = @popCount(context.registers[args.second_register_index]);
+            },
+
+            .count_set_bits_32 => {
+                const args = i.args.TwoReg;
+                // Count 1 bits in lower 32 bits only
+                const value = @as(u32, @truncate(context.registers[args.second_register_index]));
+                context.registers[args.first_register_index] = @popCount(value);
+            },
+
+            .leading_zero_bits_64 => {
+                const args = i.args.TwoReg;
+                const value = context.registers[args.second_register_index];
+                context.registers[args.first_register_index] =
+                    if (value == 0) 64 else @clz(value);
+            },
+
+            .leading_zero_bits_32 => {
+                const args = i.args.TwoReg;
+                const value = @as(u32, @truncate(context.registers[args.second_register_index]));
+                context.registers[args.first_register_index] =
+                    if (value == 0) 32 else @clz(value);
+            },
+
+            .trailing_zero_bits_64 => {
+                const args = i.args.TwoReg;
+                const value = context.registers[args.second_register_index];
+                context.registers[args.first_register_index] =
+                    if (value == 0) 64 else @ctz(value);
+            },
+
+            .trailing_zero_bits_32 => {
+                const args = i.args.TwoReg;
+                const value = @as(u32, @truncate(context.registers[args.second_register_index]));
+                context.registers[args.first_register_index] =
+                    if (value == 0) 32 else @ctz(value);
+            },
+
+            .sign_extend_8 => {
+                const args = i.args.TwoReg;
+                const value = @as(u8, @truncate(context.registers[args.second_register_index]));
+                context.registers[args.first_register_index] =
+                    @bitCast(@as(i64, @intCast(@as(i8, @bitCast(value)))));
+            },
+
+            .sign_extend_16 => {
+                const args = i.args.TwoReg;
+                const value = @as(u16, @truncate(context.registers[args.second_register_index]));
+                context.registers[args.first_register_index] =
+                    @bitCast(@as(i64, @intCast(@as(i16, @bitCast(value)))));
+            },
+
+            .zero_extend_16 => {
+                const args = i.args.TwoReg;
+                context.registers[args.first_register_index] =
+                    @as(u16, @truncate(context.registers[args.second_register_index]));
+            },
+
+            .reverse_bytes => {
+                const args = i.args.TwoReg;
+                const value = context.registers[args.second_register_index];
+                context.registers[args.first_register_index] = @byteSwap(value);
             },
 
             // A.5.10 Instructions with Arguments of Two Registers & One Immediate
-            .add_imm_32, .add_imm_64 => {
-                const args = i.args.TwoRegOneImm;
-                context.registers[args.first_register_index] = context.registers[args.second_register_index] +% args.immediate;
-                if (i.instruction == .add_imm_32) {
-                    context.registers[args.first_register_index] = @as(u32, @truncate(context.registers[args.first_register_index]));
-                }
-            },
-
-            .mul_imm_32, .mul_imm_64 => {
-                const args = i.args.TwoRegOneImm;
-                context.registers[args.first_register_index] = context.registers[args.second_register_index] *% args.immediate;
-                if (i.instruction == .mul_imm_32) {
-                    context.registers[args.first_register_index] = @as(u32, @truncate(context.registers[args.first_register_index]));
-                }
-            },
-
-            // A.5.11 Instructions with Arguments of Two Registers & One Offset
-            .branch_eq, .branch_ne, .branch_lt_u, .branch_lt_s, .branch_ge_u, .branch_ge_s => {
-                const args = i.args.TwoRegOneOffset;
-                const reg1 = context.registers[args.first_register_index];
-                const reg2 = context.registers[args.second_register_index];
-                const should_branch = switch (i.instruction) {
-                    .branch_eq => reg1 == reg2,
-                    .branch_ne => reg1 != reg2,
-                    .branch_lt_u => reg1 < reg2,
-                    .branch_lt_s => @as(i64, @bitCast(reg1)) < @as(i64, @bitCast(reg2)),
-                    .branch_ge_u => reg1 >= reg2,
-                    .branch_ge_s => @as(i64, @bitCast(reg1)) >= @as(i64, @bitCast(reg2)),
-                    else => unreachable,
-                };
-                if (should_branch) {
-                    context.pc = updatePc(context.pc, args.offset) catch {
-                        return .{ .terminal = .panic };
-                    };
-                    return .cont;
-                }
-            },
-
-            // A.5.12 Instructions with Arguments of Two Registers and Two Immediates
-            .load_imm_jump_ind => {
-                const args = i.args.TwoRegTwoImm;
-                context.registers[args.first_register_index] = args.first_immediate;
-                const jump_dest = context.program.validateJumpAddress(
-                    @truncate(context.registers[args.second_register_index] +% args.second_immediate),
-                ) catch |err| {
-                    return if (err == error.JumpAddressHalt)
-                        .{ .terminal = .{ .halt = &[_]u8{} } }
-                    else
-                        .{ .terminal = .panic };
-                };
-                context.pc = jump_dest;
-                return .cont;
-            },
-
-            // A.5.13 Instructions with Arguments of Three Registers
-            .add_32, .add_64 => {
-                const args = i.args.ThreeReg;
-                context.registers[args.third_register_index] =
-                    context.registers[args.first_register_index] +%
-                    context.registers[args.second_register_index];
-                if (i.instruction == .add_32) {
-                    context.registers[args.third_register_index] = @as(u32, @truncate(context.registers[args.third_register_index]));
-                }
-            },
-
-            .sub_32, .sub_64 => {
-                const args = i.args.ThreeReg;
-                context.registers[args.third_register_index] =
-                    context.registers[args.first_register_index] -%
-                    context.registers[args.second_register_index];
-                if (i.instruction == .sub_32) {
-                    context.registers[args.third_register_index] = @as(u32, @truncate(context.registers[args.third_register_index]));
-                }
-            },
-
-            .mul_32, .mul_64 => {
-                const args = i.args.ThreeReg;
-                context.registers[args.third_register_index] =
-                    context.registers[args.first_register_index] *%
-                    context.registers[args.second_register_index];
-                if (i.instruction == .mul_32) {
-                    context.registers[args.third_register_index] = @as(u32, @truncate(context.registers[args.third_register_index]));
-                }
-            },
-
-            .div_u_32, .div_u_64 => {
-                const args = i.args.ThreeReg;
-                if (context.registers[args.second_register_index] == 0) {
-                    context.registers[args.third_register_index] = if (i.instruction == .div_u_32) 0xFFFFFFFF else 0xFFFFFFFFFFFFFFFF;
-                } else {
-                    context.registers[args.third_register_index] = @divTrunc(context.registers[args.first_register_index], context.registers[args.second_register_index]);
-                    if (i.instruction == .div_u_32) {
-                        context.registers[args.third_register_index] = @as(u32, @truncate(context.registers[args.third_register_index]));
-                    }
-                }
-            },
-
-            .div_s_32, .div_s_64 => {
-                const args = i.args.ThreeReg;
-                if (context.registers[args.second_register_index] == 0) {
-                    context.registers[args.third_register_index] = if (i.instruction == .div_s_32) 0xFFFFFFFF else 0xFFFFFFFFFFFFFFFF;
-                } else {
-                    const is_32 = i.instruction == .div_s_32;
-                    const reg1 = if (is_32)
-                        @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.first_register_index]))))
-                    else
-                        @as(i64, @bitCast(context.registers[args.first_register_index]));
-                    const reg2 = if (is_32)
-                        @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.second_register_index]))))
-                    else
-                        @as(i64, @bitCast(context.registers[args.second_register_index]));
-                    context.registers[args.third_register_index] = @bitCast(@divTrunc(reg1, reg2));
-                }
-            },
-
-            .rem_u_32, .rem_u_64 => {
-                const args = i.args.ThreeReg;
-                if (context.registers[args.second_register_index] == 0) {
-                    context.registers[args.third_register_index] = context.registers[args.first_register_index];
-                } else {
-                    context.registers[args.third_register_index] = @rem(context.registers[args.first_register_index], context.registers[args.second_register_index]);
-                    if (i.instruction == .rem_u_32) {
-                        context.registers[args.third_register_index] = @as(u32, @truncate(context.registers[args.third_register_index]));
-                    }
-                }
-            },
-
-            .rem_s_32, .rem_s_64 => {
-                const args = i.args.ThreeReg;
-                if (context.registers[args.second_register_index] == 0) {
-                    context.registers[args.third_register_index] = context.registers[args.first_register_index];
-                } else {
-                    const is_32 = i.instruction == .rem_s_32;
-                    const reg1 = if (is_32)
-                        @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.first_register_index]))))
-                    else
-                        @as(i64, @bitCast(context.registers[args.first_register_index]));
-                    const reg2 = if (is_32)
-                        @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.second_register_index]))))
-                    else
-                        @as(i64, @bitCast(context.registers[args.second_register_index]));
-                    context.registers[args.third_register_index] = @bitCast(@rem(reg1, reg2));
-                }
-            },
-
-            .shlo_l_32, .shlo_l_64 => {
-                const args = i.args.ThreeReg;
-                const mask: u64 = if (i.instruction == .shlo_l_32) 0x1F else 0x3F;
-                context.registers[args.third_register_index] =
-                    context.registers[args.first_register_index] << @intCast(context.registers[args.second_register_index] & mask);
-                if (i.instruction == .shlo_l_32) {
-                    context.registers[args.third_register_index] = @as(u32, @truncate(context.registers[args.third_register_index]));
-                }
-            },
-
-            .shlo_r_32, .shlo_r_64 => {
-                const args = i.args.ThreeReg;
-                const mask: u64 = if (i.instruction == .shlo_r_32) 0x1F else 0x3F;
-                context.registers[args.third_register_index] =
-                    context.registers[args.first_register_index] >> @intCast(context.registers[args.second_register_index] & mask);
-                if (i.instruction == .shlo_r_32) {
-                    context.registers[args.third_register_index] = @as(u32, @truncate(context.registers[args.third_register_index]));
-                }
-            },
-
-            .shar_r_32, .shar_r_64 => {
-                const args = i.args.ThreeReg;
-                const mask: u64 = if (i.instruction == .shar_r_32) 0x1F else 0x3F;
-                const shift = context.registers[args.second_register_index] & mask;
-                if (i.instruction == .shar_r_32) {
-                    const value = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.first_register_index]))));
-                    context.registers[args.third_register_index] = @as(u32, @bitCast(value >> @intCast(shift)));
-                } else {
-                    const value = @as(i64, @bitCast(context.registers[args.first_register_index]));
-                    context.registers[args.third_register_index] = @bitCast(value >> @intCast(shift));
-                }
-            },
-
-            .@"and" => {
-                const args = i.args.ThreeReg;
-                context.registers[args.third_register_index] =
-                    context.registers[args.first_register_index] &
-                    context.registers[args.second_register_index];
-            },
-
-            .xor => {
-                const args = i.args.ThreeReg;
-                context.registers[args.third_register_index] =
-                    context.registers[args.first_register_index] ^
-                    context.registers[args.second_register_index];
-            },
-
-            .@"or" => {
-                const args = i.args.ThreeReg;
-                context.registers[args.third_register_index] =
-                    context.registers[args.first_register_index] |
-                    context.registers[args.second_register_index];
-            },
-
-            .mul_upper_s_s => {
-                const args = i.args.ThreeReg;
-                const result = @as(i128, @intCast(@as(i64, @bitCast(context.registers[args.first_register_index])))) *
-                    @as(i128, @intCast(@as(i64, @bitCast(context.registers[args.second_register_index]))));
-                context.registers[args.third_register_index] = @as(u64, @bitCast(@as(i64, @intCast(result >> 64))));
-            },
-
-            .mul_upper_u_u => {
-                const args = i.args.ThreeReg;
-                const result = @as(u128, context.registers[args.first_register_index]) *
-                    @as(u128, context.registers[args.second_register_index]);
-                context.registers[args.third_register_index] = @intCast(result >> 64);
-            },
-
-            .mul_upper_s_u => {
-                const args = i.args.ThreeReg;
-                const result = @as(i128, @intCast(@as(i64, @bitCast(context.registers[args.first_register_index])))) *
-                    @as(i128, @intCast(context.registers[args.second_register_index]));
-                context.registers[args.third_register_index] = @as(u64, @bitCast(@as(i64, @intCast(result >> 64))));
-            },
-
-            .set_lt_u => {
-                const args = i.args.ThreeReg;
-                context.registers[args.third_register_index] =
-                    if (context.registers[args.first_register_index] < context.registers[args.second_register_index]) 1 else 0;
-            },
-
-            .set_lt_s => {
-                const args = i.args.ThreeReg;
-                context.registers[args.third_register_index] =
-                    if (@as(i64, @bitCast(context.registers[args.first_register_index])) <
-                    @as(i64, @bitCast(context.registers[args.second_register_index]))) 1 else 0;
-            },
-
-            .cmov_iz => {
-                const args = i.args.ThreeReg;
-                if (context.registers[args.second_register_index] == 0) {
-                    context.registers[args.third_register_index] = context.registers[args.first_register_index];
-                }
-            },
-
-            .cmov_nz => {
-                const args = i.args.ThreeReg;
-                if (context.registers[args.second_register_index] != 0) {
-                    context.registers[args.third_register_index] = context.registers[args.first_register_index];
-                }
-            },
-
-            // A.5.10 Instructions with Arguments of Two Registers & One Immediate (continued)
             .store_ind_u8 => {
                 const args = i.args.TwoRegOneImm;
                 const addr = context.registers[args.second_register_index] +% args.immediate;
@@ -701,10 +523,16 @@ pub const PVM = struct {
 
                 context.registers[args.first_register_index] = switch (i.instruction) {
                     .load_ind_i8 => @bitCast(@as(i64, @intCast(@as(i8, @bitCast(data[0]))))),
-                    .load_ind_i16 => @bitCast(@as(i64, @intCast(@as(i16, @bitCast(std.mem.readInt(u16, data[0..2], .little)))))),
+                    .load_ind_i16 => @bitCast(@as(i64, @intCast(@as(i16, @bitCast(std.mem.readInt(u16, data[0..2], .little)))))), // TODO: save a bitCast here
                     .load_ind_i32 => @bitCast(@as(i64, @intCast(@as(i32, @bitCast(std.mem.readInt(u32, data[0..4], .little)))))),
                     else => unreachable,
                 };
+            },
+
+            .add_imm_32 => {
+                const args = i.args.TwoRegOneImm;
+                const result = context.registers[args.second_register_index] +% args.immediate;
+                context.registers[args.first_register_index] = @as(u32, @truncate(result));
             },
 
             .and_imm => {
@@ -722,107 +550,547 @@ pub const PVM = struct {
                 context.registers[args.first_register_index] = context.registers[args.second_register_index] | args.immediate;
             },
 
-            .set_lt_u_imm, .set_lt_s_imm, .set_gt_u_imm, .set_gt_s_imm => {
+            .mul_imm_32 => {
                 const args = i.args.TwoRegOneImm;
-                const result = switch (i.instruction) {
-                    .set_lt_u_imm => context.registers[args.second_register_index] < args.immediate,
-                    .set_lt_s_imm => @as(i64, @bitCast(context.registers[args.second_register_index])) < @as(i64, @bitCast(args.immediate)),
-                    .set_gt_u_imm => context.registers[args.second_register_index] > args.immediate,
-                    .set_gt_s_imm => @as(i64, @bitCast(context.registers[args.second_register_index])) > @as(i64, @bitCast(args.immediate)),
-                    else => unreachable,
-                };
-                context.registers[args.first_register_index] = if (result) 1 else 0;
+                const result = context.registers[args.second_register_index] *% args.immediate;
+                context.registers[args.first_register_index] = @as(u32, @truncate(result));
             },
 
-            .shlo_l_imm_32, .shlo_l_imm_64, .shlo_l_imm_alt_32, .shlo_l_imm_alt_64 => {
+            .set_lt_u_imm => {
                 const args = i.args.TwoRegOneImm;
-                const mask: u64 = switch (i.instruction) {
-                    .shlo_l_imm_32, .shlo_l_imm_alt_32 => 0x1F,
-                    .shlo_l_imm_64, .shlo_l_imm_alt_64 => 0x3F,
-                    else => unreachable,
-                };
-                const shift = switch (i.instruction) {
-                    .shlo_l_imm_32, .shlo_l_imm_64 => args.immediate & mask,
-                    .shlo_l_imm_alt_32, .shlo_l_imm_alt_64 => context.registers[args.second_register_index] & mask,
-                    else => unreachable,
-                };
-                const value = switch (i.instruction) {
-                    .shlo_l_imm_32, .shlo_l_imm_64 => context.registers[args.second_register_index],
-                    .shlo_l_imm_alt_32, .shlo_l_imm_alt_64 => args.immediate,
-                    else => unreachable,
-                };
-                context.registers[args.first_register_index] = value << @intCast(shift);
-                if (i.instruction == .shlo_l_imm_32 or i.instruction == .shlo_l_imm_alt_32) {
-                    context.registers[args.first_register_index] = @as(u32, @truncate(context.registers[args.first_register_index]));
-                }
+                context.registers[args.first_register_index] =
+                    if (context.registers[args.second_register_index] < args.immediate) 1 else 0;
             },
 
-            .shlo_r_imm_32, .shlo_r_imm_64, .shlo_r_imm_alt_32, .shlo_r_imm_alt_64 => {
+            .set_lt_s_imm => {
                 const args = i.args.TwoRegOneImm;
-                const mask: u64 = switch (i.instruction) {
-                    .shlo_r_imm_32, .shlo_r_imm_alt_32 => 0x1F,
-                    .shlo_r_imm_64, .shlo_r_imm_alt_64 => 0x3F,
-                    else => unreachable,
-                };
-                const shift = switch (i.instruction) {
-                    .shlo_r_imm_32, .shlo_r_imm_64 => args.immediate & mask,
-                    .shlo_r_imm_alt_32, .shlo_r_imm_alt_64 => context.registers[args.second_register_index] & mask,
-                    else => unreachable,
-                };
-                const value = switch (i.instruction) {
-                    .shlo_r_imm_32, .shlo_r_imm_64 => context.registers[args.second_register_index],
-                    .shlo_r_imm_alt_32, .shlo_r_imm_alt_64 => args.immediate,
-                    else => unreachable,
-                };
-                context.registers[args.first_register_index] = value >> @intCast(shift);
-                if (i.instruction == .shlo_r_imm_32 or i.instruction == .shlo_r_imm_alt_32) {
-                    context.registers[args.first_register_index] = @as(u32, @truncate(context.registers[args.first_register_index]));
-                }
+                context.registers[args.first_register_index] =
+                    if (@as(i64, @bitCast(context.registers[args.second_register_index])) <
+                    @as(i64, @bitCast(args.immediate))) 1 else 0;
             },
 
-            .shar_r_imm_32, .shar_r_imm_64, .shar_r_imm_alt_32, .shar_r_imm_alt_64 => {
+            .shlo_l_imm_32 => {
                 const args = i.args.TwoRegOneImm;
-                const mask: u64 = switch (i.instruction) {
-                    .shar_r_imm_32, .shar_r_imm_alt_32 => 0x1F,
-                    .shar_r_imm_64, .shar_r_imm_alt_64 => 0x3F,
-                    else => unreachable,
-                };
-                const shift = switch (i.instruction) {
-                    .shar_r_imm_32, .shar_r_imm_64 => args.immediate & mask,
-                    .shar_r_imm_alt_32, .shar_r_imm_alt_64 => context.registers[args.second_register_index] & mask,
-                    else => unreachable,
-                };
-                const value = switch (i.instruction) {
-                    .shar_r_imm_32 => @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.second_register_index])))),
-                    .shar_r_imm_64 => @as(i64, @bitCast(context.registers[args.second_register_index])),
-                    // FIXME: check this
-                    .shar_r_imm_alt_32 => @as(i32, @bitCast(@as(u32, @truncate(args.immediate)))),
-                    .shar_r_imm_alt_64 => @as(i64, @bitCast(args.immediate)),
-                    else => unreachable,
-                };
-                context.registers[args.first_register_index] = @bitCast(value >> @intCast(shift));
+                const shift = args.immediate & 0x1F;
+                const result = context.registers[args.second_register_index] << @intCast(shift);
+                context.registers[args.first_register_index] = @as(u32, @truncate(result));
             },
 
+            .shlo_r_imm_32 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = args.immediate & 0x1F;
+                const result = context.registers[args.second_register_index] >> @intCast(shift);
+                context.registers[args.first_register_index] = @as(u32, @truncate(result));
+            },
+
+            .shar_r_imm_32 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = args.immediate & 0x1F;
+                const value = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.second_register_index]))));
+                context.registers[args.first_register_index] = signExtendToU64(i32, value >> @intCast(shift));
+            },
+
+            .neg_add_imm_32 => {
+                const args = i.args.TwoRegOneImm;
+                const result = args.immediate -% context.registers[args.second_register_index];
+                context.registers[args.first_register_index] = @as(u32, @truncate(result));
+            },
+
+            .set_gt_u_imm => {
+                const args = i.args.TwoRegOneImm;
+                context.registers[args.first_register_index] =
+                    if (context.registers[args.second_register_index] > args.immediate) 1 else 0;
+            },
+            .set_gt_s_imm => {
+                const args = i.args.TwoRegOneImm;
+                context.registers[args.first_register_index] =
+                    if (@as(i64, @bitCast(context.registers[args.second_register_index])) >
+                    @as(i64, @bitCast(args.immediate))) 1 else 0;
+            },
+
+            .shlo_l_imm_alt_32 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = context.registers[args.second_register_index] & 0x1F;
+                const result = args.immediate << @intCast(shift);
+                context.registers[args.first_register_index] = @as(u32, @truncate(result));
+            },
+            .shlo_r_imm_alt_32 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = context.registers[args.second_register_index] & 0x1F;
+                const result = args.immediate >> @intCast(shift);
+                context.registers[args.first_register_index] = @as(u32, @truncate(result));
+            },
+            .shar_r_imm_alt_32 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = context.registers[args.second_register_index] & 0x1F;
+                const value = @as(i32, @bitCast(@as(u32, @truncate(args.immediate))));
+                context.registers[args.first_register_index] = signExtendToU64(i32, value >> @intCast(shift));
+            },
             .cmov_iz_imm => {
                 const args = i.args.TwoRegOneImm;
                 if (context.registers[args.second_register_index] == 0) {
                     context.registers[args.first_register_index] = args.immediate;
                 }
             },
-
             .cmov_nz_imm => {
                 const args = i.args.TwoRegOneImm;
                 if (context.registers[args.second_register_index] != 0) {
                     context.registers[args.first_register_index] = args.immediate;
                 }
             },
-
-            .neg_add_imm_32, .neg_add_imm_64 => {
+            .add_imm_64 => {
+                const args = i.args.TwoRegOneImm;
+                context.registers[args.first_register_index] = context.registers[args.second_register_index] +% args.immediate;
+            },
+            .mul_imm_64 => {
+                const args = i.args.TwoRegOneImm;
+                context.registers[args.first_register_index] = context.registers[args.second_register_index] *% args.immediate;
+            },
+            .shlo_l_imm_64 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = args.immediate & 0x3F;
+                context.registers[args.first_register_index] = context.registers[args.second_register_index] << @intCast(shift);
+            },
+            .shlo_r_imm_64 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = args.immediate & 0x3F;
+                context.registers[args.first_register_index] = context.registers[args.second_register_index] >> @intCast(shift);
+            },
+            .shar_r_imm_64 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = args.immediate & 0x3F;
+                const value = @as(i64, @bitCast(context.registers[args.second_register_index]));
+                context.registers[args.first_register_index] = @bitCast(value >> @intCast(shift));
+            },
+            .neg_add_imm_64 => {
                 const args = i.args.TwoRegOneImm;
                 context.registers[args.first_register_index] = args.immediate -% context.registers[args.second_register_index];
-                if (i.instruction == .neg_add_imm_32) {
-                    context.registers[args.first_register_index] = @as(u32, @truncate(context.registers[args.first_register_index]));
+            },
+            .shlo_l_imm_alt_64 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = context.registers[args.second_register_index] & 0x3F;
+                context.registers[args.first_register_index] = args.immediate << @intCast(shift);
+            },
+            .shlo_r_imm_alt_64 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = context.registers[args.second_register_index] & 0x3F;
+                context.registers[args.first_register_index] = args.immediate >> @intCast(shift);
+            },
+            .shar_r_imm_alt_64 => {
+                const args = i.args.TwoRegOneImm;
+                const shift = context.registers[args.second_register_index] & 0x3F;
+                const value = @as(i64, @bitCast(args.immediate));
+                context.registers[args.first_register_index] = @bitCast(value >> @intCast(shift));
+            },
+            .rot_r_64_imm => {
+                const args = i.args.TwoRegOneImm;
+                // Rotate right by immediate value for 64-bit
+                // Mask shift value to 6 bits (0-63) as per spec
+                const shift = args.immediate & 0x3F;
+                // Rotate right using std.math.rotr
+                context.registers[args.first_register_index] = std.math.rotr(
+                    u64,
+                    context.registers[args.second_register_index],
+                    shift,
+                );
+            },
+            .rot_r_64_imm_alt => {
+                const args = i.args.TwoRegOneImm;
+                // Alternate version where rotate amount comes from register
+                // Mask shift value to 6 bits (0-63)
+                const shift = context.registers[args.second_register_index] & 0x3F;
+                // Rotate immediate value right
+                context.registers[args.first_register_index] = std.math.rotr(u64, args.immediate, shift);
+            },
+            .rot_r_32_imm => {
+                const args = i.args.TwoRegOneImm;
+                // Rotate right by immediate for 32-bit value
+                // Mask shift value to 5 bits (0-31)
+                const shift = args.immediate & 0x1F;
+                // Extract 32-bit value from register
+                const value = @as(u32, @truncate(context.registers[args.second_register_index]));
+                // Perform rotation
+                const result = std.math.rotr(u32, value, shift);
+                // Sign extend result back to 64 bits
+                context.registers[args.first_register_index] = signExtendToU64(u32, result);
+            },
+            .rot_r_32_imm_alt => {
+                const args = i.args.TwoRegOneImm;
+                // Alternate version where rotate amount comes from register
+                // Mask shift value to 5 bits (0-31)
+                const shift = context.registers[args.second_register_index] & 0x1F;
+                // Extract 32-bit value from immediate
+                const value = @as(u32, @truncate(args.immediate));
+                // Perform rotation
+                const result = std.math.rotr(u32, value, shift);
+                // Sign extend result back to 64 bits
+                context.registers[args.first_register_index] = signExtendToU64(u32, result);
+            },
+
+            // A.5.11 Instructions with Arguments of Two Registers & One Offset
+            .branch_eq, .branch_ne, .branch_lt_u, .branch_lt_s, .branch_ge_u, .branch_ge_s => {
+                const args = i.args.TwoRegOneOffset;
+                const reg1 = context.registers[args.first_register_index];
+                const reg2 = context.registers[args.second_register_index];
+                const should_branch = switch (i.instruction) {
+                    .branch_eq => reg1 == reg2,
+                    .branch_ne => reg1 != reg2,
+                    .branch_lt_u => reg1 < reg2,
+                    .branch_lt_s => @as(i64, @bitCast(reg1)) < @as(i64, @bitCast(reg2)),
+                    .branch_ge_u => reg1 >= reg2,
+                    .branch_ge_s => @as(i64, @bitCast(reg1)) >= @as(i64, @bitCast(reg2)),
+                    else => unreachable,
+                };
+                if (should_branch) {
+                    context.pc = updatePc(context.pc, args.offset) catch {
+                        return .{ .terminal = .panic };
+                    };
+                    return .cont;
                 }
+            },
+
+            // A.5.12 Instructions with Arguments of Two Registers and Two Immediates
+            .load_imm_jump_ind => {
+                const args = i.args.TwoRegTwoImm;
+                context.registers[args.first_register_index] = args.first_immediate;
+                const jump_dest = context.program.validateJumpAddress(
+                    @truncate(context.registers[args.second_register_index] +% args.second_immediate),
+                ) catch |err| {
+                    return if (err == error.JumpAddressHalt)
+                        .{ .terminal = .{ .halt = &[_]u8{} } }
+                    else
+                        .{ .terminal = .panic };
+                };
+                context.pc = jump_dest;
+                return .cont;
+            },
+
+            // A.5.13 Instructions with Arguments of Three Registers
+            .add_32 => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] = signExtendToU64(
+                    u32,
+                    @truncate(context.registers[args.first_register_index] +%
+                        context.registers[args.second_register_index]),
+                );
+            },
+            .sub_32 => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] = signExtendToU64(
+                    u32,
+                    @truncate(context.registers[args.first_register_index] -%
+                        context.registers[args.second_register_index]),
+                );
+            },
+
+            .mul_32 => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] = signExtendToU64(u32, @truncate(context.registers[args.first_register_index] *%
+                    context.registers[args.second_register_index]));
+            },
+
+            .div_u_32 => {
+                const args = i.args.ThreeReg;
+                if (context.registers[args.second_register_index] == 0) {
+                    context.registers[args.third_register_index] = 0xFFFFFFFFFFFFFFFF;
+                } else {
+                    context.registers[args.third_register_index] = @divTrunc(
+                        @as(u32, @truncate(context.registers[args.first_register_index])),
+                        @as(u32, @truncate(context.registers[args.second_register_index])),
+                    );
+                }
+            },
+
+            .div_s_32 => {
+                const args = i.args.ThreeReg;
+                if (context.registers[args.second_register_index] == 0) {
+                    context.registers[args.third_register_index] = 0xFFFFFFFFFFFFFFFF;
+                } else {
+                    const rega = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.first_register_index]))));
+                    const regb = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.second_register_index]))));
+                    if (rega == std.math.minInt(i32) and regb == -1) {
+                        context.registers[args.third_register_index] = signExtendToU64(i32, rega);
+                    } else {
+                        context.registers[args.third_register_index] = signExtendToU64(i32, @divTrunc(rega, regb));
+                    }
+                }
+            },
+
+            .rem_u_32 => {
+                const args = i.args.ThreeReg;
+                const rega = @as(u32, @truncate(context.registers[args.first_register_index]));
+                const regb = @as(u32, @truncate(context.registers[args.second_register_index]));
+
+                if (regb == 0) {
+                    context.registers[args.third_register_index] = signExtendToU64(u32, rega);
+                } else {
+                    context.registers[args.third_register_index] = signExtendToU64(u32, @mod(rega, regb));
+                }
+            },
+
+            .rem_s_32 => {
+                const args = i.args.ThreeReg;
+                const rega: i32 = @bitCast(@as(u32, @truncate(context.registers[args.first_register_index])));
+                const regb: i32 = @bitCast(@as(u32, @truncate(context.registers[args.second_register_index])));
+                if (regb == 0) {
+                    context.registers[args.third_register_index] = signExtendToU64(i32, rega);
+                } else if (rega == std.math.minInt(i32) and regb == -1) {
+                    context.registers[args.third_register_index] = 0;
+                } else {
+                    context.registers[args.third_register_index] = signExtendToU64(i32, @mod(rega, regb));
+                }
+            },
+
+            .shlo_l_32 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x1F;
+                const shift = context.registers[args.second_register_index] & mask;
+                const result = context.registers[args.first_register_index] << @intCast(shift);
+                context.registers[args.third_register_index] = signExtendToU64(u32, @truncate(result));
+            },
+
+            .shlo_r_32 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x1F;
+                const shift = context.registers[args.second_register_index] & mask;
+                const result = context.registers[args.first_register_index] >> @intCast(shift);
+                context.registers[args.third_register_index] = signExtendToU64(u32, @truncate(result));
+            },
+
+            .shar_r_32 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x1F;
+                const shift = context.registers[args.second_register_index] & mask;
+                const value = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.first_register_index]))));
+                context.registers[args.third_register_index] = signExtendToU64(u32, @bitCast(value >> @intCast(shift)));
+            },
+
+            // 64 bit variants
+
+            .add_64 => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] =
+                    context.registers[args.first_register_index] +%
+                    context.registers[args.second_register_index];
+            },
+            .sub_64 => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] =
+                    context.registers[args.first_register_index] -%
+                    context.registers[args.second_register_index];
+            },
+            .mul_64 => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] =
+                    context.registers[args.first_register_index] *%
+                    context.registers[args.second_register_index];
+            },
+            .div_u_64 => {
+                const args = i.args.ThreeReg;
+                if (context.registers[args.second_register_index] == 0) {
+                    context.registers[args.third_register_index] = 0xFFFFFFFFFFFFFFFF;
+                } else {
+                    context.registers[args.third_register_index] = @divTrunc(context.registers[args.first_register_index], context.registers[args.second_register_index]);
+                }
+            },
+            .div_s_64 => {
+                const args = i.args.ThreeReg;
+                if (context.registers[args.second_register_index] == 0) {
+                    context.registers[args.third_register_index] = 0xFFFFFFFFFFFFFFFF;
+                } else {
+                    const rega = @as(i64, @bitCast(context.registers[args.first_register_index]));
+                    const regb = @as(i64, @bitCast(context.registers[args.second_register_index]));
+                    context.registers[args.third_register_index] = @bitCast(@divTrunc(rega, regb));
+                }
+            },
+            .rem_u_64 => {
+                const args = i.args.ThreeReg;
+                if (context.registers[args.second_register_index] == 0) {
+                    context.registers[args.third_register_index] = context.registers[args.first_register_index];
+                } else {
+                    context.registers[args.third_register_index] = @mod(context.registers[args.first_register_index], context.registers[args.second_register_index]);
+                }
+            },
+            .rem_s_64 => {
+                const args = i.args.ThreeReg;
+                const rega: i32 = @bitCast(@as(u32, @truncate(context.registers[args.first_register_index])));
+                const regb: i32 = @bitCast(@as(u32, @truncate(context.registers[args.second_register_index])));
+                if (regb == 0) {
+                    context.registers[args.third_register_index] = context.registers[args.first_register_index];
+                } else if (rega == std.math.minInt(i64) and regb == -1) {
+                    context.registers[args.third_register_index] = 0;
+                } else {
+                    context.registers[args.third_register_index] = signExtendToU64(i32, @mod(rega, regb));
+                }
+            },
+            .shlo_l_64 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x3F;
+                const shift = context.registers[args.second_register_index] & mask;
+                context.registers[args.third_register_index] =
+                    context.registers[args.first_register_index] << @intCast(shift);
+            },
+            .shlo_r_64 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x3F;
+                const shift = context.registers[args.second_register_index] & mask;
+                context.registers[args.third_register_index] =
+                    context.registers[args.first_register_index] >> @intCast(shift);
+            },
+            .shar_r_64 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x3F;
+                const shift = context.registers[args.second_register_index] & mask;
+                const value = @as(i64, @bitCast(context.registers[args.first_register_index]));
+                context.registers[args.third_register_index] = @bitCast(value >> @intCast(shift));
+            },
+
+            .@"and" => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] =
+                    context.registers[args.first_register_index] &
+                    context.registers[args.second_register_index];
+            },
+
+            .xor => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] =
+                    context.registers[args.first_register_index] ^
+                    context.registers[args.second_register_index];
+            },
+
+            .@"or" => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] =
+                    context.registers[args.first_register_index] |
+                    context.registers[args.second_register_index];
+            },
+
+            .mul_upper_s_s => {
+                const args = i.args.ThreeReg;
+                const result = @as(i128, @intCast(@as(i64, @bitCast(context.registers[args.first_register_index])))) *
+                    @as(i128, @intCast(@as(i64, @bitCast(context.registers[args.second_register_index]))));
+                context.registers[args.third_register_index] = @as(u64, @bitCast(@as(i64, @intCast(result >> 64))));
+            },
+
+            .mul_upper_u_u => {
+                const args = i.args.ThreeReg;
+                const result = @as(u128, context.registers[args.first_register_index]) *
+                    @as(u128, context.registers[args.second_register_index]);
+                context.registers[args.third_register_index] = @intCast(result >> 64);
+            },
+
+            .mul_upper_s_u => {
+                const args = i.args.ThreeReg;
+                const result = @as(i128, @intCast(@as(i64, @bitCast(context.registers[args.first_register_index])))) *
+                    @as(i128, @intCast(context.registers[args.second_register_index]));
+                context.registers[args.third_register_index] = @as(u64, @bitCast(@as(i64, @intCast(result >> 64))));
+            },
+
+            .set_lt_u => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] =
+                    if (context.registers[args.first_register_index] < context.registers[args.second_register_index]) 1 else 0;
+            },
+
+            .set_lt_s => {
+                const args = i.args.ThreeReg;
+                context.registers[args.third_register_index] =
+                    if (@as(i64, @bitCast(context.registers[args.first_register_index])) <
+                    @as(i64, @bitCast(context.registers[args.second_register_index]))) 1 else 0;
+            },
+
+            .cmov_iz => {
+                const args = i.args.ThreeReg;
+                if (context.registers[args.second_register_index] == 0) {
+                    context.registers[args.third_register_index] = context.registers[args.first_register_index];
+                }
+            },
+            .cmov_nz => {
+                const args = i.args.ThreeReg;
+                if (context.registers[args.second_register_index] != 0) {
+                    context.registers[args.third_register_index] = context.registers[args.first_register_index];
+                }
+            },
+            .rot_l_64 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x3F; // 6 bits for 64-bit rotations
+                const shift = context.registers[args.second_register_index] & mask;
+                const value = context.registers[args.first_register_index];
+                context.registers[args.third_register_index] = std.math.rotl(u64, value, shift);
+            },
+
+            .rot_l_32 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x1F; // 5 bits for 32-bit rotations
+                const shift = context.registers[args.second_register_index] & mask;
+                const value = @as(u32, @truncate(context.registers[args.first_register_index]));
+                const result = std.math.rotl(u32, value, shift);
+                context.registers[args.third_register_index] = signExtendToU64(u32, result);
+            },
+            .rot_r_64 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x3F;
+                const shift = context.registers[args.second_register_index] & mask;
+                const value = context.registers[args.first_register_index];
+                context.registers[args.third_register_index] = std.math.rotr(u64, value, shift);
+            },
+
+            .rot_r_32 => {
+                const args = i.args.ThreeReg;
+                const mask: u64 = 0x1F; // 5 bits for 32-bit rotations
+                const shift = context.registers[args.second_register_index] & mask;
+                const value = @as(u32, @truncate(context.registers[args.first_register_index]));
+                const result = std.math.rotr(u32, value, shift);
+                context.registers[args.third_register_index] = signExtendToU64(u32, result);
+            },
+
+            // Bitwise operations with inverted operands
+            .and_inv => {
+                const args = i.args.ThreeReg;
+                const value_a = context.registers[args.first_register_index];
+                const value_b = ~context.registers[args.second_register_index]; // Invert second operand
+                context.registers[args.third_register_index] = value_a & value_b;
+            },
+
+            .or_inv => {
+                const args = i.args.ThreeReg;
+                const value_a = context.registers[args.first_register_index];
+                const value_b = ~context.registers[args.second_register_index]; // Invert second operand
+                context.registers[args.third_register_index] = value_a | value_b;
+            },
+
+            .xnor => {
+                const args = i.args.ThreeReg;
+                const value_a = context.registers[args.first_register_index];
+                const value_b = context.registers[args.second_register_index];
+                context.registers[args.third_register_index] = ~(value_a ^ value_b); // XNOR is inverse of XOR
+            },
+
+            .max => {
+                const args = i.args.ThreeReg;
+                const value_a = @as(i64, @bitCast(context.registers[args.first_register_index]));
+                const value_b = @as(i64, @bitCast(context.registers[args.second_register_index]));
+                context.registers[args.third_register_index] = @bitCast(@max(value_a, value_b));
+            },
+            .max_u => {
+                const args = i.args.ThreeReg;
+                const value_a = context.registers[args.first_register_index];
+                const value_b = context.registers[args.second_register_index];
+                context.registers[args.third_register_index] = @max(value_a, value_b);
+            },
+
+            .min => {
+                const args = i.args.ThreeReg;
+                const value_a = @as(i64, @bitCast(context.registers[args.first_register_index]));
+                const value_b = @as(i64, @bitCast(context.registers[args.second_register_index]));
+                context.registers[args.third_register_index] = @bitCast(@min(value_a, value_b));
+            },
+            .min_u => {
+                const args = i.args.ThreeReg;
+                const value_a = context.registers[args.first_register_index];
+                const value_b = context.registers[args.second_register_index];
+                context.registers[args.third_register_index] = @min(value_a, value_b);
             },
         }
 

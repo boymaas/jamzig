@@ -18,7 +18,5 @@ test "pvm:fuzzer:run" {
     var fuzzer = try PVMFuzzer.init(testing.allocator, config);
     defer fuzzer.deinit();
 
-    var results = try fuzzer.run();
-
-    _ = results.getStats();
+    _ = try fuzzer.run();
 }
