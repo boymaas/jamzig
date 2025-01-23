@@ -24,12 +24,6 @@ pub fn mutateProgramBytes(
     defer span.deinit();
     span.debug("Evaluating program mutation (length={d} bytes)", .{bytes.len});
 
-    // First decide if we should mutate this program at all
-    if (seed_gen.randomIntRange(usize, 0, 1_000_000) >= config.program_mutation_probability) {
-        span.debug("Program skipped for mutation based on probability", .{});
-        return;
-    }
-
     // Calculate total number of bits to flip based on probability
     const total_bits = bytes.len * 8;
     const bits_to_flip = (total_bits * config.bit_flip_probability) / 1_000;
@@ -161,6 +155,14 @@ const ErrorStats = struct {
 pub const FuzzResults = struct {
     accumulated: Stats,
 
+    const ExecutionStats = struct {
+        halt: usize = 0,
+        panic: usize = 0,
+        out_of_gas: usize = 0,
+        page_fault: usize = 0,
+        host_call: usize = 0,
+    };
+
     const Stats = struct {
         total_cases: usize = 0,
         successful: usize = 0,
@@ -169,6 +171,8 @@ pub const FuzzResults = struct {
         mutated_cases: usize = 0,
         init_failures: usize = 0,
         error_stats: ErrorStats = ErrorStats.init(),
+        error_stats_mutated: ErrorStats = ErrorStats.init(),
+        execution_stats: ExecutionStats = .{},
 
         pub fn avgGas(self: *const @This()) usize {
             return @as(usize, @intCast(self.total_gas)) / self.total_cases;
@@ -191,16 +195,26 @@ pub const FuzzResults = struct {
 
         self.accumulated.total_cases += 1;
 
-        if (result.init_failed) {
-            self.accumulated.init_failures += 1;
-            span.debug("Test case failed during initialization", .{});
-        }
-
-        if (result.status) |_| {
-            self.accumulated.successful += 1;
+        if (result.status) |status| {
+            switch (status) {
+                .halt => |_| {
+                    self.accumulated.successful += 1;
+                    self.accumulated.execution_stats.halt += 1;
+                },
+                .err => |err| switch (err) {
+                    .panic => self.accumulated.execution_stats.panic += 1,
+                    .out_of_gas => self.accumulated.execution_stats.out_of_gas += 1,
+                    .page_fault => self.accumulated.execution_stats.page_fault += 1,
+                    .host_call => self.accumulated.execution_stats.host_call += 1,
+                },
+            }
         } else |err| {
-            self.accumulated.errors += 1;
-            self.accumulated.error_stats.recordError(err);
+            if (result.was_mutated) {
+                self.accumulated.error_stats_mutated.recordError(err);
+            } else {
+                self.accumulated.errors += 1;
+                self.accumulated.error_stats.recordError(err);
+            }
         }
 
         if (result.was_mutated) {
@@ -208,6 +222,15 @@ pub const FuzzResults = struct {
         }
 
         self.accumulated.total_gas += result.gas_used;
+    }
+
+    pub fn writeExecutionStats(self: *const @This(), writer: anytype) !void {
+        try writer.writeAll("\nExecution Result Statistics:\n");
+        try writer.print("    Halt: {d}\n", .{self.accumulated.execution_stats.halt});
+        try writer.print("    Panic: {d}\n", .{self.accumulated.execution_stats.panic});
+        try writer.print("    Out of Gas: {d}\n", .{self.accumulated.execution_stats.out_of_gas});
+        try writer.print("    Page Fault: {d}\n", .{self.accumulated.execution_stats.page_fault});
+        try writer.print("    Host Call: {d}\n", .{self.accumulated.execution_stats.host_call});
     }
 };
 
@@ -233,11 +256,12 @@ pub const PVMFuzzer = struct {
         self.allocator.destroy(self.seed_gen);
     }
 
-    pub fn run(self: *Self) !FuzzResults {
+    pub fn run(self: *Self) !struct { results: FuzzResults, init_errors: FuzzResults } {
         const span = trace.span(.run_fuzzer);
         defer span.deinit();
         span.debug("Starting fuzzing session with {d} test cases", .{self.config.num_cases});
 
+        var init_errors = FuzzResults.init();
         var results = FuzzResults.init();
 
         var test_count: u32 = self.config.start_case;
@@ -260,13 +284,13 @@ pub const PVMFuzzer = struct {
                 std.debug.print("  Error: {s}\n", .{@errorName(err)});
                 return err;
             };
-            results.accumulate(result);
-
-            // if (self.config.verbose) {
-            //     self.printTestResult(test_count, result);
-            // }
+            if (result.init_failed) {
+                init_errors.accumulate(result);
+            } else {
+                results.accumulate(result);
+            }
         }
-        return results;
+        return .{ .results = results, .init_errors = init_errors };
     }
 
     pub fn runSingleTest(self: *Self, seed: u64) !FuzzResult {
@@ -308,7 +332,7 @@ pub const PVMFuzzer = struct {
         );
 
         const program_bytes = try program.getRawBytes(self.allocator);
-        const will_mutate = seed_gen.randomIntRange(u8, 0, 99) < self.config.mutation.program_mutation_probability;
+        const will_mutate = seed_gen.randomIntRange(u16, 0, 999) < self.config.mutation.program_mutation_probability;
 
         if (will_mutate) {
             mutation_span.warn("Program mutation probability check: will_mutate={}", .{will_mutate});
@@ -325,7 +349,7 @@ pub const PVMFuzzer = struct {
         var exec_ctx = PVM.ExecutionContext.initSimple(
             self.allocator,
             program_bytes,
-            1, // Stack size
+            1024, // Stack size
             4, // Heap size
             self.config.max_gas,
         ) catch |err| {
@@ -378,12 +402,20 @@ pub const PVMFuzzer = struct {
                 },
             }
         } else |err| {
-            execution_span.debug("Program execution failed with error: {s}. Gas used: {d}", .{ @errorName(err), gas_used });
-            if (exec_ctx.error_data) |error_data| {
-                execution_span.trace("Error data: {any}", .{error_data});
+            // Correctly generated programs whould never return an Error, sometimes when we do
+            // some random bitflips this can happen and it is expected.
+
+            // Memory errors expected due to uncontrolled register additions
+            if (!will_mutate and !PVM.Memory.isMemoryError(err)) {
+                std.debug.print("\n\nProgram execution failed (non-mutated) with error: {s}. Gas used: {d}\n\n", .{ @errorName(err), gas_used });
+
+                try exec_ctx.debugState(4, std.io.getStdErr().writer());
+
+                if (exec_ctx.error_data) |error_data| {
+                    std.debug.print("Error data: {any}", .{error_data});
+                }
+                return error.PvmErroredInNormalOperation;
             }
-            // we should never leak any errors unless its a memory allocation error.
-            return error.PvmErroredInNormalOperation;
         }
 
         return FuzzResult{
@@ -443,5 +475,6 @@ pub fn fuzzSimple(allocator: Allocator) !void {
     std.debug.print("Traps: {d}\n", .{stats.traps});
     std.debug.print("Errors: {d}\n", .{stats.errors});
     try stats.error_stats.writeErrorCounts(std.io.getStdErr().writer());
+    try results.writeExecutionStats(std.io.getStdErr().writer());
     std.debug.print("Average Gas: {d}\n", .{stats.avg_gas});
 }

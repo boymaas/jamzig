@@ -99,20 +99,21 @@ pub const GeneratedProgram = struct {
                 defer inst_span.deinit();
 
                 // Generate a deterministic offset using the seed generator
-                const random_offset = seed_gen.randomIntRange(u32, 0, heap_len - access.size);
+                const random_offset = seed_gen.randomIntRange(
+                    u32,
+                    0,
+                    heap_len - access.size - 64 - 1, // 64 is the biggest value which can be read
+                );
                 const offset = heap_start + random_offset;
                 inst_span.debug("Rewriting memory access at pc {d} to address 0x{X}", .{ entry.pc, offset });
 
-                // Create a modified instruction with the new address
-                var modified_inst = entry.inst;
-                try modified_inst.setMemoryAddress(offset);
-
                 // Encode the modified instruction
-                const encoded = try modified_inst.encodeOwned();
-                const encoded_bytes = encoded.asSlice();
-
-                // Update the code buffer with the modified instruction
-                @memcpy(self.code[entry.pc..][0..encoded_bytes.len], encoded_bytes);
+                // NOTE: this is a bit of a hack, as if for some reason
+                // we get a random match on 0xaaaaaaaa we could get a false hit
+                var inst_slice = self.code[entry.pc..entry.next_pc];
+                if (std.mem.indexOf(u8, inst_slice, &[_]u8{0xaa} ** 4)) |index| {
+                    std.mem.writeInt(u32, inst_slice[index..][0..4], offset, .little);
+                }
             }
         }
     }
@@ -225,6 +226,7 @@ pub const ProgramGenerator = struct {
         mask_span.debug("Allocating mask of size {d} bytes", .{mask_size});
 
         const mask = try self.allocator.alloc(u8, mask_size);
+        errdefer self.allocator.free(mask);
         @memset(mask, 0);
 
         var mask_iter = mask_bitset.iterator(.{});
@@ -232,61 +234,77 @@ pub const ProgramGenerator = struct {
             mask_span.trace("Mask bit {d} set", .{bidx});
             mask[bidx / 8] |= @as(u8, 1) << @intCast(bidx % 8);
         }
-        mask_span.debug("Generated mask with {d} bytes", .{mask.len});
+        span.debug("Generated mask with {d} bytes", .{mask.len});
 
         // On the second pass of our program we need to find the branches
         // and let them jump to any of the elements in our jump table to make
         // these jumps valid
         var prgdec = @import("../../pvm/decoder.zig").Decoder.init(code.items, mask);
         var iter = prgdec.iterator();
-        while (try iter.next()) |entry| {
-            if (entry.inst.isBranch() or entry.inst.instruction == .jump) {
-                // Select a random jump target from our jump table
-                var target_idx = self.seed_gen.randomIntRange(usize, 0, basic_blocks.items.len - 1);
-                var target_pc = basic_blocks.items[target_idx];
 
-                // If we're jumping to our own position and there's a next target available,
-                // use the next target instead
-                if (target_pc == entry.pc and basic_blocks.items.len > 1) {
-                    target_idx = (target_idx + 1) % basic_blocks.items.len;
-                    target_pc = basic_blocks.items[target_idx];
+        {
+            const rewrite_span = span.child(.rewrite_jumps);
+            rewrite_span.debug("Rewriting jumps", .{});
+            while (try iter.next()) |entry| {
+                if (entry.inst.isBranch() or entry.inst.instruction == .jump) {
+                    const branch_span = rewrite_span.child(.rewrite_branch);
+                    defer branch_span.deinit();
+                    branch_span.debug("Rewriting branch/jump at pc {d}: {}", .{ entry.pc, entry.inst });
+
+                    // Select a random jump target from our jump table
+                    var target_idx = self.seed_gen.randomIntRange(usize, 0, basic_blocks.items.len - 1);
+                    var target_pc = basic_blocks.items[target_idx];
+
+                    // If we're jumping to our own position and there's a next target available,
+                    // use the next target instead
+                    if (target_pc == entry.pc and basic_blocks.items.len > 1) {
+                        target_idx = (target_idx + 1) % basic_blocks.items.len;
+                        target_pc = basic_blocks.items[target_idx];
+                    }
+
+                    // Calculate the relative offset from current position
+                    // Need to account for instruction size in offset calculation
+                    const current_pos = entry.pc;
+                    const offset: i32 = @intCast(@as(i64, target_pc) - @as(i64, current_pos));
+                    branch_span.trace("Jump calculation - from: {d}, to: {d}, offset: {d} ({d})", .{ current_pos, target_pc, offset, @as(u32, @bitCast(offset)) });
+
+                    // Update the branch instruction with the new target
+                    // the offset are always the last 4 bytes of te instruction
+                    // which we maximized in the first pass
+                    var buffer: [4]u8 = undefined;
+                    const code_slice = code.items[entry.next_pc - 4 ..][0..4];
+                    std.mem.writeInt(i32, &buffer, offset, .little);
+                    branch_span.trace("Rewriting bytes at offset {X}: {X} => {X}", .{
+                        entry.next_pc - 4,
+                        code_slice,
+                        &buffer,
+                    });
+
+                    // Update the code buffer with the modified instruction
+                    @memcpy(code_slice, &buffer);
                 }
 
-                // Calculate the relative offset from current position
-                // Need to account for instruction size in offset calculation
-                const current_pos = entry.pc;
-                const offset: i32 = @intCast(@as(i64, target_pc) - @as(i64, current_pos));
+                // Handle the indirect jumps here
+                if (entry.inst.instruction == .jump_ind or
+                    entry.inst.instruction == .load_imm_jump_ind)
+                {
+                    // Select a random jump target index
+                    var target_idx = self.seed_gen.randomIntRange(usize, 0, jump_table.items.len - 1);
 
-                // Update the branch instruction with the new target
-                // the offset are always the last 4 bytes of te instruction
-                // which we maximized in the first pass
-                var buffer: [4]u8 = undefined;
-                std.mem.writeInt(i32, &buffer, offset, .little);
+                    // If the target is the same as our position and there's a next target available,
+                    // use the next target instead
+                    if (jump_table.items[target_idx] == entry.pc and jump_table.items.len > 1) {
+                        target_idx = (target_idx + 1) % jump_table.items.len;
+                    }
 
-                // Update the code buffer with the modified instruction
-                @memcpy(code.items[entry.next_pc - 4 ..][0..4], &buffer);
-            }
+                    // Update the instruction's immediate value with the jump table index
+                    var buffer: [4]u8 = undefined;
+                    std.mem.writeInt(u32, &buffer, @as(u32, @intCast((target_idx + 1) * 2)), .little);
 
-            // Handle the indirect jumps here
-            if (entry.inst.instruction == .jump_ind or
-                entry.inst.instruction == .load_imm_jump_ind)
-            {
-                // Select a random jump target index
-                var target_idx = self.seed_gen.randomIntRange(usize, 0, jump_table.items.len - 1);
-
-                // If the target is the same as our position and there's a next target available,
-                // use the next target instead
-                if (jump_table.items[target_idx] == entry.pc and jump_table.items.len > 1) {
-                    target_idx = (target_idx + 1) % jump_table.items.len;
+                    // Update the code buffer at the immediate position
+                    const imm_offset = entry.next_pc - 4; // Last 4 bytes contain the immediate
+                    @memcpy(code.items[imm_offset..][0..4], &buffer);
                 }
-
-                // Update the instruction's immediate value with the jump table index
-                var buffer: [4]u8 = undefined;
-                std.mem.writeInt(u32, &buffer, @as(u32, @intCast((target_idx + 1) * 2)), .little);
-
-                // Update the code buffer at the immediate position
-                const imm_offset = entry.next_pc - 4; // Last 4 bytes contain the immediate
-                @memcpy(code.items[imm_offset..][0..4], &buffer);
             }
         }
 

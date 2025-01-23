@@ -77,14 +77,11 @@ pub const PVM = struct {
         // Execution related errors
         OutOfGas,
         Trap,
-    } || Decoder.Error || Program.Error || error{
+    } || Decoder.Error || Program.Error || Memory.Error || error{
         OutOfMemory,
         EmptyBuffer,
         InsufficientData,
         SectionNotFound,
-        WriteProtected,
-        PageFault,
-        AccessViolation,
         NonAllocatedMemoryAccess,
         DivisionByZero,
     };

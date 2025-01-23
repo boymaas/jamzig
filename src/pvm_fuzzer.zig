@@ -31,7 +31,7 @@ pub fn main() !void {
         \\-g, --max-gas <u32>       Maximum gas per test case (default: 1000000)
         \\-b, --max-blocks <u32>    Maximum number of basic blocks per program (default: 32)
         \\-S, --test-seed <u64>     Rerun a single testcase with this seed
-        \\-m, --mut-prob <usize>       Program mutation probability (0-1M, default: 10)
+        \\-m, --mut-prob <usize>       Program mutation probability (0-1K, default: 10)
         \\-f, --flip-prob <usize>      Bit flip probability (0-1K, default: 1)
     );
 
@@ -86,15 +86,28 @@ pub fn main() !void {
     std.debug.print("Mutation Probability: {d}/1M\n", .{config.mutation.program_mutation_probability});
     std.debug.print("Bit Flip Probability: {d}/1K\n\n", .{config.mutation.bit_flip_probability});
 
-    var result = try fuzzer.run();
+    var run = try fuzzer.run();
 
     // Print results
-    const stats = result.getStats();
+    const stats = run.results.getStats();
+    const init_stats = run.init_errors.getStats();
+
     std.debug.print("\nFuzzing Complete!\n", .{});
-    std.debug.print("Results:\n", .{});
-    std.debug.print("  Total Cases: {d}\n", .{stats.total_cases});
-    std.debug.print("  Successful: {d} ({d}%)\n", .{ stats.successful, (stats.successful * 100) / stats.total_cases });
-    std.debug.print("  Errors: {d} ({d}%)\n", .{ stats.errors, (stats.errors * 100) / stats.total_cases });
+    std.debug.print("==================== Results:\n", .{});
+    std.debug.print("  Total Cases  : {d}\n", .{stats.total_cases});
+    std.debug.print("  Mutated Cases: {d}\n", .{init_stats.mutated_cases});
+    std.debug.print("  Avg Gas Used : {d}\n", .{stats.avgGas()});
+    try run.results.writeExecutionStats(std.io.getStdErr().writer());
+
+    std.debug.print("\n\n==================== Execution errors\n", .{});
     try stats.error_stats.writeErrorCounts(std.io.getStdErr().writer());
-    std.debug.print("  Average Gas Used: {d}\n", .{stats.avgGas()});
+
+    std.debug.print("\n\n==================== Execution errors after mutation\n", .{});
+    try stats.error_stats_mutated.writeErrorCounts(std.io.getStdErr().writer());
+
+    std.debug.print("\n\n==================== Init Errors:\n", .{});
+    try init_stats.error_stats.writeErrorCounts(std.io.getStdErr().writer());
+
+    std.debug.print("\n\n==================== Init Errors after mutation\n", .{});
+    try init_stats.error_stats_mutated.writeErrorCounts(std.io.getStdErr().writer());
 }

@@ -21,6 +21,7 @@ pub const Decoder = struct {
         InvalidInstruction,
         OutOfBounds,
         InvalidImmediateLength,
+        MaxInstructionSizeInBytesExceeded,
         InvalidRegisterIndex,
     } || decoder.Error;
 
@@ -63,65 +64,65 @@ pub const Decoder = struct {
     fn decodeOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneImmType {
         const l = @min(4, self.skip_l(pc));
         return try decoder.decodeOneImm(
-            self.getCodeSliceAt(
+            (try self.getCodeSliceAt(
                 pc,
                 l,
-            ).asSlice(),
+            )).asSlice(),
         );
     }
 
     fn decodeTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeTwoImm(bytes);
     }
 
     fn decodeOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.OneOffsetType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeOneOffset(bytes);
     }
 
     fn decodeOneRegOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeOneRegOneImm(bytes);
     }
 
     fn decodeOneRegTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegTwoImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeOneRegTwoImm(bytes);
     }
 
     fn decodeOneRegOneImmOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneImmOneOffsetType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeOneRegOneImmOneOffset(bytes);
     }
 
     fn decodeOneRegOneExtImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneExtImmType {
-        const bytes = self.getCodeSliceAt(pc, 10).asSlice(); // 1 byte opcode + 1 byte reg + 8 bytes immediate
+        const bytes = (try self.getCodeSliceAt(pc, 10)).asSlice(); // 1 byte opcode + 1 byte reg + 8 bytes immediate
         return try decoder.decodeOneRegOneExtImm(bytes);
     }
 
     fn decodeTwoReg(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeTwoReg(bytes);
     }
 
     fn decodeTwoRegOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegOneImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeTwoRegOneImm(bytes);
     }
 
     fn decodeTwoRegOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegOneOffsetType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeTwoRegOneOffset(bytes);
     }
 
     fn decodeTwoRegTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegTwoImmType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeTwoRegTwoImm(bytes);
     }
 
     fn decodeThreeReg(self: *const Decoder, pc: u32) Error!InstructionArgs.ThreeRegType {
-        const bytes = self.getCodeSliceAt(pc, self.skip_l(pc)).asSlice();
+        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
         return try decoder.decodeThreeReg(bytes);
     }
 
@@ -172,8 +173,8 @@ pub const Decoder = struct {
         }
 
         // Initialize from slice
-        pub inline fn fromSlice(slice: []const u8) CodeSlice {
-            std.debug.assert(slice.len < MaxInstructionSizeInBytes);
+        pub inline fn fromSlice(slice: []const u8) Error!CodeSlice {
+            std.debug.assert(slice.len <= MaxInstructionSizeInBytes);
             var self = CodeSlice{ .len = @intCast(slice.len) };
             std.mem.copyForwards(u8, self.buffer[0..slice.len], slice);
             return self;
@@ -195,8 +196,10 @@ pub const Decoder = struct {
         }
     };
 
-    pub fn getCodeSliceAt(self: *const @This(), pc: u32, len: u32) CodeSlice {
-        std.debug.assert(len <= MaxInstructionSizeInBytes);
+    pub fn getCodeSliceAt(self: *const @This(), pc: u32, len: u32) !CodeSlice {
+        if (len > MaxInstructionSizeInBytes) {
+            return Error.MaxInstructionSizeInBytesExceeded;
+        }
         const end = pc + len;
         if (pc <= self.code.len and end > self.code.len) {
             // we are extending the code, return 0 buffer
@@ -206,7 +209,7 @@ pub const Decoder = struct {
             return CodeSlice.zeroes(@intCast(len));
         }
         // just return the code slice
-        return CodeSlice.fromSlice(self.code[pc..][0..len]);
+        return try CodeSlice.fromSlice(self.code[pc..][0..len]);
     }
 
     pub fn getMaskAt(self: *const @This(), mask_index: u32) u8 {
@@ -217,25 +220,25 @@ pub const Decoder = struct {
         return 0xFF;
     }
 
-    pub fn iterator(self: *@This()) Iterator {
+    pub fn iterator(self: *const @This()) Iterator {
         return .{ .decoder = self };
     }
 
     inline fn decodeInt(self: *const Decoder, comptime T: type, pc: u32) Error!T {
         var overflow_buffer = std.mem.zeroes([MaxInstructionSizeInBytes]u8);
-        const slice: *const [@sizeOf(T)]u8 = self.getCodeSliceAt(&overflow_buffer, pc, @sizeOf(T)).asSlice()[0..@sizeOf(T)];
+        const slice: *const [@sizeOf(T)]u8 = (try self.getCodeSliceAt(&overflow_buffer, pc, @sizeOf(T))).asSlice()[0..@sizeOf(T)];
         return std.mem.readInt(T, slice, .little);
     }
 
     inline fn decodeImmediate(self: *const Decoder, pc: u32, length: u32) Error!u64 {
         var overflow_buffer = std.mem.zeroes([MaxInstructionSizeInBytes]u8);
-        const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
+        const slice = (try self.getCodeSliceAt(&overflow_buffer, pc, length));
         return immediate.decodeUnsigned(slice);
     }
 
     inline fn decodeImmediateSigned(self: *const Decoder, pc: u32, length: u32) Error!i64 {
         var overflow_buffer = std.mem.zeroes([MaxInstructionSizeInBytes]u8);
-        const slice = self.getCodeSliceAt(&overflow_buffer, pc, length);
+        const slice = (try self.getCodeSliceAt(&overflow_buffer, pc, length));
         return immediate.decodeSigned(slice);
     }
 
@@ -255,6 +258,7 @@ const Iterator = struct {
         pc: u32,
         next_pc: u32,
         inst: InstructionWithArgs,
+        raw: []const u8,
     };
 
     pub fn next(self: *@This()) !?Entry {
@@ -262,11 +266,14 @@ const Iterator = struct {
 
         const current_pc = self.pc;
         const inst = try self.decoder.decodeInstruction(current_pc);
-        self.pc += inst.skip_l() + 1; // TODO: the +1 is becuse the skip_l is from the args. This should be in the skip_l
+        // TODO: the +1 is becuse the skip_l is from the args. This should be in the skip_l
+        self.pc += inst.skip_l() + 1;
         return .{
             .pc = current_pc,
             .next_pc = self.pc,
             .inst = inst,
+            // Since in some cases the pc can extend code.len
+            .raw = self.decoder.code[current_pc..@min(self.pc, self.decoder.code.len)],
         };
     }
 };
@@ -311,4 +318,62 @@ test "safeSubstract - different types" {
 
 test "safeSubstract - zero result" {
     try std.testing.expectEqual(@as(u32, 0), try safeSubstract(u32, 10, .{ 5, 5 }));
+}
+
+test "skip_l - no skip when mask bit is 1" {
+    const code = &[_]u8{0} ** 16;
+    const mask = &[_]u8{0xFF} ** 2;
+    const d = Decoder.init(code, mask);
+    try std.testing.expectEqual(@as(u32, 0), d.skip_l(0));
+}
+
+test "skip_l - skip until first 1 bit" {
+    const code = &[_]u8{0} ** 16;
+    const mask = &[_]u8{ 0b00001000, 0xFF };
+    const d = Decoder.init(code, mask);
+    try std.testing.expectEqual(@as(u32, 3), d.skip_l(0));
+}
+
+test "skip_l - skip across byte boundary" {
+    const code = &[_]u8{0} ** 16;
+    const mask = &[_]u8{ 0b00000000, 0b00000001 };
+    const d = Decoder.init(code, mask);
+    try std.testing.expectEqual(@as(u32, 8), d.skip_l(0));
+}
+
+test "skip_l - skip across byte boundary from middle" {
+    const code = &[_]u8{0} ** 16;
+    const mask = &[_]u8{ 0b00000000, 0b00000001 };
+    const d = Decoder.init(code, mask);
+    try std.testing.expectEqual(@as(u32, 4), d.skip_l(4));
+}
+
+test "skip_l - start from middle of byte" {
+    const code = &[_]u8{0} ** 16;
+    const mask = &[_]u8{ 0b11110000, 0xFF };
+    const d = Decoder.init(code, mask);
+    try std.testing.expectEqual(@as(u32, 0), d.skip_l(5));
+}
+
+test "skip_l - skip with non-zero pc" {
+    const code = &[_]u8{0} ** 16;
+    const mask = &[_]u8{ 0xFF, 0b00001000 };
+    const d = Decoder.init(code, mask);
+    try std.testing.expectEqual(@as(u32, 3), d.skip_l(8));
+}
+
+test "skip_l - skip at end of mask" {
+    const code = &[_]u8{0} ** 16;
+    const mask = &[_]u8{0xFF};
+    const d = Decoder.init(code, mask);
+    // When we're beyond mask length, getMaskAt returns 0xFF, so no skip
+    try std.testing.expectEqual(@as(u32, 0), d.skip_l(8));
+}
+
+test "skip_l - skip at end of mask with zeroes" {
+    const code = &[_]u8{0} ** 16;
+    const mask = &[_]u8{0x00};
+    const d = Decoder.init(code, mask);
+    // When we have no 1's will skip
+    try std.testing.expectEqual(@as(u32, 8), d.skip_l(0));
 }

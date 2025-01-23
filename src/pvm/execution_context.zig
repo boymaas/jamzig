@@ -29,7 +29,7 @@ pub const ExecutionContext = struct {
     pub fn initSimple(
         allocator: Allocator,
         raw_program: []const u8,
-        stack_size: u24,
+        stack_size_in_bytes: u24,
         heap_size_in_pages: u16,
         max_gas: u32,
     ) !ExecutionContext {
@@ -42,7 +42,7 @@ pub const ExecutionContext = struct {
             &[_]u8{},
             &[_]u8{},
             &[_]u8{},
-            stack_size,
+            stack_size_in_bytes,
             heap_size_in_pages,
         ));
         errdefer memory.deinit();
@@ -67,5 +67,44 @@ pub const ExecutionContext = struct {
 
     pub fn registerHostCall(self: *ExecutionContext, idx: u32, handler: HostCallFn) !void {
         try self.host_calls.put(idx, handler);
+    }
+
+    pub fn debugState(self: *const ExecutionContext, context_size_in_instructions: u32, writer: anytype) !void {
+        const context_size = context_size_in_instructions * 8; // TODO: MaxInstructionSize=16
+        const start_pc = if (self.pc >= context_size) self.pc - context_size else 0;
+
+        // Print here the state of the PC
+        std.debug.print("\x1b[1mDEBUG STATE AROUND CURRENT PC @ {}\x1b[0m\n\n", .{self.pc});
+
+        var iter = self.decoder.iterator();
+        while (try iter.next()) |entry| {
+            if (entry.pc < start_pc) {
+                continue;
+            }
+            if (entry.pc >= start_pc + (2 * context_size)) {
+                break;
+            }
+
+            const is_current = entry.pc == self.pc;
+            try writer.print("{s}{d:0>4}: ", .{
+                if (is_current) "==> " else "    ",
+                entry.pc,
+            });
+
+            // Print raw bytes (up to 16)
+            const raw_bytes = entry.raw;
+            const max_bytes = @min(raw_bytes.len, 16);
+            for (raw_bytes[0..max_bytes]) |byte| {
+                try writer.print("{x:0>2} ", .{byte});
+            }
+
+            // Pad remaining space for alignment
+            var i: usize = max_bytes;
+            while (i < 16) : (i += 1) {
+                try writer.writeAll("   ");
+            }
+
+            try writer.print(" {}\n", .{entry.inst});
+        }
     }
 };
