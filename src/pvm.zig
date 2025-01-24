@@ -202,7 +202,6 @@ pub const PVM = struct {
 
             // A.5.5 Instructions with Arguments of One Offset
             .jump => {
-                // TODO: catch potential errors and return the correct ExecutionResult
                 context.pc = updatePc(context.pc, i.args.OneOffset.offset) catch {
                     return .{ .terminal = .panic };
                 };
@@ -531,7 +530,7 @@ pub const PVM = struct {
 
                 context.registers[args.first_register_index] = switch (i.instruction) {
                     .load_ind_i8 => @bitCast(@as(i64, @intCast(@as(i8, @bitCast(data[0]))))),
-                    .load_ind_i16 => @bitCast(@as(i64, @intCast(@as(i16, @bitCast(std.mem.readInt(u16, data[0..2], .little)))))), // TODO: save a bitCast here
+                    .load_ind_i16 => @bitCast(@as(i64, @intCast(std.mem.readInt(i16, data[0..2], .little)))),
                     .load_ind_i32 => @bitCast(@as(i64, @intCast(@as(i32, @bitCast(std.mem.readInt(u32, data[0..4], .little)))))),
                     else => unreachable,
                 };
