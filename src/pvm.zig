@@ -194,7 +194,7 @@ pub const PVM = struct {
 
                 context.memory.write(@truncate(args.first_immediate), bytes[0..size]) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(args.first_immediate) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -239,8 +239,7 @@ pub const PVM = struct {
                     else => unreachable,
                 }) catch |err| {
                     if (err == error.PageFault) {
-                        // FIXME: must be lowest address wich triggered the page_fault
-                        return .{ .terminal = .{ .page_fault = @truncate(args.immediate) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -280,7 +279,7 @@ pub const PVM = struct {
 
                 context.memory.write(@truncate(args.immediate), bytes[0..size]) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(args.immediate) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -310,7 +309,7 @@ pub const PVM = struct {
                 const addr = context.registers[args.register_index] +% args.first_immediate;
                 context.memory.write(@truncate(addr), bytes[0..size]) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(addr) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -439,7 +438,7 @@ pub const PVM = struct {
                 var bytes = [_]u8{@truncate(context.registers[args.first_register_index])};
                 context.memory.write(@truncate(addr), &bytes) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(addr) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -451,7 +450,7 @@ pub const PVM = struct {
                 std.mem.writeInt(u16, &bytes, @truncate(context.registers[args.first_register_index]), .little);
                 context.memory.write(@truncate(addr), &bytes) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(addr) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -463,7 +462,7 @@ pub const PVM = struct {
                 std.mem.writeInt(u32, &bytes, @truncate(context.registers[args.first_register_index]), .little);
                 context.memory.write(@truncate(addr), &bytes) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(addr) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -475,7 +474,7 @@ pub const PVM = struct {
                 std.mem.writeInt(u64, &bytes, context.registers[args.first_register_index], .little);
                 context.memory.write(@truncate(addr), &bytes) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(addr) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -492,7 +491,7 @@ pub const PVM = struct {
                     else => unreachable,
                 }) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(addr) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
@@ -516,7 +515,7 @@ pub const PVM = struct {
                     else => unreachable,
                 }) catch |err| {
                     if (err == error.PageFault) {
-                        return .{ .terminal = .{ .page_fault = @truncate(addr) } };
+                        return .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } };
                     }
                     return err;
                 };
