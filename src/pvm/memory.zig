@@ -4,36 +4,25 @@ const Allocator = std.mem.Allocator;
 const trace = @import("../tracing.zig").scoped(.pvm);
 
 pub const Memory = struct {
-    // Memory layout constants moved into Memory struct
+    // Core memory pages for each section
+    read_only: []u8,
+    heap: []u8,
+    input: []u8,
+    stack: []u8,
+
+    // Track current heap allocation position
+    heap_base_address: u32,
+
+    // Error tracking
+    last_violation: ?ViolationInfo,
+    allocator: Allocator,
+
+    // Memory layout constants
     pub const Z_Z: u32 = 0x10000; // 2^16 = 65,536 - Major zone size
     pub const Z_P: u32 = 0x1000; // 2^12 = 4,096 - Page size
     pub const Z_I: u32 = 0x1000000; // 2^24 - Standard input data size
 
-    pub const ViolationType = enum {
-        OutOfBounds, // Attempted access beyond section bounds
-        WriteProtection, // Write to read-only memory
-        AccessViolation, // Access to inaccessible memory
-        NonAllocated, // Access to non-allocated memory
-        InvalidPage, // Access to non-existent page
-    };
-
-    pub const ViolationInfo = struct {
-        violation_type: ViolationType,
-        address: u32,
-        attempted_size: usize,
-        page_bounds: struct {
-            start: u32,
-            end: u32,
-        },
-    };
-
-    pub const Error = error{PageFault};
-
-    pub fn isMemoryError(err: anyerror) bool {
-        return err == Error.PageFault;
-    }
-
-    // Memory section addresses
+    // Fixed section base addresses
     pub const READ_ONLY_BASE_ADDRESS: u32 = Z_Z;
     pub fn HEAP_BASE_ADDRESS(read_only_size: u32) !u32 {
         return 2 * Z_Z + try std.math.divCeil(u32, read_only_size * Z_Z, Z_Z);
@@ -41,141 +30,300 @@ pub const Memory = struct {
     pub const INPUT_ADDRESS: u32 = 0xFFFFFFFF - Z_Z - Z_I;
     pub const STACK_ADDRESS: u32 = 0xFFFFFFFF - Z_Z;
 
-    pub const PageMap = struct {
-        address: u32,
-        length: u32,
-        state: AccessState,
-        data: []u8,
-    };
-
-    // AccessSate
-    pub const AccessState = enum {
-        /// Memory region is readable only
+    pub const MemorySection = enum {
         ReadOnly,
-        /// Memory region is readable and writable
-        ReadWrite,
-        /// Memory region cannot be accessed
-        Inaccessible,
+        Heap,
+        Input,
+        Stack,
     };
 
-    pub const Section = struct {
+    pub const AccessInfo = struct {
+        section: MemorySection,
+        slice: []u8, // Mutable slice for write access
+        offset: u32, // Offset within the section
+    };
+
+    pub const ReadAccessInfo = struct {
+        section: MemorySection,
+        slice: []const u8, // Immutable slice for read access
+        offset: u32, // Offset within the section
+    };
+
+    pub const ViolationType = enum {
+        OutOfBounds,
+        WriteProtection,
+        AccessViolation,
+        NonAllocated,
+        InvalidPage,
+    };
+
+    pub const ViolationInfo = struct {
+        violation_type: ViolationType,
         address: u32,
-        size: usize,
-        state: AccessState,
-        data: ?[]const u8,
-
-        pub fn init(address: u32, size: usize, data: ?[]const u8, state: AccessState) Section {
-            const span = trace.span(.section_init);
-            defer span.deinit();
-
-            span.debug("Initializing memory section", .{});
-            span.trace("address: 0x{x}, size: {}, state: {s}", .{ address, size, @tagName(state) });
-
-            return .{
-                .address = address,
-                .size = size,
-                .state = state,
-                .data = data,
-            };
-        }
+        attempted_size: usize,
+        page_bounds: ?struct {
+            start: u32,
+            end: u32,
+        } = null,
     };
 
-    // Standard memory layout configuration
-    pub const Layout = struct {
-        read_only: Section,
-        heap: Section,
-        input: Section,
-        stack: Section,
-
-        pub fn standard(
-            read_only: []const u8,
-            read_write: []const u8,
-            input: []const u8,
-            stack_size_in_bytes: u24,
-            heap_size_in_pages: u16,
-        ) !Layout {
-            const span = trace.span(.layout_standard);
-            defer span.deinit();
-
-            span.debug("Creating standard memory layout", .{});
-            span.trace(
-                "RO size: {}, RW size: {}, Input size: {}, Stack size: {}, Heap pages: {}",
-                .{ read_only.len, read_write.len, input.len, stack_size_in_bytes, heap_size_in_pages },
-            );
-
-            return .{
-                .read_only = Section.init(
-                    READ_ONLY_BASE_ADDRESS,
-                    try std.math.divCeil(usize, read_only.len * Z_P, Z_P),
-                    read_only,
-                    .ReadOnly,
-                ),
-                .heap = Section.init(
-                    try HEAP_BASE_ADDRESS(@as(u32, @intCast(read_only.len))),
-                    heap_size_in_pages * Z_P + try std.math.divCeil(usize, read_write.len * Z_P, Z_P),
-                    read_write,
-                    .ReadWrite,
-                ),
-                .input = Section.init(
-                    INPUT_ADDRESS,
-                    try std.math.divCeil(usize, input.len * Z_P, Z_P),
-                    input,
-                    .ReadOnly,
-                ),
-                .stack = Section.init(
-                    STACK_ADDRESS - try std.math.divCeil(u32, Z_P * @as(u32, stack_size_in_bytes), Z_P),
-                    Z_Z,
-                    null,
-                    .ReadWrite,
-                ),
-            };
-        }
+    pub const WriteAccessResult = union(enum) {
+        Success: AccessInfo,
+        Violation: ViolationInfo,
     };
 
-    last_violation: ?ViolationInfo,
-    layout: Layout,
-    page_maps: []PageMap,
-    allocator: Allocator,
+    pub const ReadAccessResult = union(enum) {
+        Success: ReadAccessInfo,
+        Violation: ViolationInfo,
+    };
 
-    pub fn init(allocator: Allocator, layout: Layout) !Memory {
-        // Start with no violation info
+    pub const Error = error{ PageFault, DivisionByZero, OutOfMemory };
 
+    pub fn isMemoryError(err: anyerror) bool {
+        return err == Error.PageFault;
+    }
+
+    pub fn init(
+        allocator: Allocator,
+        read_only: []const u8,
+        read_write: []const u8,
+        input: []const u8,
+        stack_size_in_bytes: u24,
+        heap_size_in_pages: u16,
+    ) !Memory {
         const span = trace.span(.memory_init);
         defer span.deinit();
 
         span.debug("Initializing memory system", .{});
 
-        var page_maps = std.ArrayList(PageMap).init(allocator);
+        // Calculate section sizes rounded to page boundaries
+        const ro_size = try std.math.divCeil(usize, read_only.len * Z_P, Z_P);
+        const heap_size = heap_size_in_pages * Z_P + try std.math.divCeil(usize, read_write.len * Z_P, Z_P);
+        const input_size = try std.math.divCeil(usize, input.len * Z_P, Z_P);
+        const stack_size = try std.math.divCeil(u32, Z_P * @as(u32, stack_size_in_bytes), Z_P);
+
+        // Allocate memory pages for each section
         errdefer {
             span.debug("Cleaning up after initialization error", .{});
-            for (page_maps.items) |page| {
-                allocator.free(page.data);
-            }
-            page_maps.deinit();
         }
 
-        // Add sections in order
-        inline for (.{ layout.read_only, layout.heap, layout.input, layout.stack }) |section| {
-            const section_span = span.child(.section_alloc);
-            defer section_span.deinit();
-
-            section_span.debug("Allocating section at 0x{x}", .{section.address});
-            section_span.trace("Size: {}, State: {s}", .{ section.size, @tagName(section.state) });
-
-            try page_maps.append(.{
-                .address = section.address,
-                .length = @intCast(section.size),
-                .state = section.state,
-                .data = try allocator.alloc(u8, section.size),
-            });
-        }
-
-        return Memory{
-            .page_maps = try page_maps.toOwnedSlice(),
-            .layout = layout,
-            .allocator = allocator,
+        var memory = Memory{
+            .read_only = try allocator.alloc(u8, ro_size),
+            .heap = try allocator.alloc(u8, heap_size),
+            .input = try allocator.alloc(u8, input_size),
+            .stack = try allocator.alloc(u8, stack_size),
+            .heap_base_address = try HEAP_BASE_ADDRESS(@intCast(read_only.len)),
             .last_violation = null,
+            .allocator = allocator,
         };
+
+        // Initialize sections with provided data and zero remaining space
+        @memcpy(memory.read_only[0..read_only.len], read_only);
+        @memset(memory.read_only[read_only.len..], 0);
+
+        @memcpy(memory.heap[0..read_write.len], read_write);
+        @memset(memory.heap[read_write.len..], 0);
+
+        @memcpy(memory.input[0..input.len], input);
+        @memset(memory.input[input.len..], 0);
+
+        @memset(memory.stack, 0);
+
+        return memory;
+    }
+
+    pub fn addressInReadOnlySection(self: *const Memory, address: u32) bool {
+        return address >= READ_ONLY_BASE_ADDRESS and
+            address < READ_ONLY_BASE_ADDRESS + self.read_only.len;
+    }
+
+    pub fn addressInHeap(self: *const Memory, address: u32) bool {
+        return address >= self.heap_base_address and
+            address < self.heap_base_address + self.heap.len;
+    }
+
+    pub fn addressInInput(self: *const Memory, address: u32) bool {
+        return address >= INPUT_ADDRESS and
+            address < INPUT_ADDRESS + self.input.len;
+    }
+
+    pub fn addressInStack(self: *const Memory, address: u32) bool {
+        return address >= STACK_ADDRESS and
+            address < STACK_ADDRESS + self.stack.len;
+    }
+
+    pub fn addressOutsideOfSections(self: *const Memory, address: u32) bool {
+        return !self.addressInReadOnlySection(address) and
+            !self.addressInHeap(address) and
+            !self.addressInInput(address) and
+            !self.addressInStack(address);
+    }
+
+    pub fn checkReadAccess(self: *const Memory, address: u32, size: usize) ReadAccessResult {
+        // Check if address is in any valid readable section
+        if (self.addressInReadOnlySection(address)) {
+            const offset = address - READ_ONLY_BASE_ADDRESS;
+            if (offset + size <= self.read_only.len) {
+                return .{ .Success = .{
+                    .section = .ReadOnly,
+                    .slice = self.read_only[offset..][0..size],
+                    .offset = offset,
+                } };
+            }
+            return .{ .Violation = .{
+                .violation_type = .OutOfBounds,
+                .address = address,
+                .attempted_size = size,
+                .page_bounds = .{
+                    .start = READ_ONLY_BASE_ADDRESS,
+                    .end = READ_ONLY_BASE_ADDRESS + @as(u32, @intCast(self.read_only.len)),
+                },
+            } };
+        }
+
+        if (self.addressInHeap(address)) {
+            const offset = address - self.heap_base_address;
+            if (offset + size <= self.heap.len) {
+                return .{ .Success = .{
+                    .section = .Heap,
+                    .slice = self.heap[offset..][0..size],
+                    .offset = offset,
+                } };
+            }
+            return .{ .Violation = .{
+                .violation_type = .OutOfBounds,
+                .address = address,
+                .attempted_size = size,
+                .page_bounds = .{
+                    .start = self.heap_base_address,
+                    .end = self.heap_base_address + @as(u32, @intCast(self.heap.len)),
+                },
+            } };
+        }
+
+        if (self.addressInInput(address)) {
+            const offset = address - INPUT_ADDRESS;
+            if (offset + size <= self.input.len) {
+                return ReadAccessResult{ .Success = .{
+                    .section = .Input,
+                    .slice = self.input[offset..][0..size],
+                    .offset = offset,
+                } };
+            }
+            return .{ .Violation = .{
+                .violation_type = .OutOfBounds,
+                .address = address,
+                .attempted_size = size,
+                .page_bounds = .{
+                    .start = INPUT_ADDRESS,
+                    .end = INPUT_ADDRESS + @as(u32, @intCast(self.input.len)),
+                },
+            } };
+        }
+
+        if (self.addressInStack(address)) {
+            const offset = address - STACK_ADDRESS;
+            if (offset + size <= self.stack.len) {
+                return .{ .Success = .{
+                    .section = .Stack,
+                    .slice = self.stack[offset..][0..size],
+                    .offset = offset,
+                } };
+            }
+            return .{ .Violation = .{
+                .violation_type = .OutOfBounds,
+                .address = address,
+                .attempted_size = size,
+                .page_bounds = .{
+                    .start = STACK_ADDRESS,
+                    .end = STACK_ADDRESS + @as(u32, @intCast(self.stack.len)),
+                },
+            } };
+        }
+
+        // Reading from outside any valid section is an access violation
+        return .{ .Violation = .{
+            .violation_type = .AccessViolation,
+            .address = address,
+            .attempted_size = size,
+            .page_bounds = null,
+        } };
+    }
+
+    pub fn checkWriteAccess(self: *const Memory, address: u32, size: usize) WriteAccessResult {
+        // Writing to read-only section is a write protection violation
+        if (self.addressInReadOnlySection(address)) {
+            return .{ .Violation = .{
+                .violation_type = .WriteProtection,
+                .address = address,
+                .attempted_size = size,
+                .page_bounds = .{
+                    .start = READ_ONLY_BASE_ADDRESS,
+                    .end = READ_ONLY_BASE_ADDRESS + @as(u32, @intCast(self.read_only.len)),
+                },
+            } };
+        }
+
+        // Writing to input section is a write protection violation
+        if (self.addressInInput(address)) {
+            return .{ .Violation = .{
+                .violation_type = .WriteProtection,
+                .address = address,
+                .attempted_size = size,
+                .page_bounds = .{
+                    .start = INPUT_ADDRESS,
+                    .end = INPUT_ADDRESS + @as(u32, @intCast(self.input.len)),
+                },
+            } };
+        }
+
+        if (self.addressInHeap(address)) {
+            const offset = address - self.heap_base_address;
+            if (offset + size <= self.heap.len) {
+                return .{ .Success = .{
+                    .section = .Heap,
+                    .slice = self.heap[offset..][0..size],
+                    .offset = offset,
+                } };
+            }
+            return .{ .Violation = .{
+                .violation_type = .OutOfBounds,
+                .address = address,
+                .attempted_size = size,
+                .page_bounds = .{
+                    .start = self.heap_base_address,
+                    .end = self.heap_base_address + @as(u32, @intCast(self.heap.len)),
+                },
+            } };
+        }
+
+        if (self.addressInStack(address)) {
+            const offset = address - STACK_ADDRESS;
+            if (offset + size <= self.stack.len) {
+                return WriteAccessResult{ .Success = .{
+                    .section = .Stack,
+                    .slice = self.stack[offset..][0..size],
+                    .offset = offset,
+                } };
+            }
+            return WriteAccessResult{ .Violation = .{
+                .violation_type = .OutOfBounds,
+                .address = address,
+                .attempted_size = size,
+                .page_bounds = .{
+                    .start = STACK_ADDRESS,
+                    .end = STACK_ADDRESS + @as(u32, @intCast(self.stack.len)),
+                },
+            } };
+        }
+
+        // Writing outside any writable section is an access violation
+        return WriteAccessResult{ .Violation = .{
+            .violation_type = .AccessViolation,
+            .address = address,
+            .attempted_size = size,
+            .page_bounds = null,
+        } };
     }
 
     pub fn write(self: *Memory, address: u32, data: []const u8) !void {
@@ -184,61 +332,16 @@ pub const Memory = struct {
 
         span.debug("Writing to memory", .{});
         span.trace("Address: 0x{x}, Data length: {}", .{ address, data.len });
-        span.trace("Data: {any}", .{std.fmt.fmtSliceHexLower(data)});
 
-        for (self.page_maps) |*page| {
-            if (address >= page.address and address < page.address + page.length) {
-                if (page.state != .ReadWrite) {
-                    span.err("Write protection violation at 0x{x}", .{address});
-                    self.last_violation = .{
-                        .violation_type = .WriteProtection,
-                        .address = address,
-                        .attempted_size = data.len,
-                        .page_bounds = .{
-                            .start = page.address,
-                            .end = page.address + page.length,
-                        },
-                    };
-                    return Error.PageFault;
-                }
-
-                const offset = address - page.address;
-                if (offset + data.len > page.length) {
-                    const first_invalid_addr = page.address + page.length;
-                    span.err("Write operation exceeds bounds at 0x{x} - bounds: [0x{x}..0x{x}], overflow: {d} bytes", .{
-                        address,
-                        page.address,
-                        page.address + page.length,
-                        (offset + data.len) - page.length,
-                    });
-                    self.last_violation = .{
-                        .violation_type = .OutOfBounds,
-                        .address = first_invalid_addr,
-                        .attempted_size = data.len,
-                        .page_bounds = .{
-                            .start = page.address,
-                            .end = page.address + page.length,
-                        },
-                    };
-                    return Error.PageFault;
-                }
-
-                span.debug("Write operation completed successfully", .{});
-                return;
-            }
-        }
-
-        span.err("Page fault on write to 0x{x}", .{address});
-        self.last_violation = .{
-            .violation_type = .InvalidPage,
-            .address = address,
-            .attempted_size = data.len,
-            .page_bounds = .{
-                .start = 0,
-                .end = 0,
+        switch (self.checkWriteAccess(address, data.len)) {
+            .Success => |info| {
+                @memcpy(info.slice, data);
             },
-        };
-        return Error.PageFault;
+            .Violation => |violation| {
+                self.last_violation = violation;
+                return Error.PageFault;
+            },
+        }
     }
 
     pub fn read(self: *Memory, address: u32, size: usize) ![]const u8 {
@@ -248,80 +351,51 @@ pub const Memory = struct {
         span.debug("Reading from memory", .{});
         span.trace("Address: 0x{x}, Size: {}", .{ address, size });
 
-        for (self.page_maps) |page| {
-            if (address >= page.address and address < page.address + page.length) {
-                if (page.state == .Inaccessible) {
-                    span.err("Access violation at 0x{x}", .{address});
-                    self.last_violation = .{
-                        .violation_type = .AccessViolation,
-                        .address = address,
-                        .attempted_size = size,
-                        .page_bounds = .{
-                            .start = page.address,
-                            .end = page.address + page.length,
-                        },
-                    };
-                    return Error.PageFault;
-                }
+        switch (self.checkReadAccess(address, size)) {
+            .Success => |info| {
+                return info.slice;
+            },
+            .Violation => |violation| {
+                self.last_violation = violation;
+                return Error.PageFault;
+            },
+        }
+    }
 
-                const offset = address - page.address;
-                if (offset + size > page.length) {
-                    const first_invalid_addr = page.address + page.length;
-                    span.err("Read operation exceeds bounds at 0x{x} - bounds: [0x{x}..0x{x}], overflow: {d} bytes", .{
-                        address,
-                        page.address,
-                        page.address + page.length,
-                        (offset + size) - page.length,
-                    });
-                    self.last_violation = .{
-                        .violation_type = .OutOfBounds,
-                        .address = first_invalid_addr,
-                        .attempted_size = size,
-                        .page_bounds = .{
-                            .start = page.address,
-                            .end = page.address + page.length,
-                        },
-                    };
-                    return Error.PageFault;
-                }
+    pub const AllocResult = struct {
+        address: u32,
+        success: bool,
+    };
 
-                if (page.data.len < offset + size) {
-                    span.err("Attempt to read non-allocated memory at 0x{x}", .{address});
-                    self.last_violation = .{
-                        .violation_type = .NonAllocated,
-                        .address = page.address + @as(u32, @intCast(page.data.len)),
-                        .attempted_size = size,
-                        .page_bounds = .{
-                            .start = page.address,
-                            .end = page.address + page.length,
-                        },
-                    };
-                    return Error.PageFault;
-                }
+    pub fn sbrk(self: *Memory, size: u64) Error!AllocResult {
+        const span = trace.span(.memory_sbrk);
+        defer span.deinit();
 
-                if (page.data.len < offset + size) {
-                    span.err("Attempt to read non-allocated memory at 0x{x}", .{address});
-                    return Error.PageFault;
-                }
+        span.debug("Allocating memory with sbrk", .{});
+        span.trace("Requested size: {}", .{size});
 
-                const data = page.data[offset .. offset + size];
-                span.trace("Read data: {any}", .{std.fmt.fmtSliceHexLower(data)});
-                span.debug("Read operation completed successfully", .{});
-                return data;
-            }
+        // Zero size allocation returns success with address 0
+        if (size == 0) {
+            return AllocResult{ .address = 0, .success = true };
         }
 
-        span.err("Page fault on read from 0x{x}", .{address});
-        self.last_violation = .{
-            .violation_type = .InvalidPage,
-            .address = address,
-            .attempted_size = size,
-            .page_bounds = .{
-                .start = 0,
-                .end = 0,
-            },
+        // Calculate allocation size rounded to page boundary
+        const allocation_size = try std.math.divCeil(u32, @intCast(size), Z_P) * Z_P;
+
+        // Increase the heap size, could move the memory location and initialize the
+        // added buffer with 0s
+        const old_heap_len = self.heap.len;
+
+        self.heap = try self.allocator.realloc(self.heap, self.heap.len + allocation_size);
+        @memset(self.heap[old_heap_len..], 0);
+
+        // Allocation successful - return current address and advance
+        const result = AllocResult{
+            .address = self.heap_base_address + @as(u32, @intCast(old_heap_len)), // the pointer to the newly allocated memory
+            .success = true,
         };
-        return Error.PageFault;
+
+        return result;
     }
 
     pub fn getLastViolation(self: *const Memory) ?ViolationInfo {
@@ -334,84 +408,12 @@ pub const Memory = struct {
 
         span.debug("Deinitializing memory system", .{});
 
-        for (self.page_maps) |page| {
-            span.trace("Freeing page at 0x{x}, size: {}", .{ page.address, page.data.len });
-            self.allocator.free(page.data);
-        }
-        self.allocator.free(self.page_maps);
+        // Free all section memory
+        self.allocator.free(self.read_only);
+        self.allocator.free(self.heap);
+        self.allocator.free(self.input);
+        self.allocator.free(self.stack);
+
         self.* = undefined;
-    }
-
-    pub fn initSection(self: *Memory, address: u32, data: []const u8) Error!void {
-        const span = trace.span(.init_section);
-        defer span.deinit();
-
-        span.debug("Initializing section data", .{});
-        span.trace("Address: 0x{x}, Data length: {}", .{ address, data.len });
-        span.trace("Data: {any}", .{std.fmt.fmtSliceHexLower(data)});
-
-        for (self.page_maps) |*page| {
-            if (page.address == address) {
-                if (data.len > page.length) {
-                    span.err("Section data exceeds bounds", .{});
-                    self.last_violation = .{
-                        .violation_type = .OutOfBounds,
-                        .address = address,
-                        .attempted_size = data.len,
-                        .page_bounds = .{
-                            .start = page.address,
-                            .end = page.address + page.length,
-                        },
-                    };
-                    return Error.PageFault;
-                }
-                if (page.data.len > 0) {
-                    span.debug("Freeing existing section data", .{});
-                    self.allocator.free(page.data);
-                }
-                page.data = try self.allocator.dupe(u8, data);
-                span.debug("Section initialized successfully", .{});
-                return;
-            }
-        }
-
-        span.err("Section not found at address 0x{x}", .{address});
-        self.last_violation = .{
-            .violation_type = .InvalidPage,
-            .address = address,
-            .attempted_size = data.len,
-            .page_bounds = .{
-                .start = 0,
-                .end = 0,
-            },
-        };
-        return Error.PageFault;
-    }
-
-    pub fn initSectionByName(self: *Memory, section: enum {
-        read_only,
-        heap,
-        input,
-        stack,
-    }, data: []const u8) !void {
-        const span = trace.span(.init_section_by_name);
-        defer span.deinit();
-
-        span.debug("Initializing named section: {s}", .{@tagName(section)});
-        span.trace("Data length: {}", .{data.len});
-
-        const address = switch (section) {
-            .read_only => self.layout.read_only.address,
-            .heap => {
-                span.err("Cannot initialize heap section", .{});
-                @panic("heap cannot be initialized");
-            },
-            .input => self.layout.input.address,
-            .stack => {
-                span.err("Cannot initialize stack section", .{});
-                @panic("stack cannot be initialized");
-            },
-        };
-        try self.initSection(address, data);
     }
 };

@@ -38,13 +38,14 @@ pub const ExecutionContext = struct {
         errdefer program.deinit(allocator);
 
         // Configure memory layout using Memory's standard layout
-        var memory = try Memory.init(allocator, try Memory.Layout.standard(
+        var memory = try Memory.init(
+            allocator,
             &[_]u8{},
             &[_]u8{},
             &[_]u8{},
             stack_size_in_bytes,
             heap_size_in_pages,
-        ));
+        );
         errdefer memory.deinit();
 
         return ExecutionContext{

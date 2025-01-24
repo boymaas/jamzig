@@ -359,8 +359,17 @@ pub const PVM = struct {
             },
 
             .sbrk => {
-                // Memory allocation is handled by the Memory implementation
-                // TODO: implement this
+                const args = i.args.TwoReg;
+                const size = context.registers[args.second_register_index];
+
+                const result = context.memory.sbrk(size) catch |err| {
+                    return if (err == error.PageFault)
+                        .{ .terminal = .{ .page_fault = context.memory.last_violation.?.address } }
+                    else
+                        return err;
+                };
+
+                context.registers[args.first_register_index] = result.address;
             },
 
             // Bit counting and manipulation instructions
