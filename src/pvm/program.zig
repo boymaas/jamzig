@@ -122,6 +122,27 @@ pub const Program = struct {
         program.mask = try allocator.dupe(u8, raw_program[mask_first_index..][0..mask_length_in_bytes]);
         errdefer allocator.free(program.mask);
 
+        // Make sure our mask has 1s exactly at program end
+        const remaining_bits = (program.code.len) % 8;
+        if (remaining_bits != 0) {
+            const mask = ~((@as(u8, 1) << @intCast(remaining_bits)) - 1);
+            @constCast(program.mask)[program.mask.len - 1] |= mask;
+        }
+
+        // Trace mask bits
+        const mask_span = span.child(.mask);
+        defer mask_span.deinit();
+        mask_span.debug("Mask length: {d} bytes", .{mask_length_in_bytes});
+
+        for (program.mask, 0..) |byte, i| {
+            // For each byte, show its bits
+            var bit_str: [8]u8 = undefined;
+            for (0..8) |bit| {
+                bit_str[bit] = if ((byte >> @intCast(7 - bit)) & 1 == 1) '1' else '0';
+            }
+            mask_span.debug("Mask[{d:0>2}]: 0b{s} (0x{x:0>2})", .{ i, bit_str, byte });
+        }
+
         // Create a safe decoder for validation
         var decoder = Decoder.init(program.code, program.mask);
 
