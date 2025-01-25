@@ -227,39 +227,48 @@ pub const Program = struct {
     pub fn validateJumpAddress(self: *const Program, address: u32) JumpError!u32 {
         const span = trace.span(.validate_jump);
         defer span.deinit();
-        span.debug("Validating jump address: {d:0>8}", .{address});
+        span.debug("Validating jump address: {d:0>8} (0x{x:0>8})", .{ address, address });
 
         const halt_pc = 0xFFFF0000;
         const ZA = 2; // Alignment requirement
 
+        span.trace("Jump table length: {d}, ZA: {d}, max valid address: {d}", .{ self.jump_table.len(), ZA, self.jump_table.len() * ZA });
+
         // Check halt condition
         if (address == halt_pc) {
+            span.trace("Detected halt address (0x{x:0>8})", .{halt_pc});
             return error.JumpAddressHalt;
         }
 
         // Validate jump address
         if (address == 0) {
+            span.trace("Invalid zero address", .{});
             return error.JumpAddressZero;
         }
 
         if (address > self.jump_table.len() * ZA) {
+            span.err("Address {d} exceeds maximum valid address {d}", .{ address, self.jump_table.len() * ZA });
             return error.JumpAddressOutOfRange;
         }
 
         if (address % ZA != 0) {
+            span.err("Address {d} is not aligned to ZA={d} (remainder: {d})", .{ address, ZA, address % ZA });
             return error.JumpAddressNotAligned;
         }
 
         // Compute jump destination
         const index = (address / ZA) - 1;
         const jump_dest = self.jump_table.getDestination(index);
+        span.trace("Computed index: {d} from address {d}/ZA-1, jump destination: {d}", .{ index, address, jump_dest });
 
         // Validate jump destination is in a basic block
         // FIXME: binary search
         if (std.mem.indexOfScalar(u32, self.basic_blocks, jump_dest) == null) {
+            span.trace("Jump destination {d} not found in basic blocks: {any}", .{ jump_dest, self.basic_blocks });
             return error.JumpAddressNotInBasicBlock;
         }
 
+        span.trace("Jump validated successfully: address {d} -> destination {d}", .{ address, jump_dest });
         return jump_dest;
     }
 

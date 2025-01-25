@@ -81,7 +81,16 @@ pub const ExecutionContext = struct {
         try writer.print("\nPC = {d} (0x{x:0>8})\n", .{ self.pc, self.pc });
         try writer.print("Gas remaining: {d}\n\n", .{self.gas});
 
-        try writer.writeAll("Instructions:\n");
+        // Print jump table
+        try writer.writeAll("Jump Table:\n");
+        if (self.program.jump_table.indices.len == 0) {
+            try writer.writeAll("  <empty>\n");
+        } else {
+            for (self.program.jump_table.indices, 0..) |target, i| {
+                try writer.print("  {d:0>3} => {d:0>4}\n", .{ i, target });
+            }
+        }
+        try writer.writeAll("\nInstructions:\n");
         var iter = self.decoder.iterator();
         while (try iter.next()) |entry| {
             const is_current = entry.pc == self.pc;

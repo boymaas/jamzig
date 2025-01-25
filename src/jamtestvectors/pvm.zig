@@ -18,6 +18,7 @@ pub const MemoryChunk = struct {
 pub const Status = enum {
     panic,
     halt,
+    @"page-fault",
 };
 
 pub const PVMTestVector = struct {
@@ -33,6 +34,7 @@ pub const PVMTestVector = struct {
     @"expected-pc": u32,
     @"expected-memory": []MemoryChunk,
     @"expected-gas": i64,
+    @"expected-page-fault-address": ?u32 = null,
 
     pub fn build_from(
         allocator: Allocator,

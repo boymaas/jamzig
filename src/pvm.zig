@@ -142,9 +142,10 @@ pub const PVM = struct {
         }
     }
 
-    fn getInstructionGasCost(instruction: InstructionWithArgs) u32 {
-        _ = instruction;
-        return 1; // Default cost, can be made more sophisticated
+    fn getInstructionGasCost(inst: InstructionWithArgs) u32 {
+        return switch (inst.instruction) {
+            else => 1,
+        };
     }
 
     const PcOffset = i32;
@@ -212,7 +213,7 @@ pub const PVM = struct {
             .jump_ind => {
                 const args = i.args.OneRegOneImm;
                 const jump_dest = context.program.validateJumpAddress(
-                    @truncate(context.registers[args.register_index] +| args.immediate),
+                    @truncate(context.registers[args.register_index] +% args.immediate),
                 ) catch |err| {
                     return if (err == error.JumpAddressHalt)
                         .{ .terminal = .{ .halt = &[_]u8{} } }
@@ -759,7 +760,9 @@ pub const PVM = struct {
             // A.5.12 Instructions with Arguments of Two Registers and Two Immediates
             .load_imm_jump_ind => {
                 const args = i.args.TwoRegTwoImm;
-                context.registers[args.first_register_index] = args.first_immediate;
+
+                // Defer register update until after jump validation
+                defer context.registers[args.first_register_index] = args.first_immediate;
                 const jump_dest = context.program.validateJumpAddress(
                     @truncate(context.registers[args.second_register_index] +% args.second_immediate),
                 ) catch |err| {
