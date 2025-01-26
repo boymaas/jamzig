@@ -25,10 +25,13 @@ pub const Memory = struct {
     // Fixed section base addresses
     pub const READ_ONLY_BASE_ADDRESS: u32 = Z_Z;
     pub fn HEAP_BASE_ADDRESS(read_only_size: u32) !u32 {
-        return 2 * Z_Z + try std.math.divCeil(u32, read_only_size * Z_Z, Z_Z);
+        return 2 * Z_Z + try alignToSectionSize(read_only_size);
     }
     pub const INPUT_ADDRESS: u32 = 0xFFFFFFFF - Z_Z - Z_I;
-    pub const STACK_ADDRESS: u32 = 0xFFFFFFFF - Z_Z;
+    pub const STACK_BASE_ADDRESS: u32 = 0xFFFFFFFF - (2 * Z_Z) - Z_I;
+    pub fn STACK_BOTTOM_ADDRESS(stack_size: anytype) u32 {
+        return STACK_BASE_ADDRESS - @as(u32, @intCast(alignToPageSize(stack_size) catch 0));
+    }
 
     pub const MemorySection = enum {
         ReadOnly,
@@ -210,8 +213,8 @@ pub const Memory = struct {
             INPUT_ADDRESS,
             INPUT_ADDRESS + input_size,
             input_size / Z_P,
-            STACK_ADDRESS,
-            STACK_ADDRESS + stack_size,
+            STACK_BOTTOM_ADDRESS(stack_size),
+            STACK_BASE_ADDRESS,
             stack_size / Z_P,
             heap_base,
             heap_base + heap_size,
@@ -289,8 +292,8 @@ pub const Memory = struct {
     }
 
     pub fn addressInStack(self: *const Memory, address: u32) bool {
-        return address >= STACK_ADDRESS and
-            address < STACK_ADDRESS + self.stack.len;
+        return address >= STACK_BOTTOM_ADDRESS(self.stack.len) and
+            address < STACK_BASE_ADDRESS;
     }
 
     pub fn addressOutsideOfSections(self: *const Memory, address: u32) bool {
@@ -366,7 +369,7 @@ pub const Memory = struct {
         }
 
         if (self.addressInStack(address)) {
-            const offset = address - STACK_ADDRESS;
+            const offset = address - STACK_BOTTOM_ADDRESS(self.stack.len);
             if (offset + size <= self.stack.len) {
                 return .{ .Success = .{
                     .section = .Stack,
@@ -374,13 +377,13 @@ pub const Memory = struct {
                     .offset = offset,
                 } };
             }
-            const bound_end = STACK_ADDRESS + @as(u32, @intCast(self.stack.len));
+            const bound_end = STACK_BASE_ADDRESS;
             return .{ .Violation = .{
                 .violation_type = .OutOfBounds,
                 .address = bound_end,
                 .attempted_size = size,
                 .page_bounds = .{
-                    .start = STACK_ADDRESS,
+                    .start = STACK_BOTTOM_ADDRESS(self.stack.len),
                     .end = bound_end,
                 },
             } };
@@ -445,7 +448,7 @@ pub const Memory = struct {
         }
 
         if (self.addressInStack(address)) {
-            const offset = address - STACK_ADDRESS;
+            const offset = address - STACK_BOTTOM_ADDRESS(self.stack.len);
             if (offset + size <= self.stack.len) {
                 return WriteAccessResult{ .Success = .{
                     .section = .Stack,
@@ -454,13 +457,13 @@ pub const Memory = struct {
                 } };
             }
 
-            const bound_end = STACK_ADDRESS + @as(u32, @intCast(self.stack.len));
+            const bound_end = STACK_BASE_ADDRESS;
             return WriteAccessResult{ .Violation = .{
                 .violation_type = .OutOfBounds,
                 .address = bound_end,
                 .attempted_size = size,
                 .page_bounds = .{
-                    .start = STACK_ADDRESS,
+                    .start = STACK_BOTTOM_ADDRESS(self.stack.len),
                     .end = bound_end,
                 },
             } };

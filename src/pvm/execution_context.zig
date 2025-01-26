@@ -73,6 +73,7 @@ pub const ExecutionContext = struct {
         return try initWithMemory(allocator, raw_program, memory, max_gas);
     }
 
+    pub const HALT_PC_VALUE: u32 = 0xFFFF0000;
     pub fn initWithMemory(
         allocator: Allocator,
         raw_program: []const u8,
@@ -83,12 +84,19 @@ pub const ExecutionContext = struct {
         var program = try Program.decode(allocator, raw_program);
         errdefer program.deinit(allocator);
 
+        // Initialize registers according to specification
+        var registers = [_]u64{0} ** 13;
+        registers[0] = HALT_PC_VALUE; // 0xFFFF0000 Halt PC value
+        registers[1] = Memory.STACK_BASE_ADDRESS; // Stack pointer
+        registers[7] = Memory.INPUT_ADDRESS;
+        registers[8] = memory.input.len;
+
         return ExecutionContext{
             .memory = memory,
             .decoder = Decoder.init(program.code, program.mask),
             .host_calls = std.AutoHashMap(u32, HostCallFn).init(allocator),
             .program = program,
-            .registers = [_]u64{0} ** 13,
+            .registers = registers,
             .pc = 0,
             .error_data = null,
             .gas = max_gas,
