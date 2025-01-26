@@ -191,13 +191,14 @@ pub const Memory = struct {
                     .offset = offset,
                 } };
             }
+            const bound_end = READ_ONLY_BASE_ADDRESS + @as(u32, @intCast(self.read_only.len));
             return .{ .Violation = .{
                 .violation_type = .OutOfBounds,
-                .address = address,
+                .address = bound_end,
                 .attempted_size = size,
                 .page_bounds = .{
                     .start = READ_ONLY_BASE_ADDRESS,
-                    .end = READ_ONLY_BASE_ADDRESS + @as(u32, @intCast(self.read_only.len)),
+                    .end = bound_end,
                 },
             } };
         }
@@ -211,13 +212,14 @@ pub const Memory = struct {
                     .offset = offset,
                 } };
             }
+            const bound_end = self.heap_base_address + @as(u32, @intCast(self.heap.len));
             return .{ .Violation = .{
                 .violation_type = .OutOfBounds,
-                .address = address,
+                .address = bound_end,
                 .attempted_size = size,
                 .page_bounds = .{
                     .start = self.heap_base_address,
-                    .end = self.heap_base_address + @as(u32, @intCast(self.heap.len)),
+                    .end = bound_end,
                 },
             } };
         }
@@ -231,13 +233,14 @@ pub const Memory = struct {
                     .offset = offset,
                 } };
             }
+            const bound_end = INPUT_ADDRESS + @as(u32, @intCast(self.input.len));
             return .{ .Violation = .{
                 .violation_type = .OutOfBounds,
-                .address = address,
+                .address = bound_end,
                 .attempted_size = size,
                 .page_bounds = .{
                     .start = INPUT_ADDRESS,
-                    .end = INPUT_ADDRESS + @as(u32, @intCast(self.input.len)),
+                    .end = bound_end,
                 },
             } };
         }
@@ -251,13 +254,14 @@ pub const Memory = struct {
                     .offset = offset,
                 } };
             }
+            const bound_end = STACK_ADDRESS + @as(u32, @intCast(self.stack.len));
             return .{ .Violation = .{
                 .violation_type = .OutOfBounds,
-                .address = address,
+                .address = bound_end,
                 .attempted_size = size,
                 .page_bounds = .{
                     .start = STACK_ADDRESS,
-                    .end = STACK_ADDRESS + @as(u32, @intCast(self.stack.len)),
+                    .end = bound_end,
                 },
             } };
         }
@@ -307,13 +311,15 @@ pub const Memory = struct {
                     .offset = offset,
                 } };
             }
+
+            const bound_end = self.heap_base_address + @as(u32, @intCast(self.heap.len));
             return .{ .Violation = .{
                 .violation_type = .OutOfBounds,
-                .address = address,
+                .address = bound_end,
                 .attempted_size = size,
                 .page_bounds = .{
                     .start = self.heap_base_address,
-                    .end = self.heap_base_address + @as(u32, @intCast(self.heap.len)),
+                    .end = bound_end,
                 },
             } };
         }
@@ -327,13 +333,15 @@ pub const Memory = struct {
                     .offset = offset,
                 } };
             }
+
+            const bound_end = STACK_ADDRESS + @as(u32, @intCast(self.stack.len));
             return WriteAccessResult{ .Violation = .{
                 .violation_type = .OutOfBounds,
-                .address = address,
+                .address = bound_end,
                 .attempted_size = size,
                 .page_bounds = .{
                     .start = STACK_ADDRESS,
-                    .end = STACK_ADDRESS + @as(u32, @intCast(self.stack.len)),
+                    .end = bound_end,
                 },
             } };
         }
