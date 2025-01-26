@@ -158,10 +158,10 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
     // Check if registers match (General Purpose Registers R0-R12)
     if (!std.mem.eql(u64, &exec_ctx.registers, &test_vector.expected_regs)) {
         std.debug.print("Register mismatch (General Purpose Registers R0-R12):\n", .{});
-        std.debug.print("        Input   |    Actual  |   Expected | Diff?\n", .{});
+        std.debug.print("        Input         |    Actual        |   Expected       | Diff?\n", .{});
         for (test_vector.initial_regs, exec_ctx.registers, test_vector.expected_regs, 0..) |input, actual, expected, i| {
             const mismatch = if (actual != expected) "*" else " ";
-            std.debug.print("R{d:2}: {d:10} | {d:10} | {d:10} | {s}\n", .{ i, input, actual, expected, mismatch });
+            std.debug.print("R{d:2}: {X:0>16} | {X:0>16} | {X:0>16} | {s}\n", .{ i, input, actual, expected, mismatch });
         }
         test_passed = false;
     }

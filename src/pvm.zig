@@ -600,8 +600,12 @@ pub const PVM = struct {
 
             .neg_add_imm_32 => {
                 const args = i.args.TwoRegOneImm;
-                const result = args.immediate -% context.registers[args.second_register_index];
-                context.registers[args.first_register_index] = @as(u32, @truncate(result));
+                const result = signExtendToU64(
+                    u32,
+                    // doing a normal wrapping substraction, letting zig take care of the details
+                    @as(u32, @truncate((args.immediate -% context.registers[args.second_register_index]))),
+                );
+                context.registers[args.first_register_index] = result;
             },
 
             .set_gt_u_imm => {
