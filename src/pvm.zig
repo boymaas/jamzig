@@ -624,13 +624,13 @@ pub const PVM = struct {
                 const args = i.args.TwoRegOneImm;
                 const shift = context.registers[args.second_register_index] & 0x1F;
                 const result = args.immediate << @intCast(shift);
-                context.registers[args.first_register_index] = @as(u32, @truncate(result));
+                context.registers[args.first_register_index] = result;
             },
             .shlo_r_imm_alt_32 => {
                 const args = i.args.TwoRegOneImm;
                 const shift = context.registers[args.second_register_index] & 0x1F;
-                const result = args.immediate >> @intCast(shift);
-                context.registers[args.first_register_index] = @as(u32, @truncate(result));
+                const result = @as(u32, @truncate(args.immediate)) >> @intCast(shift);
+                context.registers[args.first_register_index] = result;
             },
             .shar_r_imm_alt_32 => {
                 const args = i.args.TwoRegOneImm;
