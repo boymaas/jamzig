@@ -19,6 +19,7 @@ pub const PVMFixture = struct {
     expected_pc: u32,
     expected_memory: []MemoryChunk,
     expected_gas: i64,
+    expected_page_fault_address: ?u32 = null,
 
     pub const PageMap = struct {
         address: u32,
@@ -31,10 +32,11 @@ pub const PVMFixture = struct {
     };
 
     pub const Status = enum {
-        trap, // the execution ended with a trap (the `trap` instruction was
+        panic, // the execution ended with a trap (the `trap` instruction was
         // executed, the execution went "out of bounds", an invalid jump was made, or
         // an invalid instruction was executed)
         halt, // The program terminated normally.
+        page_fault, // Program halted
     };
 
     pub fn from_vector(allocator: Allocator, vector: *const PVMLib.PVMTestVector) !PVMFixture {
@@ -51,6 +53,7 @@ pub const PVMFixture = struct {
             .expected_pc = vector.@"expected-pc",
             .expected_memory = try allocator.alloc(MemoryChunk, vector.@"expected-memory".len),
             .expected_gas = vector.@"expected-gas",
+            .expected_page_fault_address = vector.@"expected-page-fault-address",
         };
 
         for (vector.@"initial-page-map", 0..) |page, i| {
@@ -78,6 +81,31 @@ pub const PVMFixture = struct {
         return fixture;
     }
 
+    pub fn initMemory(self: *const PVMFixture, allocator: Allocator) !PVM.Memory {
+        // Initialize a new memory instance with the required page maps
+        var memory = try PVM.Memory.initEmpty(allocator);
+        errdefer memory.deinit();
+
+        // Map all pages according to the initial page map configuration
+        for (self.initial_page_map) |page| {
+            if (page.length % PVM.Memory.Z_P != 0) {
+                return error.IncorrectPageLength;
+            }
+            try memory.allocatePagesAt(
+                page.address,
+                page.length / PVM.Memory.Z_P,
+                if (page.is_writable) .ReadWrite else .ReadOnly,
+            );
+        }
+
+        // Write initial memory contents
+        for (self.initial_memory) |chunk| {
+            try memory.initMemory(chunk.address, chunk.contents);
+        }
+
+        return memory;
+    }
+
     pub fn deinit(self: *PVMFixture, allocator: Allocator) void {
         allocator.free(self.name);
         allocator.free(self.initial_page_map);
@@ -94,76 +122,79 @@ pub const PVMFixture = struct {
     }
 };
 
-pub fn initPVMFromTestVector(allocator: Allocator, test_vector: *const PVMFixture) !PVM {
-    var pvm = try PVM.init(allocator, test_vector.program, test_vector.initial_gas);
-    errdefer pvm.deinit();
+pub fn initExecContextFromTestVector(allocator: Allocator, test_vector: *const PVMFixture) !PVM.ExecutionContext {
+    var exec_ctx = try PVM.ExecutionContext.initWithMemory(
+        allocator,
+        test_vector.program,
+        try test_vector.initMemory(allocator),
+        @intCast(test_vector.initial_gas),
+    );
+    errdefer exec_ctx.deinit(allocator);
 
     // Set initial registers
-    @memcpy(&pvm.registers, &test_vector.initial_regs);
-
-    // Set initial page map
-    try pvm.setPageMap(@as([]PVM.PageMapConfig, @ptrCast(test_vector.initial_page_map)));
-
-    // Set initial memory
-    for (test_vector.initial_memory) |chunk| {
-        try pvm.writeMemory(chunk.address, chunk.contents);
-    }
+    @memcpy(&exec_ctx.registers, &test_vector.initial_regs);
 
     // Set initial PC
-    pvm.pc = test_vector.initial_pc;
+    exec_ctx.pc = test_vector.initial_pc;
 
-    return pvm;
+    return exec_ctx;
 }
 
 pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path: []const u8) !bool {
-    var pvm = try initPVMFromTestVector(allocator, test_vector);
-    defer pvm.deinit();
+    var exec_ctx = try initExecContextFromTestVector(allocator, test_vector);
+    defer exec_ctx.deinit(allocator);
 
-    // Create buffers for debug output
-    var debug_registers_buffer = std.ArrayList(u8).init(allocator);
-    defer debug_registers_buffer.deinit();
-
-    // Write debug info to buffers
-    try pvm.debugWriteRegisters(debug_registers_buffer.writer());
-
-    const result: PVMFixture.Status = if (pvm.run())
-        .halt
-    else |_|
-        .trap;
-
+    const result = try PVM.execute(&exec_ctx);
     // Check if the execution status matches the expected status
     const status_matches: bool = switch (result) {
         .halt => test_vector.expected_status == .halt,
-        .trap => test_vector.expected_status == .trap,
-        else => false,
+        .err => |err| switch (err) {
+            .panic => test_vector.expected_status == .panic,
+            .page_fault => |addr| test_vector.expected_status == .page_fault and
+                test_vector.expected_page_fault_address == addr,
+            else => {
+                std.debug.print("UnexpectedErrStatus: {}", .{err});
+                return error.UnexpectedErrStatusFromResult;
+            },
+        },
     };
 
     var test_passed = true;
     if (!status_matches) {
-        std.debug.print("Status mismatch: expected {}, got {}\n", .{ test_vector.expected_status, result });
+        std.debug.print("Status mismatch: expected {}", .{test_vector.expected_status});
+        if (test_vector.expected_status == .page_fault) {
+            std.debug.print(" (expected addr: 0x{x:0>8})", .{test_vector.expected_page_fault_address.?});
+        }
+        std.debug.print(", got {}", .{result});
+        if (result == .err) {
+            if (result.err == .page_fault) {
+                std.debug.print(" (addr: 0x{x:0>8})", .{result.err.page_fault});
+            }
+        }
+        std.debug.print("\n", .{});
         test_passed = false;
     }
 
     // Check if registers match (General Purpose Registers R0-R12)
-    if (!std.mem.eql(u64, &pvm.registers, &test_vector.expected_regs)) {
+    if (!std.mem.eql(u64, &exec_ctx.registers, &test_vector.expected_regs)) {
         std.debug.print("Register mismatch (General Purpose Registers R0-R12):\n", .{});
-        std.debug.print("        Input   |    Actual  |   Expected | Diff?\n", .{});
-        for (test_vector.initial_regs, pvm.registers, test_vector.expected_regs, 0..) |input, actual, expected, i| {
+        std.debug.print("        Input         |    Actual        |   Expected       | Diff?\n", .{});
+        for (test_vector.initial_regs, exec_ctx.registers, test_vector.expected_regs, 0..) |input, actual, expected, i| {
             const mismatch = if (actual != expected) "*" else " ";
-            std.debug.print("R{d:2}: {d:10} | {d:10} | {d:10} | {s}\n", .{ i, input, actual, expected, mismatch });
+            std.debug.print("R{d:2}: {X:0>16} | {X:0>16} | {X:0>16} | {s}\n", .{ i, input, actual, expected, mismatch });
         }
         test_passed = false;
     }
 
     // Check if PC matches
-    if (pvm.pc != test_vector.expected_pc) {
-        std.debug.print("PC mismatch: expected {}, got {}\n", .{ test_vector.expected_pc, pvm.pc });
+    if (exec_ctx.pc != test_vector.expected_pc) {
+        std.debug.print("PC mismatch: expected {}, got {}\n", .{ test_vector.expected_pc, exec_ctx.pc });
         test_passed = false;
     }
 
     // Check if memory matches
     for (test_vector.expected_memory) |expected_chunk| {
-        const actual_chunk = try pvm.readMemory(expected_chunk.address, expected_chunk.contents.len);
+        const actual_chunk = try exec_ctx.memory.readSlice(expected_chunk.address, expected_chunk.contents.len);
         if (!std.mem.eql(u8, actual_chunk, expected_chunk.contents)) {
             std.debug.print("Memory mismatch at address 0x{X:0>8}:\n", .{expected_chunk.address});
             std.debug.print("Expected: ", .{});
@@ -180,8 +211,9 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
     }
 
     // Check if gas matches
-    if (pvm.gas != test_vector.expected_gas) {
-        std.debug.print("Gas mismatch: expected {}, got {}\n", .{ test_vector.expected_gas, pvm.gas });
+
+    if (exec_ctx.gas != test_vector.expected_gas) {
+        std.debug.print("Gas mismatch: expected {}, got {}\n", .{ test_vector.expected_gas, exec_ctx.gas });
         test_passed = false;
     }
 
@@ -201,9 +233,8 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
 
         std.debug.print("\nTest vector file '{s}' contents:\n{s}\n", .{ path, content });
 
-        std.debug.print("\nInitial register values:\n{s}", .{debug_registers_buffer.items});
         std.debug.print("\nDecompilation of the program:\n\n", .{});
-        pvm.decompilePrint();
+        try exec_ctx.debugProgram(std.io.getStdErr().writer());
     }
 
     return test_passed;

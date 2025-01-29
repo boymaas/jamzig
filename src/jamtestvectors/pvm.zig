@@ -16,8 +16,9 @@ pub const MemoryChunk = struct {
 };
 
 pub const Status = enum {
-    trap,
+    panic,
     halt,
+    @"page-fault",
 };
 
 pub const PVMTestVector = struct {
@@ -33,6 +34,7 @@ pub const PVMTestVector = struct {
     @"expected-pc": u32,
     @"expected-memory": []MemoryChunk,
     @"expected-gas": i64,
+    @"expected-page-fault-address": ?u32 = null,
 
     pub fn build_from(
         allocator: Allocator,
@@ -70,13 +72,13 @@ pub const PVMTestVector = struct {
 
 test "pvm: parsing the inst_add test vector" {
     const allocator = std.testing.allocator;
-    const vector = try PVMTestVector.build_from(allocator, BASE_PATH ++ "inst_add.json");
+    const vector = try PVMTestVector.build_from(allocator, BASE_PATH ++ "inst_add_32.json");
     defer vector.deinit();
 
-    try std.testing.expectEqualStrings("inst_add", vector.value.name);
+    try std.testing.expectEqualStrings("inst_add_32", vector.value.name);
     try std.testing.expectEqual(@as(u32, 0), vector.value.@"initial-pc");
     try std.testing.expectEqual(@as(i64, 10000), vector.value.@"initial-gas");
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0, 0, 3, 8, 135, 9, 249 }, vector.value.program);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 0, 0, 3, 190, 135, 9, 1 }, vector.value.program);
     try std.testing.expectEqual(@as(u32, 3), vector.value.@"expected-pc");
     try std.testing.expectEqual(@as(i64, 9998), vector.value.@"expected-gas");
 }

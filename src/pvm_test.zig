@@ -4,9 +4,9 @@ const pvmlib = @import("pvm.zig");
 const testing = std.testing;
 
 comptime {
+    _ = @import("pvm_test/test_vectors.zig");
     // TODO: disabled for now, need to reuild host_call bytecode
     // using a 64bit enabled polkavm tool and waiting for test vectors
-    // _ = @import("pvm_test/test_vectors.zig");
     // _ = @import("pvm_test/host_call.zig");
 }
 
@@ -40,6 +40,7 @@ test "pvm:simple" {
     var execution_context = try pvmlib.PVM.ExecutionContext.initSimple(allocator, &raw_program, 1024, 4, std.math.maxInt(u32));
     defer execution_context.deinit(allocator);
 
+    execution_context.clearRegisters();
     execution_context.registers[0] = 4294901760;
     execution_context.registers[7] = 9;
 
