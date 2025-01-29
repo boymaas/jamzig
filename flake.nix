@@ -8,11 +8,17 @@
     zig2nix.url = "github:Cloudef/zig2nix";
 
     rust.url = "github:oxalica/rust-overlay";
+    rust.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { zig2nix, zls, rust, ... }: let
+  outputs = { nixpkgs, zig2nix, zls, rust, ... }: let
     flake-utils = zig2nix.inputs.flake-utils;
   in (flake-utils.lib.eachDefaultSystem (system: let
+
+      pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust.overlays.default ];
+      };
 
       zls-pkg = zls.packages.${system}.default;
       rust-pkg = rust.packages.${system}.default;
@@ -31,7 +37,6 @@
         src = cleanSource ./.;
 
         nativeBuildInputs = with env.pkgs; [
-            rust-pkg
           ];
         buildInputs = with env.pkgsForTarget target; [];
 
@@ -91,8 +96,17 @@
 
       # nix develop
       devShells.default = env.mkShell {
-        nativeBuildInputs = [ zls-pkg rust-pkg ];
-        buildInputs = [  ];
+        nativeBuildInputs = [ 
+            zls-pkg 
+
+            # Cross compilation tools: Brackets are important here
+            (pkgs.rust-bin.beta.latest.default.override {
+              targets = [ "x86_64-unknown-linux-gnu" ];
+            })
+            pkgs.qemu
+          ];
+        buildInputs = [ 
+          ];
         # https://github.com/ziglang/zig/issues/18998
         shellHook = ''
           unset NIX_CFLAGS_COMPILE
