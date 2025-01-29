@@ -138,14 +138,23 @@ fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Bu
     defer b.allocator.free(manifest_path);
 
     // Get target triple for Rust
+    // Get target triple for Rust
     const target_triple = switch (target.result.cpu.arch) {
-        .x86_64 => if (target.result.os.tag == .linux)
-            "x86_64-unknown-linux-gnu"
-        else
-            return error.UnsupportedTarget,
+        .x86_64 => switch (target.result.os.tag) {
+            .linux => switch (target.result.abi) {
+                .gnu => "x86_64-unknown-linux-gnu",
+                .musl => "x86_64-unknown-linux-musl",
+                else => return error.UnsupportedTarget,
+            },
+            else => return error.UnsupportedTarget,
+        },
         .aarch64 => switch (target.result.os.tag) {
             .macos => "aarch64-apple-darwin",
-            .linux => "aarch64-unknown-linux-gnu",
+            .linux => switch (target.result.abi) {
+                .gnu => "aarch64-unknown-linux-gnu",
+                .musl => "aarch64-unknown-linux-musl",
+                else => return error.UnsupportedTarget,
+            },
             else => return error.UnsupportedTarget,
         },
         else => return error.UnsupportedTarget,
