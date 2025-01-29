@@ -1,0 +1,22 @@
+{
+  "1220db3fa6510f1686587aab46ac92a882d4f5a287a20d7b687f654a7b8ce3a0e8d6": {
+    "name": "pretty",
+    "url": "https://github.com/timfayz/pretty/archive/v0.10.4.tar.gz",
+    "hash": "sha256-znR5yw9jXHoq7KU/YbV1dfQqNcOWC/iFLAp7uX0xl0c="
+  },
+  "12203b5da388003e513da4a48d1c52a8ef4bf4401e27ee54bd4db9771cd6101420cc": {
+    "name": "diffz",
+    "url": "https://github.com/ziglibs/diffz/archive/420fcb22306ffd4c9c3c761863dfbb6bdbb18a73.tar.gz",
+    "hash": "sha256-BJ6zoVT+fc+ShtlAz/qFraUbtnC0hcGW3qtsooP0x5Y="
+  },
+  "1220539d4f1e7476034cb732b9008144090938c9c78dd332d28cfd48851be2558cd7": {
+    "name": "tmpfile",
+    "url": "https://github.com/jamzig/tmpfile.zig/archive/ae9b03377ee74348ded1785fa9a05050b41c5ff9.zip",
+    "hash": "sha256-KukC0MMQ7bFN2r5jNAd+qTJ//8cpu9iSVheT7LtbWdo="
+  },
+  "1220ff14a53e9a54311c9b0e665afeda2c82cfd6f57e7e1b90768bf13b85f9f29cd0": {
+    "name": "clap",
+    "url": "git+https://github.com/Hejsil/zig-clap#068c38f89814079635692c7d0be9f58508c86173",
+    "hash": "sha256-ZUrJfjiNcK21Cq9Gm3vYVGrkk1tUyfVhrqIGZ1fz2m4="
+  }
+}
