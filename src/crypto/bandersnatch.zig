@@ -146,7 +146,7 @@ pub const Bandersnatch = struct {
         secret_key: SecretKey,
 
         /// Create a new key pair from an optional seed
-        pub fn create(seed: ?[]const u8) Error!KeyPair {
+        pub fn generateDeterministic(seed: ?[]const u8) Error!KeyPair {
             var secret_bytes: [secret_length]u8 = undefined;
             var public_bytes: [public_length]u8 = undefined;
 
@@ -206,7 +206,7 @@ pub const Bandersnatch = struct {
 test "bandersnatch: key pair creation and signing" {
     // Test with fixed seed
     const seed = "test seed for bandersnatch key generation";
-    const key_pair = try Bandersnatch.KeyPair.create(seed);
+    const key_pair = try Bandersnatch.KeyPair.generateDeterministic(seed);
 
     // Test signing and verification
     const msg = "test message";
@@ -221,7 +221,7 @@ test "bandersnatch: key pair creation and signing" {
     try std.testing.expectEqualSlices(u8, &vrf_output, &output_hash);
 
     // Test random key generation
-    const random_key_pair = try Bandersnatch.KeyPair.create(null);
+    const random_key_pair = try Bandersnatch.KeyPair.generateDeterministic(null);
     const random_sig = try random_key_pair.sign(msg, context);
     _ = try random_sig.verify(msg, context, random_key_pair.public_key);
 }

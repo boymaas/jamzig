@@ -7,4 +7,4 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-erasure-coding = { git = "https://github.com/jamzig/erasure-coding.git" }
+erasure-coding = { git = "https://github.com/paritytech/erasure-coding.git" }

@@ -4,8 +4,8 @@
 [submodule "src/jamtestvectors/data"]
 	path = src/jamtestvectors/data
 	url = https://github.com/w3f/jamtestvectors/
-[submodule "src/jamtestvectors/pvm"]
-	path = src/jamtestvectors/pvm
+[submodule "src/jamtestvectors/pulls/pvm"]
+	path = src/jamtestvectors/pulls/pvm
 	url = https://github.com/w3f/jamtestvectors/
 [submodule "src/jamtestvectors/pulls/erasure_coding"]
 	path = src/jamtestvectors/pulls/erasure_coding

@@ -240,7 +240,7 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
             defer array_span.deinit();
             array_span.debug("Deserializing array of type {s}[{d}]", .{ @typeName(arrayInfo.child), arrayInfo.len });
 
-            if (arrayInfo.sentinel != null) {
+            if (arrayInfo.sentinel_ptr != null) {
                 array_span.err("Arrays with sentinels are not supported", .{});
                 @compileError("Arrays with sentinels are not supported for deserialization");
             }
@@ -252,7 +252,7 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
             ptr_span.debug("Deserializing pointer type: {s}", .{@tagName(pointerInfo.size)});
 
             switch (pointerInfo.size) {
-                .Slice => {
+                .slice => {
                     const len = try readInteger(reader);
                     ptr_span.debug("Deserializing slice of length: {d}", .{len});
 
@@ -267,7 +267,7 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
                     }
                     return slice;
                 },
-                .One, .Many, .C => {
+                .one, .many, .c => {
                     ptr_span.err("Unsupported pointer size: {s}", .{@tagName(pointerInfo.size)});
                     @compileError("Unsupported pointer type for deserialization: " ++ @typeName(T));
                 },
@@ -495,7 +495,7 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
             struct_span.debug("Successfully serialized complete struct", .{});
         },
         .array => |arrayInfo| {
-            if (arrayInfo.sentinel != null) {
+            if (arrayInfo.sentinel_ptr != null) {
                 span.err("Arrays with sentinels are not supported", .{});
                 @compileError("Arrays with sentinels are not supported for serialization");
             }
@@ -507,7 +507,7 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
             ptr_span.debug("Serializing pointer type: {s}", .{@tagName(pointerInfo.size)});
 
             switch (pointerInfo.size) {
-                .Slice => {
+                .slice => {
                     ptr_span.debug("Serializing slice of length: {d}", .{value.len});
                     try writeInteger(value.len, writer);
 
@@ -518,7 +518,7 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
                         try recursiveSerializeLeaky(pointerInfo.child, params, writer, item);
                     }
                 },
-                .One, .Many, .C => {
+                .one, .many, .c => {
                     ptr_span.err("Unsupported pointer size: {s}", .{@tagName(pointerInfo.size)});
                     @compileError("Unsupported pointer type for serialization: " ++ @typeName(T));
                 },

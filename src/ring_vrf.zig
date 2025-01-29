@@ -348,7 +348,7 @@ test "ring_vrf.basic: basic usage" {
     // Generate some test public keys
     for (0..ring_size) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+        const key_pair = try bandersnatch.Bandersnatch.KeyPair.generateDeterministic(seed);
         public_keys[i] = key_pair.public_key.toBytes();
     }
 
@@ -359,7 +359,7 @@ test "ring_vrf.basic: basic usage" {
     // Create prover
     const prover_idx = 2;
     const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
-    const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+    const key_pair = try bandersnatch.Bandersnatch.KeyPair.generateDeterministic(seed);
     var prover = try RingProver.init(
         key_pair.secret_key.toBytes(),
         &public_keys,
@@ -385,7 +385,7 @@ test "ring_vrf.ietf: IETF VRF usage" {
     // Generate some test public keys
     for (0..ring_size) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+        const key_pair = try bandersnatch.Bandersnatch.KeyPair.generateDeterministic(seed);
         public_keys[i] = key_pair.public_key.toBytes();
     }
 
@@ -396,7 +396,7 @@ test "ring_vrf.ietf: IETF VRF usage" {
     // Create prover
     const prover_idx = 2;
     const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
-    const key_pair = try bandersnatch.Bandersnatch.KeyPair.create(seed);
+    const key_pair = try bandersnatch.Bandersnatch.KeyPair.generateDeterministic(seed);
     var prover = try RingProver.init(key_pair.secret_key.toBytes(), &public_keys, prover_idx);
     defer prover.deinit();
 

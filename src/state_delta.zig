@@ -265,6 +265,7 @@ pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
 
     // Get the type of the base field
     // Convert string to field enum
+    @setEvalBranchQuota(2000);
     const field_enum = std.meta.stringToEnum(std.meta.FieldEnum(T), base_name) //
     orelse @compileError("Invalid field name: " ++ base_name);
 

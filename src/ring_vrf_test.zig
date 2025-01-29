@@ -10,7 +10,7 @@ test "ring_signature.vrf: ring signature and VRF" {
     // Generate public keys for the ring
     for (0..RING_SIZE) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try Bandersnatch.KeyPair.create(seed);
+        const key_pair = try Bandersnatch.KeyPair.generateDeterministic(seed);
         ring[i] = key_pair.public_key.toBytes();
 
         // Print the first 3 keys in hex format
@@ -38,7 +38,7 @@ test "ring_signature.vrf: ring signature and VRF" {
 
     // Generate a key pair for the prover
     const prover_seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_key_index));
-    const prover_key_pair = try Bandersnatch.KeyPair.create(prover_seed);
+    const prover_key_pair = try Bandersnatch.KeyPair.generateDeterministic(prover_seed);
 
     // Create prover
     var prover = try ring_vrf.RingProver.init(
@@ -75,7 +75,7 @@ test "verify.commitment: verify against commitment" {
     // Generate public keys for the ring
     for (0..RING_SIZE) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        const key_pair = try Bandersnatch.KeyPair.create(seed);
+        const key_pair = try Bandersnatch.KeyPair.generateDeterministic(seed);
         ring[i] = key_pair.public_key.toBytes();
     }
 
@@ -90,7 +90,7 @@ test "verify.commitment: verify against commitment" {
 
     // Generate a key pair for the prover
     const prover_seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_key_index));
-    const prover_key_pair = try Bandersnatch.KeyPair.create(prover_seed);
+    const prover_key_pair = try Bandersnatch.KeyPair.generateDeterministic(prover_seed);
 
     // Create prover
     var prover = try ring_vrf.RingProver.init(
@@ -137,7 +137,7 @@ test "fuzz: takes 10s" {
     for (0..RING_SIZE) |i| {
         var seed: [32]u8 = undefined;
         random.bytes(&seed);
-        const key_pair = try Bandersnatch.KeyPair.create(&seed);
+        const key_pair = try Bandersnatch.KeyPair.generateDeterministic(&seed);
         ring_keypairs[i] = .{
             .public_key = key_pair.public_key.toBytes(),
             .private_key = key_pair.secret_key.toBytes(),
@@ -194,7 +194,7 @@ test "equivalence.paths: Test VRF output equivalence paths" {
     for (0..ring_size) |i| {
         // Create deterministic seeds for reproducibility
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
-        key_pairs[i] = try Bandersnatch.KeyPair.create(seed);
+        key_pairs[i] = try Bandersnatch.KeyPair.generateDeterministic(seed);
         public_keys[i] = key_pairs[i].public_key.toBytes();
     }
 

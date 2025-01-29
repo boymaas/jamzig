@@ -152,7 +152,7 @@ pub const Bls12_381 = struct {
         secret_key: SecretKey,
 
         /// Create a new key pair from an optional seed
-        pub fn create(seed: ?[]const u8) Error!KeyPair {
+        pub fn generateDeterministic(seed: ?[]const u8) Error!KeyPair {
             var secret_bytes: [secret_length]u8 = undefined;
             var public_bytes: [public_length]u8 = undefined;
 

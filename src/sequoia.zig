@@ -153,9 +153,9 @@ const ValidatorKeySet = struct {
 
     pub fn init(seed: [SEED_LENGTH]u8) !ValidatorKeySet {
         return ValidatorKeySet{
-            .bandersnatch_keypair = try Bandersnatch.KeyPair.create(&seed),
-            .ed25519_keypair = try Ed25519.KeyPair.create(seed),
-            .bls12_381_keypair = try Bls12_381.KeyPair.create(&seed),
+            .bandersnatch_keypair = try Bandersnatch.KeyPair.generateDeterministic(&seed),
+            .ed25519_keypair = try Ed25519.KeyPair.generateDeterministic(seed),
+            .bls12_381_keypair = try Bls12_381.KeyPair.generateDeterministic(&seed),
         };
     }
 

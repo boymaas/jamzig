@@ -11,7 +11,7 @@ var log_err_count: usize = 0;
 var fba_buffer: [8192]u8 = undefined;
 var fba = std.heap.FixedBufferAllocator.init(&fba_buffer);
 
-// Structures to track test failures and leaks
+// Structures to track test failures
 const TestFailure = struct {
     name: []const u8,
     error_name: []const u8,
@@ -24,7 +24,7 @@ pub fn main() !void {
     var progress = false;
     var nocapture = false;
     for (args[1..]) |arg| {
-        if (std.mem.eql(u8, arg, "--verbose")) {
+        if (std.mem.eql(u8, arg, "--progress")) {
             progress = true;
         } else if (std.mem.eql(u8, arg, "--nocapture")) {
             nocapture = true;
@@ -39,6 +39,20 @@ pub fn main() !void {
     try mainTerminal(progress, nocapture);
 }
 
+fn redirectStderr() !posix.fd_t {
+    const old_fd = try posix.dup(posix.STDERR_FILENO);
+    // Open /dev/null for writing
+    const dev_null = try posix.open("/dev/null", .{ .ACCMODE = .WRONLY }, 0);
+    try posix.dup2(dev_null, posix.STDERR_FILENO);
+    posix.close(dev_null);
+    return old_fd;
+}
+
+fn restoreStderr(old_fd: posix.fd_t) !void {
+    try posix.dup2(old_fd, posix.STDERR_FILENO);
+    posix.close(old_fd);
+}
+
 fn mainTerminal(progress: bool, nocapture: bool) !void {
     @disableInstrumentation();
     const test_fn_list = builtin.test_functions;
@@ -46,7 +60,6 @@ fn mainTerminal(progress: bool, nocapture: bool) !void {
     var skip_count: usize = 0;
     var fail_count: usize = 0;
 
-    // Create arrays to store failed and leaking test names
     var failed_tests = ArrayList(TestFailure).init(fba.allocator());
     defer failed_tests.deinit();
 
@@ -59,7 +72,6 @@ fn mainTerminal(progress: bool, nocapture: bool) !void {
         defer {
             if (testing.allocator_instance.deinit() == .leak) {
                 leaks += 1;
-                // Store the name of the leaking test
                 leaked_tests.append(test_fn.name) catch {};
             }
         }
@@ -69,9 +81,18 @@ fn mainTerminal(progress: bool, nocapture: bool) !void {
             std.debug.print("\x1b[1;36m{d}/{d}\x1b[0m {s}...", .{ i + 1, test_fn_list.len, test_fn.name });
         }
 
-        _ = nocapture;
+        // Redirect stderr if not in verbose mode and nocapture is false
+        const old_fd = if (!nocapture)
+            try redirectStderr()
+        else
+            undefined;
 
         const result = test_fn.func();
+
+        // Restore stderr if it was redirected
+        if (!nocapture) {
+            try restoreStderr(old_fd);
+        }
 
         if (result) |_| {
             ok_count += 1;
@@ -85,17 +106,17 @@ fn mainTerminal(progress: bool, nocapture: bool) !void {
             },
             else => {
                 fail_count += 1;
-                // Store the failed test information
-                failed_tests.append(.{
+                try failed_tests.append(.{
                     .name = test_fn.name,
                     .error_name = @errorName(err),
-                }) catch {};
+                });
 
                 if (progress) {
                     std.debug.print("\x1b[1;31m{d}/{d}\x1b[0m {s}...\x1b[1;31mFAIL\x1b[0m (\x1b[1;31m{s}\x1b[0m)\n", .{
                         i + 1, test_fn_list.len, test_fn.name, @errorName(err),
                     });
                 }
+
                 if (@errorReturnTrace()) |trace| {
                     std.debug.dumpStackTrace(trace.*);
                 }
@@ -109,7 +130,6 @@ fn mainTerminal(progress: bool, nocapture: bool) !void {
         } else {
             std.debug.print("\x1b[1;33m{d} passed\x1b[0m; \x1b[1;33m{d} skipped\x1b[0m; \x1b[1;31m{d} failed\x1b[0m.\n", .{ ok_count, skip_count, fail_count });
 
-            // Print failed tests summary
             if (failed_tests.items.len > 0) {
                 std.debug.print("\n\x1b[1;31mFailed Tests:\x1b[0m\n", .{});
                 for (failed_tests.items) |failure| {
@@ -122,7 +142,6 @@ fn mainTerminal(progress: bool, nocapture: bool) !void {
             std.debug.print("\x1b[1;31m{d} errors were logged.\x1b[0m\n", .{log_err_count});
         }
 
-        // Print memory leak summary
         if (leaks != 0) {
             std.debug.print("\x1b[1;31m{d} tests leaked memory:\x1b[0m\n", .{leaks});
             for (leaked_tests.items) |test_name| {

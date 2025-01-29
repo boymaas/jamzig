@@ -235,46 +235,48 @@ const InstructionRange = struct {
     end: u8,
 };
 
+const IKV = struct { []const u8, InstructionRange };
+
 pub const InstructionRanges = std.StaticStringMap(InstructionRange)
     .initComptime(.{
     // A.5.1 - No arguments instructions (trap, fallthrough)
-    .{ "NoArgs", .{ .start = 0, .end = 1 } },
+    IKV{ "NoArgs", .{ .start = 0, .end = 1 } },
 
     // A.5.2 - Instructions with one immediate (ecalli)
-    .{ "OneImm", .{ .start = 10, .end = 10 } },
+    IKV{ "OneImm", .{ .start = 10, .end = 10 } },
 
     // A.5.3 - Instructions with one register and one extended immediate (load_imm_64)
-    .{ "OneRegOneExtImm", .{ .start = 20, .end = 20 } },
+    IKV{ "OneRegOneExtImm", .{ .start = 20, .end = 20 } },
 
     // A.5.4 - Instructions with two immediates (store_imm_* family)
-    .{ "TwoImm", .{ .start = 30, .end = 33 } },
+    IKV{ "TwoImm", .{ .start = 30, .end = 33 } },
 
     // A.5.5 - Instructions with one offset (jump)
-    .{ "OneOffset", .{ .start = 40, .end = 40 } },
+    IKV{ "OneOffset", .{ .start = 40, .end = 40 } },
 
     // A.5.6 - Instructions with one register and one immediate (jump_ind through store_u64)
-    .{ "OneRegOneImm", .{ .start = 50, .end = 62 } },
+    IKV{ "OneRegOneImm", .{ .start = 50, .end = 62 } },
 
     // A.5.7 - Instructions with one register and two immediates (store_imm_ind_* family)
-    .{ "OneRegTwoImm", .{ .start = 70, .end = 73 } },
+    IKV{ "OneRegTwoImm", .{ .start = 70, .end = 73 } },
 
     // A.5.8 - Instructions with one register, one immediate and one offset (load_imm_jump through branch_gt_s_imm)
-    .{ "OneRegOneImmOneOffset", .{ .start = 80, .end = 90 } },
+    IKV{ "OneRegOneImmOneOffset", .{ .start = 80, .end = 90 } },
 
     // A.5.9 - Instructions with two registers (move_reg through reverse_bytes)
-    .{ "TwoReg", .{ .start = 100, .end = 111 } }, // Updated end to include new instructions
+    IKV{ "TwoReg", .{ .start = 100, .end = 111 } }, // Updated end to include new instructions
 
     // A.5.10 - Instructions with two registers and one immediate (store_ind_* through rot_r_32_imm_alt)
-    .{ "TwoRegOneImm", .{ .start = 120, .end = 161 } }, // Updated range to reflect new IDs and instructions
+    IKV{ "TwoRegOneImm", .{ .start = 120, .end = 161 } }, // Updated range to reflect new IDs and instructions
 
     // A.5.11 - Instructions with two registers and one offset (branch_* family)
-    .{ "TwoRegOneOffset", .{ .start = 170, .end = 175 } }, // Updated range to match new IDs
+    IKV{ "TwoRegOneOffset", .{ .start = 170, .end = 175 } }, // Updated range to match new IDs
 
     // A.5.12 - Instructions with two registers and two immediates (load_imm_jump_ind)
-    .{ "TwoRegTwoImm", .{ .start = 180, .end = 180 } }, // Updated start to match new ID
+    IKV{ "TwoRegTwoImm", .{ .start = 180, .end = 180 } }, // Updated start to match new ID
 
     // A.5.13 - Instructions with three registers (add_32 through min_u)
-    .{ "ThreeReg", .{ .start = 190, .end = 230 } }, // Updated range to include new instructions
+    IKV{ "ThreeReg", .{ .start = 190, .end = 230 } }, // Updated range to include new instructions
 });
 
 //  ___           _                   _   _                _

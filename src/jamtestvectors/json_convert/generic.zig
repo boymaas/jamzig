@@ -34,11 +34,11 @@ fn convertField(conversionFunctions: anytype, allocator: anytype, fromValue: any
                 }
             },
             .pointer => |ptrInfo| {
-                if (ptrInfo.size == .Slice) {
+                if (ptrInfo.size == .slice) {
                     const fromTypeInfo = @typeInfo(FromType);
                     switch (fromTypeInfo) {
                         .pointer => |fromPtrInfo| {
-                            if (fromPtrInfo.size == .Slice) {
+                            if (fromPtrInfo.size == .slice) {
                                 const len = fromValue.len;
                                 var toSlice = try allocator.alloc(ptrInfo.child, len);
                                 for (fromValue, 0..) |item, i| {
@@ -179,7 +179,7 @@ pub fn free(allocator: Allocator, obj: anytype) void {
             }
         },
         .pointer => |ptrInfo| {
-            if (ptrInfo.size == .Slice) {
+            if (ptrInfo.size == .slice) {
                 const slice_span = span.child(.slice);
                 defer slice_span.deinit();
 

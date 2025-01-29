@@ -10,7 +10,7 @@ pub fn makeLessThanSliceOfFn(comptime T: type) fn (void, T, T) bool {
             return switch (@typeInfo(T)) {
                 .array => |info| std.mem.lessThan(info.child, &a, &b),
                 .pointer => |info| switch (info.size) {
-                    .Slice => std.mem.lessThan(info.child, a, b),
+                    .slice => std.mem.lessThan(info.child, a, b),
                     else => @compileError("Unsupported pointer type"),
                 },
                 else => a < b,

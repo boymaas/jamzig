@@ -1,5 +1,6 @@
 const std = @import("std");
 const tfmt = @import("../types/fmt.zig");
+const types = @import("../types.zig");
 const RecentHistory = @import("../recent_blocks.zig").RecentHistory;
 
 pub fn format(
@@ -35,7 +36,7 @@ test "RecentHistory format demo" {
     defer history.deinit();
 
     // Create test block
-    const block_info = .{
+    const block_info = types.BlockInfo{
         .header_hash = [_]u8{0xA1} ++ [_]u8{0} ** 31,
         .state_root = [_]u8{0xB1} ++ [_]u8{0} ** 31,
         .beefy_mmr = try allocator.dupe(?[32]u8, &.{

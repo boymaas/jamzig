@@ -296,13 +296,13 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
             defer ptr_span.deinit();
             ptr_span.debug("Formatting pointer of type {s}", .{@typeName(T)});
 
-            if (ptr.child == u8 and ptr.size == .Slice) {
+            if (ptr.child == u8 and ptr.size == .slice) {
                 ptr_span.debug("Handling as byte slice", .{});
                 try formatHex(value, writer);
                 try writer.writeAll("\n");
             } else {
                 switch (ptr.size) {
-                    .Slice => {
+                    .slice => {
                         if (value.len > 0) {
                             try writer.writeAll("[\n");
                             writer.context.indent();
@@ -322,7 +322,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                             try writer.writeAll("]\n");
                         }
                     },
-                    .One => {
+                    .one => {
                         const ChildType = ptr.child;
                         const child_type_info = @typeInfo(ChildType);
 
