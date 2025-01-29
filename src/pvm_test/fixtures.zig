@@ -88,18 +88,19 @@ pub const PVMFixture = struct {
 
         // Map all pages according to the initial page map configuration
         for (self.initial_page_map) |page| {
-            if (page.length != PVM.Memory.Z_P) {
+            if (page.length % PVM.Memory.Z_P != 0) {
                 return error.IncorrectPageLength;
             }
-            try memory.allocatePageAt(
+            try memory.allocatePagesAt(
                 page.address,
+                page.length / PVM.Memory.Z_P,
                 if (page.is_writable) .ReadWrite else .ReadOnly,
             );
         }
 
         // Write initial memory contents
         for (self.initial_memory) |chunk| {
-            try memory.writeSlice(chunk.address, chunk.contents);
+            try memory.initMemory(chunk.address, chunk.contents);
         }
 
         return memory;
@@ -133,11 +134,6 @@ pub fn initExecContextFromTestVector(allocator: Allocator, test_vector: *const P
     // Set initial registers
     @memcpy(&exec_ctx.registers, &test_vector.initial_regs);
 
-    // Set initial memory
-    for (test_vector.initial_memory) |chunk| {
-        try exec_ctx.memory.writeSlice(chunk.address, chunk.contents);
-    }
-
     // Set initial PC
     exec_ctx.pc = test_vector.initial_pc;
 
@@ -154,7 +150,8 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
         .halt => test_vector.expected_status == .halt,
         .err => |err| switch (err) {
             .panic => test_vector.expected_status == .panic,
-            .page_fault => |addr| test_vector.expected_status == .page_fault and test_vector.expected_page_fault_address == addr,
+            .page_fault => |addr| test_vector.expected_status == .page_fault and
+                test_vector.expected_page_fault_address == addr,
             else => {
                 std.debug.print("UnexpectedErrStatus: {}", .{err});
                 return error.UnexpectedErrStatusFromResult;

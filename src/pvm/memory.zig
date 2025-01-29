@@ -54,7 +54,7 @@ pub const Memory = struct {
         pub fn allocatePages(self: *PageTable, start_address: u32, num_pages: usize, flags: Page.Flags) !void {
             const span = trace.span(.allocate_pages);
             defer span.deinit();
-            span.debug("Allocating {d} pages starting at 0x{X:0>8}", .{ num_pages, start_address });
+            span.debug("Allocating {d} {s} page(s) starting at 0x{X:0>8}", .{ num_pages, @tagName(flags), start_address });
 
             // Ensure address is page aligned
             if (start_address % Memory.Z_P != 0) {
@@ -79,6 +79,7 @@ pub const Memory = struct {
             while (i < num_pages) : (i += 1) {
                 const page_addr: u32 = start_address + (@as(u32, @intCast(i)) * Memory.Z_P);
                 const page = try Page.init(self.allocator, page_addr, flags);
+                span.debug("Created page at 0x{X:0>8} with flags {s}", .{ page.address, @tagName(page.flags) });
                 try self.pages.append(page);
             }
 
@@ -319,9 +320,14 @@ pub const Memory = struct {
     }
 
     /// Allocate a single page at a specific address
-    /// Address must be page aligned
     pub fn allocatePageAt(self: *Memory, address: u32, flags: Page.Flags) !void {
-        const span = trace.span(.memory_allocate_page_at);
+        return self.allocatePagesAt(address, 1, flags);
+    }
+
+    /// Allocate multiple contiguous pages starting at a specific address
+    /// Address must be page aligned
+    pub fn allocatePagesAt(self: *Memory, address: u32, num_pages: usize, flags: Page.Flags) !void {
+        const span = trace.span(.memory_allocate_pages_at);
         defer span.deinit();
 
         // Ensure address is page aligned
@@ -329,8 +335,8 @@ pub const Memory = struct {
             return error.UnalignedAddress;
         }
 
-        // Allocate the new page
-        try self.page_table.allocatePages(address, 1, flags);
+        // Allocate the new pages
+        try self.page_table.allocatePages(address, num_pages, flags);
     }
 
     pub fn allocate(self: *Memory, size: u32) !u32 {
@@ -454,9 +460,10 @@ pub const Memory = struct {
         return page.page.data[offset..][0..size];
     }
 
-    /// Write a slice to memory not cross-page, will err on cross page
-    /// access
-    pub fn writeSlice(self: *Memory, address: u32, slice: []const u8) !void {
+    /// Initilialize a slice to memory not cross-page, will err on cross page
+    /// access. Does not check ReadWrite permissions can also write to ReadOnly
+    /// segments.
+    pub fn initMemory(self: *Memory, address: u32, slice: []const u8) !void {
         const span = trace.span(.memory_write);
         defer span.deinit();
 
@@ -475,17 +482,6 @@ pub const Memory = struct {
         const offset = address - page.page.address;
         if (offset + slice.len > Z_P) {
             return Error.CrossPageWrite;
-        }
-
-        // Check write permission
-        if (page.page.flags != .ReadWrite) {
-            self.last_violation = ViolationInfo{
-                .violation_type = .WriteProtection,
-                .address = address,
-                .attempted_size = slice.len,
-                .page = page.page,
-            };
-            return Error.PageFault;
         }
 
         // Perform the write
