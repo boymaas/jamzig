@@ -2,6 +2,8 @@
   description = "JamZig - ⚡️🛠️ A Zig-fueled implementation for the JAM protocol";
 
   inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
     zls.url = "github:zigtools/zls?ref=master";
     zig2nix.url = "github:Cloudef/zig2nix";
 
@@ -29,7 +31,7 @@
         src = cleanSource ./.;
 
         nativeBuildInputs = with env.pkgs; [
-            rust-pkg.rust-beta
+            rust-pkg
           ];
         buildInputs = with env.pkgsForTarget target; [];
 
