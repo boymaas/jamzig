@@ -40,6 +40,7 @@ test "pvm:simple" {
     var execution_context = try pvmlib.PVM.ExecutionContext.initSimple(allocator, &raw_program, 1024, 4, std.math.maxInt(u32));
     defer execution_context.deinit(allocator);
 
+    execution_context.clearRegisters();
     execution_context.registers[0] = 4294901760;
     execution_context.registers[7] = 9;
 

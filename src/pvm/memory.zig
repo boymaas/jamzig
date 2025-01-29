@@ -56,11 +56,6 @@ pub const Memory = struct {
             defer span.deinit();
             span.debug("Allocating {d} {s} page(s) starting at 0x{X:0>8}", .{ num_pages, @tagName(flags), start_address });
 
-            // Ensure address is page aligned
-            if (start_address % Memory.Z_P != 0) {
-                return error.UnalignedAddress;
-            }
-
             // Check for overlapping pages
             for (self.pages.items) |page| {
                 const new_end = start_address + (num_pages * Memory.Z_P);
@@ -289,33 +284,42 @@ pub const Memory = struct {
         const span = trace.span(.memory_init);
         defer span.deinit();
 
-        span.debug("Initializing memory system", .{});
+        span.debug("Initializing memory system with data", .{});
 
         // Calculate section sizes rounded to page boundaries
-        const ro_pages = try alignToPageSize(read_only.len) / Z_P;
-        const heap_pages = (heap_size_in_pages * Z_P + try alignToPageSize(read_write.len)) / Z_P;
-        const input_pages = try alignToPageSize(input.len) / Z_P;
+        const ro_pages = try alignToPageSize(@as(u32, @intCast(read_only.len))) / Z_P;
+        const heap_pages = @as(u32, @intCast(heap_size_in_pages * Z_P + try alignToPageSize(read_write.len))) / Z_P;
+        const input_pages = @as(u32, @intCast(try alignToPageSize(input.len) / Z_P));
 
-        var memory = Memory.initWithCapacity(
+        // Initialize the memory system with the calculated capacities
+        var memory = try Memory.initWithCapacity(
             allocator,
             ro_pages,
             heap_pages,
             input_pages,
             stack_size_in_bytes,
         );
+        errdefer memory.deinit();
 
-        // Initialize sections with provided data and zero remaining space
-        @memcpy(memory.read_only[0..read_only.len], read_only);
-        @memset(memory.read_only[read_only.len..], 0);
+        // Initialize read-only section
+        if (read_only.len > 0) {
+            try memory.initMemory(READ_ONLY_BASE_ADDRESS, read_only);
+        }
 
-        @memcpy(memory.heap[0..read_write.len], read_write);
-        @memset(memory.heap[read_write.len..], 0);
+        // Initialize heap section with read-write data
+        if (read_write.len > 0) {
+            const heap_base = try HEAP_BASE_ADDRESS(@intCast(ro_pages * Z_P));
+            try memory.initMemory(heap_base, read_write);
+        }
 
-        @memcpy(memory.input[0..input.len], input);
-        @memset(memory.input[input.len..], 0);
+        // Initialize input section
+        if (input.len > 0) {
+            try memory.initMemory(INPUT_ADDRESS, input);
+        }
 
-        @memset(memory.stack, 0);
+        // Stack is already zero-initialized by initWithCapacity
 
+        span.debug("Memory initialization complete", .{});
         return memory;
     }
 
@@ -467,25 +471,36 @@ pub const Memory = struct {
         const span = trace.span(.memory_write);
         defer span.deinit();
 
-        // Find the page containing the address
-        const page = self.page_table.findPage(address) orelse {
-            self.last_violation = ViolationInfo{
-                .violation_type = .NonAllocated,
-                .address = address,
-                .attempted_size = slice.len,
-                .page = null,
+        if (slice.len == 0) return;
+
+        var remaining = slice;
+        var current_addr = address;
+
+        while (remaining.len > 0) {
+            // Find the page containing the current address
+            const page_result = self.page_table.findPage(current_addr) orelse {
+                return Error.PageFault;
             };
-            return Error.PageFault;
-        };
 
-        // Check if write would cross page boundary
-        const offset = address - page.page.address;
-        if (offset + slice.len > Z_P) {
-            return Error.CrossPageWrite;
+            // Calculate offset and available space in current page
+            const offset = current_addr - page_result.page.address;
+            const available_in_page = Z_P - offset;
+            const bytes_to_write = @min(remaining.len, available_in_page);
+
+            // Write data to current page
+            @memcpy(page_result.page.data[offset..][0..bytes_to_write], remaining[0..bytes_to_write]);
+
+            // If we need to continue to next page, verify it exists and is contiguous
+            if (remaining.len > bytes_to_write) {
+                _ = page_result.nextContiguous() orelse {
+                    return Error.PageFault;
+                };
+            }
+
+            // Update pointers for next iteration
+            remaining = remaining[bytes_to_write..];
+            current_addr += bytes_to_write;
         }
-
-        // Perform the write
-        @memcpy(page.page.data[offset..][0..slice.len], slice);
     }
 
     /// Write an integer type to memory (u8, u16, u32, u64)

@@ -55,12 +55,8 @@ pub const ExecutionContext = struct {
         heap_size_in_pages: u16,
         max_gas: u32,
     ) !ExecutionContext {
-        // Decode program
-        var program = try Program.decode(allocator, raw_program);
-        errdefer program.deinit(allocator);
-
         // Configure memory layout with provided segments
-        var memory = try Memory.init(
+        var memory = try Memory.initWithData(
             allocator,
             read_only,
             read_write,
@@ -101,11 +97,16 @@ pub const ExecutionContext = struct {
     }
 
     /// Initialize the registers
-    pub fn initRegisters(self: *@This(), input_len: u32) void {
+    pub fn initRegisters(self: *@This(), input_len: usize) void {
         self.registers[0] = HALT_PC_VALUE; // 0xFFFF0000 Halt PC value
         self.registers[1] = Memory.STACK_BASE_ADDRESS; // Stack pointer
         self.registers[7] = Memory.INPUT_ADDRESS;
         self.registers[8] = input_len;
+    }
+
+    /// Clear all registers by setting them to zero
+    pub fn clearRegisters(self: *@This()) void {
+        @memset(&self.registers, 0);
     }
 
     pub fn deinit(self: *ExecutionContext, allocator: Allocator) void {
