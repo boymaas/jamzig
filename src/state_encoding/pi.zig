@@ -3,7 +3,7 @@ const types = @import("../types.zig");
 const encoder = @import("../codec/encoder.zig");
 const codec = @import("../codec.zig");
 
-const trace = @import("../tracing.zig").scoped(.pi_encoding);
+const trace = @import("../tracing.zig").scoped(.codec);
 
 const validator_statistics = @import("../validator_stats.zig");
 const Pi = validator_statistics.Pi;

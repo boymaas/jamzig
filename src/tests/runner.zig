@@ -24,7 +24,7 @@ pub fn main() !void {
     var progress = false;
     var nocapture = false;
     for (args[1..]) |arg| {
-        if (std.mem.eql(u8, arg, "--progress")) {
+        if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--progress")) {
             progress = true;
         } else if (std.mem.eql(u8, arg, "--nocapture")) {
             nocapture = true;

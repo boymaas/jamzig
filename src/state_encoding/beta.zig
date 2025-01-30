@@ -1,5 +1,4 @@
 const std = @import("std");
-const trace = @import("../tracing.zig").scoped(.state_encoding);
 
 const types = @import("../types.zig");
 const ReportedWorkPackage = types.ReportedWorkPackage;
@@ -8,6 +7,8 @@ const encoder = @import("../codec/encoder.zig");
 
 const recent_blocks = @import("../recent_blocks.zig");
 const RecentHistory = recent_blocks.RecentHistory;
+
+const trace = @import("../tracing.zig").scoped(.codec);
 
 pub fn encode(self: *const RecentHistory, writer: anytype) !void {
     const span = trace.span(.encode);

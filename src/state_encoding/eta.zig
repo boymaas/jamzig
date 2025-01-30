@@ -1,8 +1,9 @@
 const std = @import("std");
 const testing = std.testing;
-const trace = @import("../tracing.zig").scoped(.eta_encoder);
 
 const Eta = @import("../types.zig").Eta;
+
+const trace = @import("../tracing.zig").scoped(.codec);
 
 pub fn encode(self: *const Eta, writer: anytype) !void {
     const span = trace.span(.encode_entropy_pool);

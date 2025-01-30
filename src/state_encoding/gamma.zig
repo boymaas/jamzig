@@ -4,7 +4,7 @@ const types = @import("../types.zig");
 const codec = @import("../codec.zig");
 const jam_params = @import("../jam_params.zig");
 
-const trace = @import("../tracing.zig").scoped(.gamma_encoding);
+const trace = @import("../tracing.zig").scoped(.codec);
 
 pub fn encode(
     comptime params: jam_params.Params,

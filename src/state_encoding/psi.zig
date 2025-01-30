@@ -8,7 +8,7 @@ const disputes = @import("../disputes.zig");
 const Psi = disputes.Psi;
 const Hash = disputes.Hash;
 
-const trace = @import("../tracing.zig").scoped(.psi_encoding);
+const trace = @import("../tracing.zig").scoped(.codec);
 
 pub fn encode(self: *const Psi, writer: anytype) !void {
     const span = trace.span(.encode);

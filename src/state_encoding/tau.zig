@@ -1,6 +1,7 @@
 const std = @import("std");
 const types = @import("../types.zig");
-const trace = @import("../tracing.zig").scoped(.tau);
+
+const trace = @import("../tracing.zig").scoped(.codec);
 
 pub fn encode(tau: types.TimeSlot, writer: anytype) !void {
     const span = trace.span(.encode);

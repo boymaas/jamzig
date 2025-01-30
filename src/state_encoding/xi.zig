@@ -1,7 +1,8 @@
 const std = @import("std");
 const sort = std.sort;
 const encoder = @import("../codec/encoder.zig");
-const trace = @import("../tracing.zig").scoped(.xi);
+
+const trace = @import("../tracing.zig").scoped(.codec);
 
 const makeLessThanSliceOfFn = @import("../utils/sort.zig").makeLessThanSliceOfFn;
 const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);

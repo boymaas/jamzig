@@ -9,7 +9,7 @@ const Params = @import("../jam_params.zig").Params;
 
 const detectKeyType = @import("../state_dictionary/key_type_detection.zig").detectKeyType;
 
-const trace = @import("../tracing.zig").scoped(.state_dictionary_reconstruct);
+const trace = @import("../tracing.zig").scoped(.codec);
 
 /// Reconstructs a JamState from a MerklizationDictionary by decoding its entries
 pub fn reconstructState(
@@ -28,12 +28,7 @@ pub fn reconstructState(
 
     // Helper function to get reader for value
 
-    const getReader = struct {
-        fn get(value: []const u8) std.io.FixedBufferStream([]const u8).Reader {
-            var stream = std.io.fixedBufferStream(value);
-            return stream.reader();
-        }
-    }.get;
+    const fbs = std.io.fixedBufferStream;
 
     // Iterate through all entries
     var it = dict.entries.iterator();
@@ -57,66 +52,82 @@ pub fn reconstructState(
                     var component_span = entry_span.child(.decode_alpha);
                     defer component_span.deinit();
                     component_span.debug("Decoding alpha component (id={d})", .{key[0]});
-                    jam_state.alpha = try state_decoding.alpha.decode(params.core_count, getReader(value));
+                    var f = fbs(value);
+                    jam_state.alpha = try state_decoding.alpha.decode(params.core_count, f.reader());
                 },
                 2 => {
                     var component_span = entry_span.child(.decode_phi);
                     defer component_span.deinit();
                     component_span.debug("Decoding phi component (id={d})", .{key[0]});
-                    jam_state.phi = try state_decoding.phi.decode(params.core_count, params.max_authorizations_queue_items, allocator, getReader(value));
+                    var f = fbs(value);
+                    jam_state.phi = try state_decoding.phi.decode(params.core_count, params.max_authorizations_queue_items, allocator, f.reader());
                 },
 
                 3 => {
                     entry_span.debug("Decoding beta component (id={d})", .{key[0]});
-                    jam_state.beta = try state_decoding.beta.decode(allocator, getReader(value));
+                    var f = fbs(value);
+                    jam_state.beta = try state_decoding.beta.decode(allocator, f.reader());
                 },
                 4 => {
                     entry_span.debug("Decoding gamma component (id={d})", .{key[0]});
-                    jam_state.gamma = try state_decoding.gamma.decode(params, allocator, getReader(value));
+                    var f = fbs(value);
+                    jam_state.gamma = try state_decoding.gamma.decode(params, allocator, f.reader());
                 },
                 5 => {
                     entry_span.debug("Decoding psi component (id={d})", .{key[0]});
-                    jam_state.psi = try state_decoding.psi.decode(allocator, getReader(value));
+                    var f = fbs(value);
+                    jam_state.psi = try state_decoding.psi.decode(allocator, f.reader());
                 },
                 6 => {
                     entry_span.debug("Decoding eta component (id={d})", .{key[0]});
-                    jam_state.eta = try state_decoding.eta.decode(getReader(value));
+                    var f = fbs(value);
+                    jam_state.eta = try state_decoding.eta.decode(f.reader());
                 },
                 7 => {
                     entry_span.debug("Decoding iota component (id={d})", .{key[0]});
-                    jam_state.iota = try state_decoding.iota.decode(allocator, params.validators_count, getReader(value));
+                    var f = fbs(value);
+                    jam_state.iota = try state_decoding.iota.decode(allocator, params.validators_count, f.reader());
                 },
                 8 => {
                     entry_span.debug("Decoding kappa component (id={d})", .{key[0]});
-                    jam_state.kappa = try state_decoding.kappa.decode(allocator, params.validators_count, getReader(value));
+                    var f = fbs(value);
+                    jam_state.kappa = try state_decoding.kappa.decode(allocator, params.validators_count, f.reader());
                 },
                 9 => {
                     entry_span.debug("Decoding lambda component (id={d})", .{key[0]});
-                    jam_state.lambda = try state_decoding.lambda.decode(allocator, params.validators_count, getReader(value));
+                    var f = fbs(value);
+                    jam_state.lambda = try state_decoding.lambda.decode(allocator, params.validators_count, f.reader());
                 },
                 10 => {
                     entry_span.debug("Decoding rho component (id={d})", .{key[0]});
-                    jam_state.rho = try state_decoding.rho.decode(params, allocator, getReader(value));
+                    var f = fbs(value);
+                    jam_state.rho = try state_decoding.rho.decode(params, allocator, f.reader());
                 },
                 11 => {
                     entry_span.debug("Decoding tau component (id={d})", .{key[0]});
-                    jam_state.tau = try state_decoding.tau.decode(getReader(value));
+                    var f = fbs(value);
+                    jam_state.tau = try state_decoding.tau.decode(f.reader());
+                    std.debug.print("tau: {d}", .{jam_state.tau.?});
                 },
                 12 => {
                     entry_span.debug("Decoding chi component (id={d})", .{key[0]});
-                    jam_state.chi = try state_decoding.chi.decode(allocator, getReader(value));
+                    var f = fbs(value);
+                    jam_state.chi = try state_decoding.chi.decode(allocator, f.reader());
                 },
                 13 => {
                     entry_span.debug("Decoding pi component (id={d})", .{key[0]});
-                    jam_state.pi = try state_decoding.pi.decode(params.validators_count, getReader(value), allocator);
+                    var f = fbs(value);
+                    jam_state.pi = try state_decoding.pi.decode(params.validators_count, f.reader(), allocator);
                 },
                 14 => {
                     entry_span.debug("Decoding theta component (id={d})", .{key[0]});
-                    jam_state.theta = try state_decoding.theta.decode(params.epoch_length, allocator, getReader(value));
+                    var f = fbs(value);
+                    jam_state.theta = try state_decoding.theta.decode(params.epoch_length, allocator, f.reader());
                 },
                 15 => {
                     entry_span.debug("Decoding xi component (id={d})", .{key[0]});
-                    jam_state.xi = try state_decoding.xi.decode(params.epoch_length, allocator, getReader(value));
+                    var f = fbs(value);
+                    jam_state.xi = try state_decoding.xi.decode(params.epoch_length, allocator, f.reader());
                 },
                 else => {
                     entry_span.err("Unknown state component ID: {d}", .{key[0]});

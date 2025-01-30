@@ -5,7 +5,7 @@ const codec = @import("../codec.zig");
 const authorization = @import("../authorization.zig");
 const Alpha = authorization.Alpha;
 
-const trace = @import("../tracing.zig").scoped(.alpha_encoding);
+const trace = @import("../tracing.zig").scoped(.codec);
 
 /// Encodes pools where each pool is length encoded. Length of pools is assumed to be C
 pub fn encode(comptime core_count: u16, self: *const Alpha(core_count), writer: anytype) !void {

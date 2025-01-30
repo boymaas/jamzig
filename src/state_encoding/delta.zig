@@ -6,7 +6,7 @@ const ServiceAccount = services.ServiceAccount;
 const PreimageLookup = services.PreimageLookup;
 const PreimageLookupKey = services.PreimageLookupKey;
 
-const trace = @import("../tracing.zig").scoped(.delta_encoding);
+const trace = @import("../tracing.zig").scoped(.codec);
 
 /// Encodes base service account data: C(255, s) ↦ a_c ⌢ E_8(a_b, a_g, a_m, a_l) ⌢ E_4(a_i)
 pub fn encodeServiceAccountBase(account: *const ServiceAccount, writer: anytype) !void {

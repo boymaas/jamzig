@@ -1,21 +1,68 @@
 name: CI
-
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
 
 jobs:
   check:
-    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        target:
+          # Linux targets
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-gnu
+          - aarch64-unknown-linux-musl
+          # Darwin/macOS targets
+          - x86_64-macos
+          - aarch64-macos
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            can_test: true
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+            can_test: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04
+            can_test: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04
+            can_test: true
+          - target: x86_64-macos
+            os: macos-latest
+            can_test: true
+          - target: aarch64-macos
+            os: macos-latest
+            can_test: false  
+
+    runs-on: ${{ matrix.os }}
     permissions:
       id-token: "write"
       contents: "read"
+
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+      
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
-      - name: Run `nix run .#test`
-        run: nix run .#test -- --progress
+
+      - name: Build and test for ${{ matrix.target }}
+        if: ${{ matrix.can_test }}
+        run: |
+          # Build and test
+          nix run .#test -- --target ${{ matrix.target }} --progress
+
+      - name: Build only for ${{ matrix.target }}
+        if: ${{ !matrix.can_test }}
+        run: |
+          # Build only
+          nix run .#build -- -Dtarget=${{ matrix.target }}
+

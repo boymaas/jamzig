@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) !void {
     const tmpfile_module = b.dependency("tmpfile", .{}).module("tmpfile");
 
     // Rest of the existing build.zig implementation...
-    var rust_deps = try buildRustDependencies(b);
+    var rust_deps = try buildRustDependencies(b, target);
     defer rust_deps.deinit();
 
     const exe = b.addExecutable(.{
@@ -133,19 +133,46 @@ const RustDep = struct {
     fullpath: []const u8,
 };
 
-fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8) !void {
+fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Build.ResolvedTarget) !void {
     const manifest_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/Cargo.toml", .{name});
     defer b.allocator.free(manifest_path);
+
+    // Get target triple for Rust
+    // Get target triple for Rust
+    const target_triple = switch (target.result.cpu.arch) {
+        .x86_64 => switch (target.result.os.tag) {
+            .macos => "x86_64-apple-darwin",
+            .linux => switch (target.result.abi) {
+                .gnu => "x86_64-unknown-linux-gnu",
+                .musl => "x86_64-unknown-linux-musl",
+                else => return error.UnsupportedTarget,
+            },
+            else => return error.UnsupportedTarget,
+        },
+        .aarch64 => switch (target.result.os.tag) {
+            .macos => "aarch64-apple-darwin",
+            .linux => switch (target.result.abi) {
+                .gnu => "aarch64-unknown-linux-gnu",
+                .musl => "aarch64-unknown-linux-musl",
+                else => return error.UnsupportedTarget,
+            },
+            else => return error.UnsupportedTarget,
+        },
+        else => return error.UnsupportedTarget,
+    };
 
     var cmd = b.addSystemCommand(&[_][]const u8{
         "cargo",
         "build",
         "--release",
+        "--target",
+        target_triple,
         "--manifest-path",
         manifest_path,
     });
 
-    const target_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/target/release", .{name});
+    // Update target path to include the specific architecture
+    const target_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/target/{s}/release", .{ name, target_triple });
     defer b.allocator.free(target_path);
 
     const lib_name = if (std.mem.eql(u8, name, "crypto"))
@@ -156,13 +183,13 @@ fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8) !void {
     try deps.register(target_path, lib_name, &cmd.step);
 }
 
-pub fn buildRustDependencies(b: *std.Build) !RustDeps {
+pub fn buildRustDependencies(b: *std.Build, target: std.Build.ResolvedTarget) !RustDeps {
     var deps = RustDeps.init(b);
     errdefer deps.deinit();
 
     // Build the rust libraries
-    try buildRustDep(b, &deps, "crypto");
-    try buildRustDep(b, &deps, "reed_solomon");
+    try buildRustDep(b, &deps, "crypto", target);
+    try buildRustDep(b, &deps, "reed_solomon", target);
 
     return deps;
 }

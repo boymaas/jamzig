@@ -492,6 +492,8 @@ pub fn buildStateMerklizationDictionaryWithConfig(
     // Helpers to ...
     const getOrInitManaged = @import("state_dictionary/utils.zig").getOrInitManaged;
 
+    std.debug.print("Start here!", .{});
+
     // Encode the simple state components using specific encoders
     {
         // Alpha (1)

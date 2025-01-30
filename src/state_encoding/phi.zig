@@ -8,7 +8,7 @@ const codec = @import("../codec.zig");
 const authorization_queue = @import("../authorization_queue.zig");
 const Phi = authorization_queue.Phi;
 
-const trace = @import("../tracing.zig").scoped(.phi);
+const trace = @import("../tracing.zig").scoped(.codec);
 
 const H = 32;
 

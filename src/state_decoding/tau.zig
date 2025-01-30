@@ -8,7 +8,8 @@ const Tau = types.TimeSlot;
 /// Decodes tau (τ) from raw bytes.
 /// Tau represents the current timeslot and is encoded as a little-endian u32
 pub fn decode(reader: anytype) !Tau {
-    return try reader.readInt(u32, .little);
+    const value = try reader.readInt(u32, .little);
+    return value;
 }
 
 test "decode tau - valid data" {

@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const codec = @import("../codec.zig");
 
-const trace = @import("../tracing.zig").scoped(.validator_datas);
+const trace = @import("../tracing.zig").scoped(.codec);
 
 pub fn encode(set: *const types.ValidatorSet, writer: anytype) !void {
     const span = trace.span(.encode);

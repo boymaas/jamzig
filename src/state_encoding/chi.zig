@@ -2,7 +2,8 @@ const std = @import("std");
 const state = @import("../state.zig");
 const serialize = @import("../codec.zig").serialize;
 const encoder = @import("../codec/encoder.zig");
-const trace = @import("../tracing.zig").scoped(.chi_encoding);
+
+const trace = @import("../tracing.zig").scoped(.codec);
 
 pub fn encode(chi: *const state.Chi, writer: anytype) !void {
     const span = trace.span(.encode);
