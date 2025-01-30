@@ -14,8 +14,8 @@ jobs:
           - aarch64-unknown-linux-gnu
           - aarch64-unknown-linux-musl
           # Darwin/macOS targets
-          - x86_64-macos-darwin
-          - aarch64-macos-darwin
+          - x86_64-macos
+          - aarch64-macos
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
@@ -29,10 +29,10 @@ jobs:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04
             can_test: true
-          - target: x86_64-apple-darwin
+          - target: x86_64-macos
             os: macos-latest
             can_test: true
-          - target: aarch64-apple-darwin
+          - target: aarch64-macos
             os: macos-latest
             can_test: false  
 

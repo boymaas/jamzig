@@ -107,6 +107,7 @@
                 "aarch64-unknown-linux-gnu"
                 "aarch64-unknown-linux-musl"
                 "aarch64-apple-darwin"
+                "x86_64-apple-darwin"
               ];
             })
             pkgs.qemu

@@ -141,6 +141,7 @@ fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Bu
     // Get target triple for Rust
     const target_triple = switch (target.result.cpu.arch) {
         .x86_64 => switch (target.result.os.tag) {
+            .macos => "x86_64-apple-darwin",
             .linux => switch (target.result.abi) {
                 .gnu => "x86_64-unknown-linux-gnu",
                 .musl => "x86_64-unknown-linux-musl",
