@@ -158,6 +158,14 @@ fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Bu
             },
             else => return error.UnsupportedTarget,
         },
+        // big-endian target
+        .powerpc64 => switch (target.result.os.tag) {
+            .linux => switch (target.result.abi) {
+                .gnu => "powerpc64-unknown-linux-gnu",
+                else => return error.UnsupportedTarget,
+            },
+            else => return error.UnsupportedTarget,
+        },
         else => return error.UnsupportedTarget,
     };
 
