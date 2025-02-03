@@ -249,8 +249,8 @@ pub const ProgramGenerator = struct {
             const last_byte = mask[mask.len - 1];
             const padding_bits: u3 = @intCast(mask.len * 8 - code.items.len);
             const padding_mask = @as(i8, @bitCast(@as(u8, 0b10000000))) >> (padding_bits - 1);
-            std.debug.print("Last byte of mask:  0b{b:0>8}\n", .{last_byte});
-            std.debug.print("Padding mask:      0b{b:0>8}\n", .{@as(u8, @bitCast(padding_mask))});
+            // std.debug.print("Last byte of mask:  0b{b:0>8}\n", .{last_byte});
+            // std.debug.print("Padding mask:      0b{b:0>8}\n", .{@as(u8, @bitCast(padding_mask))});
             if (last_byte & @as(u8, @bitCast(padding_mask)) != 0) {
                 @panic("BitmaskPaddedWithNonZeroes");
             }

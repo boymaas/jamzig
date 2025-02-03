@@ -124,29 +124,31 @@ test "generate and execute multiple programs" {
     // Test different program sizes
     const sizes = [_]u32{ 16, 32, 64, 128 };
 
-    for (sizes) |size| {
-        // Generate program
-        var program = try generator.generate(size);
-        defer program.deinit(allocator);
+    for (0..10_000) |_| {
+        for (sizes) |size| {
+            // Generate program
+            var program = try generator.generate(size);
+            defer program.deinit(allocator);
 
-        // Execute program
-        const result = try executePvmWithGeneratedProgram(
-            allocator,
-            program,
-            &[_]MemoryPage{page},
-            10000, // gas limit
-        );
-        defer result.deinit();
+            // Execute program
+            const result = try executePvmWithGeneratedProgram(
+                allocator,
+                program,
+                &[_]MemoryPage{page},
+                10000, // gas limit
+            );
+            defer result.deinit();
 
-        std.debug.print("{}\n", result);
+            // std.debug.print("{}\n", result);
 
-        // Verify execution completed
-        try std.testing.expect(result.raw.status != .UnknownError);
-        // try std.testing.expect(result.raw.page_count > 0);
+            // Verify execution completed
+            try std.testing.expect(result.raw.status != .UnknownError);
+            // try std.testing.expect(result.raw.page_count > 0);
 
-        // Verify memory pages are accessible
-        // const pages = result.getPages();
-        // try std.testing.expect(pages.len > 0);
-        // try std.testing.expectEqual(pages[0].size, 0x1000);
+            // Verify memory pages are accessible
+            // const pages = result.getPages();
+            // try std.testing.expect(pages.len > 0);
+            // try std.testing.expectEqual(pages[0].size, 0x1000);
+        }
     }
 }
