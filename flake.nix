@@ -110,6 +110,7 @@
                 "x86_64-apple-darwin"
                 "powerpc64-unknown-linux-gnu"
               ];
+              extensions = ["rust-analyzer" "rust-src"];
             })
             pkgs.qemu
           ];

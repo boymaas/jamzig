@@ -1,0 +1,8 @@
+[package]
+name = "polkavm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+polkavm = { git = "https://github.com/paritytech/polkavm", package = "polkavm" }
+polkavm-common = { git = "https://github.com/paritytech/polkavm", package = "polkavm-common" }
