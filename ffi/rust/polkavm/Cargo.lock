@@ -16,14 +16,6 @@ checksum = "04cbf5b083de1c7e0222a7a51dbfdba1cbe1c6ab0b15e29fff3f6c077fd9cd9f"
 
 [[package]]
 name = "polkavm"
-version = "0.1.0"
-dependencies = [
- "polkavm 0.20.0",
- "polkavm-common",
-]
-
-[[package]]
-name = "polkavm"
 version = "0.20.0"
 source = "git+https://github.com/paritytech/polkavm#cd3729c0e625bcba19f096901eb5c36c8aa94b81"
 dependencies = [
@@ -49,6 +41,14 @@ source = "git+https://github.com/paritytech/polkavm#cd3729c0e625bcba19f096901eb5
 dependencies = [
  "log",
  "polkavm-assembler",
+]
+
+[[package]]
+name = "polkavm-ffi"
+version = "0.1.0"
+dependencies = [
+ "polkavm",
+ "polkavm-common",
 ]
 
 [[package]]
