@@ -1,11 +1,22 @@
 name: Linux build and test
-
 on:
   push:
-
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test-config:
+          - name: "Debug - Build and test"
+            command: "test"
+          - name: "Debug - Build and test ffi"
+            command: "test-ffi"
+          - name: "ReleaseFast - Build and test"
+            command: "test-release-fast"
+          - name: "ReleaseFast - Build and test ffi"
+            command: "test-ffi-release-fast"
+      # Run all matrix jobs in parallel
+      fail-fast: false
     
     steps:
       - uses: actions/checkout@v4
@@ -16,15 +27,6 @@ jobs:
       - uses: DeterminateSystems/flakehub-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
       
-      - name: Debug - Build and test
+      - name: ${{ matrix.test-config.name }}
         run: |
-          nix run .#test -- --progress
-      - name: Debug - Build and test ffi
-        run: |
-          nix run .#test-ffi -- --progress
-      - name: ReleaseFast - Build and test
-        run: |
-          nix run .#test-release-fast -- --progress
-      - name: ReleaseFast - Build and test ffi
-        run: |
-          nix run .#test-ffi-release-fast -- --progress
+          nix run .#${{ matrix.test-config.command }} -- --progress
