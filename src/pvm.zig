@@ -392,8 +392,7 @@ pub const PVM = struct {
             .sign_extend_16 => {
                 const args = i.args.TwoReg;
                 const value = @as(u16, @truncate(context.registers[args.second_register_index]));
-                context.registers[args.first_register_index] =
-                    @bitCast(@as(i64, @intCast(@as(i16, @bitCast(value)))));
+                context.registers[args.first_register_index] = signExtendToU64(u16, value);
             },
 
             .zero_extend_16 => {
@@ -801,7 +800,7 @@ pub const PVM = struct {
                 if (regb == 0) {
                     context.registers[args.third_register_index] = signExtendToU64(u32, rega);
                 } else {
-                    context.registers[args.third_register_index] = signExtendToU64(u32, @mod(rega, regb));
+                    context.registers[args.third_register_index] = signExtendToU64(u32, @rem(rega, regb));
                 }
             },
 

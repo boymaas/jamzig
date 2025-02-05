@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const PVM = @import("../../pvm.zig").PVM;
 const SeedGenerator = @import("seed.zig").SeedGenerator;
 const ProgramGenerator = @import("program_generator.zig").ProgramGenerator;
+const Register = @import("../../pvm/registers.zig").Register;
 
 const trace = @import("../../tracing.zig").scoped(.pvm);
 
@@ -395,9 +396,10 @@ pub const PVMFuzzer = struct {
         const initial_registers = exec_ctx.registers;
 
         // Dump initial register state
+        //
         execution_span.debug("Initial register state:", .{});
         for (initial_registers, 0..) |reg, i| {
-            execution_span.debug("  r{d:<2} = 0x{X:0>16}", .{ i, reg });
+            execution_span.debug("  {s} r{d:<2} = 0x{X:0>16}", .{ @tagName(try std.meta.intToEnum(Register, i)), i, reg });
         }
 
         const status = PVM.execute(&exec_ctx);
