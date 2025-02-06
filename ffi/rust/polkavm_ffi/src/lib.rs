@@ -22,19 +22,23 @@ pub struct MemoryPage {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum ExecutionStatus {
-  Success = 0,
+pub enum InitializationError {
   EngineError = 1,
   ProgramError = 2,
   ModuleError = 3,
   InstantiationError = 4,
   MemoryError = 5,
-  Trap = 6,
-  OutOfGas = 7,
-  Segfault = 8,
-  InstanceRunError = 9,
-  UnknownError = 10,
-  Running = 11,
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum ExecutionStatus {
+  Success = 0,
+  Trap = 1,
+  OutOfGas = 2,
+  Segfault = 3,
+  InstanceRunError = 4,
+  Running = 5,
 }
 
 #[repr(C)]
@@ -71,7 +75,7 @@ impl ProgramExecutor {
     page_count: usize,
     initial_registers: *const u64,
     gas_limit: u64,
-  ) -> Result<Self, ExecutionStatus> {
+  ) -> Result<Self, InitializationError> {
     // Initialize engine configuration
     let mut config = Config::new();
     config.set_backend(Some(BackendKind::Interpreter));
@@ -79,12 +83,12 @@ impl ProgramExecutor {
 
     // Initialize engine
     let engine =
-      Engine::new(&config).map_err(|_| ExecutionStatus::EngineError)?;
+      Engine::new(&config).map_err(|_| InitializationError::EngineError)?;
 
     // Parse program blob
     let raw_bytes = slice::from_raw_parts(bytecode, bytecode_len);
     let blob = ProgramBlob::parse(raw_bytes.to_vec().into())
-      .map_err(|_| ExecutionStatus::ProgramError)?;
+      .map_err(|_| InitializationError::ProgramError)?;
 
     // Configure and create module
     let mut module_config = ModuleConfig::default();
@@ -94,12 +98,12 @@ impl ProgramExecutor {
     module_config.set_step_tracing(true);
 
     let module = Module::from_blob(&engine, &module_config, blob)
-      .map_err(|_| ExecutionStatus::ModuleError)?;
+      .map_err(|_| InitializationError::ModuleError)?;
 
     // Instantiate module
     let mut instance = module
       .instantiate()
-      .map_err(|_| ExecutionStatus::InstantiationError)?;
+      .map_err(|_| InitializationError::InstantiationError)?;
 
     // Store initial pages for later use
     let pages = slice::from_raw_parts(initial_pages, page_count);
@@ -110,12 +114,12 @@ impl ProgramExecutor {
       let page_data = slice::from_raw_parts(page.data, page.size);
       instance
         .write_memory(page.address, page_data)
-        .map_err(|_| ExecutionStatus::MemoryError)?;
+        .map_err(|_| InitializationError::MemoryError)?;
 
       if !page.is_writable {
         instance
           .protect_memory(page.address, page.size as u32)
-          .map_err(|_| ExecutionStatus::MemoryError)?;
+          .map_err(|_| InitializationError::MemoryError)?;
       }
     }
 

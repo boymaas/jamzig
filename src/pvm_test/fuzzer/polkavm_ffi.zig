@@ -18,17 +18,11 @@ pub const MemoryPage = extern struct {
 
 pub const ExecutionStatus = enum(c_int) {
     Success = 0,
-    EngineError = 1,
-    ProgramError = 2,
-    ModuleError = 3,
-    InstantiationError = 4,
-    MemoryError = 5,
-    Trap = 6,
-    OutOfGas = 7,
-    Segfault = 8,
-    InstanceRunError = 9,
-    UnknownError = 10,
-    Running = 11,
+    Trap = 1,
+    OutOfGas = 2,
+    Segfault = 3,
+    InstanceRunError = 4,
+    Running = 5,
 };
 
 const RawExecutionResult = extern struct {
@@ -59,7 +53,7 @@ pub const ExecutionResult = struct {
     pub fn isFinished(self: *const ExecutionResult) bool {
         return switch (self.raw.status) {
             .Success, .Trap, .OutOfGas, .Segfault, .InstanceRunError => true,
-            else => false,
+            .Running => false,
         };
     }
 };
@@ -70,7 +64,6 @@ const ProgramExecutor = opaque {};
 extern "c" fn init_logging() void;
 extern "c" fn free_execution_result(result: RawExecutionResult) void;
 
-// New FFI functions for stepped execution
 extern "c" fn create_executor(
     bytecode: [*]const u8,
     bytecode_len: usize,
@@ -102,13 +95,17 @@ pub const Executor = struct {
 
     const Self = @This();
 
-    /// Creates a new executor instance
+    pub const Error = error{
+        ExecutorCreationFailed,
+        ExecutionError,
+    };
+
     pub fn init(
         bytecode: []const u8,
         pages: []const MemoryPage,
         registers: []const u64,
         gas_limit: u64,
-    ) !Self {
+    ) Error!Self {
         const executor = create_executor(
             bytecode.ptr,
             bytecode.len,
@@ -123,31 +120,24 @@ pub const Executor = struct {
         };
     }
 
-    /// Frees resources associated with the executor
     pub fn deinit(self: *Self) void {
         free_executor(self.executor);
     }
 
-    /// Executes a single step and returns the current execution state
     pub fn step(self: *Self) ExecutionResult {
         return .{
             .raw = step_executor(self.executor),
         };
     }
 
-    /// Returns whether the program has finished executing
     pub fn isFinished(self: *const Self) bool {
         return is_executor_finished(self.executor);
     }
 
-    /// Convenience method to run the program to completion
-    pub fn runToCompletion(self: *Self) !ExecutionResult {
+    pub fn runToCompletion(self: *Self) Error!ExecutionResult {
         var last_result: ExecutionResult = undefined;
         while (!self.isFinished()) {
             last_result = self.step();
-            if (last_result.raw.status == .UnknownError) {
-                return error.ExecutionError;
-            }
         }
         return last_result;
     }
@@ -218,40 +208,45 @@ test "stepped execution" {
             seed_gen.randomBytes(std.mem.asBytes(&registers));
 
             // Create executor
-            var executor = try createExecutorFromProgram(
-                allocator,
-                program,
-                &[_]MemoryPage{page},
-                &registers,
-                10000,
-            );
-            defer executor.deinit();
+            {
+                var executor = try createExecutorFromProgram(
+                    allocator,
+                    program,
+                    &[_]MemoryPage{page},
+                    &registers,
+                    10000,
+                );
+                defer executor.deinit();
 
-            // Test step-by-step execution
-            var step_count: usize = 0;
-            while (!executor.isFinished()) {
-                const result = executor.step();
-                defer result.deinit();
-                try std.testing.expect(result.raw.status != .UnknownError);
-                step_count += 1;
+                // Test step-by-step execution
+                var step_count: usize = 0;
+                while (!executor.isFinished()) {
+                    const result = executor.step();
+                    defer result.deinit();
+                    // try std.testing.expect(result.raw.status != .Running);
+                    step_count += 1;
+                }
+
+                // Verify we took some steps
+                try std.testing.expect(step_count > 0);
             }
 
-            // Verify we took some steps
-            try std.testing.expect(step_count > 0);
-
             // Test run to completion
-            executor = try createExecutorFromProgram(
-                allocator,
-                program,
-                &[_]MemoryPage{page},
-                &registers,
-                10000,
-            );
-            const result = try executor.runToCompletion();
-            defer result.deinit();
+            {
+                var executor = try createExecutorFromProgram(
+                    allocator,
+                    program,
+                    &[_]MemoryPage{page},
+                    &registers,
+                    10000,
+                );
+                defer executor.deinit();
 
-            try std.testing.expect(result.raw.status != .UnknownError);
-            try std.testing.expect(result.isFinished());
+                const result = try executor.runToCompletion();
+                defer result.deinit();
+
+                try std.testing.expect(result.isFinished());
+            }
         }
     }
 }
