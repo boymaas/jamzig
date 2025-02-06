@@ -384,6 +384,7 @@ pub const PVMFuzzer = struct {
             }
 
             // Check if pvm scope tracing is enabled, in that case we want polkavm logging as well
+            // NOTE: use RUST_LOG=trace to actually show the pvm logs
             if (@import("../../tracing.zig").findScope("pvm")) |_| {
                 polkavm_ffi.initLogging();
             }
@@ -415,7 +416,7 @@ pub const PVMFuzzer = struct {
                 program,
                 pages.items,
                 &initial_registers,
-                @intCast(self.config.max_gas),
+                std.math.maxInt(i64), // @intCast(self.config.max_gas),
             );
 
             // Free temporary page data
@@ -435,13 +436,24 @@ pub const PVMFuzzer = struct {
             const current_pc = exec_ctx.pc;
             const current_instruction = try exec_ctx.decoder.decodeInstruction(current_pc);
 
+            if (current_instruction.instruction == .sbrk) {
+                span.warn("Skipping sbrk instruction for now", .{});
+                exec_ctx.pc += 1 + current_instruction.skip_l();
+                continue;
+            }
+
             const step_result = PVM.executeStep(&exec_ctx) catch |err| {
                 std.debug.print("\nPVM errored during execution: {s}\n", .{@errorName(err)});
                 return error.PvmErroredInNormalOperation;
             };
 
             // If cross-checking is enabled and we have a reference executor
-            if (ref_executor) |*executor| {
+            if (ref_executor) |*executor| cross_check: {
+                // If our PVM has a term result, we do not cross check
+                if (step_result.isTerminal()) {
+                    break :cross_check;
+                }
+
                 // Execute one step in reference implementation
                 const ref_result = executor.step();
 

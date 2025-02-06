@@ -33,6 +33,10 @@ pub const ExecutionStepResult = union(enum) {
         out_of_gas: void, // ∞ Out of gas
         page_fault: u32, // F Page fault
     },
+
+    pub fn isTerminal(self: *const @This()) bool {
+        return self.* == .terminal;
+    }
 };
 
 pub const PVM = struct {
