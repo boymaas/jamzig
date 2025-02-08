@@ -88,8 +88,6 @@ pub const Memory = struct {
 
         /// Returns the index of the page containing the given address using binary search
         pub fn findPageIndexOfAddress(self: *const PageTable, address: u32) ?usize {
-            const page_addr = address & ~(@as(u32, Memory.Z_P) - 1);
-
             var left: usize = 0;
             var right: usize = self.pages.items.len;
 
@@ -97,9 +95,9 @@ pub const Memory = struct {
                 const mid = left + (right - left) / 2;
                 const page = self.pages.items[mid];
 
-                if (page.address <= page_addr and page_addr < page.address + Page.Size) {
+                if (page.address <= address and address < page.address + Page.Size) {
                     return mid;
-                } else if (page.address < page_addr) {
+                } else if (page.address < address) {
                     left = mid + 1;
                 } else {
                     right = mid;
@@ -149,42 +147,6 @@ pub const Memory = struct {
                 return std.math.order(ctx.address, item.address);
             }
         }.order;
-
-        // NOTE: untested
-        pub fn findPageByStartAddressOfPage(self: *const PageTable, address: u32) ?PageResult {
-            // do a binary search
-            const idx = std.sort.binarySearch(
-                *const Page,
-                self.pages,
-                address,
-                OrdPages,
-            ) orelse {
-                return null;
-            };
-
-            return PageResult{
-                .page = self.pages[idx],
-                .index = idx,
-                .page_table = self,
-            };
-        }
-
-        // NOTE: untestested
-        fn calculateSectionSizeInPages(self: *PageTable, section_start_address: u32) !u32 {
-            const span = trace.span(.calculate_heap_size);
-            defer span.deinit();
-
-            var current_page = self.findPageByStartAddressOfPage(section_start_address) orelse {
-                return error.CouldNotFindStartAddressOfSectionInPages;
-            };
-
-            var page_count = 1;
-            while (current_page.nextContiguous()) |next_page| : (page_count += 1) {
-                current_page = next_page;
-            }
-
-            return page_count;
-        }
     };
 
     page_table: PageTable,
@@ -223,7 +185,7 @@ pub const Memory = struct {
 
     pub const ViolationInfo = struct {
         violation_type: ViolationType,
-        address: u32,
+        address: u32, // aligned to page
         attempted_size: usize,
         page: ?*Page = null,
     };
@@ -501,7 +463,7 @@ pub const Memory = struct {
         const first_page = self.page_table.findPageOfAddresss(address) orelse {
             self.last_violation = ViolationInfo{
                 .violation_type = .NonAllocated,
-                .address = address,
+                .address = @divTrunc(address, Z_P) * Z_P,
                 .attempted_size = @sizeOf(T),
                 .page = null,
             };
@@ -615,7 +577,7 @@ pub const Memory = struct {
         const page = self.page_table.findPageOfAddresss(address) orelse {
             self.last_violation = ViolationInfo{
                 .violation_type = .NonAllocated,
-                .address = address,
+                .address = @divTrunc(address, Z_P) * Z_P, // since this falls outsize any page, we just round ti
                 .attempted_size = size,
                 .page = null,
             };

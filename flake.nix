@@ -79,6 +79,13 @@
       # nix run .#test
       apps.test = env.app [] "zig build test -- \"$@\"";
 
+      # nix run .#test
+      apps.test-release-fast = env.app [] "zig build test -Doptimize=ReleaseFast -- \"$@\"";
+
+      # nix run .#test-ffi
+      apps.test-ffi = env.app [] "zig build test-ffi -- \"$@\"";
+      apps.test-ffi-release-fast = env.app [] "zig build test-ffi -Doptimize=ReleaseFast -- \"$@\"";
+
       # nix run .#docs
       apps.docs = env.app [] "zig build docs -- \"$@\"";
 
@@ -110,6 +117,7 @@
                 "x86_64-apple-darwin"
                 "powerpc64-unknown-linux-gnu"
               ];
+              extensions = ["rust-analyzer" "rust-src"];
             })
             pkgs.qemu
           ];

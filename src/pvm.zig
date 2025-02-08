@@ -33,6 +33,10 @@ pub const ExecutionStepResult = union(enum) {
         out_of_gas: void, // ∞ Out of gas
         page_fault: u32, // F Page fault
     },
+
+    pub fn isTerminal(self: *const @This()) bool {
+        return self.* == .terminal;
+    }
 };
 
 pub const PVM = struct {
@@ -50,6 +54,7 @@ pub const PVM = struct {
     pub const ExecutionContext = @import("./pvm/execution_context.zig").ExecutionContext;
 
     pub const Result = ExecutionResult;
+    pub const StepResult = ExecutionStepResult;
 
     const updatePc = @import("./pvm/utils.zig").updatePc;
 
@@ -152,6 +157,7 @@ pub const PVM = struct {
 
     fn getInstructionGasCost(inst: InstructionWithArgs) u32 {
         return switch (inst.instruction) {
+            // .jump => 3,
             else => 1,
         };
     }
@@ -391,8 +397,7 @@ pub const PVM = struct {
             .sign_extend_16 => {
                 const args = i.args.TwoReg;
                 const value = @as(u16, @truncate(context.registers[args.second_register_index]));
-                context.registers[args.first_register_index] =
-                    @bitCast(@as(i64, @intCast(@as(i16, @bitCast(value)))));
+                context.registers[args.first_register_index] = signExtendToU64(u16, value);
             },
 
             .zero_extend_16 => {
@@ -509,7 +514,7 @@ pub const PVM = struct {
             .mul_imm_32 => {
                 const args = i.args.TwoRegOneImm;
                 const result = context.registers[args.second_register_index] *% args.immediate;
-                context.registers[args.first_register_index] = @as(u32, @truncate(result));
+                context.registers[args.first_register_index] = signExtendToU64(u32, @truncate(result));
             },
 
             .set_lt_u_imm => {
@@ -580,8 +585,8 @@ pub const PVM = struct {
             .shlo_l_imm_alt_32 => {
                 const args = i.args.TwoRegOneImm;
                 const shift = context.registers[args.second_register_index] & 0x1F;
-                const result = args.immediate << @intCast(shift);
-                context.registers[args.first_register_index] = result;
+                const result = @as(u32, @truncate(args.immediate)) << @intCast(shift);
+                context.registers[args.first_register_index] = signExtendToU64(u32, result);
             },
             .shlo_r_imm_alt_32 => {
                 const args = i.args.TwoRegOneImm;
@@ -767,23 +772,23 @@ pub const PVM = struct {
 
             .div_u_32 => {
                 const args = i.args.ThreeReg;
-                if (context.registers[args.second_register_index] == 0) {
+                const rega = @as(u32, @truncate(context.registers[args.first_register_index]));
+                const regb = @as(u32, @truncate(context.registers[args.second_register_index]));
+                if (regb == 0) {
                     context.registers[args.third_register_index] = 0xFFFFFFFFFFFFFFFF;
                 } else {
-                    context.registers[args.third_register_index] = signExtendToU64(u32, @divTrunc(
-                        @as(u32, @truncate(context.registers[args.first_register_index])),
-                        @as(u32, @truncate(context.registers[args.second_register_index])),
-                    ));
+                    context.registers[args.third_register_index] = signExtendToU64(u32, @divTrunc(rega, regb));
                 }
             },
 
             .div_s_32 => {
                 const args = i.args.ThreeReg;
-                if (context.registers[args.second_register_index] == 0) {
+                const rega = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.first_register_index]))));
+                const regb = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.second_register_index]))));
+
+                if (regb == 0) {
                     context.registers[args.third_register_index] = 0xFFFFFFFFFFFFFFFF;
                 } else {
-                    const rega = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.first_register_index]))));
-                    const regb = @as(i32, @bitCast(@as(u32, @truncate(context.registers[args.second_register_index]))));
                     if (rega == std.math.minInt(i32) and regb == -1) {
                         context.registers[args.third_register_index] = signExtendToU64(i32, rega);
                     } else {
@@ -800,7 +805,7 @@ pub const PVM = struct {
                 if (regb == 0) {
                     context.registers[args.third_register_index] = signExtendToU64(u32, rega);
                 } else {
-                    context.registers[args.third_register_index] = signExtendToU64(u32, @mod(rega, regb));
+                    context.registers[args.third_register_index] = signExtendToU64(u32, @rem(rega, regb));
                 }
             },
 

@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) !void {
     const tmpfile_module = b.dependency("tmpfile", .{}).module("tmpfile");
 
     // Rest of the existing build.zig implementation...
-    var rust_deps = try buildRustDependencies(b, target);
+    var rust_deps = try buildRustDependencies(b, target, optimize);
     defer rust_deps.deinit();
 
     const exe = b.addExecutable(.{
@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    rust_deps.statically_link_to(exe);
+    rust_deps.staticallyLinkTo(exe);
     b.installArtifact(exe);
 
     const pvm_fuzzer = b.addExecutable(.{
@@ -41,7 +41,8 @@ pub fn build(b: *std.Build) !void {
 
     pvm_fuzzer.root_module.addOptions("build_options", build_options);
     pvm_fuzzer.root_module.addImport("clap", clap_module);
-    // pvm_fuzzer.linkLibCpp();
+    pvm_fuzzer.linkLibCpp();
+    try rust_deps.staticallyLinkDepTo("polkavm_ffi", pvm_fuzzer);
     b.installArtifact(pvm_fuzzer);
 
     // Run Steps
@@ -79,7 +80,7 @@ pub fn build(b: *std.Build) !void {
     unit_tests.linkLibCpp();
 
     // Statically link our rust_deps to the unit tests
-    rust_deps.statically_link_to(unit_tests);
+    rust_deps.staticallyLinkTo(unit_tests);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
@@ -94,6 +95,18 @@ pub fn build(b: *std.Build) !void {
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    // Add FFI test step
+    const test_ffi_step = b.step("test-ffi", "Run FFI unit tests");
+
+    // Add all rust crate tests
+    const crypto_tests = try buildRustDepTests(b, "crypto", target, optimize);
+    const reed_solomon_tests = try buildRustDepTests(b, "reed_solomon", target, optimize);
+    const polkavm_tests = try buildRustDepTests(b, "polkavm_ffi", target, optimize);
+
+    test_ffi_step.dependOn(crypto_tests);
+    test_ffi_step.dependOn(reed_solomon_tests);
+    test_ffi_step.dependOn(polkavm_tests);
 }
 
 const RustDeps = struct {
@@ -111,11 +124,22 @@ const RustDeps = struct {
         try self.deps.append(RustDep{ .name = name, .step = step, .path = path, .fullpath = fullpath });
     }
 
-    pub fn statically_link_to(self: *RustDeps, comp_step: *std.Build.Step.Compile) void {
+    pub fn staticallyLinkTo(self: *RustDeps, comp_step: *std.Build.Step.Compile) void {
         for (self.deps.items) |dep| {
             comp_step.step.dependOn(dep.step);
             comp_step.addObjectFile(self.b.path(dep.fullpath));
         }
+    }
+
+    pub fn staticallyLinkDepTo(self: *RustDeps, name: []const u8, comp_step: *std.Build.Step.Compile) !void {
+        for (self.deps.items) |dep| {
+            if (std.mem.eql(u8, dep.name, name)) {
+                comp_step.step.dependOn(dep.step);
+                comp_step.addObjectFile(self.b.path(dep.fullpath));
+                return;
+            }
+        }
+        return error.DependencyNotFound;
     }
 
     fn deinit(self: *RustDeps) void {
@@ -133,13 +157,8 @@ const RustDep = struct {
     fullpath: []const u8,
 };
 
-fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Build.ResolvedTarget) !void {
-    const manifest_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/Cargo.toml", .{name});
-    defer b.allocator.free(manifest_path);
-
-    // Get target triple for Rust
-    // Get target triple for Rust
-    const target_triple = switch (target.result.cpu.arch) {
+fn getRustTargetTriple(target: std.Build.ResolvedTarget) ![]const u8 {
+    return switch (target.result.cpu.arch) {
         .x86_64 => switch (target.result.os.tag) {
             .macos => "x86_64-apple-darwin",
             .linux => switch (target.result.abi) {
@@ -158,7 +177,6 @@ fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Bu
             },
             else => return error.UnsupportedTarget,
         },
-        // big-endian target
         .powerpc64 => switch (target.result.os.tag) {
             .linux => switch (target.result.abi) {
                 .gnu => "powerpc64-unknown-linux-gnu",
@@ -168,19 +186,36 @@ fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Bu
         },
         else => return error.UnsupportedTarget,
     };
+}
 
-    var cmd = b.addSystemCommand(&[_][]const u8{
-        "cargo",
-        "build",
-        "--release",
-        "--target",
-        target_triple,
-        "--manifest-path",
-        manifest_path,
-    });
+fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Build.ResolvedTarget, optimize_mode: std.builtin.OptimizeMode) !void {
+    const manifest_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/Cargo.toml", .{name});
+    defer b.allocator.free(manifest_path);
+
+    const target_triple = try getRustTargetTriple(target);
+
+    var cmd = switch (optimize_mode) {
+        .Debug => b.addSystemCommand(&[_][]const u8{
+            "cargo",
+            "build",
+            "--target",
+            target_triple,
+            "--manifest-path",
+            manifest_path,
+        }),
+        .ReleaseSafe, .ReleaseSmall, .ReleaseFast => b.addSystemCommand(&[_][]const u8{
+            "cargo",
+            "build",
+            "--release",
+            "--target",
+            target_triple,
+            "--manifest-path",
+            manifest_path,
+        }),
+    };
 
     // Update target path to include the specific architecture
-    const target_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/target/{s}/release", .{ name, target_triple });
+    const target_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/target/{s}/{s}", .{ name, target_triple, if (optimize_mode == .Debug) "debug" else "release" });
     defer b.allocator.free(target_path);
 
     const lib_name = if (std.mem.eql(u8, name, "crypto"))
@@ -191,13 +226,44 @@ fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Bu
     try deps.register(target_path, lib_name, &cmd.step);
 }
 
-pub fn buildRustDependencies(b: *std.Build, target: std.Build.ResolvedTarget) !RustDeps {
+fn buildRustDepTests(b: *std.Build, name: []const u8, target: std.Build.ResolvedTarget, optimize_mode: std.builtin.OptimizeMode) !*std.Build.Step {
+    const manifest_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/Cargo.toml", .{name});
+    defer b.allocator.free(manifest_path);
+
+    const target_triple = try getRustTargetTriple(target);
+
+    // Create cargo test command
+    var cmd = switch (optimize_mode) {
+        .Debug => b.addSystemCommand(&[_][]const u8{
+            "cargo",
+            "test",
+            "--target",
+            target_triple,
+            "--manifest-path",
+            manifest_path,
+        }),
+        .ReleaseSafe, .ReleaseSmall, .ReleaseFast => b.addSystemCommand(&[_][]const u8{
+            "cargo",
+            "test",
+            "--release",
+            "--target",
+            target_triple,
+            "--manifest-path",
+            manifest_path,
+        }),
+    };
+
+    return &cmd.step;
+}
+
+pub fn buildRustDependencies(b: *std.Build, target: std.Build.ResolvedTarget, optimize_mode: std.builtin.OptimizeMode) !RustDeps {
     var deps = RustDeps.init(b);
     errdefer deps.deinit();
 
     // Build the rust libraries
-    try buildRustDep(b, &deps, "crypto", target);
-    try buildRustDep(b, &deps, "reed_solomon", target);
+    try buildRustDep(b, &deps, "crypto", target, optimize_mode);
+    try buildRustDep(b, &deps, "reed_solomon", target, optimize_mode);
+    try buildRustDep(b, &deps, "polkavm_ffi", target, optimize_mode);
 
     return deps;
 }

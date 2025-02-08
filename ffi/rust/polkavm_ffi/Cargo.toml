@@ -1,0 +1,15 @@
+[package]
+name = "polkavm-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+env_logger = "0.11.6"
+polkavm = { git = "https://github.com/paritytech/polkavm", package = "polkavm" }
+polkavm-common = { git = "https://github.com/paritytech/polkavm", package = "polkavm-common" }
+
+[profile.dev]
+overflow-checks = false # When true, makes fuzzing difficult due to all kinds of panics

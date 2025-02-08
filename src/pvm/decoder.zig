@@ -20,6 +20,7 @@ pub const Decoder = struct {
     pub const Error = error{
         InvalidInstruction,
         OutOfBounds,
+        TrapOutOfBounds,
         InvalidImmediateLength,
         MaxInstructionSizeInBytesExceeded,
         InvalidRegisterIndex,
@@ -214,6 +215,15 @@ pub const Decoder = struct {
 
     pub fn getMaskAt(self: *const @This(), mask_index: u32) u8 {
         if (mask_index < self.mask.len) {
+            // If this is the last byte of the mask, handle padding
+            if (mask_index == self.mask.len - 1) {
+                const remaining_bits = self.code.len % 8;
+                if (remaining_bits > 0) {
+                    // Set all bits after the code length to 1
+                    const padding_mask = @as(u8, 0xFF) << @intCast(remaining_bits);
+                    return self.mask[mask_index] | padding_mask;
+                }
+            }
             return self.mask[mask_index];
         }
 

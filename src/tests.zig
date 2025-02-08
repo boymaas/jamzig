@@ -31,6 +31,7 @@ comptime {
     _ = @import("pvm_test.zig");
     _ = @import("pvm_test/fuzzer/test.zig");
     _ = @import("pvm_test/fuzzer/program_generator.zig");
+    _ = @import("pvm_test/fuzzer/polkavm_ffi.zig");
 
     _ = @import("merkle.zig");
     _ = @import("merkle_test.zig");

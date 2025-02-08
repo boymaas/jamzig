@@ -64,6 +64,11 @@ pub fn generate(allocator: std.mem.Allocator, seed_gen: *SeedGenerator, instruct
         });
         i += 1;
     }
+
+    // Append an explicit trap instruction to ensure consistent program termination behavior.
+    // This harmonizes the program counter (PC) update semantics between our implementation
+    // and polkavm when handling out-of-bounds execution.
+    try instructions.append(.{ .instruction = .trap, .args = .{ .NoArgs = instlib.InstructionArgs.NoArgsType{ .no_of_bytes_to_skip = 1 } } });
     const result = try instructions.toOwnedSlice();
 
     return result;

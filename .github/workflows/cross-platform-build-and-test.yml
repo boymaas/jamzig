@@ -1,4 +1,4 @@
-name: CI
+name: Crossplatfrom build and test
 on:
   push:
     branches:
@@ -51,10 +51,16 @@ jobs:
           submodules: 'recursive'
       
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/flakehub-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
 
       - name: Build and test for ${{ matrix.target }}
+        if: ${{ matrix.can_test }}
+        run: |
+          # Build and test
+          nix run .#test -- --target ${{ matrix.target }} --progress
+
+      - name: Build and test-ffi for ${{ matrix.target }}
         if: ${{ matrix.can_test }}
         run: |
           # Build and test

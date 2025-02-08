@@ -65,6 +65,15 @@ blk: {
     break :blk configs;
 } else @as([]const ScopeConfig, &[_]ScopeConfig{});
 
+pub fn findScope(name: []const u8) ?*const ScopeConfig {
+    for (boption_scope_configs) |*scope| {
+        if (std.mem.startsWith(u8, scope.name, name)) {
+            return scope;
+        }
+    }
+    return null;
+}
+
 threadlocal var current_depth: usize = 0;
 threadlocal var current_span: ?*Span = null;
 

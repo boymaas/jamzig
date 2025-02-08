@@ -31,8 +31,9 @@ pub fn main() !void {
         \\-g, --max-gas <u32>       Maximum gas per test case (default: 1000000)
         \\-b, --max-blocks <u32>    Maximum number of basic blocks per program (default: 32)
         \\-S, --test-seed <u64>     Rerun a single testcase with this seed
-        \\-m, --mut-prob <usize>       Program mutation probability (0-1K, default: 10)
-        \\-f, --flip-prob <usize>      Bit flip probability (0-1K, default: 1)
+        \\-m, --mut-prob <usize>    Program mutation probability (0-1K, default: 10)
+        \\-f, --flip-prob <usize>   Bit flip probability (0-1K, default: 1)
+        \\-x, --cross-check         Enable cross-checking against reference implementation
     );
 
     var diag = clap.Diagnostic{};
@@ -62,6 +63,7 @@ pub fn main() !void {
             .program_mutation_probability = if (res.args.@"mut-prob") |prob| prob else 10,
             .bit_flip_probability = if (res.args.@"flip-prob") |prob| prob else 1,
         },
+        .enable_cross_check = res.args.@"cross-check" != 0,
     };
 
     // Initialize and run fuzzer
@@ -70,6 +72,7 @@ pub fn main() !void {
 
     // Print configuration
     if (res.args.@"test-seed") |test_case_seed| {
+        @import("./pvm_test/fuzzer/polkavm_ffi.zig").initLogging();
         std.debug.print("\nRunning single test case with seed: {d}\n", .{test_case_seed});
         _ = try fuzzer.runSingleTest(test_case_seed);
         return;
@@ -84,7 +87,8 @@ pub fn main() !void {
     std.debug.print("Max Instructions: {d}\n", .{config.max_instruction_count});
     std.debug.print("Verbose: {}\n", .{config.verbose});
     std.debug.print("Mutation Probability: {d}/1M\n", .{config.mutation.program_mutation_probability});
-    std.debug.print("Bit Flip Probability: {d}/1K\n\n", .{config.mutation.bit_flip_probability});
+    std.debug.print("Bit Flip Probability: {d}/1K\n", .{config.mutation.bit_flip_probability});
+    std.debug.print("Cross-Check: {}\n\n", .{config.enable_cross_check});
 
     var run = try fuzzer.run();
 
