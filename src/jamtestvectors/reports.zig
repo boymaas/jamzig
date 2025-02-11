@@ -121,6 +121,7 @@ pub const ErrorCode = enum(u8) {
     too_many_dependencies = 19,
     segment_root_lookup_invalid = 20,
     bad_signature = 21,
+    work_report_too_big = 22,
 };
 
 pub const Output = union(enum) {

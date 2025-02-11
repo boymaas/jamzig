@@ -161,6 +161,14 @@ pub const WorkExecResult = union(enum(u8)) {
     bad_code: void = 3,
     code_oversize: void = 4,
 
+    /// length of result
+    pub fn len(self: *const @This()) usize {
+        switch (self.*) {
+            .ok => |data| return data.len,
+            else => return 0,
+        }
+    }
+
     // TODO: make a good type here
     pub fn getOutputHash(self: *const @This(), comptime H: type) !OpaqueHash {
         var hasher = H.init(.{});
@@ -220,8 +228,8 @@ pub const WorkExecResult = union(enum(u8)) {
         return switch (tag) {
             0 => blk: {
                 const codec = @import("codec.zig");
-                const len = try codec.readInteger(reader);
-                const data = try alloc.alloc(u8, len);
+                const length = try codec.readInteger(reader);
+                const data = try alloc.alloc(u8, length);
                 try reader.readNoEof(data);
                 break :blk WorkExecResult{ .ok = data };
             },

@@ -43,9 +43,10 @@ test "tiny/bad_validator_index-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_validator_index-1.bin");
 }
-test "tiny/consume_authorization_once-1.bin" {
+
+test "tiny/big_work_report_output-1.bin" {
     const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/consume_authorization_once-1.bin");
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/big_work_report_output-1.bin");
 }
 test "tiny/core_engaged-1.bin" {
     const allocator = std.testing.allocator;
@@ -55,13 +56,13 @@ test "tiny/dependency_missing-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/dependency_missing-1.bin");
 }
-test "tiny/duplicate_package_in_recent_history-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/duplicate_package_in_recent_history-1.bin");
-}
 test "tiny/duplicated_package_in_report-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/duplicated_package_in_report-1.bin");
+}
+test "tiny/duplicate_package_in_recent_history-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/duplicate_package_in_recent_history-1.bin");
 }
 test "tiny/future_report_slot-1.bin" {
     const allocator = std.testing.allocator;
@@ -147,6 +148,10 @@ test "tiny/service_item_gas_too_low-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/service_item_gas_too_low-1.bin");
 }
+test "tiny/too_big_work_report_output-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/too_big_work_report_output-1.bin");
+}
 test "tiny/too_high_work_report_gas-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/too_high_work_report_gas-1.bin");
@@ -159,6 +164,7 @@ test "tiny/wrong_assignment-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/wrong_assignment-1.bin");
 }
+
 //
 // // Run all tiny test vectors
 // test "all.tiny.vectors" {

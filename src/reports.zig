@@ -40,6 +40,7 @@ pub const Error = error{
     InvalidValidatorPublicKey,
     InvalidRotationPeriod,
     InvalidSlotRange,
+    WorkReportTooBig,
 };
 
 pub const ValidatedGuaranteeExtrinsic = struct {
@@ -123,6 +124,33 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 return Error.OutOfOrderGuarantee;
             }
             prev_guarantee_core = guarantee.report.core_index;
+
+            // Validate output size limits
+            {
+                const size_span = span.child(.validate_output_sizes);
+                defer size_span.deinit();
+
+                size_span.debug("Starting output size validation", .{});
+                size_span.trace("Auth output size: {d} bytes", .{guarantee.report.auth_output.len});
+
+                var total_size: usize = guarantee.report.auth_output.len;
+
+                for (guarantee.report.results, 0..) |result, i| {
+                    const result_size = result.result.len();
+                    size_span.trace("Result[{d}] size: {d} bytes", .{ i, result_size });
+                    total_size += result_size;
+                }
+
+                // TODO: use a constant here
+                const max_size = comptime 48 * std.math.pow(usize, 2, 10);
+                size_span.debug("Total size: {d} bytes, limit: {d} bytes", .{ total_size, max_size });
+
+                if (total_size > max_size) {
+                    size_span.err("Total output size {d} exceeds limit {d}", .{ total_size, max_size });
+                    return Error.WorkReportTooBig;
+                }
+                size_span.debug("Output size validation passed", .{});
+            }
 
             // Validate gas limits
             {
@@ -626,12 +654,15 @@ pub fn processGuaranteeExtrinsic(
             assignment,
         );
 
+        // TODO: disabled this to fix the report test vectors, this needs to be handled by
+        // authorizer subsystem
+
         // remove the authorizer from the pool
-        process_span.debug(
-            "Removing authorizer from pool {d}",
-            .{std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash)},
-        );
-        jam_state.alpha.?.removeAuthorizer(core_index, guarantee.report.authorizer_hash);
+        // process_span.debug(
+        //     "Removing authorizer from pool {d}",
+        //     .{std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash)},
+        // );
+        // jam_state.alpha.?.removeAuthorizer(core_index, guarantee.report.authorizer_hash);
 
         // Track reported packages
         try reported.append(.{

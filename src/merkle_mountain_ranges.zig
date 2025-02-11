@@ -1,14 +1,15 @@
 const std = @import("std");
-
 const utils = @import("merkle/utils.zig");
-
 const types = @import("merkle/types.zig");
+const encoder = @import("codec/encoder.zig");
 
 const Hash = types.Hash;
 const Entry = ?Hash;
 
+/// MMR is defined as a sequence of optional peaks per graypaper E.2
 pub const MMR = std.ArrayList(Entry);
 
+/// Filter nulls from the MMR sequence to get the actual peaks
 pub fn filter_nulls(mrange: []const Entry, buffer: []Hash) []Hash {
     var count: usize = 0;
     for (mrange) |maybe_hash| {
@@ -20,68 +21,77 @@ pub fn filter_nulls(mrange: []const Entry, buffer: []Hash) []Hash {
     return buffer[0..count];
 }
 
-/// MMR Super Peak function
+/// Implements MR super peak function
 pub fn super_peak(mrange: []const Entry, hasher: anytype) Hash {
     // The maximum number of peaks for n leaves is floor(log2(n)) + 1. For
     // practical MMR sizes (up to millions of entries), this means we rarely
     // need more than 32 peaks. (8.589.934.591)
     std.debug.assert(mrange.len <= 32);
 
-    var buffer: [32]Hash = undefined; // Adjust size based on your needs
+    var buffer: [32]Hash = undefined;
     const filtered = filter_nulls(mrange, &buffer);
     return super_peak_inner(filtered, hasher);
 }
 
 pub fn super_peak_inner(h: []Hash, hasher: anytype) Hash {
+    // Base case: empty sequence returns zero hash
     if (h.len == 0) {
         return [_]u8{0} ** 32;
     }
 
+    // Single peak case returns the peak directly
     if (h.len == 1) {
-        return h[0]; // this is always set on len == 1
+        return h[0];
     }
 
-    var message: [68]u8 = undefined;
-    @memcpy(message[0..4], "node");
-
+    // Recursive case: combine peaks according to specification
+    // Recursively process h[0..(h.len-1)] peaks
     var mr = super_peak_inner(h[0..(h.len - 1)], hasher);
-    @memcpy(message[4..36], &mr);
-    @memcpy(message[36..68], &h[h.len - 1]);
-
-    var H = hasher.init(.{});
-    H.update(&message);
 
     var hash: [32]u8 = undefined;
+    var H = hasher.init(.{});
+    H.update("peak");
+    H.update(&mr);
+    H.update(&h[h.len - 1]);
     H.final(&hash);
+
     return hash;
 }
 
+/// Implements A append function from graypaper equation E.8
 pub fn append(mrange: *MMR, leaf: Hash, hasher: anytype) !void {
     _ = try P(mrange, leaf, 0, hasher);
-    return;
 }
 
+/// Implements P helper function from graypaper equation E.8
 pub fn P(mrange: *MMR, leaf: Hash, n: usize, hasher: anytype) !*MMR {
     if (n >= mrange.items.len) {
+        // Base case: extend MMR with new leaf
         try mrange.append(leaf);
         return mrange;
-    } else if (n < mrange.items.len and mrange.items[n] == null) {
-        return R(mrange, n, leaf);
-    } else {
-        var H = hasher.init(.{});
-        H.update(&mrange.items[n].?);
-        H.update(&leaf);
-        var hash_of_item_and_leaf: [32]u8 = undefined;
-        H.final(&hash_of_item_and_leaf);
-        return P(
-            try R(mrange, n, null),
-            hash_of_item_and_leaf,
-            n + 1,
-            hasher,
-        );
     }
+
+    if (mrange.items[n] == null) {
+        // Available slot case: place leaf
+        return R(mrange, n, leaf);
+    }
+
+    // Combine and recurse case per specification
+    var combined: [32]u8 = undefined;
+    var H = hasher.init(.{});
+    H.update(&mrange.items[n].?);
+    H.update(&leaf);
+    H.final(&combined);
+
+    return P(
+        try R(mrange, n, null),
+        combined,
+        n + 1,
+        hasher,
+    );
 }
 
+/// Implements R helper function from graypaper
 pub fn R(s: *MMR, i: usize, v: Entry) !*MMR {
     if (std.meta.eql(s.items[i], v)) {
         return s;
@@ -90,17 +100,16 @@ pub fn R(s: *MMR, i: usize, v: Entry) !*MMR {
     return s;
 }
 
-const encoder = @import("codec/encoder.zig");
-
-// TODO: this is covered in the default codec implementation
-// as such this can be removed
+/// Implements EM encoding function from graypaper equation E.9
 pub fn encode(mrange: []?Hash, writer: anytype) !void {
+    // First encode the nulls as a sequence of bits
     try writer.writeAll(encoder.encodeInteger(mrange.len).as_slice());
 
+    // Then encode each peak
     for (mrange) |maybe_hash| {
-        if (maybe_hash) |leaf| {
+        if (maybe_hash) |hash| {
             try writer.writeByte(1);
-            try writer.writeAll(&leaf);
+            try writer.writeAll(&hash);
         } else {
             try writer.writeByte(0);
         }
