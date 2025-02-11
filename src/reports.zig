@@ -654,12 +654,15 @@ pub fn processGuaranteeExtrinsic(
             assignment,
         );
 
+        // TODO: disabled this to fix the report test vectors, this needs to be handled by
+        // authorizer subsystem
+
         // remove the authorizer from the pool
-        process_span.debug(
-            "Removing authorizer from pool {d}",
-            .{std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash)},
-        );
-        jam_state.alpha.?.removeAuthorizer(core_index, guarantee.report.authorizer_hash);
+        // process_span.debug(
+        //     "Removing authorizer from pool {d}",
+        //     .{std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash)},
+        // );
+        // jam_state.alpha.?.removeAuthorizer(core_index, guarantee.report.authorizer_hash);
 
         // Track reported packages
         try reported.append(.{

@@ -43,6 +43,7 @@ test "tiny/bad_validator_index-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_validator_index-1.bin");
 }
+
 test "tiny/big_work_report_output-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/big_work_report_output-1.bin");
