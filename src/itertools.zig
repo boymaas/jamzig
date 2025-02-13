@@ -1,5 +1,53 @@
 const std = @import("std");
 
+/// Collects iterator values into an owned slice
+pub fn collectIter(
+    comptime T: type,
+    allocator: std.mem.Allocator,
+    iterator: anytype,
+) ![]T {
+    var list = std.ArrayList(T).init(allocator);
+    errdefer list.deinit();
+
+    while (try iterator.next()) |item| {
+        try list.append(item);
+    }
+
+    return try list.toOwnedSlice();
+}
+
+test "collectIter - basic usage" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    // Create a simple number iterator
+    const NumberIterator = struct {
+        current: u32 = 0,
+        max: u32,
+
+        pub fn init(max: u32) @This() {
+            return .{ .max = max };
+        }
+
+        pub fn next(self: *@This()) !?u32 {
+            if (self.current >= self.max) return null;
+            const value = self.current;
+            self.current += 1;
+            return value;
+        }
+    };
+
+    // Test collecting numbers 0 through 4
+    var iter = NumberIterator.init(5);
+    const numbers = try collectIter(u32, allocator, &iter);
+    defer allocator.free(numbers);
+
+    try testing.expectEqual(@as(usize, 5), numbers.len);
+    for (numbers, 0..) |num, i| {
+        try testing.expectEqual(@as(u32, @intCast(i)), num);
+    }
+}
+
 /// Iterates over a slice of T and returns a field on the type
 pub fn MapIterator(T: type, comptime accessor: []const u8) type {
     return struct {
