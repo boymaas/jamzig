@@ -41,7 +41,7 @@ pub fn format(
 }
 
 // Test helper to demonstrate formatting
-test "Xi format demo" {
+test "Xi.format" {
     // Setup test data
     const epoch_size = 4;
     var xi = Xi(epoch_size).init(std.testing.allocator);
@@ -49,13 +49,10 @@ test "Xi format demo" {
 
     // Add some test entries
     const work_report_hash1 = [_]u8{0xA1} ++ [_]u8{0} ** 31;
-    const segment_root1 = [_]u8{0xB1} ++ [_]u8{0} ** 31;
     const work_report_hash2 = [_]u8{0xA2} ++ [_]u8{0} ** 31;
-    const segment_root2 = [_]u8{0xB2} ++ [_]u8{0} ** 31;
 
-    try xi.addEntryToTimeSlot(1, work_report_hash1, segment_root1);
-    try xi.addEntryToTimeSlot(1, work_report_hash2, segment_root2);
-    try xi.addEntryToTimeSlot(3, work_report_hash2, segment_root2);
+    try xi.addWorkPackage(work_report_hash1);
+    try xi.addWorkPackage(work_report_hash2);
 
     // Print formatted output
     std.debug.print("\n{}\n", .{xi});
