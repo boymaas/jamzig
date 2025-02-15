@@ -36,18 +36,18 @@ test "Theta - format" {
     var theta = Theta(4).init(allocator);
     defer theta.deinit();
 
-    const Entry = @import("../available_reports.zig").Entry;
+    const WorkReportsAndDeps = @import("../available_reports.zig").Theta(4).WorkReportAndDeps;
     const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
 
     // Create a report with some test data
-    var entry1 = Entry{
+    var entry1 = WorkReportsAndDeps{
         .work_report = createEmptyWorkReport([_]u8{1} ** 32),
         .dependencies = .{},
     };
     try entry1.dependencies.put(allocator, [_]u8{2} ** 32, {});
     try entry1.dependencies.put(allocator, [_]u8{3} ** 32, {});
 
-    var entry2 = Entry{
+    var entry2 = WorkReportsAndDeps{
         .work_report = createEmptyWorkReport([_]u8{4} ** 32),
         .dependencies = .{},
     };

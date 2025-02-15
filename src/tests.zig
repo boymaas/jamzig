@@ -1,4 +1,6 @@
 comptime {
+    _ = @import("itertools.zig");
+
     _ = @import("jamtestvectors/loader.zig");
     _ = @import("jamtestvectors/safrole.zig");
     _ = @import("jamtestvectors/codec.zig");

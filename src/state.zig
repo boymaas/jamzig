@@ -303,26 +303,40 @@ pub fn JamStateView(comptime params: Params) type {
     };
 }
 
-pub const Alpha = @import("authorizer_pool.zig").Alpha;
-pub const Beta = @import("recent_blocks.zig").RecentHistory;
+// Core imports
+pub const authorization = @import("authorization.zig");
+pub const recent_blocks = @import("recent_blocks.zig");
+pub const accumulated_reports = @import("accumulated_reports.zig");
+pub const available_reports = @import("available_reports.zig");
+pub const safrole_state = @import("safrole_state.zig");
+pub const services = @import("services.zig");
+pub const pending_reports = @import("pending_reports.zig");
+pub const authorization_queue = @import("authorization_queue.zig");
+pub const services_priviledged = @import("services_priviledged.zig");
+pub const disputes = @import("disputes.zig");
+pub const validator_stats = @import("validator_stats.zig");
 
-// History and Queuing or work reports
-pub const Xi = @import("accumulated_reports.zig").Xi;
-pub const Theta = @import("available_reports.zig").Theta;
+// State components
+pub const Alpha = authorization.Alpha;
+pub const Beta = recent_blocks.RecentHistory;
 
-// TODO: move this to a seperate file
-pub const Gamma = @import("safrole_state.zig").Gamma;
-pub const Delta = @import("services.zig").Delta;
+// History and Queuing of work reports
+pub const Xi = accumulated_reports.Xi;
+pub const Theta = available_reports.Theta;
+
+// Validator and network state
+pub const Gamma = safrole_state.Gamma;
+pub const Delta = services.Delta;
 pub const Eta = types.Eta;
 pub const Iota = types.Iota;
 pub const Kappa = types.Kappa;
 pub const Lambda = types.Lambda;
-pub const Rho = @import("pending_reports.zig").Rho;
+pub const Rho = pending_reports.Rho;
 pub const Tau = types.TimeSlot;
-pub const Phi = @import("authorizer_queue.zig").Phi;
-pub const Chi = @import("services_priviledged.zig").Chi;
-pub const Psi = @import("disputes.zig").Psi;
-pub const Pi = @import("validator_stats.zig").Pi;
+pub const Phi = authorization_queue.Phi;
+pub const Chi = services_priviledged.Chi;
+pub const Psi = disputes.Psi;
+pub const Pi = validator_stats.Pi;
 
 // Helpers to init decoupled state object by params
 pub const init = @import("state_params_init.zig");

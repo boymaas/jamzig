@@ -1,5 +1,85 @@
 const std = @import("std");
 
+/// Collects into newly created ArrayList with capacity
+pub fn collectIntoArrayList(
+    comptime T: type,
+    allocator: std.mem.Allocator,
+    iterator: anytype,
+    options: struct {
+        /// Initial capacity for the array list, if null uses ArrayList default
+        initial_capacity: ?usize = null,
+    },
+) !std.ArrayList(T) {
+    var list = if (options.initial_capacity) |capacity|
+        try std.ArrayList(T).initCapacity(allocator, capacity)
+    else
+        std.ArrayList(T).init(allocator);
+    errdefer list.deinit();
+
+    try collectIntoAppendable(iterator, &list);
+    return list;
+}
+
+test "collectIntoArrayList - basic usage" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    // Create a simple number iterator
+    const NumberIterator = struct {
+        current: u32 = 0,
+        max: u32,
+
+        pub fn init(max: u32) @This() {
+            return .{ .max = max };
+        }
+
+        pub fn next(self: *@This()) !?u32 {
+            if (self.current >= self.max) return null;
+            const value = self.current;
+            self.current += 1;
+            return value;
+        }
+    };
+
+    // Test collecting numbers 0 through 4
+    var iter = NumberIterator.init(5);
+    var list = try collectIntoArrayList(
+        u32,
+        allocator,
+        &iter,
+        .{ .initial_capacity = 8 },
+    );
+    defer list.deinit();
+
+    try testing.expectEqual(@as(usize, 5), list.items.len);
+    for (list.items, 0..) |num, i| {
+        try testing.expectEqual(@as(u32, @intCast(i)), num);
+    }
+}
+
+test "collectIntoArrayList - empty iterator" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const EmptyIterator = struct {
+        pub fn next(self: *@This()) !?u32 {
+            _ = self;
+            return null;
+        }
+    };
+
+    var iter = EmptyIterator{};
+    var list = try collectIntoArrayList(
+        u32,
+        allocator,
+        &iter,
+        .{},
+    );
+    defer list.deinit();
+
+    try testing.expectEqual(@as(usize, 0), list.items.len);
+}
+
 /// Collects iterator values into an appendable container (e.g. ArrayList)
 pub fn collectIntoAppendable(
     iterator: anytype,
@@ -46,7 +126,7 @@ test "collectIntoAppendable - basic usage" {
     var list = std.ArrayList(u32).init(allocator);
     defer list.deinit();
 
-    try collectIntoAppendable(u32, &iter, &list);
+    try collectIntoAppendable(&iter, &list);
     const numbers = list.items;
 
     try testing.expectEqual(@as(usize, 5), numbers.len);
@@ -82,7 +162,7 @@ test "collectIntoSet - basic usage" {
     var set = std.AutoHashMap(u32, void).init(allocator);
     defer set.deinit();
 
-    try collectIntoSet(u32, &iter, &set);
+    try collectIntoSet(&iter, &set);
 
     // Verify set size (should be 4 unique numbers)
     try testing.expectEqual(@as(usize, 4), set.count());

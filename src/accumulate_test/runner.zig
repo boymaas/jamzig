@@ -22,7 +22,7 @@ pub fn processAccumulateReports(
         params,
         allocator,
         test_case.input.reports,
-        test_case.input.slot,
+        params.Time().init(test_case.pre_state.slot, test_case.input.slot),
         delta,
         theta,
         chi,

@@ -127,7 +127,7 @@ test "tiny/process_one_immediate_report-1.bin" {
 pub const FULL_PARAMS = jam_params.FULL_PARAMS;
 
 fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, test_bin: []const u8) !void {
-    std.debug.print("Running test: {s}\n", .{test_bin});
+    std.debug.print("\nRunning test: {s}\n", .{test_bin});
 
     var test_vector = try loader.loadAndDeserializeTestVector(
         tvector.TestCase,

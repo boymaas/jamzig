@@ -68,7 +68,7 @@ pub const RefineContext = struct {
     beefy_root: BeefyRoot,
     lookup_anchor: HeaderHash,
     lookup_anchor_slot: TimeSlot,
-    prerequisites: []OpaqueHash,
+    prerequisites: []WorkPackageHash,
 
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){

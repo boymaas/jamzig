@@ -75,7 +75,7 @@ pub fn convertReadyQueue(
 
         // Convert each record in the slot
         for (slot_records) |slot_record| {
-            const entry = try state_theta.Entry.initWithDependencies(
+            const entry = try state_theta.WorkReportAndDeps.initWithDependencies(
                 allocator,
                 try slot_record.report.deepClone(allocator),
                 slot_record.dependencies,
@@ -95,10 +95,11 @@ pub fn convertAccumulated(
     var xi = state.Xi(epoch_size).init(allocator);
     errdefer xi.deinit();
 
-    for (accumulated.items, 0..) |queue_items, time_slot| {
+    for (accumulated.items) |queue_items| {
         for (queue_items) |queue_item| {
-            try xi.addWorkPackageToTimeSlot(@as(u32, @intCast(time_slot)), queue_item);
+            try xi.addWorkPackage(queue_item);
         }
+        try xi.shiftDown();
     }
 
     return xi;

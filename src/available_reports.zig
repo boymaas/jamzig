@@ -12,6 +12,8 @@ pub fn Theta(comptime epoch_size: usize) type {
         entries: [epoch_size]SlotEntries,
         allocator: std.mem.Allocator,
 
+        pub const Entry = WorkReportAndDeps;
+
         pub fn init(allocator: std.mem.Allocator) @This() {
             return .{
                 .entries = [_]SlotEntries{.{}} ** epoch_size,
@@ -23,12 +25,26 @@ pub fn Theta(comptime epoch_size: usize) type {
         pub fn addEntryToTimeSlot(
             self: *@This(),
             time_slot: types.TimeSlot,
-            entry: Entry,
+            entry: WorkReportAndDeps,
         ) !void {
             try self.entries[time_slot].append(self.allocator, entry);
         }
 
-        pub fn getReportsAtSlot(self: *const @This(), time_slot: types.TimeSlot) []const Entry {
+        /// Add a work report to the newest time slot (last slot in the array)
+        pub fn addWorkReport(
+            self: *@This(),
+            time_slot: types.TimeSlot,
+            work_report: WorkReport,
+        ) !void {
+            // Create WorkReportAndDeps from the work report
+            var entry = try WorkReportAndDeps.fromWorkReport(self.allocator, work_report);
+            errdefer entry.deinit(self.allocator);
+
+            // Add to the newest time slot (last slot in the array)
+            try self.addEntryToTimeSlot(time_slot, entry);
+        }
+
+        pub fn getReportsAtSlot(self: *const @This(), time_slot: types.TimeSlot) []const WorkReportAndDeps {
             return self.entries[time_slot].items;
         }
 
@@ -44,7 +60,7 @@ pub fn Theta(comptime epoch_size: usize) type {
 
             theta: *Theta(epoch_size),
 
-            pub fn next(self: *@This()) ?*Entry {
+            pub fn next(self: *@This()) ?*WorkReportAndDeps {
                 // If we exhausted all epochs we are done
                 if (self.processed_epochs >= epoch_size) {
                     return null;
@@ -69,8 +85,9 @@ pub fn Theta(comptime epoch_size: usize) type {
             }
         };
 
-        /// Creates an iterator returning all the Entries start from epoch
-        pub fn iterator(self: *@This(), starting_epoch: u32) Iterator {
+        /// Creates an iterator returning all the entries starting from starting epoch
+        /// wrapping around until all epochs are covered
+        pub fn iteratorStartingFrom(self: *@This(), starting_epoch: u32) Iterator {
             return .{ .theta = self, .starting_epoch = starting_epoch };
         }
 
@@ -124,20 +141,20 @@ pub fn Theta(comptime epoch_size: usize) type {
     };
 }
 
-pub const SlotEntries = std.ArrayListUnmanaged(Entry);
+pub const SlotEntries = std.ArrayListUnmanaged(WorkReportAndDeps);
 
-pub const Entry = struct {
+pub const WorkReportAndDeps = struct {
     /// a work report
     work_report: WorkReport,
     /// set of work package hashes
-    dependencies: std.AutoHashMapUnmanaged([32]u8, void),
+    dependencies: std.AutoArrayHashMapUnmanaged(types.WorkPackageHash, void),
 
     pub fn initWithDependencies(
         allocator: std.mem.Allocator,
         work_report: WorkReport,
         dependencies: []const [32]u8,
-    ) !Entry {
-        var deps = std.AutoHashMapUnmanaged([32]u8, void){};
+    ) !WorkReportAndDeps {
+        var deps = std.AutoArrayHashMapUnmanaged([32]u8, void){};
         errdefer deps.deinit(allocator);
 
         // Add all dependencies to the hash map
@@ -145,28 +162,39 @@ pub const Entry = struct {
             try deps.put(allocator, dep, {});
         }
 
-        return Entry{
+        return WorkReportAndDeps{
             .work_report = work_report,
             .dependencies = deps,
         };
     }
 
-    pub fn deinit(self: *Entry, allocator: std.mem.Allocator) void {
+    pub fn fromWorkReport(allocator: std.mem.Allocator, work_report: WorkReport) !WorkReportAndDeps {
+        var work_report_and_deps = @This(){ .work_report = work_report, .dependencies = .{} };
+        for (work_report.context.prerequisites) |work_package_hash| {
+            try work_report_and_deps.dependencies.put(allocator, work_package_hash, {});
+        }
+        for (work_report.segment_root_lookup) |srl| {
+            try work_report_and_deps.dependencies.put(allocator, srl.work_package_hash, {});
+        }
+        return work_report_and_deps;
+    }
+
+    pub fn deinit(self: *WorkReportAndDeps, allocator: std.mem.Allocator) void {
         self.dependencies.deinit(allocator);
         self.* = undefined;
     }
 
-    pub fn deepClone(self: Entry, allocator: std.mem.Allocator) !Entry {
+    pub fn deepClone(self: WorkReportAndDeps, allocator: std.mem.Allocator) !WorkReportAndDeps {
         // Create a new dependencies map
         var cloned_dependencies = std.AutoHashMapUnmanaged([32]u8, void){};
 
         // Clone each dependency key-value pair
-        var iterator = self.dependencies.iterator();
-        while (iterator.next()) |entry| {
+        var iter = self.dependencies.iterator();
+        while (iter.next()) |entry| {
             try cloned_dependencies.put(allocator, entry.key_ptr.*, {});
         }
 
-        return Entry{
+        return WorkReportAndDeps{
             .work_report = try self.work_report.deepClone(allocator),
             .dependencies = cloned_dependencies,
         };
@@ -187,11 +215,11 @@ test "Theta - getReportsAtSlot" {
     const work_report2 = createEmptyWorkReport([_]u8{2} ** 32);
 
     // Create two sample Entries
-    const entry1 = Entry{
+    const entry1 = Theta(12).WorkReportAndDeps{
         .work_report = work_report1,
         .dependencies = .{},
     };
-    const entry2 = Entry{
+    const entry2 = Theta(12).WorkReportAndDeps{
         .work_report = work_report2,
         .dependencies = .{},
     };
@@ -221,7 +249,7 @@ test "Theta - init, add entries, and verify" {
     const work_report = createEmptyWorkReport([_]u8{1} ** 32);
 
     // Create a sample Entry
-    var entry = Entry{
+    var entry = Theta(12).WorkReportAndDeps{
         .work_report = work_report,
         .dependencies = .{},
     };
@@ -254,15 +282,15 @@ test "Theta - iterator basic functionality" {
     const work_report3 = createEmptyWorkReport([_]u8{3} ** 32);
 
     // Create entries and add them to different slots
-    const entry1 = Entry{
+    const entry1 = Theta(12).WorkReportAndDeps{
         .work_report = work_report1,
         .dependencies = .{},
     };
-    const entry2 = Entry{
+    const entry2 = Theta(12).WorkReportAndDeps{
         .work_report = work_report2,
         .dependencies = .{},
     };
-    const entry3 = Entry{
+    const entry3 = Theta(12).WorkReportAndDeps{
         .work_report = work_report3,
         .dependencies = .{},
     };
@@ -273,14 +301,14 @@ test "Theta - iterator basic functionality" {
     try theta.addEntryToTimeSlot(11, entry3);
 
     // Test iterator starting from slot 0
-    var iterator = theta.iterator(0);
+    var iterator = theta.iteratorStartingFrom(0);
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{1} ** 32));
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{2} ** 32));
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{3} ** 32));
     try testing.expect(iterator.next() == null);
 
     // Test iterator starting from slot 8
-    iterator = theta.iterator(8);
+    iterator = theta.iteratorStartingFrom(8);
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{3} ** 32));
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{1} ** 32));
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{2} ** 32));
@@ -295,23 +323,23 @@ test "Theta - iterator multiple entries per slot" {
     defer theta.deinit();
 
     // Create entries with distinct IDs
-    const entry1 = Entry{
+    const entry1 = Theta(12).WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{1} ** 32),
         .dependencies = .{},
     };
-    const entry2 = Entry{
+    const entry2 = Theta(12).WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{2} ** 32),
         .dependencies = .{},
     };
-    const entry3 = Entry{
+    const entry3 = Theta(12).WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{3} ** 32),
         .dependencies = .{},
     };
-    const entry4 = Entry{
+    const entry4 = Theta(12).WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{4} ** 32),
         .dependencies = .{},
     };
-    const entry5 = Entry{
+    const entry5 = Theta(12).WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{5} ** 32),
         .dependencies = .{},
     };
@@ -328,7 +356,7 @@ test "Theta - iterator multiple entries per slot" {
 
     // Test iterator starting from slot 2
     {
-        var iterator = theta.iterator(2);
+        var iterator = theta.iteratorStartingFrom(2);
 
         // Should find entry in slot 3
         const first = iterator.next().?;
@@ -352,7 +380,7 @@ test "Theta - iterator multiple entries per slot" {
 
     // Test iterator starting from slot 6 (should wrap around)
     {
-        var iterator = theta.iterator(6);
+        var iterator = theta.iteratorStartingFrom(6);
 
         // Should find two entries in slot 8
         const first = iterator.next().?;
