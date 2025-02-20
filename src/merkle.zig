@@ -1,9 +1,6 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
-
 const types = @import("merkle/types.zig");
-
 const Key = types.Key;
 const Hash = types.Hash;
 
@@ -50,8 +47,33 @@ fn bit(k: Key, i: usize) bool {
     return (k[i >> 3] & (@as(u8, 0x80) >> @intCast(i & 7))) != 0;
 }
 
-// TODO: optimize this with partitioning algo
-fn merkle(allocator: Allocator, kvs: []const Entry, i: usize) !Hash {
+fn partition(kvs: []Entry, i: usize) usize {
+    if (kvs.len <= 1) return 0;
+
+    var left: usize = 0;
+    var right: usize = kvs.len - 1;
+
+    // Partition the array in-place based on the bit at position i
+    while (left < right) {
+        // Find a 1-bit from the left
+        while (left < right and !bit(kvs[left].k, i)) : (left += 1) {}
+        // Find a 0-bit from the right
+        while (left < right and bit(kvs[right].k, i)) : (right -= 1) {}
+
+        if (left < right) {
+            // Swap elements
+            const temp = kvs[left];
+            kvs[left] = kvs[right];
+            kvs[right] = temp;
+        }
+    }
+
+    // Return the partition point (first 1-bit position)
+    while (left < kvs.len and !bit(kvs[left].k, i)) : (left += 1) {}
+    return left;
+}
+
+fn merkle(kvs: []Entry, i: usize) Hash {
     if (kvs.len == 0) {
         return [_]u8{0} ** 32;
     }
@@ -62,28 +84,20 @@ fn merkle(allocator: Allocator, kvs: []const Entry, i: usize) !Hash {
         return result;
     }
 
-    var l = std.ArrayList(Entry).init(allocator);
-    defer l.deinit();
-    var r = std.ArrayList(Entry).init(allocator);
-    defer r.deinit();
+    // Find the division point
+    const split = partition(kvs, i);
 
-    for (kvs) |kv| {
-        if (bit(kv.k, i)) {
-            try r.append(kv);
-        } else {
-            try l.append(kv);
-        }
-    }
+    // Recursively process left and right partitions
+    const ml = merkle(kvs[0..split], i + 1);
+    const mr = merkle(kvs[split..], i + 1);
 
-    const ml = try merkle(allocator, l.items, i + 1);
-    const mr = try merkle(allocator, r.items, i + 1);
+    // Combine results
     const encoded = branch(ml, mr);
-
     var result: Hash = undefined;
     Blake2b256.hash(&encoded, &result, .{});
     return result;
 }
 
-pub fn M_sigma(allocator: Allocator, kvs: []const Entry) !Hash {
-    return try merkle(allocator, kvs, 0);
+pub fn M_sigma(kvs: []Entry) Hash {
+    return merkle(kvs, 0);
 }

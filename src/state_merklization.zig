@@ -24,7 +24,7 @@ pub fn merklizeStateDictionary(
     const entries = try state_dict.toOwnedSlice();
     defer allocator.free(entries);
 
-    return try merkle.M_sigma(allocator, entries);
+    return merkle.M_sigma(entries);
 }
 
 //  _   _       _ _  _____         _
