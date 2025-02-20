@@ -17,34 +17,29 @@ pub fn encode(self: anytype, writer: anytype) !void {
     defer span.deinit();
     span.debug("Starting phi encoding", .{});
 
-    // The number of cores (C) is a constant no need to encode it
-    // Encode each queue
+    // Each core queue must have exactly 80 entries
+    // Each entry is either a valid hash or zeros
     for (self.queue, 0..) |core_queue, i| {
         const core_span = span.child(.core);
         defer core_span.deinit();
         core_span.debug("Encoding core {d} queue", .{i});
 
-        // The length of the queue is not encoded as it is a Constants
-        // Encode each hash in the queue
-        for (core_queue.items, 0..) |hash, j| {
+        // The hashes are already properly serialized as raw bytes
+        // Just write them in order, padding with zeros
+        for (0..self.max_authorizations_queue_items) |j| {
             const hash_span = core_span.child(.hash);
             defer hash_span.deinit();
-            hash_span.debug("Writing hash {d} of {d}", .{ j + 1, core_queue.items.len });
-            hash_span.trace("Hash value: {any}", .{std.fmt.fmtSliceHexLower(&hash)});
-            try writer.writeAll(&hash);
-        }
 
-        // Write 0 hashes to fill the queue until 80
-        const zero_hashes_to_write = self.max_authorizations_queue_items - core_queue.items.len;
-        const zero_hash = [_]u8{0} ** H;
-        core_span.debug("Writing {d} zero hashes", .{zero_hashes_to_write});
-
-        var k: usize = 0;
-        while (k < zero_hashes_to_write) : (k += 1) {
-            const zero_span = core_span.child(.zero_hash);
-            defer zero_span.deinit();
-            zero_span.trace("Writing zero hash {d} of {d}", .{ k + 1, zero_hashes_to_write });
-            try writer.writeAll(&zero_hash);
+            if (j < core_queue.items.len) {
+                hash_span.debug("Writing hash {d} of {d}", .{ j + 1, core_queue.items.len });
+                hash_span.trace("Hash value: {any}", .{std.fmt.fmtSliceHexLower(&core_queue.items[j])});
+                try writer.writeAll(&core_queue.items[j]);
+            } else {
+                // Write zero hash for any remaining slots
+                const zero_hash = [_]u8{0} ** H;
+                hash_span.debug("Writing zero hash {d} of {d}", .{ j + 1, self.max_authorizations_queue_items - core_queue.items.len });
+                try writer.writeAll(&zero_hash);
+            }
         }
     }
     span.debug("Successfully completed phi encoding", .{});

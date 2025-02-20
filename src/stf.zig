@@ -18,6 +18,7 @@ pub const safrole = @import("stf/safrole.zig");
 pub const services = @import("stf/services.zig");
 pub const time = @import("stf/time.zig");
 pub const work_report = @import("stf/work_reports.zig");
+pub const validator_stats = @import("stf/validator_stats.zig");
 
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.stf);
@@ -60,6 +61,8 @@ pub fn stateTransition(
         new_block.extrinsic.tickets,
     );
     defer markers.deinit(allocator);
+
+    try validator_stats.transition(params, state_transition);
 
     return state_transition;
 }
