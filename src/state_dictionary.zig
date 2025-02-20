@@ -384,6 +384,11 @@ pub const MerklizationDictionary = struct {
         };
     }
 
+    /// Calculate the state root for this dict
+    pub fn buildStateRoot(self: *const MerklizationDictionary, allocator: std.mem.Allocator) !types.StateRoot {
+        return try @import("state_merklization.zig").merklizeStateDictionary(allocator, self);
+    }
+
     /// Slice is owned, the values are owned by the dictionary.
     pub fn toOwnedSlice(self: *const MerklizationDictionary) ![]Entry {
         var buffer = std.ArrayList(Entry).init(self.entries.allocator);
@@ -393,6 +398,20 @@ pub const MerklizationDictionary = struct {
         }
 
         return buffer.toOwnedSlice();
+    }
+
+    /// Returns a new owned slice of entries sorted by key.
+    /// The slice should be freed by the caller.
+    /// The values remain owned by the dictionary.
+    pub fn toOwnedSliceSortedByKey(self: *const MerklizationDictionary) ![]Entry {
+        const slice = try self.toOwnedSlice();
+        const Context = struct {
+            pub fn lessThan(_: @This(), a: Entry, b: Entry) bool {
+                return std.mem.lessThan(u8, &a.k, &b.k);
+            }
+        };
+        std.mem.sort(Entry, slice, Context{}, Context.lessThan);
+        return slice;
     }
 
     pub fn deinit(self: *MerklizationDictionary) void {

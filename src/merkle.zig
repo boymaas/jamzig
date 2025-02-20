@@ -14,8 +14,11 @@ pub const Entry = struct {
 
 fn branch(l: Hash, r: Hash) [64]u8 {
     var result: [64]u8 = undefined;
-    result[0] = l[0] & 0xfe;
+    // Branch node: first bit 0
+    result[0] = l[0] & 0b01111111;
+    // Use last 255 bits of left sub-trie
     @memcpy(result[1..32], l[1..]);
+    // Use full 256 bits of right sub-trie
     @memcpy(result[32..], &r);
     return result;
 }
@@ -23,22 +26,31 @@ fn branch(l: Hash, r: Hash) [64]u8 {
 fn leaf(k: Key, v: []const u8) [64]u8 {
     var result: [64]u8 = undefined;
     if (v.len <= 32) {
-        result[0] = 0b01 | @as(u8, @intCast(v.len << 2));
+        // Embedded value leaf: first bit 1, second bit 0
+        // Next 6 bits store value size
+        result[0] = 0b10000000 | (@as(u8, @truncate(v.len)) & 0x3f);
+        // 31 bytes for key prefix
         @memcpy(result[1..32], k[0..31]);
-        @memcpy(result[32 .. 32 + v.len], v);
-        @memset(result[32 + v.len .. 64], 0);
+        // Up to 32 bytes for value, zero-padded
+        @memcpy(result[32..][0..v.len], v);
+        @memset(result[32 + v.len ..][0..], 0);
     } else {
-        result[0] = 0b11;
+        // Regular leaf: first bit 1, second bit 1
+        // Next 6 bits zeroed
+        result[0] = 0b11000000;
+        // 31 bytes for key prefix
         @memcpy(result[1..32], k[0..31]);
+        // 32 bytes for value hash
         Blake2b256.hash(v, result[32..64], .{});
     }
     return result;
 }
 
 fn bit(k: Key, i: usize) bool {
-    return (k[i >> 3] & (@as(u8, 1) << @intCast(i & 7))) != 0;
+    return (k[i >> 3] & (@as(u8, 0x80) >> @intCast(i & 7))) != 0;
 }
 
+// TODO: optimize this with partitioning algo
 fn merkle(allocator: Allocator, kvs: []const Entry, i: usize) !Hash {
     if (kvs.len == 0) {
         return [_]u8{0} ** 32;

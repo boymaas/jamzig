@@ -121,7 +121,16 @@ test "jamtestnet.jamduna.fallback" {
         var state_transition = try state_transition_vector.decodeBin(JAMDUNA_PARAMS, allocator);
         defer state_transition.deinit(allocator);
 
-        // std.debug.print("{}", .{types.fmt.format(state_transition)});
+        // First lest validate the roots
+        var pre_state_mdict = try state_transition.preStateAsMerklizationDict(allocator);
+        defer pre_state_mdict.deinit();
+
+        for (state_transition.pre_state.keyvals) |kv| {
+            std.debug.print("comparing key {x}\n", .{kv.key});
+            try std.testing.expectEqualSlices(u8, kv.val, pre_state_mdict.entries.get(kv.key[0..32].*).?);
+        }
+
+        try state_transition.validatePreStateRoot(allocator);
 
         std.debug.print("Block header slot: {d}\n", .{state_transition.block.header.slot});
 
@@ -134,7 +143,6 @@ test "jamtestnet.jamduna.fallback" {
                 allocator,
                 &dict,
             );
-            std.debug.print("Beta {s}", .{current_state.?.beta.?});
             std.debug.print("Genesis state initialized\n", .{});
         }
 
@@ -155,14 +163,15 @@ test "jamtestnet.jamduna.fallback" {
 
         // std.debug.print("New state {s}", .{types.fmt.format(current_state.?)});
 
-        var current_state_mdict = try current_state.?.buildStateMerklizationDictionaryWithConfig(
-            allocator,
-            .{ .include_preimage_timestamps = true },
-        );
+        // Now lets produce a MerkleDict for our current state and from the expected state
+        // They should result in the same output.
+        var current_state_mdict = try current_state.?.buildStateMerklizationDictionary(allocator);
         defer current_state_mdict.deinit();
 
         var expected_state_mdict = try state_transition.postStateAsMerklizationDict(allocator);
         defer expected_state_mdict.deinit();
+
+        // std.debug.print("{}\n", .{types.fmt.format(&expected_state_mdict)});
 
         var expected_state_diff = try current_state_mdict.diff(&expected_state_mdict);
         defer expected_state_diff.deinit();
@@ -177,10 +186,15 @@ test "jamtestnet.jamduna.fallback" {
             return error.UnexpectedStateDiff;
         }
 
-        const state_root = try current_state.?.buildStateRootWithConfig(allocator, .{ .include_preimage_timestamps = false });
+        const state_root = try current_state.?.buildStateRoot(allocator);
         std.debug.print("New state root: {s}\n", .{std.fmt.fmtSliceHexLower(&state_root)});
 
-        try std.testing.expectEqualSlices(u8, &state_root, &state_transition.post_state.state_root);
+        // State root do not mach yet
+        try std.testing.expectEqualSlices(
+            u8,
+            &state_transition.post_state.state_root,
+            &state_root,
+        );
     }
     std.debug.print("\n=== Completed All State Transitions ===\n", .{});
 }

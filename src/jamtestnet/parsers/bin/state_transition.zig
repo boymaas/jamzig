@@ -95,6 +95,27 @@ pub const TestStateTransition = struct {
         return keyValArrayToMerklizationDict(allocator, self.post_state.keyvals, "post_state");
     }
 
+    pub fn validatePreStateRoot(self: *const TestStateTransition, allocator: std.mem.Allocator) !void {
+        var state_mdict = try self.preStateAsMerklizationDict(allocator);
+        defer state_mdict.deinit();
+        const state_root = try state_mdict.buildStateRoot(allocator);
+
+        try std.testing.expectEqualSlices(u8, &self.pre_state.state_root, &state_root);
+    }
+
+    pub fn validatePostStateRoot(self: *const TestStateTransition, allocator: std.mem.Allocator) !void {
+        var state_mdict = try self.postStateAsMerklizationDict(allocator);
+        defer state_mdict.deinit();
+        const state_root = try state_mdict.buildStateRoot(allocator);
+
+        try std.testing.expectEqualSlices(u8, &self.post_state.state_root, &state_root);
+    }
+
+    pub fn validateRoots(self: *const TestStateTransition, allocator: std.mem.Allocator) !void {
+        try self.validatePreStateRoot(allocator);
+        try self.validatePostStateRoot(allocator);
+    }
+
     fn keyValArrayToMerklizationDict(allocator: std.mem.Allocator, keyvals: []const KeyVal, context: []const u8) !state_dictionary.MerklizationDictionary {
         var dict = state_dictionary.MerklizationDictionary.init(allocator);
         errdefer dict.deinit();
@@ -114,8 +135,8 @@ pub const TestStateTransition = struct {
         if (key_bytes.len != 32) {
             return error.InvalidKeyLength;
         }
-        var key: types.StateRoot = undefined;
-        @memcpy(&key, key_bytes);
+        var key: types.OpaqueHash = undefined;
+        std.mem.copyForwards(u8, &key, key_bytes[0..32]);
         return key;
     }
 };
