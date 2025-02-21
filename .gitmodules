@@ -1,5 +1,5 @@
 [submodule "src/stf_test/jamtestnet"]
-	path = src/jamtestnet/data
+	path = src/jamtestnet/teams/jamduna
 	url = https://github.com/jam-duna/jamtestnet.git
 [submodule "src/jamtestvectors/data"]
 	path = src/jamtestvectors/data

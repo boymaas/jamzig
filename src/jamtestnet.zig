@@ -37,7 +37,7 @@ test "jamduna:fallback" {
     const allocator = std.testing.allocator;
     std.debug.print("\nJAMDUNA Fallback\n", .{});
 
-    var state_transition_vectors = try jamtestnet.state_transitions.collectStateTransitions("src/jamtestnet/data/data/fallback", allocator);
+    var state_transition_vectors = try jamtestnet.state_transitions.collectStateTransitions("src/jamtestnet/teams/jamduna/data/fallback", allocator);
     defer state_transition_vectors.deinit(allocator);
     std.debug.print("Collected {d} state transition vectors\n", .{state_transition_vectors.items().len});
 
@@ -128,7 +128,7 @@ test "jamduna:safrole" {
     const allocator = std.testing.allocator;
     std.debug.print("\nJAMDUNA Safrole\n", .{});
 
-    var state_transition_vectors = try jamtestnet.state_transitions.collectStateTransitions("src/jamtestnet/data/data/safrole", allocator);
+    var state_transition_vectors = try jamtestnet.state_transitions.collectStateTransitions("src/jamtestnet/teams/jamduna/data/safrole", allocator);
     defer state_transition_vectors.deinit(allocator);
     std.debug.print("Collected {d} state transition vectors\n", .{state_transition_vectors.items().len});
 
