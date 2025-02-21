@@ -61,14 +61,14 @@ test "jamzig:safrole" {
 }
 
 // NOTE: disabled, not following the standard.
-// test "javajam:fallback" {
-//     const allocator = std.testing.allocator;
-//     try runStateTransitionTests(
-//         JAMDUNA_PARAMS,
-//         allocator,
-//         "src/jamtestnet/teams/javajam/state_transitions",
-//     );
-// }
+test "javajam:safrole" {
+    const allocator = std.testing.allocator;
+    try runStateTransitionTests(
+        JAMDUNA_PARAMS,
+        allocator,
+        "src/jamtestnet/teams/javajam/state_transitions",
+    );
+}
 
 /// Run state transition tests using vectors from the specified directory
 pub fn runStateTransitionTests(
@@ -87,8 +87,8 @@ pub fn runStateTransitionTests(
         if (current_state) |*cs| cs.deinit(allocator);
     }
 
-    for (state_transition_vectors.items(), 0..) |state_transition_vector, i| {
-        std.debug.print("\nProcessing transition {d}/{d}\n", .{ i + 1, state_transition_vectors.items().len });
+    for (state_transition_vectors.items()) |state_transition_vector| {
+        // std.debug.print("\nProcessing transition {d}/{d}\n", .{ i + 1, state_transition_vectors.items().len });
 
         var state_transition = try state_transition_vector.decodeBin(params, allocator);
         defer state_transition.deinit(allocator);
@@ -102,11 +102,11 @@ pub fn runStateTransitionTests(
         // Validator Root Calculations
         try state_transition.validateRoots(allocator);
 
-        std.debug.print("Block header slot: {d}\n", .{state_transition.block.header.slot});
+        // std.debug.print("Block header slot: {d}\n", .{state_transition.block.header.slot});
 
         // Initialize genesis state if needed
         if (current_state == null) {
-            std.debug.print("Initializing genesis state...\n", .{});
+            // std.debug.print("Initializing genesis state...\n", .{});
             var dict = try state_transition.preStateAsMerklizationDict(allocator);
             defer dict.deinit();
             current_state = try state_dict.reconstruct.reconstructState(
@@ -114,10 +114,10 @@ pub fn runStateTransitionTests(
                 allocator,
                 &dict,
             );
-            std.debug.print("Genesis state initialized\n", .{});
+            // std.debug.print("Genesis state initialized\n", .{});
         }
 
-        std.debug.print("Executing state transition...\n", .{});
+        // std.debug.print("Executing state transition...\n", .{});
         var transition = try stf.stateTransition(
             params,
             allocator,
@@ -128,6 +128,13 @@ pub fn runStateTransitionTests(
 
         // Merge transition into base state
         try transition.mergePrimeOntoBase();
+
+        // Log block information for debugging
+        @import("sequoia.zig").logging.printBlockEntropyDebug(
+            JAMDUNA_PARAMS,
+            &state_transition.block,
+            &current_state.?,
+        );
 
         // Validate against expected state
         var current_state_mdict = try current_state.?.buildStateMerklizationDictionary(allocator);
