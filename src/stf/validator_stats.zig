@@ -13,13 +13,18 @@ pub const Error = error{};
 pub fn transition(
     comptime params: Params,
     stx: *StateTransition(params),
+    current_validator: types.ValidatorIndex,
 ) !void {
     const span = trace.span(.transition_validator_stats);
     defer span.deinit();
     span.debug("Starting validator_stats transition", .{});
 
-    const current_validator = 4;
     var pi = try stx.ensureT(state.Pi, .pi_prime);
+
+    if (stx.time.isNewEpoch()) {
+        try pi.transitionToNextEpoch();
+    }
+
     var stats = try pi.getValidatorStats(current_validator);
     stats.blocks_produced += 1;
 }
