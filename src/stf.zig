@@ -31,7 +31,13 @@ pub fn stateTransition(
 ) !*StateTransition(params) {
     const span = trace.span(.state_transition);
     defer span.deinit();
-    std.debug.assert(current_state.ensureFullyInitialized() catch false);
+
+    // Ensure we have a fully initialized state at the start
+    if (@import("builtin").mode == .Debug) {
+        if (!try current_state.checkIfFullyInitialized()) {
+            return error.StateNotFullyInitialized;
+        }
+    }
 
     const transition_time = params.Time().init(current_state.tau.?, new_block.header.slot);
     var state_transition = try StateTransition(params).initHeap(allocator, current_state, transition_time);

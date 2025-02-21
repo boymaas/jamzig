@@ -19,7 +19,7 @@ const trace = @import("tracing.zig").scoped(.stf_test);
 
 // we derive from the normal settings
 // see: https://github.com/jam-duna/jamtestnet/blob/main/chainspecs.json#L2
-const JAMDUNA_PARAMS = jam_params.Params{
+pub const JAMDUNA_PARAMS = jam_params.Params{
     .epoch_length = 12,
     .ticket_submission_end_epoch_slot = 10,
     .validators_count = 6,
@@ -48,6 +48,15 @@ test "jamduna:safrole" {
         JAMDUNA_PARAMS,
         allocator,
         "src/jamtestnet/teams/jamduna/data/safrole/state_transitions",
+    );
+}
+
+test "jamzig:safrole" {
+    const allocator = std.testing.allocator;
+    try runStateTransitionTests(
+        JAMDUNA_PARAMS,
+        allocator,
+        "src/jamtestnet/teams/jamzig/safrole/state_transitions",
     );
 }
 

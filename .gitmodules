@@ -16,3 +16,6 @@
 [submodule "src/jamtestnet/teams/javajam"]
 	path = src/jamtestnet/teams/javajam
 	url = https://github.com/javajamio/javajam-trace.git
+[submodule "src/jamtestnet/teams/jamzig"]
+	path = src/jamtestnet/teams/jamzig
+	url = https://github.com/jamzig/jamtestnet.git

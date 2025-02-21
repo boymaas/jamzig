@@ -29,6 +29,7 @@ pub fn Phi(
         pub fn init(allocator: std.mem.Allocator) !Phi(core_count, max_authorizations_queue_items) {
             var queue: [core_count]std.ArrayList(AuthorizerHash) = undefined;
             for (0..core_count) |i| {
+                // FIXME: errdefer
                 queue[i] = try std.ArrayList(AuthorizerHash).initCapacity(
                     allocator,
                     max_authorizations_queue_items,

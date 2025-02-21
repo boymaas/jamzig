@@ -174,8 +174,10 @@ pub fn JamState(comptime params: Params) type {
             try state.initXi(allocator);
             try state.initTheta(allocator);
             try state.initRho(allocator);
-            try state.initEta();
-            try state.initTau();
+
+            // NOTE: Eta and Tau are initialized in Safrole
+            // try state.initEta();
+            // try state.initTau();
             try state.initSafrole(allocator);
 
             return state;
@@ -204,15 +206,14 @@ pub fn JamState(comptime params: Params) type {
         // Comptime patterns
         usingnamespace StateHelpers;
 
-        pub fn ensureFullyInitialized(self: *const JamState(params)) !bool {
+        pub fn checkIfFullyInitialized(self: *const JamState(params)) !bool {
             // Define our error type at compile time
             const InitError = comptime StateHelpers.buildInitErrorType(@TypeOf(self.*));
 
             // Check each field using inline for
             inline for (std.meta.fields(@TypeOf(self.*))) |field| {
                 if (@field(self, field.name) == null) {
-                    // Create the error name dynamically
-                    return @field(InitError, "Uninitialized" ++ field.name);
+                    return @field(InitError, "Uninitialized" ++ StateHelpers.capitalize(field.name));
                 }
             }
             return true;
@@ -373,6 +374,15 @@ const StateHelpers = struct {
         }
     }
 
+    fn capitalize(comptime str: []const u8) [str.len]u8 {
+        comptime {
+            var buffer: [str.len]u8 = undefined;
+            buffer[0] = std.ascii.toUpper(str[0]);
+            std.mem.copyForwards(u8, buffer[1..], str[1..]);
+            return buffer;
+        }
+    }
+
     /// Checks if the whole state has been initialized. We do not have any
     /// entries which are null
     ///
@@ -385,7 +395,7 @@ const StateHelpers = struct {
         var error_fields: [fields.len]std.builtin.Type.Error = undefined;
         for (fields, 0..) |field, i| {
             error_fields[i] = .{
-                .name = "Uninitialized" ++ field.name,
+                .name = "Uninitialized" ++ capitalize(field.name),
             };
         }
 

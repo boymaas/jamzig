@@ -716,6 +716,12 @@ pub const TicketEnvelope = struct {
 pub const TicketsExtrinsic = struct {
     data: []TicketEnvelope, // SIZE(0..16)
 
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .data = try allocator.dupe(TicketEnvelope, self.data),
+        };
+    }
+
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.data);
         self.* = undefined;
@@ -825,6 +831,13 @@ pub const Preimage = struct {
     requester: ServiceId,
     blob: []u8,
 
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        return @This(){
+            .requester = self.requester,
+            .blob = try allocator.dupe(u8, self.blob),
+        };
+    }
+
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         allocator.free(self.blob);
     }
@@ -832,6 +845,19 @@ pub const Preimage = struct {
 
 pub const PreimagesExtrinsic = struct {
     data: []Preimage,
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        var cloned_data = try allocator.alloc(Preimage, self.data.len);
+        errdefer allocator.free(cloned_data);
+
+        for (self.data, 0..) |preimage, i| {
+            cloned_data[i] = try preimage.deepClone(allocator);
+        }
+
+        return @This(){
+            .data = cloned_data,
+        };
+    }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.data) |preimage| {
@@ -869,7 +895,22 @@ pub const AvailAssurance = struct {
 
 pub const AssurancesExtrinsic = struct {
     data: []AvailAssurance, // SIZE(0..validators_count)
-    //
+
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        var cloned_data = try allocator.alloc(AvailAssurance, self.data.len);
+        // FIXME: in case of error below we need to run through and dealloc each allocated
+        // item
+        errdefer allocator.free(cloned_data);
+
+        for (self.data, 0..) |assurance, i| {
+            cloned_data[i] = try assurance.deepClone(allocator);
+        }
+
+        return @This(){
+            .data = cloned_data,
+        };
+    }
+
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.data) |*assurance| {
             assurance.deinit(allocator);
@@ -907,6 +948,20 @@ pub const ReportGuarantee = struct {
 pub const GuaranteesExtrinsic = struct {
     data: []ReportGuarantee, // SIZE(0..cores_count)
 
+    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+        var cloned_data = try allocator.alloc(ReportGuarantee, self.data.len);
+        errdefer allocator.free(cloned_data);
+
+        for (self.data, 0..) |guarantee, i| {
+            // FIXME: in case of errors we need to deallocate what was allocated
+            cloned_data[i] = try guarantee.deepClone(allocator);
+        }
+
+        return @This(){
+            .data = cloned_data,
+        };
+    }
+
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.data) |*assurance| {
             assurance.deinit(allocator);
@@ -925,17 +980,11 @@ pub const Extrinsic = struct {
 
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
-            .tickets = try allocator.dupe(TicketEnvelope, self.tickets),
+            .tickets = try self.tickets.deepClone(allocator),
             .disputes = try self.disputes.deepClone(allocator),
-            .preimages = try allocator.dupe(Preimage, self.preimages),
-            .assurances = blk: {
-                var assurances = try allocator.alloc(AvailAssurance, self.assurances.len);
-                for (self.assurances, 0..) |assurance, i| {
-                    assurances[i] = try assurance.deepClone(allocator);
-                }
-                break :blk assurances;
-            },
-            .guarantees = try allocator.dupe(ReportGuarantee, self.guarantees),
+            .preimages = try self.preimages.deepClone(allocator),
+            .assurances = try self.assurances.deepClone(allocator),
+            .guarantees = try self.guarantees.deepClone(allocator),
         };
     }
 

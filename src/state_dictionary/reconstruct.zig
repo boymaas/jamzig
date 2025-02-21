@@ -24,6 +24,11 @@ pub fn reconstructState(
 
     var jam_state = try state.JamState(params).init(allocator);
     errdefer jam_state.deinit(allocator);
+
+    // NOTE: we initialize delta here, as we always want a delta to be available
+    // also when we have a merklization dictioray without any service accounts
+    jam_state.delta = state.Delta.init(allocator);
+
     span.debug("Initialized empty JamState", .{});
 
     // Buffer for storing preimage lookup entries until we can process them
@@ -145,10 +150,6 @@ pub fn reconstructState(
                 var delta_span = entry_span.child(.process_delta_base);
                 defer delta_span.deinit();
                 delta_span.debug("Processing delta base entry", .{});
-                if (jam_state.delta == null) {
-                    delta_span.debug("Initializing delta state", .{});
-                    jam_state.delta = state.Delta.init(allocator);
-                }
 
                 try delta_reconstruction.reconstructServiceAccountBase(allocator, &jam_state.delta.?, key, value);
             },
@@ -156,10 +157,6 @@ pub fn reconstructState(
                 var storage_span = entry_span.child(.process_delta_storage);
                 defer storage_span.deinit();
                 storage_span.debug("Processing delta storage entry", .{});
-                if (jam_state.delta == null) {
-                    storage_span.debug("Initializing delta state", .{});
-                    jam_state.delta = state.Delta.init(allocator);
-                }
 
                 try delta_reconstruction.reconstructStorageEntry(allocator, &jam_state.delta.?, key, value);
             },
@@ -167,10 +164,6 @@ pub fn reconstructState(
                 var preimage_span = entry_span.child(.process_delta_preimage);
                 defer preimage_span.deinit();
                 preimage_span.debug("Processing delta preimage entry", .{});
-                if (jam_state.delta == null) {
-                    preimage_span.debug("Initializing delta state", .{});
-                    jam_state.delta = state.Delta.init(allocator);
-                }
 
                 try delta_reconstruction.reconstructPreimageEntry(allocator, &jam_state.delta.?, jam_state.tau, key, value);
             },
@@ -178,10 +171,6 @@ pub fn reconstructState(
                 var lookup_span = entry_span.child(.process_delta_lookup);
                 defer lookup_span.deinit();
                 lookup_span.debug("Processing delta lookup entry", .{});
-                if (jam_state.delta == null) {
-                    lookup_span.debug("Initializing delta state", .{});
-                    jam_state.delta = state.Delta.init(allocator);
-                }
 
                 // Buffer the lookup entry for later processing after all preimages are loaded
                 try preimage_lookup_buffer.append(.{
