@@ -53,6 +53,18 @@ pub const KeyVal = struct {
         };
     }
 
+    // Add custom JSON serialization as array [key, val, id, desc]
+    pub fn jsonStringify(self: *const KeyVal, writer: anytype) !void {
+        try writer.beginArray();
+
+        try writer.write(self.key);
+        try writer.write(self.val);
+        try writer.write(self.id);
+        try writer.write(self.desc);
+
+        try writer.endArray();
+    }
+
     pub fn deinit(self: *KeyVal, allocator: std.mem.Allocator) void {
         allocator.free(self.key);
         allocator.free(self.val);

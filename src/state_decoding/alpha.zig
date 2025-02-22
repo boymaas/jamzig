@@ -5,8 +5,8 @@ const decoder = @import("../codec/decoder.zig");
 const codec = @import("../codec.zig");
 const Alpha = authorization.Alpha;
 
-pub fn decode(comptime core_count: u16, reader: anytype) !Alpha(core_count) {
-    var alpha = Alpha(core_count).init();
+pub fn decode(comptime core_count: u16, comptime max_pool_items: u8, reader: anytype) !Alpha(core_count, max_pool_items) {
+    var alpha = Alpha(core_count, max_pool_items).init();
 
     // For each core's pool
     for (0..core_count) |core| {

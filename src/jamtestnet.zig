@@ -30,7 +30,7 @@ pub const JAMDUNA_PARAMS = jam_params.Params{
     // JAMDUNA changes
     .max_ticket_entries_per_validator = 3, // N
     .max_authorizations_queue_items = 80, // Q
-    .max_authorizations_pool_items = 2,
+    .max_authorizations_pool_items = 8, // O
 };
 
 test "jamduna:fallback" {

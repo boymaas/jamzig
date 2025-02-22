@@ -1,27 +1,24 @@
 const std = @import("std");
 const types = @import("types.zig");
 
-// Constants
-// TODO: Move to configuration
-//  max_authorizations_pool_items: u8 = 8, // O
-const O: usize = 8; // Maximum number of items in the authorizations pool
-
 // Types
-const Hash = [32]u8;
-const AuthorizationPool = std.BoundedArray(Hash, O);
+const Hash = types.OpaqueHash;
+pub fn AuthorizationPool(comptime max_pool_items: u8) type {
+    return std.BoundedArray(Hash, max_pool_items);
+}
 
-pub fn Alpha(comptime core_count: u16) type {
+pub fn Alpha(comptime core_count: u16, comptime max_pool_items: u8) type {
     return struct {
         //  α[c] The set of authorizers allowable for a particular core c as the
         //  authorizer pool
-        pools: [core_count]AuthorizationPool,
+        pools: [core_count]AuthorizationPool(max_pool_items),
 
         pub fn init() @This() {
             var alpha = @This(){
                 .pools = undefined,
             };
             for (0..core_count) |i| {
-                alpha.pools[i] = AuthorizationPool.init(0) catch unreachable;
+                alpha.pools[i] = AuthorizationPool(max_pool_items).init(0) catch unreachable;
             }
             return alpha;
         }
@@ -69,7 +66,7 @@ pub fn Alpha(comptime core_count: u16) type {
 
             // Clone each pool
             for (0..core_count) |i| {
-                clone.pools[i] = try AuthorizationPool.init(0);
+                clone.pools[i] = try AuthorizationPool(max_pool_items).init(0);
                 // Copy all hashes from the original pool
                 try clone.pools[i].appendSlice(self.pools[i].constSlice());
             }

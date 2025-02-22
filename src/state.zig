@@ -11,7 +11,7 @@ pub fn JamState(comptime params: Params) type {
     return struct {
         /// α: Core authorization state and associated queues.
         /// Manipulated in: src/authorization.zig
-        alpha: ?Alpha(params.core_count) = null,
+        alpha: ?Alpha(params.core_count, params.max_authorizations_pool_items) = null,
 
         /// β: Metadata of the latest block, including block number, timestamps, and cryptographic references.
         /// Manipulated in: src/recent_blocks.zig
@@ -74,7 +74,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize Alpha component
         pub fn initAlpha(self: *JamState(params), _: std.mem.Allocator) !void {
-            self.alpha = Alpha(params.core_count).init();
+            self.alpha = Alpha(params.core_count, params.max_authorizations_pool_items).init();
         }
 
         /// Initialize Beta component (max_blocks should be 10)

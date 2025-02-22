@@ -65,7 +65,11 @@ pub fn reconstructState(
                     defer component_span.deinit();
                     component_span.debug("Decoding alpha component (id={d})", .{key[0]});
                     var f = fbs(value);
-                    jam_state.alpha = try state_decoding.alpha.decode(params.core_count, f.reader());
+                    jam_state.alpha = try state_decoding.alpha.decode(
+                        params.core_count,
+                        params.max_authorizations_pool_items,
+                        f.reader(),
+                    );
                 },
                 2 => {
                     var component_span = entry_span.child(.decode_phi);
