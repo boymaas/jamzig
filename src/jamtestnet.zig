@@ -51,6 +51,15 @@ test "jamduna:safrole" {
     );
 }
 
+test "jamduna:assurances" {
+    const allocator = std.testing.allocator;
+    try runStateTransitionTests(
+        JAMDUNA_PARAMS,
+        allocator,
+        "src/jamtestnet/teams/jamduna/data/assurances/state_transitions",
+    );
+}
+
 test "jamzig:safrole" {
     const allocator = std.testing.allocator;
     try runStateTransitionTests(
@@ -94,6 +103,7 @@ pub fn runStateTransitionTests(
         defer state_transition.deinit(allocator);
 
         // std.debug.print("{}", .{types.fmt.format(state_transition)});
+        std.debug.print("{}", .{types.fmt.format(state_transition.block)});
 
         // First validate the roots
         var pre_state_mdict = try state_transition.preStateAsMerklizationDict(allocator);
@@ -148,8 +158,12 @@ pub fn runStateTransitionTests(
 
         // Check for differences from expected state
         if (expected_state_diff.has_changes()) {
+            std.debug.print("{}", .{expected_state_diff});
+
             var expected_state = try state_dict.reconstruct.reconstructState(params, allocator, &expected_state_mdict);
             defer expected_state.deinit(allocator);
+
+            std.debug.print("{}", .{expected_state});
 
             try @import("tests/diff.zig").printDiffBasedOnFormatToStdErr(allocator, &current_state.?, &expected_state);
             return error.UnexpectedStateDiff;

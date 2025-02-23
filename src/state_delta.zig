@@ -29,9 +29,6 @@ const DaggerStateInfo = struct {
     blocks_next: bool,
 };
 
-/// StateTransition implements a pattern for state transitions.
-/// It maintains both the original (base) state and a transitioning (prime) state,
-/// creating copies of state fields only when they need to be modified.
 pub fn StateTransition(comptime params: Params) type {
     return struct {
         const Self = @This();
@@ -72,7 +69,7 @@ pub fn StateTransition(comptime params: Params) type {
         }
 
         /// Returns base or prime value. Creates prime by cloning base if needed.
-        pub fn ensure(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(State, field) {
+        pub fn ensure(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(STBaseType(State, field), field) {
             const builtin = @import("builtin");
             const name = @tagName(field);
 
@@ -104,7 +101,7 @@ pub fn StateTransition(comptime params: Params) type {
         }
 
         /// Type-hinted variant of ensure() for IDE support
-        pub fn ensureT(self: *Self, comptime T: type, comptime field: STAccessors(State)) Error!*T {
+        pub fn ensureT(self: *Self, comptime T: type, comptime field: STAccessors(State)) Error!STAccessorPointerType(T, field) {
             return try self.ensure(field);
         }
 
@@ -133,7 +130,7 @@ pub fn StateTransition(comptime params: Params) type {
         }
 
         /// initialize the transient by deepCloning the base. Will return a pointer to the cloned value
-        pub fn initTransientWithBase(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(State, field) {
+        pub fn initTransientWithBase(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(STBaseType(State, field), field) {
             const builtin = @import("builtin");
             const name = @tagName(field);
 
@@ -162,7 +159,7 @@ pub fn StateTransition(comptime params: Params) type {
         }
 
         /// Returns field value. Debug mode enforces existence.
-        pub inline fn get(self: *Self, comptime field: STAccessors(State)) !STAccessorPointerType(State, field) {
+        pub inline fn get(self: *Self, comptime field: STAccessors(State)) !STAccessorPointerType(STBaseType(State, field), field) {
             const builtin = @import("builtin");
 
             const name = @tagName(field);
@@ -238,6 +235,42 @@ pub fn StateTransition(comptime params: Params) type {
             self.prime.deinit(self.allocator);
             self.allocator.destroy(self);
         }
+
+        /// Creates a view struct containing *const pointers to the latest version of each field
+        pub fn buildPrimeView(self: *Self) state.JamStateView(params) {
+            var view = state.JamStateView(params).init();
+
+            // For each field, use prime if it exists, otherwise use base
+            inline for (comptime std.meta.fieldNames(state.JamStateView(params))) |field_name| {
+                const prime_field = &@field(self.prime, field_name);
+                const base_field = &@field(self.base, field_name);
+
+                @field(view, field_name) = if (prime_field.*) |*p|
+                    p
+                else if (base_field.*) |*b|
+                    b
+                else
+                    null;
+            }
+
+            return view;
+        }
+        /// Creates a view struct containing *const pointers to the latest version of each field
+        pub fn buildBaseView(self: *Self) state.JamStateView(params) {
+            var view = state.JamStateView(params).init();
+
+            // For each field, use prime if it exists, otherwise use base
+            inline for (comptime std.meta.fieldNames(state.JamStateView(params))) |field_name| {
+                const base_field = &@field(self.base, field_name);
+
+                @field(view, field_name) = if (base_field.*) |*b|
+                    b
+                else
+                    null;
+            }
+
+            return view;
+        }
     };
 }
 
@@ -246,18 +279,7 @@ pub fn StateTransition(comptime params: Params) type {
 /// Returns the base type for a given field accessor
 pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
     const field_name = @tagName(field);
-    // Handle special transition states
-    if (std.mem.eql(u8, field_name, "beta_dagger")) {
-        return state.Beta;
-    }
-    if (std.mem.eql(u8, field_name, "delta_double_dagger")) {
-        return state.Delta;
-    }
-    if (std.mem.eql(u8, field_name, "rho_dagger") or std.mem.eql(u8, field_name, "rho_double_dagger")) {
-        return state.Rho;
-    }
 
-    // For regular fields, strip _prime suffix if present
     const base_name = if (std.mem.endsWith(u8, field_name, "_prime"))
         field_name[0 .. field_name.len - 6]
     else
@@ -265,7 +287,7 @@ pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
 
     // Get the type of the base field
     // Convert string to field enum
-    @setEvalBranchQuota(2000);
+    @setEvalBranchQuota(4000);
     const field_enum = std.meta.stringToEnum(std.meta.FieldEnum(T), base_name) //
     orelse @compileError("Invalid field name: " ++ base_name);
 
@@ -275,12 +297,11 @@ pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
 /// Returns the appropriate pointer type (*const or *) for a given field accessor
 pub fn STAccessorPointerType(comptime T: anytype, comptime field: anytype) type {
     const field_name = @tagName(field);
-    const BaseType = STBaseType(T, field);
 
     return if (std.mem.endsWith(u8, field_name, "_prime"))
-        *BaseType
+        *T
     else
-        *const BaseType;
+        *const T;
 }
 
 // Generates all field variants (base + prime).

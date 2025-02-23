@@ -261,6 +261,33 @@ pub fn JamState(comptime params: Params) type {
     };
 }
 
+pub fn JamStateView(comptime params: Params) type {
+    return struct {
+        const Self = @This();
+
+        alpha: ?*const Alpha(params.core_count, params.max_authorizations_pool_items) = null,
+        beta: ?*const Beta = null,
+        gamma: ?*const Gamma(params.validators_count, params.epoch_length) = null,
+        delta: ?*const Delta = null,
+        eta: ?*const Eta = null,
+        iota: ?*const Iota = null,
+        kappa: ?*const Kappa = null,
+        lambda: ?*const Lambda = null,
+        rho: ?*const Rho(params.core_count) = null,
+        tau: ?*const Tau = null,
+        phi: ?*const Phi(params.core_count, params.max_authorizations_queue_items) = null,
+        chi: ?*const Chi = null,
+        psi: ?*const Psi = null,
+        pi: ?*const Pi = null,
+        xi: ?*const Xi(params.epoch_length) = null,
+        theta: ?*const Theta(params.epoch_length) = null,
+
+        pub fn init() Self {
+            return Self{};
+        }
+    };
+}
+
 pub const Alpha = @import("authorization.zig").Alpha;
 pub const Beta = @import("recent_blocks.zig").RecentHistory;
 

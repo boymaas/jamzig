@@ -137,6 +137,22 @@ pub fn LossyHash(comptime size: usize) type {
             // Compare the stored hash portion with the corresponding slice of the input hash
             return std.mem.eql(u8, &self.hash, other[self.start..self.end]);
         }
+
+        pub fn format(
+            self: @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = fmt;
+            _ = options;
+            try writer.print("LossyHash(size={d}, {d}..{d}): {s}", .{
+                size,
+                self.start,
+                self.end,
+                std.fmt.fmtSliceHexLower(&self.hash),
+            });
+        }
     };
 }
 
@@ -147,14 +163,14 @@ pub fn buildStorageKey(k: [32]u8) [32]u8 {
     return result;
 }
 
-pub fn deconstructStorageKey(key: [28]u8) ?LossyHash(24) {
+pub fn deconstructStorageKey(key: [28]u8) ?[24]u8 {
     // Verify the expected magic number
     const magic = std.mem.readInt(u32, key[0..4], .little);
     if (magic != 0xFFFFFFFF) return null;
 
     var result: [24]u8 = undefined;
     @memcpy(&result, key[4..28]); // Copy the stored data back
-    return .{ .hash = result, .start = 0, .end = 24 };
+    return result;
 }
 
 // TODO: rename to construct ...

@@ -32,7 +32,7 @@ pub const RecentBlock = struct {
         return RecentBlock{
             .header_hash = try block.header.header_hash(params, allocator),
             .parent_state_root = block.header.parent_state_root,
-            .accumulate_root = try block.calcAccumulateRoot(allocator),
+            .accumulate_root = std.mem.zeroes(types.OpaqueHash),
             .work_reports = blk: {
                 // Extract work report hashes from guarantees
                 // TODO: move this to block level, more clean
@@ -41,6 +41,9 @@ pub const RecentBlock = struct {
 
                 for (block.extrinsic.guarantees.data) |guarantee| {
                     try reports.append(.{
+                        // TODO: doulb check if we need the workpackage hash
+                        // instead of the work report hash
+                        // .hash = try guarantee.report.hash(allocator),
                         .hash = guarantee.report.package_spec.hash,
                         .exports_root = guarantee.report.package_spec.exports_root,
                     });
@@ -87,22 +90,20 @@ pub const RecentHistory = struct {
     /// Frees all resources associated with the RecentHistory
     pub fn deinit(self: *Self) void {
         for (self.blocks.items) |*block| {
-            self.allocator.free(block.beefy_mmr);
-            self.allocator.free(block.work_reports);
+            block.deinit(self.allocator);
         }
         self.blocks.deinit();
         self.* = undefined;
     }
 
-    /// Imports a new block into the recent history
-    /// TODO: remove allocator, now its managed
+    /// Imports a new block into the recent history, takes ownership or RecentBlock
     pub fn import(self: *Self, input: RecentBlock) !void {
         // Create a new BlockStateInformation
         var block_info = types.BlockInfo{
             .header_hash = input.header_hash,
             .state_root = std.mem.zeroes(types.Hash), // This will be updated in the next block
             .beefy_mmr = undefined,
-            .work_reports = try self.allocator.dupe(types.ReportedWorkPackage, input.work_reports),
+            .work_reports = input.work_reports,
         };
 
         // Update the parent block's state root if it exists

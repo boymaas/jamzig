@@ -123,7 +123,6 @@ pub fn reconstructState(
                     entry_span.debug("Decoding tau component (id={d})", .{key[0]});
                     var f = fbs(value);
                     jam_state.tau = try state_decoding.tau.decode(f.reader());
-                    std.debug.print("tau: {d}", .{jam_state.tau.?});
                 },
                 12 => {
                     entry_span.debug("Decoding chi component (id={d})", .{key[0]});
@@ -171,8 +170,8 @@ pub fn reconstructState(
 
                 try delta_reconstruction.reconstructPreimageEntry(allocator, &jam_state.delta.?, jam_state.tau, key, value);
             },
-            .delta_lookup => {
-                var lookup_span = entry_span.child(.process_delta_lookup);
+            .delta_preimage_lookup => {
+                var lookup_span = entry_span.child(.process_delta_preimage_lookup);
                 defer lookup_span.deinit();
                 lookup_span.debug("Processing delta lookup entry", .{});
 

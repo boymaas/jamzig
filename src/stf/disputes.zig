@@ -10,16 +10,17 @@ const StateTransition = @import("../state_delta.zig").StateTransition;
 pub const Error = error{};
 
 pub fn transition(
-    comptime validators_count: u32,
-    comptime core_count: u16,
+    comptime params: Params,
     allocator: std.mem.Allocator,
-    current_psi: *const state.Psi,
-    current_kappa: state.Kappa,
-    current_lambda: state.Lambda,
-    current_rho: *state.Rho(core_count),
-    current_epoch: types.Epoch,
+    stx: *StateTransition(params),
     xtdisputes: types.DisputesExtrinsic,
-) !state.Psi {
+) !void {
+    const current_kappa: *const types.ValidatorSet = try stx.ensure(.kappa);
+    const current_lambda: *const types.ValidatorSet = try stx.ensure(.lambda);
+    const current_psi: *const state.Psi = try stx.ensure(.psi);
+
+    const rho_prime: *state.Rho(params.core_count) = try stx.ensure(.rho_prime);
+
     // Map current_kappa to extract Edwards public keys
     const current_kappa_keys = try current_kappa.getEd25519PublicKeys(allocator);
     defer allocator.free(current_kappa_keys);
@@ -33,20 +34,17 @@ pub fn transition(
         current_psi,
         current_kappa_keys,
         current_lambda_keys,
-        validators_count,
-        current_epoch,
+        params.validators_count,
+        stx.time.current_epoch,
     );
 
-    var posterior_state = try disputes.processDisputesExtrinsic(
-        core_count,
+    try disputes.processDisputesExtrinsic(
+        params.core_count,
         current_psi,
-        current_rho,
+        rho_prime,
         xtdisputes,
-        validators_count,
+        params.validators_count,
     );
-    errdefer posterior_state.deinit();
 
-    try disputes.verifyDisputesExtrinsicPost(xtdisputes, &posterior_state);
-
-    return posterior_state;
+    try disputes.verifyDisputesExtrinsicPost(xtdisputes, current_psi);
 }
