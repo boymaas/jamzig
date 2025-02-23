@@ -128,12 +128,9 @@ pub fn deconstructServiceIndexHashKey(key: [32]u8) struct { service_index: u32, 
 
 //// Represents the different types of keys in the state dictionary
 pub const DictKeyType = enum {
-    state_component, // State components (1-15)
-    delta_base, // Service base info (255)
     delta_storage, // Service storage entries
     delta_preimage, // Service preimage entries
     delta_preimage_lookup, // Service preimage lookup entries
-    unknown,
 };
 
 // represents a lossy hash and the start and end of where the has was cut
@@ -417,39 +414,33 @@ pub const DeltaBaseMetadata = struct {
 
 // Metadata for storage entries
 pub const DeltaStorageMetadata = struct {
-    service_index: u32,
     storage_key: [32]u8,
 };
 
 // Metadata for preimage entries
 pub const DeltaPreimageMetadata = struct {
-    service_index: u32,
     hash: [32]u8,
     preimage_length: u32,
 };
 
 // Metadata for preimage lookup entries
 pub const DeltaPreimageLookupMetadata = struct {
-    service_index: u32,
     hash: [32]u8,
     preimage_length: u32,
 };
 
 // Union of all possible metadata types
 pub const DictMetadata = union(DictKeyType) {
-    state_component: StateComponentMetadata,
-    delta_base: DeltaBaseMetadata,
     delta_storage: DeltaStorageMetadata,
     delta_preimage: DeltaPreimageMetadata,
     delta_preimage_lookup: DeltaPreimageLookupMetadata,
-    unknown: void,
 };
 
 // Enhanced dictionary entry with metadata
 pub const DictEntry = struct {
     key: [32]u8,
     value: []const u8,
-    metadata: DictMetadata,
+    metadata: ?DictMetadata = null,
 
     pub fn deinit(self: *DictEntry, allocator: std.mem.Allocator) void {
         allocator.free(self.value);
@@ -623,7 +614,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(alpha_key, .{
             .key = alpha_key,
             .value = alpha_value,
-            .metadata = .{ .state_component = .{ .component_index = 1 } },
         });
 
         // Phi (2)
@@ -638,7 +628,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(phi_key, .{
             .key = phi_key,
             .value = phi_value,
-            .metadata = .{ .state_component = .{ .component_index = 2 } },
         });
 
         // Beta (3)
@@ -653,7 +642,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(beta_key, .{
             .key = beta_key,
             .value = beta_value,
-            .metadata = .{ .state_component = .{ .component_index = 3 } },
         });
 
         // Gamma (4)
@@ -666,7 +654,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(gamma_key, .{
             .key = gamma_key,
             .value = gamma_value,
-            .metadata = .{ .state_component = .{ .component_index = 4 } },
         });
 
         // Psi (5)
@@ -677,7 +664,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(psi_key, .{
             .key = psi_key,
             .value = psi_value,
-            .metadata = .{ .state_component = .{ .component_index = 5 } },
         });
 
         // Eta (6) does not contain allocations
@@ -687,7 +673,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(eta_key, .{
             .key = eta_key,
             .value = eta_value,
-            .metadata = .{ .state_component = .{ .component_index = 6 } },
         });
 
         // Iota (7)
@@ -698,7 +683,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(iota_key, .{
             .key = iota_key,
             .value = iota_value,
-            .metadata = .{ .state_component = .{ .component_index = 7 } },
         });
 
         // Kappa (8)
@@ -709,7 +693,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(kappa_key, .{
             .key = kappa_key,
             .value = kappa_value,
-            .metadata = .{ .state_component = .{ .component_index = 8 } },
         });
 
         // Lambda (9)
@@ -720,7 +703,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(lambda_key, .{
             .key = lambda_key,
             .value = lambda_value,
-            .metadata = .{ .state_component = .{ .component_index = 9 } },
         });
 
         // Rho (10)
@@ -734,7 +716,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(rho_key, .{
             .key = rho_key,
             .value = rho_value,
-            .metadata = .{ .state_component = .{ .component_index = 10 } },
         });
 
         // Tau (11)
@@ -744,7 +725,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(tau_key, .{
             .key = tau_key,
             .value = tau_value,
-            .metadata = .{ .state_component = .{ .component_index = 11 } },
         });
 
         // Chi (12)
@@ -755,7 +735,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(chi_key, .{
             .key = chi_key,
             .value = chi_value,
-            .metadata = .{ .state_component = .{ .component_index = 12 } },
         });
 
         // Pi (13)
@@ -766,7 +745,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(pi_key, .{
             .key = pi_key,
             .value = pi_value,
-            .metadata = .{ .state_component = .{ .component_index = 13 } },
         });
 
         // Theta (14)
@@ -777,7 +755,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(theta_key, .{
             .key = theta_key,
             .value = theta_value,
-            .metadata = .{ .state_component = .{ .component_index = 14 } },
         });
 
         // Xi (15)
@@ -789,7 +766,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(xi_key, .{
             .key = xi_key,
             .value = xi_value,
-            .metadata = .{ .state_component = .{ .component_index = 15 } },
         });
     }
 
@@ -811,7 +787,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                 try map.put(base_key, .{
                     .key = base_key,
                     .value = try base_value.toOwnedSlice(),
-                    .metadata = .{ .delta_base = .{ .service_index = service_idx } },
                 });
 
                 // Storage entries
@@ -822,7 +797,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                         .key = storage_key,
                         .value = try allocator.dupe(u8, storage_entry.value_ptr.*),
                         .metadata = .{ .delta_storage = .{
-                            .service_index = service_idx,
                             .storage_key = storage_entry.key_ptr.*,
                         } },
                     });
@@ -837,7 +811,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                             .key = preimage_key,
                             .value = try allocator.dupe(u8, preimage_entry.value_ptr.*),
                             .metadata = .{ .delta_preimage = .{
-                                .service_index = service_idx,
                                 .hash = preimage_entry.key_ptr.*,
                                 .preimage_length = @intCast(preimage_entry.value_ptr.*.len),
                             } },
@@ -860,7 +833,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                                 .value = try preimage_lookup.toOwnedSlice(),
                                 .metadata = .{
                                     .delta_preimage_lookup = .{
-                                        .service_index = service_idx,
                                         .hash = key.hash,
                                         .preimage_length = key.length,
                                     },

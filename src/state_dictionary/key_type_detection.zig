@@ -7,7 +7,6 @@ pub const DictKeyType = enum {
     delta_storage, // Service storage entries
     delta_preimage, // Service preimage entries
     delta_preimage_lookup, // Service preimage lookup entries
-    unknown,
 };
 
 /// Extracts service ID from an interleaved key format

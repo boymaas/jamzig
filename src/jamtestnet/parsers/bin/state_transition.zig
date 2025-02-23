@@ -134,59 +134,40 @@ pub const KeyVal = struct {
         };
     }
 
-    pub fn parseMetadata(self: *const @This()) !state_dictionary.DictMetadata {
+    pub fn parseMetadata(self: *const @This()) !?state_dictionary.DictMetadata {
         // Determine metadata type using key_type_detection
         const key = self.getKey();
         const key_type = state_dictionary.reconstruct.detectKeyType(key);
         return switch (key_type) {
-            .state_component => state_dictionary.DictMetadata{
-                .state_component = .{
-                    .component_index = self.key[0],
-                },
-            },
-            .delta_base => state_dictionary.DictMetadata{
-                .delta_base = .{
-                    .service_index = state_dictionary.deconstructByteServiceIndexKey(key).service_index,
-                },
-            },
             .delta_storage => blk: {
-                const decomposed = state_dictionary.deconstructServiceIndexHashKey(key);
-
                 // TODO: this could be wrong, assuming the buildup of a strorage key from metadata
                 const storage_key = (try parseHKFromDesc(self.desc))[4..32].* ++ try parseKFromDesc(self.desc);
 
                 break :blk state_dictionary.DictMetadata{
                     .delta_storage = .{
-                        .service_index = decomposed.service_index,
                         .storage_key = storage_key,
                     },
                 };
             },
             .delta_preimage => blk: {
-                const decomposed = state_dictionary.deconstructServiceIndexHashKey(key);
-
                 const hash = try parseHashFromDesc(self.desc);
 
                 break :blk state_dictionary.DictMetadata{
                     .delta_preimage = .{
-                        .service_index = decomposed.service_index,
                         .hash = hash,
                         .preimage_length = @intCast(self.val.len),
                     },
                 };
             },
             .delta_preimage_lookup => blk: {
-                const decomposed = state_dictionary.deconstructServiceIndexHashKey(key);
-
                 break :blk state_dictionary.DictMetadata{
                     .delta_preimage_lookup = .{
-                        .service_index = decomposed.service_index,
                         .hash = try parseHashFromDesc(self.desc),
                         .preimage_length = try parseLengthFromDesc(self.desc),
                     },
                 };
             },
-            .unknown => return error.UnkownKeyType,
+            else => null,
         };
     }
 
@@ -201,6 +182,8 @@ pub const KeyVal = struct {
         try writer.write(self.id);
         try writer.write(self.desc);
         writer.options.emit_bytes_as_hex = true;
+
+        try writer.write(self.metadata);
 
         try writer.endArray();
     }

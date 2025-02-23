@@ -54,7 +54,7 @@ pub fn reconstructStorageEntry(
     const owned_value = try allocator.dupe(u8, dict_entry.value);
     errdefer allocator.free(owned_value);
 
-    const storage_key = dict_entry.metadata.delta_storage.storage_key;
+    const storage_key = dict_entry.metadata.?.delta_storage.storage_key;
     try account.storage.put(storage_key, owned_value);
     span.debug("Successfully stored entry in account storage", .{});
 }
@@ -88,7 +88,7 @@ pub fn reconstructPreimageEntry(
 
     // we have to decode the value to add it the account preimages, but we also do
     // not have access to the hash
-    try account.preimages.put(dict_entry.metadata.delta_preimage.hash, owned_value);
+    try account.preimages.put(dict_entry.metadata.?.delta_preimage.hash, owned_value);
     span.debug("Successfully stored preimage in account", .{});
 
     // GP0.5.0 @ 9.2.1 The state of the lookup system natu-
@@ -132,7 +132,7 @@ pub fn reconstructPreimageLookupEntry(
     );
 
     // add it to the account
-    const metadata = dict_entry.metadata.delta_preimage_lookup;
+    const metadata = dict_entry.metadata.?.delta_preimage_lookup;
     try account.preimage_lookups.put(
         services.PreimageLookupKey{ .hash = metadata.hash, .length = metadata.preimage_length },
         entry,

@@ -178,10 +178,6 @@ pub fn reconstructState(
 
                 try delta_reconstruction.reconstructPreimageLookupEntry(allocator, &jam_state.delta.?, dict_entry);
             },
-            .unknown => {
-                entry_span.err("Invalid key encountered: {any}", .{key});
-                return error.InvalidKey;
-            },
         }
     }
 

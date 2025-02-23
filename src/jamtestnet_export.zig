@@ -7,11 +7,12 @@ const codec = @import("codec.zig");
 const state_dictionary = @import("state_dictionary.zig");
 const jamtestnet = @import("jamtestnet.zig");
 const jamtestnet_json = @import("jamtestnet/json.zig");
+const jamtestnet_export = @import("jamtestnet/export.zig");
 
 const stf = @import("stf.zig");
 
-const TestStateTransition = @import("jamtestnet/parsers/bin/state_transition.zig").TestStateTransition;
-const KeyVal = @import("jamtestnet/parsers/bin/state_transition.zig").KeyVal;
+const StateTransition = jamtestnet_export.StateTransition;
+const KeyVal = jamtestnet_export.KeyVal;
 
 pub fn writeStateTransition(
     comptime params: jam_params.Params,
@@ -37,7 +38,7 @@ pub fn writeStateTransition(
     defer allocator.free(json_path_buf);
 
     // Build state transition data
-    var transition = TestStateTransition{
+    var transition = StateTransition{
         .pre_state = .{
             .state_root = try current_state.buildStateRoot(allocator),
             .keyvals = try buildKeyValsFromState(params, allocator, current_state),
@@ -57,7 +58,7 @@ pub fn writeStateTransition(
     {
         const file = try std.fs.cwd().createFile(bin_path_buf, .{});
         defer file.close();
-        try codec.serialize(TestStateTransition, params, file.writer(), transition);
+        try codec.serialize(StateTransition, params, file.writer(), transition);
     }
 
     // Write JSON format
@@ -113,9 +114,6 @@ fn buildMetadataString(allocator: std.mem.Allocator, metadata: *const state_dict
                 m.preimage_length,
             });
         },
-        .unknown => {
-            return allocator.dupe(u8, "");
-        },
     }
 }
 
@@ -136,9 +134,6 @@ fn buildIdString(allocator: std.mem.Allocator, metadata: *const state_dictionary
         .delta_preimage_lookup => |_| {
             return std.fmt.allocPrint(allocator, "account_lookup", .{});
         },
-        .unknown => {
-            return error.UnknownType;
-        },
     }
 }
 
@@ -155,17 +150,16 @@ fn buildKeyValsFromState(comptime params: jam_params.Params, allocator: std.mem.
         const key = entry.key_ptr.*;
         const dict_entry = entry.value_ptr.*;
         try keyvals.append(.{
-            .key = try allocator.dupe(u8, &key),
+            .key = key,
             .val = try allocator.dupe(u8, dict_entry.value),
-            .id = try buildIdString(allocator, &dict_entry.metadata),
-            .desc = try buildMetadataString(allocator, &dict_entry.metadata),
+            .metadata = dict_entry.metadata,
         });
     }
 
     // sort the keyvals on key in place
     std.mem.sort(KeyVal, keyvals.items, {}, struct {
         fn lessThan(_: void, a: KeyVal, b: KeyVal) bool {
-            return std.mem.lessThan(u8, a.key, b.key);
+            return std.mem.lessThan(u8, &a.key, &b.key);
         }
     }.lessThan);
 
