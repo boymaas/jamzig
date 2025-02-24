@@ -44,8 +44,9 @@ pub fn convertBeta(
 pub fn convertAuthPools(
     auth_pools: tvector.AuthPools,
     comptime core_count: u16,
-) state.Alpha(core_count) {
-    var alpha = state.Alpha(core_count).init();
+    comptime max_pool_items: u8,
+) state.Alpha(core_count, max_pool_items) {
+    var alpha = state.Alpha(core_count, max_pool_items).init();
 
     for (auth_pools.pools, 0..) |pool, core| {
         for (pool) |hash| {
@@ -129,7 +130,7 @@ pub fn convertState(
     if (test_state.auth_pools.pools.len != params.core_count) {
         return StateInitError.InvalidAuthPoolsCount;
     }
-    jam_state.alpha = convertAuthPools(test_state.auth_pools, params.core_count);
+    jam_state.alpha = convertAuthPools(test_state.auth_pools, params.core_count, params.max_authorizations_pool_items);
 
     // Convert service state
     jam_state.delta = try convertServices(allocator, test_state.services);

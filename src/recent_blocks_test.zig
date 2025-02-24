@@ -24,7 +24,7 @@ test "recent blocks: parsing all test cases" {
     defer entries.deinit();
 
     for (entries.items) |entry| {
-        std.debug.print("\x1b[1;32mProcessing test vector: {s}\x1b[0m\n", .{entry});
+        std.debug.print("\n\x1b[1;32mProcessing test vector: {s}\x1b[0m\n", .{entry});
 
         const file_path = try std.fs.path.join(allocator, &[_][]const u8{ target_dir, entry });
         defer allocator.free(file_path);
@@ -44,7 +44,7 @@ test "recent blocks: parsing all test cases" {
 
         // Process the new block
         const recent_block = try fromTestVectorInputToRecentBlock(allocator, vector.expected.value.input);
-        defer recent_block.deinit(allocator);
+        errdefer recent_block.deinit(allocator);
 
         try recent_history.import(recent_block);
 

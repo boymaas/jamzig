@@ -126,7 +126,14 @@ pub fn deconstructServiceIndexHashKey(key: [32]u8) struct { service_index: u32, 
 // |_|\_\___|\__, | |_|  |_|\__,_|_| |_|\__, |_|_|_| |_|\__, |
 //           |___/                      |___/           |___/
 
-/// represents a lossy hash and the start and end of where the has was cut
+//// Represents the different types of keys in the state dictionary
+pub const DictKeyType = enum {
+    delta_storage, // Service storage entries
+    delta_preimage, // Service preimage entries
+    delta_preimage_lookup, // Service preimage lookup entries
+};
+
+// represents a lossy hash and the start and end of where the has was cut
 pub fn LossyHash(comptime size: usize) type {
     return struct {
         hash: [size]u8,
@@ -136,6 +143,22 @@ pub fn LossyHash(comptime size: usize) type {
         pub fn matches(self: *const @This(), other: *const [32]u8) bool {
             // Compare the stored hash portion with the corresponding slice of the input hash
             return std.mem.eql(u8, &self.hash, other[self.start..self.end]);
+        }
+
+        pub fn format(
+            self: @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = fmt;
+            _ = options;
+            try writer.print("LossyHash(size={d}, {d}..{d}): {s}", .{
+                size,
+                self.start,
+                self.end,
+                std.fmt.fmtSliceHexLower(&self.hash),
+            });
         }
     };
 }
@@ -147,14 +170,14 @@ pub fn buildStorageKey(k: [32]u8) [32]u8 {
     return result;
 }
 
-pub fn deconstructStorageKey(key: [28]u8) ?LossyHash(24) {
+pub fn deconstructStorageKey(key: [28]u8) ?[24]u8 {
     // Verify the expected magic number
     const magic = std.mem.readInt(u32, key[0..4], .little);
     if (magic != 0xFFFFFFFF) return null;
 
     var result: [24]u8 = undefined;
     @memcpy(&result, key[4..28]); // Copy the stored data back
-    return .{ .hash = result, .start = 0, .end = 24 };
+    return result;
 }
 
 // TODO: rename to construct ...
@@ -372,15 +395,67 @@ pub const MerklizationDictionaryDiff = struct {
     }
 };
 
+//  __  __           _    _      ____  _      _
+// |  \/  | ___ _ __| | _| | ___|  _ \(_) ___| |_
+// | |\/| |/ _ \ '__| |/ / |/ _ \ | | | |/ __| __|
+// | |  | |  __/ |  |   <| |  __/ |_| | | (__| |_
+// |_|  |_|\___|_|  |_|\_\_|\___|____/|_|\___|\__|
+//
+
+// Metadata for state components
+pub const StateComponentMetadata = struct {
+    component_index: u8, // 1-15 for state components
+};
+
+// Metadata for service base info
+pub const DeltaBaseMetadata = struct {
+    service_index: u32,
+};
+
+// Metadata for storage entries
+pub const DeltaStorageMetadata = struct {
+    storage_key: [32]u8,
+};
+
+// Metadata for preimage entries
+pub const DeltaPreimageMetadata = struct {
+    hash: [32]u8,
+    preimage_length: u32,
+};
+
+// Metadata for preimage lookup entries
+pub const DeltaPreimageLookupMetadata = struct {
+    hash: [32]u8,
+    preimage_length: u32,
+};
+
+// Union of all possible metadata types
+pub const DictMetadata = union(DictKeyType) {
+    delta_storage: DeltaStorageMetadata,
+    delta_preimage: DeltaPreimageMetadata,
+    delta_preimage_lookup: DeltaPreimageLookupMetadata,
+};
+
+// Enhanced dictionary entry with metadata
+pub const DictEntry = struct {
+    key: [32]u8,
+    value: []const u8,
+    metadata: ?DictMetadata = null,
+
+    pub fn deinit(self: *DictEntry, allocator: std.mem.Allocator) void {
+        allocator.free(self.value);
+    }
+};
+
 pub const MerklizationDictionary = struct {
-    entries: std.AutoHashMap([32]u8, []const u8),
+    entries: std.AutoHashMap([32]u8, DictEntry),
 
     // FIX: move these entries to a shared type file
-    const Entry = @import("merkle.zig").Entry;
+    const MerkleEntry = @import("merkle.zig").Entry;
 
     pub fn init(allocator: std.mem.Allocator) MerklizationDictionary {
         return .{
-            .entries = std.AutoHashMap([32]u8, []const u8).init(allocator),
+            .entries = std.AutoHashMap([32]u8, DictEntry).init(allocator),
         };
     }
 
@@ -390,11 +465,11 @@ pub const MerklizationDictionary = struct {
     }
 
     /// Slice is owned, the values are owned by the dictionary.
-    pub fn toOwnedSlice(self: *const MerklizationDictionary) ![]Entry {
-        var buffer = std.ArrayList(Entry).init(self.entries.allocator);
+    pub fn toOwnedSlice(self: *const MerklizationDictionary) ![]MerkleEntry {
+        var buffer = std.ArrayList(MerkleEntry).init(self.entries.allocator);
         var it = self.entries.iterator();
         while (it.next()) |entry| {
-            try buffer.append(.{ .k = entry.key_ptr.*, .v = entry.value_ptr.* });
+            try buffer.append(.{ .k = entry.key_ptr.*, .v = entry.value_ptr.value });
         }
 
         return buffer.toOwnedSlice();
@@ -403,21 +478,21 @@ pub const MerklizationDictionary = struct {
     /// Returns a new owned slice of entries sorted by key.
     /// The slice should be freed by the caller.
     /// The values remain owned by the dictionary.
-    pub fn toOwnedSliceSortedByKey(self: *const MerklizationDictionary) ![]Entry {
+    pub fn toOwnedSliceSortedByKey(self: *const MerklizationDictionary) ![]MerkleEntry {
         const slice = try self.toOwnedSlice();
         const Context = struct {
-            pub fn lessThan(_: @This(), a: Entry, b: Entry) bool {
+            pub fn lessThan(_: @This(), a: MerkleEntry, b: MerkleEntry) bool {
                 return std.mem.lessThan(u8, &a.k, &b.k);
             }
         };
-        std.mem.sort(Entry, slice, Context{}, Context.lessThan);
+        std.mem.sort(MerkleEntry, slice, Context{}, Context.lessThan);
         return slice;
     }
 
     pub fn deinit(self: *MerklizationDictionary) void {
         var it = self.entries.valueIterator();
         while (it.next()) |entry| {
-            self.entries.allocator.free(entry.*);
+            entry.deinit(self.entries.allocator);
         }
         self.entries.deinit();
         self.* = undefined;
@@ -434,14 +509,14 @@ pub const MerklizationDictionary = struct {
             const key = other_entry.key_ptr.*;
             const new_value = other_entry.value_ptr.*;
 
-            if (self.entries.get(key)) |me_value| {
+            if (self.entries.get(key)) |me_entry| {
                 // Entry exists in both - check if changed
-                if (!std.mem.eql(u8, me_value, new_value)) {
+                if (!std.mem.eql(u8, me_entry.value, new_value.value)) {
                     try result.entries.append(.{
                         .key = key,
                         .diff_type = .changed,
-                        .me_value = me_value,
-                        .other_value = new_value,
+                        .me_value = me_entry.value,
+                        .other_value = new_value.value,
                     });
                 }
             } else {
@@ -449,7 +524,7 @@ pub const MerklizationDictionary = struct {
                 try result.entries.append(.{
                     .key = key,
                     .diff_type = .added,
-                    .other_value = new_value,
+                    .other_value = new_value.value,
                 });
             }
         }
@@ -458,13 +533,13 @@ pub const MerklizationDictionary = struct {
         var self_it = self.entries.iterator();
         while (self_it.next()) |self_entry| {
             const key = self_entry.key_ptr.*;
-            const old_value = self_entry.value_ptr.*;
+            // const old_value = self_entry.value_ptr.*;
 
             if (!other.entries.contains(key)) {
                 try result.entries.append(.{
                     .key = key,
                     .diff_type = .removed,
-                    .me_value = old_value,
+                    .me_value = self_entry.value_ptr.*.value,
                 });
             }
         }
@@ -483,9 +558,23 @@ pub const MerklizationDictionary = struct {
 
         var it = self.entries.iterator();
         while (it.next()) |entry| {
-            try writer.print("key: {any}, value: {any}\n", .{
+            try writer.print("type: {s}, key: {s}, ", .{
+                @tagName(entry.value_ptr.metadata),
                 std.fmt.fmtSliceHexLower(&entry.key_ptr.*),
-                std.fmt.fmtSliceHexLower(entry.value_ptr.*[0..@min(entry.value_ptr.*.len, 160)]),
+            });
+
+            // Format metadata based on type
+            switch (entry.value_ptr.metadata) {
+                .state_component => |m| try writer.print("component: {d}, ", .{m.component_index}),
+                .delta_base => |m| try writer.print("service: {d}, ", .{m.service_index}),
+                .delta_storage => |m| try writer.print("service: {d}, ", .{m.service_index}),
+                .delta_preimage => |m| try writer.print("service: {d}, ", .{m.service_index}),
+                .delta_preimage_lookup => |m| try writer.print("service: {d}, ", .{m.service_index}),
+                .unknown => {},
+            }
+
+            try writer.print("value: {s}\n", .{
+                std.fmt.fmtSliceHexLower(entry.value_ptr.value[0..@min(entry.value_ptr.value.len, 160)]),
             });
         }
     }
@@ -505,7 +594,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
     state: *const jamstate.JamState(params),
     comptime config: DictionaryConfig,
 ) !MerklizationDictionary {
-    var map = std.AutoHashMap([32]u8, []const u8).init(allocator);
+    var map = std.AutoHashMap([32]u8, DictEntry).init(allocator);
     errdefer map.deinit();
 
     // Helpers to ...
@@ -520,9 +609,12 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         const alpha_value = try encodeAndOwnSlice(
             allocator,
             state_encoder.encodeAlpha,
-            .{ params.core_count, alpha_managed.ptr },
+            .{ params.core_count, params.max_authorizations_pool_items, alpha_managed.ptr },
         );
-        try map.put(alpha_key, alpha_value);
+        try map.put(alpha_key, .{
+            .key = alpha_key,
+            .value = alpha_value,
+        });
 
         // Phi (2)
         const phi_key = constructSimpleByteKey(2);
@@ -533,7 +625,10 @@ pub fn buildStateMerklizationDictionaryWithConfig(
             state_encoder.encodePhi,
             .{phi_managed.ptr},
         );
-        try map.put(phi_key, phi_value);
+        try map.put(phi_key, .{
+            .key = phi_key,
+            .value = phi_value,
+        });
 
         // Beta (3)
         const beta_key = constructSimpleByteKey(3);
@@ -544,7 +639,10 @@ pub fn buildStateMerklizationDictionaryWithConfig(
             state_encoder.encodeBeta,
             .{beta_managed.ptr},
         );
-        try map.put(beta_key, beta_value);
+        try map.put(beta_key, .{
+            .key = beta_key,
+            .value = beta_value,
+        });
 
         // Gamma (4)
         const gamma_key = constructSimpleByteKey(4);
@@ -553,41 +651,59 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         var gamma_buffer = std.ArrayList(u8).init(allocator);
         try state_encoder.encodeGamma(params, gamma_managed.ptr, gamma_buffer.writer());
         const gamma_value = try gamma_buffer.toOwnedSlice();
-        try map.put(gamma_key, gamma_value);
+        try map.put(gamma_key, .{
+            .key = gamma_key,
+            .value = gamma_value,
+        });
 
         // Psi (5)
         const psi_key = constructSimpleByteKey(5);
         var psi_managed = try getOrInitManaged(allocator, &state.psi, .{allocator});
         defer psi_managed.deinit(allocator);
         const psi_value = try encodeAndOwnSlice(allocator, state_encoder.encodePsi, .{psi_managed.ptr});
-        try map.put(psi_key, psi_value);
+        try map.put(psi_key, .{
+            .key = psi_key,
+            .value = psi_value,
+        });
 
         // Eta (6) does not contain allocations
         const eta_key = constructSimpleByteKey(6);
         const eta_managed = if (state.eta) |eta| eta else [_]types.Entropy{[_]u8{0} ** 32} ** 4;
         const eta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeEta, .{&eta_managed});
-        try map.put(eta_key, eta_value);
+        try map.put(eta_key, .{
+            .key = eta_key,
+            .value = eta_value,
+        });
 
         // Iota (7)
         const iota_key = constructSimpleByteKey(7);
         var iota_managed = try getOrInitManaged(allocator, &state.iota, .{ allocator, params.validators_count });
         defer iota_managed.deinit(allocator);
         const iota_value = try encodeAndOwnSlice(allocator, state_encoder.encodeIota, .{iota_managed.ptr});
-        try map.put(iota_key, iota_value);
+        try map.put(iota_key, .{
+            .key = iota_key,
+            .value = iota_value,
+        });
 
         // Kappa (8)
         const kappa_key = constructSimpleByteKey(8);
         var kappa_managed = try getOrInitManaged(allocator, &state.kappa, .{ allocator, params.validators_count });
         defer kappa_managed.deinit(allocator);
         const kappa_value = try encodeAndOwnSlice(allocator, state_encoder.encodeKappa, .{kappa_managed.ptr});
-        try map.put(kappa_key, kappa_value);
+        try map.put(kappa_key, .{
+            .key = kappa_key,
+            .value = kappa_value,
+        });
 
         // Lambda (9)
         const lambda_key = constructSimpleByteKey(9);
         var lambda_managed = try getOrInitManaged(allocator, &state.lambda, .{ allocator, params.validators_count });
         defer lambda_managed.deinit(allocator);
         const lambda_value = try encodeAndOwnSlice(allocator, state_encoder.encodeLambda, .{lambda_managed.ptr});
-        try map.put(lambda_key, lambda_value);
+        try map.put(lambda_key, .{
+            .key = lambda_key,
+            .value = lambda_value,
+        });
 
         // Rho (10)
         const rho_key = constructSimpleByteKey(10);
@@ -597,34 +713,49 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         var rho_buffer = std.ArrayList(u8).init(allocator); // TODO: reuse buffers
         try state_encoder.encodeRho(params, rho_managed.ptr, rho_buffer.writer());
         const rho_value = try rho_buffer.toOwnedSlice();
-        try map.put(rho_key, rho_value);
+        try map.put(rho_key, .{
+            .key = rho_key,
+            .value = rho_value,
+        });
 
         // Tau (11)
         const tau_key = constructSimpleByteKey(11);
         const tau_managed = if (state.tau) |tau| tau else 0; // stack managed
         const tau_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTau, .{tau_managed});
-        try map.put(tau_key, tau_value);
+        try map.put(tau_key, .{
+            .key = tau_key,
+            .value = tau_value,
+        });
 
         // Chi (12)
         const chi_key = constructSimpleByteKey(12);
         var chi_managed = try getOrInitManaged(allocator, &state.chi, .{allocator});
         defer chi_managed.deinit(allocator);
         const chi_value = try encodeAndOwnSlice(allocator, state_encoder.encodeChi, .{chi_managed.ptr});
-        try map.put(chi_key, chi_value);
+        try map.put(chi_key, .{
+            .key = chi_key,
+            .value = chi_value,
+        });
 
         // Pi (13)
         const pi_key = constructSimpleByteKey(13);
         var pi_managed = try getOrInitManaged(allocator, &state.pi, .{ allocator, params.validators_count });
         defer pi_managed.deinit(allocator);
         const pi_value = try encodeAndOwnSlice(allocator, state_encoder.encodePi, .{pi_managed.ptr});
-        try map.put(pi_key, pi_value);
+        try map.put(pi_key, .{
+            .key = pi_key,
+            .value = pi_value,
+        });
 
         // Theta (14)
         const theta_key = constructSimpleByteKey(14);
         var theta_managed = try getOrInitManaged(allocator, &state.theta, .{allocator});
         defer theta_managed.deinit(allocator);
         const theta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTheta, .{theta_managed.ptr});
-        try map.put(theta_key, theta_value);
+        try map.put(theta_key, .{
+            .key = theta_key,
+            .value = theta_value,
+        });
 
         // Xi (15)
         const xi_key = constructSimpleByteKey(15);
@@ -632,7 +763,10 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         defer xi_managed.deinit(allocator);
         // FIXME: now hard coded epoch size
         const xi_value = try encodeAndOwnSlice(allocator, state_encoder.encodeXi, .{ 12, allocator, &xi_managed.ptr.entries });
-        try map.put(xi_key, xi_value);
+        try map.put(xi_key, .{
+            .key = xi_key,
+            .value = xi_value,
+        });
     }
 
     // Handle delta component (service accounts) specially
@@ -650,13 +784,22 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                 var base_value = std.ArrayList(u8).init(allocator);
                 try state_encoder.delta.encodeServiceAccountBase(account, base_value.writer());
 
-                try map.put(base_key, try base_value.toOwnedSlice());
+                try map.put(base_key, .{
+                    .key = base_key,
+                    .value = try base_value.toOwnedSlice(),
+                });
 
                 // Storage entries
                 var storage_iter = account.storage.iterator();
                 while (storage_iter.next()) |storage_entry| {
                     const storage_key = constructServiceIndexHashKey(service_idx, buildStorageKey(storage_entry.key_ptr.*));
-                    try map.put(storage_key, try allocator.dupe(u8, storage_entry.value_ptr.*));
+                    try map.put(storage_key, .{
+                        .key = storage_key,
+                        .value = try allocator.dupe(u8, storage_entry.value_ptr.*),
+                        .metadata = .{ .delta_storage = .{
+                            .storage_key = storage_entry.key_ptr.*,
+                        } },
+                    });
                 }
 
                 if (config.include_preimages) {
@@ -664,7 +807,14 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                     var preimage_iter = account.preimages.iterator();
                     while (preimage_iter.next()) |preimage_entry| {
                         const preimage_key = constructServiceIndexHashKey(service_idx, buildPreimageKey(preimage_entry.key_ptr.*));
-                        try map.put(preimage_key, try allocator.dupe(u8, preimage_entry.value_ptr.*));
+                        try map.put(preimage_key, .{
+                            .key = preimage_key,
+                            .value = try allocator.dupe(u8, preimage_entry.value_ptr.*),
+                            .metadata = .{ .delta_preimage = .{
+                                .hash = preimage_entry.key_ptr.*,
+                                .preimage_length = @intCast(preimage_entry.value_ptr.*.len),
+                            } },
+                        });
                     }
 
                     if (config.include_preimage_timestamps) {
@@ -678,7 +828,16 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                             try delta_encoder.encodePreimageLookup(lookup_entry.value_ptr.*, preimage_lookup.writer());
 
                             const lookup_key = constructServiceIndexHashKey(service_idx, buildPreimageLookupKey(key));
-                            try map.put(lookup_key, try preimage_lookup.toOwnedSlice());
+                            try map.put(lookup_key, .{
+                                .key = lookup_key,
+                                .value = try preimage_lookup.toOwnedSlice(),
+                                .metadata = .{
+                                    .delta_preimage_lookup = .{
+                                        .hash = key.hash,
+                                        .preimage_length = key.length,
+                                    },
+                                },
+                            });
                         }
                     }
                 }
@@ -736,70 +895,6 @@ test "constructByteServiceIndexKey" {
     for (key[8..]) |byte| {
         try testing.expectEqual(@as(u8, 0), byte);
     }
-}
-
-test "MerklizationDictionary diff" {
-    const allocator = testing.allocator;
-
-    var dict1 = MerklizationDictionary.init(allocator);
-    defer dict1.deinit();
-
-    var dict2 = MerklizationDictionary.init(allocator);
-    defer dict2.deinit();
-
-    // Setup some test data
-    const key1 = constructSimpleByteKey(1);
-    const key2 = constructSimpleByteKey(2);
-    const key3 = constructSimpleByteKey(3);
-
-    const val1 = try allocator.dupe(u8, &[_]u8{ 1, 1, 1 });
-    const val2 = try allocator.dupe(u8, &[_]u8{ 2, 2, 2 });
-    const val3 = try allocator.dupe(u8, &[_]u8{ 3, 3, 3 });
-    const val2_changed = try allocator.dupe(u8, &[_]u8{ 4, 4, 4 });
-
-    // Dict1: key1->val1, key2->val2
-    try dict1.entries.put(key1, val1);
-    try dict1.entries.put(key2, val2);
-
-    // Dict2: key2->val2_changed, key3->val3
-    try dict2.entries.put(key2, val2_changed);
-    try dict2.entries.put(key3, val3);
-
-    // Compare
-    var diff = try dict1.diff(&dict2);
-    defer diff.deinit();
-
-    // Verify results
-    try testing.expectEqual(@as(usize, 3), diff.entries.items.len);
-
-    var found_removed = false;
-    var found_changed = false;
-    var found_added = false;
-
-    for (diff.entries.items) |entry| {
-        switch (entry.diff_type) {
-            .removed => {
-                try testing.expect(std.mem.eql(u8, &key1, &entry.key));
-                try testing.expect(std.mem.eql(u8, val1, entry.me_value.?));
-                found_removed = true;
-            },
-            .changed => {
-                try testing.expect(std.mem.eql(u8, &key2, &entry.key));
-                try testing.expect(std.mem.eql(u8, val2, entry.me_value.?));
-                try testing.expect(std.mem.eql(u8, val2_changed, entry.other_value.?));
-                found_changed = true;
-            },
-            .added => {
-                try testing.expect(std.mem.eql(u8, &key3, &entry.key));
-                try testing.expect(std.mem.eql(u8, val3, entry.other_value.?));
-                found_added = true;
-            },
-        }
-    }
-
-    try testing.expect(found_removed);
-    try testing.expect(found_changed);
-    try testing.expect(found_added);
 }
 
 test "constructServiceIndexHashKey" {

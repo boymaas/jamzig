@@ -7,16 +7,11 @@ const ordered_files = @import("../tests/ordered_files.zig");
 const getOrderedFiles = ordered_files.getOrderedFiles;
 const hex_bytes = @import("../jamtestvectors/json_types/hex_bytes.zig");
 
-const state_transition_parser = @import("parsers/bin/state_transition.zig");
 const jam_params = @import("../jam_params.zig");
 
 pub const StateTransitionPair = struct {
     bin: ordered_files.Entry,
     json: ordered_files.Entry,
-
-    pub fn decodeBin(self: @This(), comptime params: jam_params.Params, allocator: std.mem.Allocator) !state_transition_parser.TestStateTransition {
-        return try state_transition_parser.loadTestVector(params, allocator, self.bin.path);
-    }
 
     pub fn deinit(self: *StateTransitionPair, allocator: Allocator) void {
         self.bin.deinit(allocator);

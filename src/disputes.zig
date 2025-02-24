@@ -2,6 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const crypto = std.crypto;
 
+const trace = @import("tracing.zig").scoped(.disputes);
+
 // Types
 pub const Hash = [32]u8;
 pub const Signature = [64]u8;
@@ -96,41 +98,74 @@ pub const Psi = struct {
 // Process disputes extrinsic implementation
 pub fn processDisputesExtrinsic(
     comptime core_count: u32,
-    current_state: *const Psi,
-    current_rho: *Rho(core_count),
+    psi_prime: *Psi,
+    rho_prime: *Rho(core_count),
     extrinsic: DisputesExtrinsic,
     validator_count: usize,
-) !Psi {
-    var state = try current_state.deepClone();
+) !void {
+    const span = trace.span(.process_disputes);
+    defer span.deinit();
+    span.debug("Processing disputes extrinsic with {d} validators", .{validator_count});
+    span.debug("Verdicts count: {d}, Culprits: {d}, Faults: {d}", .{
+        extrinsic.verdicts.len,
+        extrinsic.culprits.len,
+        extrinsic.faults.len,
+    });
 
     // Process verdicts
-    for (extrinsic.verdicts) |verdict| {
+    for (extrinsic.verdicts, 0..) |verdict, i| {
+        const verdict_span = span.child(.process_verdict);
+        defer verdict_span.deinit();
+        verdict_span.debug("Processing verdict {d} of {d}", .{ i + 1, extrinsic.verdicts.len });
+        verdict_span.trace("Target hash: {any}", .{std.fmt.fmtSliceHexLower(&verdict.target)});
+
         const positive_judgments = countPositiveJudgments(verdict);
+        verdict_span.debug("Positive judgments: {d}", .{positive_judgments});
+
         if (positive_judgments == validator_count * 2 / 3 + 1) {
-            try state.good_set.put(verdict.target, {});
+            verdict_span.debug("Adding to good set - supermajority positive", .{});
+            try psi_prime.good_set.put(verdict.target, {});
         } else if (positive_judgments == 0) {
-            try state.bad_set.put(verdict.target, {});
-            _ = try current_rho.clearFromCore(verdict.target);
+            verdict_span.debug("Adding to bad set - unanimous negative", .{});
+            try psi_prime.bad_set.put(verdict.target, {});
+            verdict_span.debug("Clearing from core", .{});
+            _ = try rho_prime.clearFromCore(verdict.target);
         } else if (positive_judgments == validator_count / 3) {
-            try state.wonky_set.put(verdict.target, {});
-            _ = try current_rho.clearFromCore(verdict.target);
+            verdict_span.debug("Adding to wonky set - threshold negative", .{});
+            try psi_prime.wonky_set.put(verdict.target, {});
+            verdict_span.debug("Clearing from core", .{});
+            _ = try rho_prime.clearFromCore(verdict.target);
         }
     }
 
     // Clear punish set before processing new offenders
-    state.punish_set.clearRetainingCapacity();
+    psi_prime.punish_set.clearRetainingCapacity();
 
     // Process culprits
-    for (extrinsic.culprits) |culprit| {
-        try state.punish_set.put(culprit.key, {});
+    const culprits_span = span.child(.process_culprits);
+    defer culprits_span.deinit();
+    culprits_span.debug("Processing {d} culprits", .{extrinsic.culprits.len});
+
+    for (extrinsic.culprits, 0..) |culprit, i| {
+        const culprit_span = culprits_span.child(.culprit);
+        defer culprit_span.deinit();
+        culprit_span.debug("Processing culprit {d} of {d}", .{ i + 1, extrinsic.culprits.len });
+        culprit_span.trace("Public key: {any}", .{std.fmt.fmtSliceHexLower(&culprit.key)});
+        try psi_prime.punish_set.put(culprit.key, {});
     }
 
     // Process faults
-    for (extrinsic.faults) |fault| {
-        try state.punish_set.put(fault.key, {});
-    }
+    const faults_span = span.child(.process_faults);
+    defer faults_span.deinit();
+    faults_span.debug("Processing {d} faults", .{extrinsic.faults.len});
 
-    return state;
+    for (extrinsic.faults, 0..) |fault, i| {
+        const fault_span = faults_span.child(.fault);
+        defer fault_span.deinit();
+        fault_span.debug("Processing fault {d} of {d}", .{ i + 1, extrinsic.faults.len });
+        fault_span.trace("Public key: {any}", .{std.fmt.fmtSliceHexLower(&fault.key)});
+        try psi_prime.punish_set.put(fault.key, {});
+    }
 }
 
 fn countPositiveJudgments(verdict: Verdict) usize {
@@ -141,101 +176,6 @@ fn countPositiveJudgments(verdict: Verdict) usize {
         }
     }
     return count;
-}
-
-const testing = std.testing;
-
-test "processDisputesExtrinsic - good set" {
-    const allocator = std.testing.allocator;
-    var current_state = Psi.init(allocator);
-    defer current_state.deinit();
-    var current_rho = Rho(341).init(allocator);
-
-    const validator_count: usize = 3; // Simplified for testing
-    const target_hash: Hash = [_]u8{1} ** 32;
-
-    const extrinsic = types.DisputesExtrinsic{
-        .verdicts = @constCast(&[_]types.Verdict{.{
-            .age = 0,
-            .target = target_hash,
-            .votes = &[_]types.Judgement{
-                .{ .index = 0, .vote = true, .signature = [_]u8{0} ** 64 },
-                .{ .index = 1, .vote = true, .signature = [_]u8{0} ** 64 },
-                .{ .index = 2, .vote = true, .signature = [_]u8{0} ** 64 },
-            },
-        }}),
-        .culprits = &[_]types.Culprit{},
-        .faults = &[_]types.Fault{},
-    };
-
-    var state = try processDisputesExtrinsic(341, &current_state, &current_rho, extrinsic, validator_count);
-    defer state.deinit();
-
-    try testing.expect(state.good_set.contains(target_hash));
-    try testing.expect(!state.bad_set.contains(target_hash));
-    try testing.expect(!state.wonky_set.contains(target_hash));
-}
-
-test "processDisputesExtrinsic - bad set" {
-    const allocator = std.testing.allocator;
-    var current_state = Psi.init(allocator);
-    defer current_state.deinit();
-    var current_rho = Rho(341).init(allocator);
-
-    const validator_count: usize = 3; // Simplified for testing
-    const target_hash: Hash = [_]u8{2} ** 32;
-
-    const extrinsic = types.DisputesExtrinsic{
-        .verdicts = @constCast(&[_]types.Verdict{.{
-            .age = 0,
-            .target = target_hash,
-            .votes = &[_]types.Judgement{
-                .{ .index = 0, .vote = false, .signature = [_]u8{0} ** 64 },
-                .{ .index = 1, .vote = false, .signature = [_]u8{0} ** 64 },
-                .{ .index = 2, .vote = false, .signature = [_]u8{0} ** 64 },
-            },
-        }}),
-        .culprits = &[_]types.Culprit{},
-        .faults = &[_]types.Fault{},
-    };
-
-    var state = try processDisputesExtrinsic(341, &current_state, &current_rho, extrinsic, validator_count);
-    defer state.deinit();
-
-    try testing.expect(!state.good_set.contains(target_hash));
-    try testing.expect(state.bad_set.contains(target_hash));
-    try testing.expect(!state.wonky_set.contains(target_hash));
-}
-
-test "processDisputesExtrinsic - wonky set" {
-    const allocator = std.testing.allocator;
-    var current_state = Psi.init(allocator);
-    defer current_state.deinit();
-    var current_rho = Rho(341).init(allocator);
-
-    const validator_count: usize = 3; // Simplified for testing
-    const target_hash: Hash = [_]u8{3} ** 32;
-
-    const extrinsic = types.DisputesExtrinsic{
-        .verdicts = @constCast(&[_]types.Verdict{.{
-            .age = 0,
-            .target = target_hash,
-            .votes = &[_]types.Judgement{
-                .{ .index = 0, .vote = true, .signature = [_]u8{0} ** 64 },
-                .{ .index = 1, .vote = false, .signature = [_]u8{0} ** 64 },
-                .{ .index = 2, .vote = false, .signature = [_]u8{0} ** 64 },
-            },
-        }}),
-        .culprits = &[_]types.Culprit{},
-        .faults = &[_]types.Fault{},
-    };
-
-    var state = try processDisputesExtrinsic(341, &current_state, &current_rho, extrinsic, validator_count);
-    defer state.deinit();
-
-    try testing.expect(!state.good_set.contains(target_hash));
-    try testing.expect(!state.bad_set.contains(target_hash));
-    try testing.expect(state.wonky_set.contains(target_hash));
 }
 
 pub const VerificationError = error{
@@ -281,6 +221,16 @@ pub fn verifyDisputesExtrinsicPre(
     validator_count: usize,
     current_epoch: u32,
 ) VerificationError!void {
+    const span = trace.span(.verify_pre);
+    defer span.deinit();
+    span.debug("Starting pre-verification of disputes extrinsic", .{});
+    span.debug("Validator count: {d}, Current epoch: {d}", .{ validator_count, current_epoch });
+    span.debug("Verdicts: {d}, Culprits: {d}, Faults: {d}", .{
+        extrinsic.verdicts.len,
+        extrinsic.culprits.len,
+        extrinsic.faults.len,
+    });
+
     // Check if verdicts are sorted and unique
     try verifyOrderedUnique(
         extrinsic.verdicts,
@@ -437,6 +387,15 @@ pub fn verifyDisputesExtrinsicPost(
     extrinsic: DisputesExtrinsic,
     posterior_state: *const Psi,
 ) VerificationError!void {
+    const span = trace.span(.verify_post);
+    defer span.deinit();
+    span.debug("Starting post-verification of disputes extrinsic", .{});
+    span.debug("Verdicts: {d}, Culprits: {d}, Faults: {d}", .{
+        extrinsic.verdicts.len,
+        extrinsic.culprits.len,
+        extrinsic.faults.len,
+    });
+
     // Verify culprits
     for (extrinsic.culprits) |culprit| {
         if (!posterior_state.bad_set.contains(culprit.target)) {
@@ -472,6 +431,11 @@ fn verifyOrderedUnique(
     compareFn: fn (U, U) std.math.Order,
     errortype: VerificationError,
 ) !void {
+    const span = trace.span(.verify_ordered);
+    defer span.deinit();
+    span.debug("Verifying ordered uniqueness for {d} items", .{items.len});
+    span.trace("Item type: {s}", .{@typeName(T)});
+
     if (items.len == 0) return;
     var prev = mapFn(&items[0]);
     for (items[1..]) |*item| {

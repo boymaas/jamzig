@@ -12,7 +12,8 @@ pub fn validateAndProcessGuaranteeExtrinsic(
     comptime params: Params,
     allocator: std.mem.Allocator,
     test_case: *const tvector.TestCase,
-    jam_state: *state.JamState(params),
+    jam_state: *const state.JamStateView(params),
+    rho: *state.Rho(params.core_count),
 ) !reports.Result {
     // First validate the guarantee extrinsic
     const validated_extrinsic = try reports.ValidatedGuaranteeExtrinsic.validate(
@@ -30,6 +31,7 @@ pub fn validateAndProcessGuaranteeExtrinsic(
         validated_extrinsic,
         test_case.input.slot,
         jam_state,
+        rho,
     );
 
     return result;
@@ -44,11 +46,14 @@ pub fn runReportTest(comptime params: Params, allocator: std.mem.Allocator, test
     var expected_state = try converters.convertState(params, allocator, test_case.post_state);
     defer expected_state.deinit(allocator);
 
+    const pre_state_view = state.JamStateView(params).fromJamState(&pre_state);
+
     var process_result = validateAndProcessGuaranteeExtrinsic(
         params,
         allocator,
         &test_case,
-        &pre_state,
+        &pre_state_view,
+        &pre_state.rho.?,
     );
     defer {
         if (process_result) |*result| {

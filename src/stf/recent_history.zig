@@ -19,7 +19,7 @@ pub fn transition(
     const span = trace.span(.transition_recent_history);
     defer span.deinit();
 
-    var beta_prime = try stx.ensureT(state.Beta, .beta_prime);
+    var beta_prime: *state.Beta = try stx.ensure(.beta_prime);
 
     span.debug("Starting recent history transition", .{});
     span.trace("Current beta block count: {d}", .{beta_prime.blocks.items.len});

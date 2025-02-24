@@ -13,7 +13,7 @@ const services = @import("services.zig");
 
 const jam_params = @import("jam_params.zig");
 
-const jamtestnet = @This();
+const jamtestnet = @import("jamtestnet/parsers.zig");
 
 const trace = @import("tracing.zig").scoped(.stf_test);
 
@@ -30,13 +30,15 @@ pub const JAMDUNA_PARAMS = jam_params.Params{
     // JAMDUNA changes
     .max_ticket_entries_per_validator = 3, // N
     .max_authorizations_queue_items = 80, // Q
-    .max_authorizations_pool_items = 2,
+    .max_authorizations_pool_items = 8, // O
 };
 
 test "jamduna:fallback" {
     const allocator = std.testing.allocator;
+    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
     try runStateTransitionTests(
         JAMDUNA_PARAMS,
+        loader.loader(),
         allocator,
         "src/jamtestnet/teams/jamduna/data/fallback/state_transitions",
     );
@@ -44,35 +46,52 @@ test "jamduna:fallback" {
 
 test "jamduna:safrole" {
     const allocator = std.testing.allocator;
+    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
     try runStateTransitionTests(
         JAMDUNA_PARAMS,
+        loader.loader(),
         allocator,
         "src/jamtestnet/teams/jamduna/data/safrole/state_transitions",
     );
 }
 
-test "jamzig:safrole" {
+test "jamduna:assurances" {
+    // const allocator = std.testing.allocator;
+    // const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
+    // try runStateTransitionTests(
+    //     JAMDUNA_PARAMS,
+    //     loader.loader(),
+    //     allocator,
+    //     "src/jamtestnet/teams/jamduna/data/assurances/state_transitions",
+    // );
+}
+
+test "javajam:safrole" {
     const allocator = std.testing.allocator;
+    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
     try runStateTransitionTests(
         JAMDUNA_PARAMS,
+        loader.loader(),
+        allocator,
+        "src/jamtestnet/teams/javajam/state_transitions",
+    );
+}
+
+test "jamzig:safrole" {
+    const allocator = std.testing.allocator;
+    const loader = jamtestnet.jamzig.Loader(JAMDUNA_PARAMS){};
+    try runStateTransitionTests(
+        JAMDUNA_PARAMS,
+        loader.loader(),
         allocator,
         "src/jamtestnet/teams/jamzig/safrole/state_transitions",
     );
 }
 
-// NOTE: disabled, not following the standard.
-// test "javajam:fallback" {
-//     const allocator = std.testing.allocator;
-//     try runStateTransitionTests(
-//         JAMDUNA_PARAMS,
-//         allocator,
-//         "src/jamtestnet/teams/javajam/state_transitions",
-//     );
-// }
-
 /// Run state transition tests using vectors from the specified directory
 pub fn runStateTransitionTests(
     comptime params: jam_params.Params,
+    loader: jamtestnet.Loader,
     allocator: std.mem.Allocator,
     test_dir: []const u8,
 ) !void {
@@ -87,13 +106,14 @@ pub fn runStateTransitionTests(
         if (current_state) |*cs| cs.deinit(allocator);
     }
 
-    for (state_transition_vectors.items(), 0..) |state_transition_vector, i| {
-        std.debug.print("\nProcessing transition {d}/{d}\n", .{ i + 1, state_transition_vectors.items().len });
+    for (state_transition_vectors.items()) |state_transition_vector| {
+        // std.debug.print("\nProcessing transition {d}/{d}\n", .{ i + 1, state_transition_vectors.items().len });
 
-        var state_transition = try state_transition_vector.decodeBin(params, allocator);
+        var state_transition = try loader.loadTestVector(allocator, state_transition_vector.bin.path);
         defer state_transition.deinit(allocator);
 
         // std.debug.print("{}", .{types.fmt.format(state_transition)});
+        // std.debug.print("{}", .{types.fmt.format(state_transition.block)});
 
         // First validate the roots
         var pre_state_mdict = try state_transition.preStateAsMerklizationDict(allocator);
@@ -102,11 +122,11 @@ pub fn runStateTransitionTests(
         // Validator Root Calculations
         try state_transition.validateRoots(allocator);
 
-        std.debug.print("Block header slot: {d}\n", .{state_transition.block.header.slot});
+        // std.debug.print("Block header slot: {d}\n", .{state_transition.block.header.slot});
 
         // Initialize genesis state if needed
         if (current_state == null) {
-            std.debug.print("Initializing genesis state...\n", .{});
+            // std.debug.print("Initializing genesis state...\n", .{});
             var dict = try state_transition.preStateAsMerklizationDict(allocator);
             defer dict.deinit();
             current_state = try state_dict.reconstruct.reconstructState(
@@ -114,20 +134,27 @@ pub fn runStateTransitionTests(
                 allocator,
                 &dict,
             );
-            std.debug.print("Genesis state initialized\n", .{});
+            // std.debug.print("Genesis state initialized\n", .{});
         }
 
-        std.debug.print("Executing state transition...\n", .{});
+        // std.debug.print("Executing state transition...\n", .{});
         var transition = try stf.stateTransition(
             params,
             allocator,
             &current_state.?,
-            &state_transition.block,
+            &state_transition.block(),
         );
         defer transition.deinitHeap();
 
         // Merge transition into base state
         try transition.mergePrimeOntoBase();
+
+        // Log block information for debugging
+        @import("sequoia.zig").logging.printBlockEntropyDebug(
+            JAMDUNA_PARAMS,
+            &state_transition.block(),
+            &current_state.?,
+        );
 
         // Validate against expected state
         var current_state_mdict = try current_state.?.buildStateMerklizationDictionary(allocator);
@@ -141,8 +168,12 @@ pub fn runStateTransitionTests(
 
         // Check for differences from expected state
         if (expected_state_diff.has_changes()) {
+            std.debug.print("{}", .{expected_state_diff});
+
             var expected_state = try state_dict.reconstruct.reconstructState(params, allocator, &expected_state_mdict);
             defer expected_state.deinit(allocator);
+
+            std.debug.print("{}", .{expected_state});
 
             try @import("tests/diff.zig").printDiffBasedOnFormatToStdErr(allocator, &current_state.?, &expected_state);
             return error.UnexpectedStateDiff;
@@ -152,7 +183,7 @@ pub fn runStateTransitionTests(
         const state_root = try current_state.?.buildStateRoot(allocator);
         try std.testing.expectEqualSlices(
             u8,
-            &state_transition.post_state.state_root,
+            &state_transition.postStateRoot(),
             &state_root,
         );
     }

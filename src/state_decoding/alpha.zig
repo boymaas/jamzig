@@ -5,8 +5,8 @@ const decoder = @import("../codec/decoder.zig");
 const codec = @import("../codec.zig");
 const Alpha = authorization.Alpha;
 
-pub fn decode(comptime core_count: u16, reader: anytype) !Alpha(core_count) {
-    var alpha = Alpha(core_count).init();
+pub fn decode(comptime core_count: u16, comptime max_pool_items: u8, reader: anytype) !Alpha(core_count, max_pool_items) {
+    var alpha = Alpha(core_count, max_pool_items).init();
 
     // For each core's pool
     for (0..core_count) |core| {
@@ -28,6 +28,7 @@ pub fn decode(comptime core_count: u16, reader: anytype) !Alpha(core_count) {
 test "decode alpha - empty pools" {
     const allocator = testing.allocator;
     const core_count: u16 = 2;
+    const max_pool_items: u8 = 8;
 
     // Create buffer with zero-length pools
     var buffer = std.ArrayList(u8).init(allocator);
@@ -38,7 +39,7 @@ test "decode alpha - empty pools" {
     try buffer.writer().writeInt(u32, 0, .little);
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    const alpha = try decode(core_count, fbs.reader());
+    const alpha = try decode(core_count, max_pool_items, fbs.reader());
 
     // Verify empty pools
     for (alpha.pools) |pool| {
@@ -49,6 +50,7 @@ test "decode alpha - empty pools" {
 test "decode alpha - with authorizations" {
     const allocator = testing.allocator;
     const core_count: u16 = 2;
+    const max_pool_items: u8 = 8;
 
     // Create test data
     var buffer = std.ArrayList(u8).init(allocator);
@@ -66,7 +68,7 @@ test "decode alpha - with authorizations" {
     try writer.writeAll(&[_]u8{3} ** 32);
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    const alpha = try decode(core_count, fbs.reader());
+    const alpha = try decode(core_count, max_pool_items, fbs.reader());
 
     // Verify Core 0
     try testing.expectEqual(@as(usize, 1), alpha.pools[0].len);
@@ -80,29 +82,31 @@ test "decode alpha - with authorizations" {
 
 test "decode alpha - insufficient data" {
     const core_count: u16 = 2;
+    const max_pool_items: u8 = 8;
 
     // Test truncated length
     {
         var buffer = [_]u8{ 1, 0 }; // Incomplete u32
         var fbs = std.io.fixedBufferStream(&buffer);
-        try testing.expectError(error.EndOfStream, decode(core_count, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(core_count, max_pool_items, fbs.reader()));
     }
 
     // Test truncated authorization
     {
         var buffer = [_]u8{ 1, 0, 0, 0 } ++ [_]u8{1} ** 16; // Only half auth
         var fbs = std.io.fixedBufferStream(&buffer);
-        try testing.expectError(error.EndOfStream, decode(core_count, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(core_count, max_pool_items, fbs.reader()));
     }
 }
 
 test "decode alpha - roundtrip" {
     const encoder = @import("../state_encoding/alpha.zig");
     const core_count: u16 = 2;
+    const max_pool_items: u8 = 8;
     const allocator = testing.allocator;
 
     // Create sample alpha state
-    var original = Alpha(core_count).init();
+    var original = Alpha(core_count, max_pool_items).init();
     const auth1: [32]u8 = [_]u8{1} ** 32;
     const auth2: [32]u8 = [_]u8{2} ** 32;
     try original.pools[0].append(auth1);
@@ -111,11 +115,11 @@ test "decode alpha - roundtrip" {
     // Encode
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
-    try encoder.encode(core_count, &original, buffer.writer());
+    try encoder.encode(core_count, max_pool_items, &original, buffer.writer());
 
     // Decode
     var fbs = std.io.fixedBufferStream(buffer.items);
-    const decoded = try decode(core_count, fbs.reader());
+    const decoded = try decode(core_count, max_pool_items, fbs.reader());
 
     // Verify pools
     for (original.pools, 0..) |pool, i| {

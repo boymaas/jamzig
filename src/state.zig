@@ -11,7 +11,7 @@ pub fn JamState(comptime params: Params) type {
     return struct {
         /// α: Core authorization state and associated queues.
         /// Manipulated in: src/authorization.zig
-        alpha: ?Alpha(params.core_count) = null,
+        alpha: ?Alpha(params.core_count, params.max_authorizations_pool_items) = null,
 
         /// β: Metadata of the latest block, including block number, timestamps, and cryptographic references.
         /// Manipulated in: src/recent_blocks.zig
@@ -74,7 +74,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize Alpha component
         pub fn initAlpha(self: *JamState(params), _: std.mem.Allocator) !void {
-            self.alpha = Alpha(params.core_count).init();
+            self.alpha = Alpha(params.core_count, params.max_authorizations_pool_items).init();
         }
 
         /// Initialize Beta component (max_blocks should be 10)
@@ -222,7 +222,9 @@ pub fn JamState(comptime params: Params) type {
         pub fn deepClone(self: *const JamState(params), allocator: std.mem.Allocator) !JamState(params) {
             var clone = JamState(params){};
             inline for (std.meta.fields(JamState(params))) |field| {
-                @field(clone, field.name) = try self.cloneField(&field, allocator);
+                if (@field(self, field.name)) |value| {
+                    @field(clone, field.name) = try StateHelpers.copyOrDeepCloneValue(value, allocator);
+                }
             }
             return clone;
         }
@@ -257,6 +259,46 @@ pub fn JamState(comptime params: Params) type {
             writer: anytype,
         ) !void {
             try @import("state_format/jam_state.zig").format(params, self, fmt, options, writer);
+        }
+    };
+}
+
+pub fn JamStateView(comptime params: Params) type {
+    return struct {
+        const Self = @This();
+
+        alpha: ?*const Alpha(params.core_count, params.max_authorizations_pool_items) = null,
+        beta: ?*const Beta = null,
+        gamma: ?*const Gamma(params.validators_count, params.epoch_length) = null,
+        delta: ?*const Delta = null,
+        eta: ?*const Eta = null,
+        iota: ?*const Iota = null,
+        kappa: ?*const Kappa = null,
+        lambda: ?*const Lambda = null,
+        rho: ?*const Rho(params.core_count) = null,
+        tau: ?*const Tau = null,
+        phi: ?*const Phi(params.core_count, params.max_authorizations_queue_items) = null,
+        chi: ?*const Chi = null,
+        psi: ?*const Psi = null,
+        pi: ?*const Pi = null,
+        xi: ?*const Xi(params.epoch_length) = null,
+        theta: ?*const Theta(params.epoch_length) = null,
+
+        pub fn init() Self {
+            return Self{};
+        }
+
+        /// creates a view from a JamState
+        pub fn fromJamState(state: *const JamState(params)) @This() {
+            var view = @This(){};
+
+            inline for (std.meta.fields(@This())) |*field| {
+                if (@field(state, field.name)) |*value| {
+                    @field(view, field.name) = value;
+                }
+            }
+
+            return view;
         }
     };
 }
@@ -303,29 +345,24 @@ const StateHelpers = struct {
     }
 
     // Helper for deep cloning a single field
-    fn cloneField(self: anytype, struct_field: *const std.builtin.Type.StructField, allocator: std.mem.Allocator) !std.meta.Child(struct_field.type) {
-        const field_type = std.meta.Child(struct_field.type);
+    fn copyOrDeepCloneValue(value: anytype, allocator: std.mem.Allocator) !@TypeOf(value) {
+        const T = @TypeOf(value);
 
-        if (comptime isComplexType(field_type)) {
-            if (@field(self, struct_field.name)) |value| {
-                if (@hasDecl(field_type, "deepClone")) {
-                    const info = @typeInfo(@TypeOf(field_type.deepClone));
-                    if (info == .@"fn" and info.@"fn".params.len > 1) {
-                        return try value.deepClone(allocator);
-                    } else {
-                        return try value.deepClone();
-                    }
+        // Check if its a complex type
+        if (comptime isComplexType(T)) {
+            if (@hasDecl(T, "deepClone")) {
+                const info = @typeInfo(@TypeOf(T.deepClone));
+                if (info == .@"fn" and info.@"fn".params.len > 1) {
+                    return try value.deepClone(allocator);
                 } else {
-                    @panic("Please implement deepClone for: " ++ @typeName(field_type));
+                    return try value.deepClone();
                 }
-            }
-        } else {
-            // For simple types that can be copied directly
-            if (@field(self, struct_field.name)) |value| {
-                return value;
+            } else {
+                @panic("Please implement deepClone for: " ++ @typeName(T));
             }
         }
-        unreachable;
+
+        return value;
     }
 
     // Helper for deinitializing a single field

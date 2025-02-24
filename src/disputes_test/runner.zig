@@ -5,44 +5,51 @@ const tvector = @import("../jamtestvectors/disputes.zig");
 
 const disputes = @import("../disputes.zig");
 const stf = @import("../stf.zig");
+const state = @import("../state.zig");
 
 const helpers = @import("../tests/helpers.zig");
 
 const Params = @import("../jam_params.zig").Params;
 
 pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, test_case: tvector.TestCase) !void {
-    var current_psi = try converters.convertPsi(allocator, test_case.pre_state.psi);
-    defer current_psi.deinit();
-    var expected_psi = try converters.convertPsi(allocator, test_case.post_state.psi);
-    defer expected_psi.deinit();
+    var pre_state_psi = try converters.convertPsi(allocator, test_case.pre_state.psi);
+    defer pre_state_psi.deinit();
+    var post_state_psi = try converters.convertPsi(allocator, test_case.post_state.psi);
+    defer post_state_psi.deinit();
 
-    var current_rho = try converters.convertRho(params.core_count, allocator, test_case.pre_state.rho);
-    defer current_rho.deinit();
-    var expected_rho = try converters.convertRho(params.core_count, allocator, test_case.post_state.rho);
-    defer expected_rho.deinit();
+    var pre_state_rho = try converters.convertRho(params.core_count, allocator, test_case.pre_state.rho);
+    defer pre_state_rho.deinit();
+    var post_state_rho = try converters.convertRho(params.core_count, allocator, test_case.post_state.rho);
+    defer post_state_rho.deinit();
 
-    const current_epoch = test_case.pre_state.tau / params.epoch_length;
-    const transition_result = stf.disputes.transition(
-        params.validators_count,
-        params.core_count,
+    // Build our state transition
+    const StateTransition = @import("../state_delta.zig").StateTransition;
+    var current_state = state.JamState(params){
+        .psi = try pre_state_psi.deepClone(),
+        .rho = try pre_state_rho.deepClone(allocator),
+        .tau = test_case.pre_state.tau,
+        .kappa = try test_case.pre_state.kappa.deepClone(allocator),
+        .lambda = try test_case.pre_state.lambda.deepClone(allocator),
+    };
+    defer current_state.deinit(allocator);
+
+    const time = params.Time().init(
+        test_case.pre_state.tau,
+        test_case.pre_state.tau + 1, // alluming + 1
+    );
+    var stx = try StateTransition(params).init(allocator, &current_state, time);
+    defer stx.deinit();
+
+    const result = stf.disputes.transition(
+        params,
         allocator,
-        &current_psi,
-        test_case.pre_state.kappa,
-        test_case.pre_state.lambda,
-        &current_rho,
-        current_epoch,
+        &stx,
         test_case.input.disputes,
     );
 
-    defer {
-        if (transition_result) |psi| {
-            defer @constCast(&psi).deinit();
-        } else |_| {} // this needs to be here to satisfy the compiler
-    }
-
     switch (test_case.output) {
         .err => |expected_error| {
-            if (transition_result) |_| {
+            if (result) |_| {
                 std.debug.print("\nGot a success, expected error: {any}\n", .{expected_error});
                 return error.UnexpectedSuccess;
             } else |actual_error| {
@@ -67,7 +74,10 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
             }
         },
         .ok => |expected_marks| {
-            if (transition_result) |transitioned_psi| {
+            if (result) |_| {
+                const transitioned_psi = stx.prime.psi.?;
+                const transitioned_rho = stx.prime.rho.?;
+
                 // push all expected marks in an AutoHashMap
                 var expected_marks_map = std.AutoArrayHashMap(disputes.PublicKey, void).init(allocator);
                 defer expected_marks_map.deinit();
@@ -78,12 +88,12 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
 
                 try helpers.expectHashMapEqual(@TypeOf(expected_marks_map), disputes.PublicKey, void, expected_marks_map, transitioned_psi.punish_set);
                 // Compare the rest of the fields
-                try helpers.expectHashMapEqual(@TypeOf(expected_psi.good_set), disputes.Hash, void, expected_psi.good_set, transitioned_psi.good_set);
-                try helpers.expectHashMapEqual(@TypeOf(expected_psi.bad_set), disputes.Hash, void, expected_psi.bad_set, transitioned_psi.bad_set);
-                try helpers.expectHashMapEqual(@TypeOf(expected_psi.wonky_set), disputes.Hash, void, expected_psi.wonky_set, transitioned_psi.wonky_set);
+                try helpers.expectHashMapEqual(@TypeOf(post_state_psi.good_set), disputes.Hash, void, post_state_psi.good_set, transitioned_psi.good_set);
+                try helpers.expectHashMapEqual(@TypeOf(post_state_psi.bad_set), disputes.Hash, void, post_state_psi.bad_set, transitioned_psi.bad_set);
+                try helpers.expectHashMapEqual(@TypeOf(post_state_psi.wonky_set), disputes.Hash, void, post_state_psi.wonky_set, transitioned_psi.wonky_set);
 
                 // Compare the two Rho states
-                try std.testing.expectEqualDeep(expected_rho, current_rho);
+                try std.testing.expectEqualDeep(post_state_rho, transitioned_rho);
             } else |err| {
                 std.debug.print("UnexpectedError: {any}\n", .{err});
                 return error.UnexpectedError;

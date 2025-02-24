@@ -6,8 +6,7 @@ pub const DictKeyType = enum {
     delta_base, // Service base info (255)
     delta_storage, // Service storage entries
     delta_preimage, // Service preimage entries
-    delta_lookup, // Service preimage lookup entries
-    unknown,
+    delta_preimage_lookup, // Service preimage lookup entries
 };
 
 /// Extracts service ID from an interleaved key format
@@ -85,7 +84,7 @@ pub fn detectKeyType(key: [32]u8) DictKeyType {
             // For preimage lookup, the prefix should be a valid length value
             // Typically this would be less than some maximum value
             // Let's assume a reasonable maximum length for preimages
-            return .delta_lookup;
+            return .delta_preimage_lookup;
         },
     }
 }
@@ -136,5 +135,5 @@ test "detectKeyType service entries" {
     key[3] = 0x00;
     key[5] = 0x00;
     key[7] = 0x00;
-    try testing.expectEqual(detectKeyType(key), .delta_lookup);
+    try testing.expectEqual(detectKeyType(key), .delta_preimage_lookup);
 }

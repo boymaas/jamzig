@@ -44,7 +44,11 @@ pub fn transition(
     span.debug("Starting state transition", .{});
 
     // Process and validate ticket extrinsic
-    const verified_extrinsic = try ticket_validation.processTicketExtrinsic(params, stx, ticket_extrinsic);
+    const verified_extrinsic = try ticket_validation.processTicketExtrinsic(
+        params,
+        stx,
+        ticket_extrinsic,
+    );
     defer stx.allocator.free(verified_extrinsic);
 
     // Handle epoch transition if needed

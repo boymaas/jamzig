@@ -8,7 +8,7 @@ const Alpha = authorization.Alpha;
 const trace = @import("../tracing.zig").scoped(.codec);
 
 /// Encodes pools where each pool is length encoded. Length of pools is assumed to be C
-pub fn encode(comptime core_count: u16, self: *const Alpha(core_count), writer: anytype) !void {
+pub fn encode(comptime core_count: u16, comptime max_pool_items: u8, self: *const Alpha(core_count, max_pool_items), writer: anytype) !void {
     const span = trace.span(.encode);
     defer span.deinit();
     span.debug("Starting alpha encoding for {d} cores", .{core_count});
@@ -46,7 +46,8 @@ const testing = std.testing;
 
 test "Alpha encode" {
     const C = 341;
-    var alpha = Alpha(C).init();
+    const O = 8;
+    var alpha = Alpha(C, O).init();
     const core: usize = 0;
     const auth1: [32]u8 = [_]u8{1} ** 32;
     const auth2: [32]u8 = [_]u8{2} ** 32;
@@ -57,7 +58,7 @@ test "Alpha encode" {
     var buffer = std.ArrayList(u8).init(std.testing.allocator);
     defer buffer.deinit();
 
-    try encode(C, &alpha, buffer.writer());
+    try encode(C, O, &alpha, buffer.writer());
 
     // Expected output:
     // - 2 (number of items in the first pool)

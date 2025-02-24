@@ -1002,40 +1002,6 @@ pub const Block = struct {
     header: Header,
     extrinsic: Extrinsic,
 
-    // TODO: return the AccumulateRoot type
-    // Replace the stub implementation in Block.calcAccumulateRoot
-    pub fn calcAccumulateRoot(self: *const @This(), allocator: std.mem.Allocator) !OpaqueHash {
-        const accumulate_root = @import("accumulate_root.zig");
-
-        // Early return if no guarantees
-        if (self.extrinsic.guarantees.data.len == 0) {
-            return std.mem.zeroes(OpaqueHash);
-        }
-
-        // Collect successful accumulation outputs from guaranteed work reports
-        var outputs = std.ArrayList(accumulate_root.AccumulationOutput).init(allocator);
-        defer outputs.deinit();
-
-        const Blake2b256 = std.crypto.hash.blake2.Blake2b256;
-
-        for (self.extrinsic.guarantees.data) |guarantee| {
-            for (guarantee.report.results) |result| {
-                if (result.result == .ok) {
-                    try outputs.append(.{
-                        .service_id = result.service_id,
-                        .output_hash = try result.result.getOutputHash(Blake2b256), // Use code_hash as output hash
-                    });
-                }
-            }
-        }
-
-        // Calculate the accumulate root using the collected outputs
-        return try accumulate_root.calculateAccumulateRoot(
-            allocator,
-            outputs.items,
-        );
-    }
-
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
             .header = try self.header.deepClone(allocator),

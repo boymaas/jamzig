@@ -5,7 +5,8 @@ const Alpha = @import("../authorization.zig").Alpha;
 
 pub fn format(
     comptime core_count: u32,
-    self: Alpha(core_count),
+    comptime max_pool_items: u8,
+    self: Alpha(core_count, max_pool_items),
     comptime fmt: []const u8,
     options: std.fmt.FormatOptions,
     writer: anytype,
@@ -41,7 +42,8 @@ pub fn format(
 // Test helper to demonstrate formatting
 test "Alpha format demo" {
     const core_count = 4;
-    var alpha = Alpha(core_count).init();
+    const max_pool_items = 8;
+    var alpha = Alpha(core_count, max_pool_items).init();
 
     // Add some test data
     const auth1 = [_]u8{0xA1} ++ [_]u8{0} ** 31;

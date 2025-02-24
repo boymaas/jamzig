@@ -1,4 +1,5 @@
 const std = @import("std");
+const types = @import("types.zig");
 const tvector = @import("jamtestvectors/disputes.zig");
 
 const diffz = @import("disputes_test/diffz.zig");
@@ -410,12 +411,7 @@ test "tiny/progress_invalidates_avail_assignments-1.json" {
     var test_vector = try tvector.TestCase.build_from(TINY_PARAMS, allocator, test_bin);
     defer test_vector.deinit(allocator);
 
-    // try printStateDiff(
-    //     allocator,
-    //     &test_vector.pre_state,
-    //     &test_vector.post_state,
-    // );
-    //
+    // try @import("tests/diff.zig").printDiffBasedOnFormatToStdErr(allocator, types.fmt.format(&test_vector.pre_state), types.fmt.format(&test_vector.post_state));
 
     try runDisputeTest(allocator, TINY_PARAMS, test_vector);
 }

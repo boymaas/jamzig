@@ -17,8 +17,9 @@ pub const recent_history = @import("stf/recent_history.zig");
 pub const safrole = @import("stf/safrole.zig");
 pub const services = @import("stf/services.zig");
 pub const time = @import("stf/time.zig");
-pub const work_report = @import("stf/work_reports.zig");
+pub const reports = @import("stf/reports.zig");
 pub const validator_stats = @import("stf/validator_stats.zig");
+pub const assurances = @import("stf/assurances.zig");
 
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.stf);
@@ -53,6 +54,31 @@ pub fn stateTransition(
         params,
         state_transition,
         new_block,
+    );
+
+    // => rho_dagger
+    _ = try disputes.transition(
+        params,
+        allocator,
+        state_transition,
+        new_block.extrinsic.disputes,
+    );
+
+    // => rho_double_dagger
+    try assurances.transition(
+        params,
+        allocator,
+        state_transition,
+        new_block.extrinsic.assurances,
+        new_block.header.parent,
+    );
+
+    // => rho_prime
+    try reports.transition(
+        params,
+        allocator,
+        state_transition,
+        new_block.extrinsic.guarantees,
     );
 
     try eta.transition(
