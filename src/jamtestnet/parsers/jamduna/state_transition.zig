@@ -27,16 +27,17 @@ fn parseLengthFromDesc(desc: []const u8) !u32 {
     return length;
 }
 
-fn parseKFromDesc(desc: []const u8) ![4]u8 {
-    const k_prefix = " k=";
+fn parseKFromDesc(desc: []const u8) ![32]u8 {
+    std.debug.print("{s}", .{desc});
+    const k_prefix = " k=0x";
     const k_start = std.mem.indexOf(u8, desc, k_prefix) orelse return error.InvalidDescFormat;
     const hex_start = k_start + k_prefix.len;
 
-    const hex_string = desc[hex_start..][0..8];
+    const hex_string = desc[hex_start..][0..64];
     std.debug.print("{s}\n", .{hex_string});
 
     // Parse the hex string into bytes
-    var masked_bytes: [4]u8 = undefined;
+    var masked_bytes: [32]u8 = undefined;
     _ = try std.fmt.hexToBytes(&masked_bytes, hex_string);
     return masked_bytes;
 }
@@ -138,8 +139,7 @@ pub const KeyVal = struct {
         const key_type = state_dictionary.reconstruct.detectKeyType(key);
         return switch (key_type) {
             .delta_storage => blk: {
-                // TODO: this could be wrong, assuming the buildup of a strorage key from metadata
-                const storage_key = (try parseHKFromDesc(self.desc))[4..32].* ++ try parseKFromDesc(self.desc);
+                const storage_key = try parseKFromDesc(self.desc);
 
                 break :blk state_dictionary.DictMetadata{
                     .delta_storage = .{
