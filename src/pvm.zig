@@ -29,6 +29,10 @@ pub const PVM = struct {
         panic, // ☇ Panic
         out_of_gas, // ∞ Out of gas
         page_fault: u32, // F Page fault
+
+        pub fn isError(self: @This()) bool {
+            return self != .halt;
+        }
     };
 
     // Possible results from Single Step Execution
@@ -49,6 +53,10 @@ pub const PVM = struct {
     pub const BasicInvocationResult = union(enum) {
         host_call: HostCallInvocation,
         terminal: InvocationException,
+
+        pub fn isError(self: @This()) bool {
+            return self == .terminal and self.terminal.isError();
+        }
     };
 
     const updatePc = @import("./pvm/utils.zig").updatePc;

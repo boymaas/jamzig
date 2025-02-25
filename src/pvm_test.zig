@@ -74,9 +74,9 @@ test "pvm:simple" {
     execution_context.registers[0] = 4294901760;
     execution_context.registers[7] = 9;
 
-    const status = try pvmlib.PVM.execute(&execution_context);
+    const status = try pvmlib.PVM.basicInvocation(&execution_context);
 
-    if (status != .halt) {
+    if (status.terminal != .halt) {
         std.debug.print("Expected .halt got {any}\n", .{status});
     }
 

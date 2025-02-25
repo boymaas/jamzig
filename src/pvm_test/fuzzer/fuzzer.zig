@@ -62,7 +62,7 @@ pub const FuzzConfig = struct {
 
 pub const FuzzResult = struct {
     seed: u64,
-    status: PVM.Error!PVM.Result,
+    status: PVM.Error!PVM.SingleStepResult,
     gas_used: i64,
     was_mutated: bool,
     // error_data: ?PVM.ErrorData,
@@ -200,16 +200,17 @@ pub const FuzzResults = struct {
 
         if (result.status) |status| {
             switch (status) {
-                .halt => |_| {
-                    self.accumulated.successful += 1;
-                    self.accumulated.execution_stats.halt += 1;
-                },
-                .err => |err| switch (err) {
+                .terminal => |err| switch (err) {
+                    .halt => |_| {
+                        self.accumulated.successful += 1;
+                        self.accumulated.execution_stats.halt += 1;
+                    },
                     .panic => self.accumulated.execution_stats.panic += 1,
                     .out_of_gas => self.accumulated.execution_stats.out_of_gas += 1,
                     .page_fault => self.accumulated.execution_stats.page_fault += 1,
-                    .host_call => self.accumulated.execution_stats.host_call += 1,
                 },
+                .host_call => self.accumulated.execution_stats.host_call += 1,
+                else => {},
             }
         } else |err| {
             if (result.was_mutated) {
@@ -447,7 +448,7 @@ pub const PVMFuzzer = struct {
                 continue;
             }
 
-            const step_result = PVM.executeStep(&exec_ctx) catch |err| {
+            const step_result = PVM.singleStepInvocation(&exec_ctx) catch |err| {
                 std.debug.print("\nPVM errored during execution: {s}\n", .{@errorName(err)});
                 return error.PvmErroredInNormalOperation;
             };
@@ -494,7 +495,7 @@ pub const PVMFuzzer = struct {
                     const handler = exec_ctx.host_calls.get(host.idx) orelse
                         return FuzzResult{
                         .seed = seed,
-                        .status = .{ .err = .{ .host_call = host.idx } },
+                        .status = .{ .terminal = .panic },
                         .gas_used = initial_gas - exec_ctx.gas,
                         .was_mutated = will_mutate,
                         .init_failed = false,
@@ -510,7 +511,7 @@ pub const PVMFuzzer = struct {
                         .page_fault => |addr| {
                             return FuzzResult{
                                 .seed = seed,
-                                .status = .{ .err = .{ .page_fault = addr } },
+                                .status = .{ .terminal = .{ .page_fault = addr } },
                                 .gas_used = initial_gas - exec_ctx.gas,
                                 .was_mutated = will_mutate,
                                 .init_failed = false,
@@ -522,10 +523,10 @@ pub const PVMFuzzer = struct {
                     return FuzzResult{
                         .seed = seed,
                         .status = switch (result) {
-                            .halt => |output| .{ .halt = output },
-                            .panic => .{ .err = .panic },
-                            .out_of_gas => .{ .err = .out_of_gas },
-                            .page_fault => |addr| .{ .err = .{ .page_fault = addr } },
+                            .halt => .{ .terminal = .halt },
+                            .panic => .{ .terminal = .panic },
+                            .out_of_gas => .{ .terminal = .out_of_gas },
+                            .page_fault => |addr| .{ .terminal = .{ .page_fault = addr } },
                         },
                         .gas_used = initial_gas - exec_ctx.gas,
                         .was_mutated = will_mutate,
@@ -601,7 +602,7 @@ pub const CrossCheckError = error{
 };
 
 // Helper function to convert PVM step result to FFI status
-fn pvmStepToFfiStatus(step: PVM.StepResult) polkavm_ffi.ExecutionStatus {
+fn pvmStepToFfiStatus(step: PVM.SingleStepResult) polkavm_ffi.ExecutionStatus {
     return switch (step) {
         .cont => .Running,
         .host_call => .Running, // Host calls should be played in PVM first

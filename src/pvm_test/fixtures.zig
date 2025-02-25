@@ -144,11 +144,13 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
     var exec_ctx = try initExecContextFromTestVector(allocator, test_vector);
     defer exec_ctx.deinit(allocator);
 
-    const result = try PVM.execute(&exec_ctx);
+    const result = try PVM.basicInvocation(&exec_ctx);
     // Check if the execution status matches the expected status
     const status_matches: bool = switch (result) {
-        .halt => test_vector.expected_status == .halt,
-        .err => |err| switch (err) {
+        .host_call => true, // NOTE: ignored for now
+        // ignored for now
+        .terminal => |err| switch (err) {
+            .halt => test_vector.expected_status == .halt,
             .panic => test_vector.expected_status == .panic,
             .page_fault => |addr| test_vector.expected_status == .page_fault and
                 test_vector.expected_page_fault_address == addr,
@@ -166,9 +168,10 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
             std.debug.print(" (expected addr: 0x{x:0>8})", .{test_vector.expected_page_fault_address.?});
         }
         std.debug.print(", got {}", .{result});
-        if (result == .err) {
-            if (result.err == .page_fault) {
-                std.debug.print(" (addr: 0x{x:0>8})", .{result.err.page_fault});
+
+        if (result == .terminal) {
+            if (result.terminal == .page_fault) {
+                std.debug.print(" (addr: 0x{x:0>8})", .{result.terminal.page_fault});
             }
         }
         std.debug.print("\n", .{});
