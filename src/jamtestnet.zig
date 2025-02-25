@@ -163,11 +163,6 @@ pub fn runStateTransitionTests(
         var expected_state_mdict = try state_transition.postStateAsMerklizationDict(allocator);
         defer expected_state_mdict.deinit();
 
-        // FIX: JAMDUNA fix, clear out C1
-        const c1_key = [_]u8{0x01} ++ [_]u8{0x00} ** 31;
-        const current_alpha = try current_state_mdict.entries.get(c1_key).?.deepClone(allocator);
-        try expected_state_mdict.put(current_alpha);
-
         var expected_state_diff = try current_state_mdict.diff(&expected_state_mdict);
         defer expected_state_diff.deinit();
 
