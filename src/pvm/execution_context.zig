@@ -25,6 +25,70 @@ pub const ExecutionContext = struct {
         host_call: u32,
     };
 
+    pub fn initStandardProgramCodeFormat(
+        allocator: Allocator,
+        program_code: []const u8,
+        input: []const u8,
+        max_gas: u32,
+    ) !ExecutionContext {
+        // To keep track wehere we are
+        var remaining_bytes = program_code[0..];
+
+        if (remaining_bytes.len < 11) {
+            return error.IncompleteHeader;
+        }
+
+        // first 3 is lenght of read only
+        const read_only_size_in_bytes = std.mem.readInt(u24, program_code[0..3], .little);
+        // next 3 is lenght of read write
+        const read_write_size_in_bytes = std.mem.readInt(u24, program_code[3..6], .little);
+        // next 2 is heap in pages
+        const heap_size_in_pages = std.mem.readInt(u16, program_code[6..8], .little);
+        // next 3 is size of stack
+        const stack_size_in_bytes = std.mem.readInt(u24, program_code[8..11], .little);
+
+        // Register we are just behind the header
+        remaining_bytes = remaining_bytes[11..];
+
+        if (remaining_bytes.len < read_only_size_in_bytes + read_write_size_in_bytes) {
+            return error.MemoryDataSegmentTooSmall;
+        }
+
+        // then read the length of read only
+        const read_only_data = remaining_bytes[0..read_only_size_in_bytes];
+        // then read the length of write only
+        const read_write_data = remaining_bytes[read_only_size_in_bytes..][0..read_write_size_in_bytes];
+
+        // Update we are at the beginning of our code_data_segment
+        remaining_bytes = remaining_bytes[read_only_size_in_bytes + read_write_size_in_bytes ..];
+
+        // read lenght of code
+        if (remaining_bytes.len < 4) {
+            return error.ProgramCodeFormatCodeDataSegmentTooSmall;
+        }
+        const code_len_in_bytes = std.mem.readInt(u32, remaining_bytes[0..4], .little);
+
+        remaining_bytes = remaining_bytes[4..];
+
+        if (remaining_bytes.len < code_len_in_bytes) {
+            return error.ProgramCodeFormatCodeDataSegmentTooSmall;
+        }
+
+        const code_data = remaining_bytes[0..code_len_in_bytes];
+
+        // then read the actual codeu
+        return try initWithMemorySegments(
+            allocator,
+            code_data,
+            read_only_data,
+            read_write_data,
+            input, // FIXME: need to add input here
+            stack_size_in_bytes,
+            heap_size_in_pages,
+            max_gas,
+        );
+    }
+
     pub fn initSimple(
         allocator: Allocator,
         raw_program: []const u8,
