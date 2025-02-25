@@ -354,10 +354,8 @@ pub const PVMFuzzer = struct {
 
         // Register host call handler
         try exec_ctx.registerHostCall(0, struct {
-            pub fn func(gas: *i64, registers: *[13]u64, memory: *PVM.Memory) PVM.HostCallResult {
-                _ = gas;
-                _ = registers;
-                _ = memory;
+            pub fn func(ctx: *PVM.ExecutionContext) PVM.HostCallResult {
+                _ = ctx;
                 return .play;
             }
         }.func);
@@ -502,7 +500,7 @@ pub const PVMFuzzer = struct {
                     };
 
                     // Execute host call
-                    const result = handler(&exec_ctx.gas, &exec_ctx.registers, &exec_ctx.memory);
+                    const result = handler(&exec_ctx);
                     switch (result) {
                         .play => {
                             exec_ctx.pc = host.next_pc;

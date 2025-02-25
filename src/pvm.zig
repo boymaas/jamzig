@@ -35,7 +35,6 @@ pub const PVM = struct {
         }
     };
 
-    // Possible results from Single Step Execution
     pub const SingleStepResult = union(enum) {
         // Continue execution with next instruction
         cont: void,
@@ -49,9 +48,16 @@ pub const PVM = struct {
         }
     };
 
-    // Result from Basic Execution
     pub const BasicInvocationResult = union(enum) {
         host_call: HostCallInvocation,
+        terminal: InvocationException,
+
+        pub fn isError(self: @This()) bool {
+            return self == .terminal and self.terminal.isError();
+        }
+    };
+
+    pub const HostCallInvocationResult = union(enum) {
         terminal: InvocationException,
 
         pub fn isError(self: @This()) bool {
@@ -122,8 +128,8 @@ pub const PVM = struct {
     }
 
     /// Basic invocation (Basic & Hostcall in one)
-    /// Calls singleStepInvocation until we reach a terminal
-    /// condition/hostcall or we run out of gas
+    /// Calls singleStepInvocation until we reach a terminal condition/hostcall
+    /// or we run out of gas
     pub fn basicInvocation(
         context: *ExecutionContext,
     ) Error!BasicInvocationResult {
@@ -150,7 +156,30 @@ pub const PVM = struct {
 
     // Host call invocation invocation
     // Calls basicInvocation until we against
-    // pub fn hostcallInvocation(context: *ExecutionContext) Error!HostcallResult
+    pub fn hostcallInvocation(context: *ExecutionContext) Error!HostCallInvocationResult {
+        switch (try basicInvocation(context)) {
+            .host_call => |params| {
+                if (context.host_calls.get(params.idx)) |host_call_fn| {
+                    switch (host_call_fn(context)) {
+                        .play => {
+                            context.pc = params.next_pc;
+                            hostcallInvocation(context);
+                        },
+                        .page_fault => |addr| {
+                            return .{
+                                .terminal = .{ .page_fault = addr },
+                            };
+                        },
+                    }
+                } else {
+                    return Error.NonExistentHostCall;
+                }
+            },
+            .terminal => |terminal| {
+                return .{ .terminal = terminal };
+            },
+        }
+    }
 
     fn getInstructionGasCost(inst: InstructionWithArgs) u32 {
         return switch (inst.instruction) {
