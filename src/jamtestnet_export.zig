@@ -32,7 +32,7 @@ pub fn main() !void {
     defer builder.deinit();
 
     const output_dir = "src/jamtestnet/teams/jamzig/safrole/state_transitions";
-    const num_blocks = 4;
+    const num_blocks = 64;
 
     std.debug.print("Generating {d} blocks...\n", .{num_blocks});
 

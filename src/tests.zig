@@ -92,6 +92,7 @@ comptime {
     _ = @import("validator_stats.zig");
 
     _ = @import("jamtestnet.zig");
+    _ = @import("jamtestnet/parsers/jamduna/state_snapshot.zig");
 
     _ = @import("stf_test.zig");
 

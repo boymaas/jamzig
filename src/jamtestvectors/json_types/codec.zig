@@ -190,8 +190,8 @@ pub const Mmr = struct {
 };
 
 pub const ReportedWorkPackage = struct {
-    hash: WorkReportHash,
-    exports_root: ExportsRoot,
+    work_package_hash: WorkReportHash, // Inconsistent with test vectors
+    segment_tree_root: ExportsRoot, // Inconstisten with test vectors
 };
 
 pub const BlockInfo = struct {
@@ -307,4 +307,52 @@ pub const Extrinsic = struct {
 pub const Block = struct {
     header: Header,
     extrinsic: Extrinsic,
+};
+
+pub const ReadyRecord = struct {
+    report: WorkReport,
+    dependencies: []WorkPackageHash,
+};
+
+pub const ActivityRecord = struct {
+    blocks: U32,
+    tickets: U32,
+    pre_images: U32,
+    pre_images_size: U32,
+    guarantees: U32,
+    assurances: U32,
+};
+
+pub const ActivityRecords = []ActivityRecord; // SIZE(validators_count)
+
+pub const Statistics = struct {
+    current: ActivityRecords,
+    last: ActivityRecords,
+};
+
+pub const PreimageEntry = struct {
+    hash: OpaqueHash,
+    blob: HexBytes,
+};
+
+pub const LookupMetaKey = struct {
+    hash: OpaqueHash,
+    length: U32,
+};
+
+pub const LookupMetaEntry = struct {
+    key: LookupMetaKey,
+    value: []U32,
+};
+
+pub const AccountData = struct {
+    service: ServiceInfo,
+    preimages: []PreimageEntry,
+    lookup_meta: []LookupMetaEntry,
+    // storage: std.StringHashMap(HexBytes), // FIXME:
+};
+
+pub const Account = struct {
+    id: ServiceId,
+    data: AccountData,
 };
