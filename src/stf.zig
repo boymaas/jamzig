@@ -81,6 +81,13 @@ pub fn stateTransition(
         new_block.extrinsic.guarantees,
     );
 
+    // Process authorizations using guarantees extrinsic data
+    try authorization.transition(
+        params,
+        state_transition,
+        new_block.extrinsic.guarantees,
+    );
+
     try eta.transition(
         params,
         state_transition,
