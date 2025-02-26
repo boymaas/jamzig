@@ -13,6 +13,7 @@ pub const Error = error{
     PreviousStateRequired,
     StateTransitioned,
     PrimeFieldAlreadySet,
+    DeepCloneError,
 } || error{OutOfMemory};
 
 const DaggerState = enum {
@@ -69,7 +70,7 @@ pub fn StateTransition(comptime params: Params) type {
         }
 
         /// Returns base or prime value. Creates prime by cloning base if needed.
-        pub fn ensure(self: *Self, comptime field: STAccessors(State)) anyerror!STAccessorPointerType(STBaseType(State, field), field) {
+        pub fn ensure(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(STBaseType(State, field), field) {
             const builtin = @import("builtin");
             const name = @tagName(field);
 
@@ -197,16 +198,20 @@ pub fn StateTransition(comptime params: Params) type {
             return try self.get(field);
         }
 
-        fn cloneField(self: *Self, field: anytype) anyerror!@TypeOf(field.?) {
+        fn cloneField(self: *Self, field: anytype) Error!@TypeOf(field.?) {
             const T = @TypeOf(field.?);
             return switch (@typeInfo(T)) {
                 .@"struct", .@"union" => if (@hasDecl(T, "deepClone")) blk: {
                     const info = @typeInfo(@TypeOf(T.deepClone));
                     break :blk if (info == .@"fn" and info.@"fn".params.len > 1 and
                         info.@"fn".params[1].type == std.mem.Allocator)
-                        try field.?.deepClone(self.allocator)
+                        field.?.deepClone(self.allocator) catch {
+                            return Error.DeepCloneError;
+                        }
                     else
-                        try field.?.deepClone();
+                        field.?.deepClone() catch {
+                            return Error.DeepCloneError;
+                        };
                 } else @compileError("All structs / unions must have a deepClone method"),
                 else => field.?,
             };
