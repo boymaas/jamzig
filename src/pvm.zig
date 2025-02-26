@@ -3,41 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const trace = @import("tracing.zig").scoped(.pvm);
 
-// Separated execution result into its own type
-pub const ExecutionResult = union(enum) {
-    halt: []const u8,
-    err: ExecutionError,
-
-    pub const ExecutionError = union(enum) {
-        panic,
-        out_of_gas,
-        page_fault: u32,
-        host_call: u32,
-    };
-};
-
-pub const ExecutionStepResult = union(enum) {
-    // Continue execution with next instruction
-    cont: void,
-    // Need to execute host call
-    host_call: struct {
-        /// Host call index
-        idx: u32,
-        /// Next PC after host call
-        next_pc: u32,
-    },
-    // Terminal conditions from graypaper
-    terminal: union(enum) {
-        halt: []const u8, // ∎ Regular halt
-        panic: void, // ☇ Panic
-        out_of_gas: void, // ∞ Out of gas
-        page_fault: u32, // F Page fault
-    },
-
-    pub fn isTerminal(self: *const @This()) bool {
-        return self.* == .terminal;
-    }
-};
+pub const invoke = @import("pvm/invocation.zig");
 
 pub const PVM = struct {
     pub const Program = @import("./pvm/program.zig").Program;
@@ -48,13 +14,29 @@ pub const PVM = struct {
 
     pub const Memory = @import("./pvm/memory.zig").Memory;
 
-    pub const HostCallFn = @import("./pvm/host_calls.zig").HostCallFn;
-    pub const HostCallResult = @import("./pvm/host_calls.zig").HostCallResult;
+    pub const HostCallMap = ExecutionContext.HostCallMap;
+    pub const HostCallFn = ExecutionContext.HostCallFn;
+    pub const HostCallResult = ExecutionContext.HostCallResult;
 
     pub const ExecutionContext = @import("./pvm/execution_context.zig").ExecutionContext;
 
-    pub const Result = ExecutionResult;
-    pub const StepResult = ExecutionStepResult;
+    pub const HostCallInvocation = struct {
+        /// Host call index
+        idx: u32,
+        /// Next PC after host call
+        next_pc: u32,
+    };
+
+    pub const InvocationException = union(enum) {
+        halt, // ∎ Regular halt
+        panic, // ☇ Panic
+        out_of_gas, // ∞ Out of gas
+        page_fault: u32, // F Page fault
+
+        pub fn isError(self: @This()) bool {
+            return self != .halt;
+        }
+    };
 
     const updatePc = @import("./pvm/utils.zig").updatePc;
 
@@ -93,7 +75,21 @@ pub const PVM = struct {
         DivisionByZero,
     };
 
-    pub fn executeStep(context: *ExecutionContext) Error!ExecutionStepResult {
+    pub const SingleStepResult = union(enum) {
+        // Continue execution with next instruction
+        cont: void,
+        // Need to execute host call
+        host_call: HostCallInvocation,
+        // Terminal conditions from graypaper
+        terminal: InvocationException,
+
+        pub fn isTerminal(self: *const @This()) bool {
+            return self.* == .terminal;
+        }
+    };
+
+    // Single step invocation
+    pub fn singleStepInvocation(context: *ExecutionContext) Error!SingleStepResult {
         const span = trace.span(.execute_step);
         defer span.deinit();
 
@@ -117,41 +113,116 @@ pub const PVM = struct {
         return executeInstruction(context, instruction);
     }
 
-    pub fn execute(
+    pub const BasicInvocationResult = union(enum) {
+        host_call: HostCallInvocation,
+        terminal: InvocationException,
+
+        pub fn isError(self: @This()) bool {
+            return self == .terminal and self.terminal.isError();
+        }
+    };
+
+    /// Basic invocation (Basic & Hostcall in one)
+    /// Calls singleStepInvocation until we reach a terminal condition/hostcall
+    /// or we run out of gas
+    pub fn basicInvocation(
         context: *ExecutionContext,
-    ) Error!ExecutionResult {
+    ) Error!BasicInvocationResult {
         while (true) {
-            const step_result = try executeStep(context);
+            const step_result = try singleStepInvocation(context);
             switch (step_result) {
                 .cont => continue,
-                .host_call => |host| {
-                    // Get host call handler
-                    const handler = context.host_calls.get(host.idx) orelse
-                        return .{ .err = .{ .host_call = host.idx } };
-
-                    // Execute host call
-                    const result = handler(&context.gas, &context.registers, &context.memory);
-                    switch (result) {
-                        .play => {
-                            context.pc = host.next_pc;
-                            continue;
-                        },
-                        .page_fault => |addr| {
-                            return .{ .err = .{ .page_fault = addr } };
-                        },
-                    }
+                .host_call => |invocation| {
+                    return .{ .host_call = invocation };
                 },
                 .terminal => |result| switch (result) {
-                    .halt => |output| return .{ .halt = output },
-                    .panic => return .{ .err = .panic },
-                    .out_of_gas => return .{ .err = .out_of_gas },
                     .page_fault => |addr| {
-                        // FIXME: to make gas accounting work against test vectors
+                        // FIXME: this to make gas accounting work against test vectors
                         context.gas -= 1;
-                        return .{ .err = .{ .page_fault = addr } };
+                        return .{ .terminal = .{ .page_fault = addr } };
+                    },
+                    else => {
+                        return .{ .terminal = result };
                     },
                 },
             }
+        }
+    }
+
+    pub const HostCallInvocationResult = union(enum) {
+        terminal: InvocationException,
+
+        pub fn isError(self: @This()) bool {
+            return self == .terminal and self.terminal.isError();
+        }
+    };
+
+    // Host call invocation invocation
+    // Calls basicInvocation until we against
+    pub fn hostcallInvocation(context: *ExecutionContext) Error!HostCallInvocationResult {
+        switch (try basicInvocation(context)) {
+            .host_call => |params| {
+                if (context.host_calls.get(params.idx)) |host_call_fn| {
+                    switch (host_call_fn(context)) {
+                        .play => {
+                            context.pc = params.next_pc;
+                            return try hostcallInvocation(context);
+                        },
+                        .page_fault => |addr| {
+                            return .{
+                                .terminal = .{ .page_fault = addr },
+                            };
+                        },
+                    }
+                } else {
+                    return Error.NonExistentHostCall;
+                }
+            },
+            .terminal => |terminal| {
+                return .{ .terminal = terminal };
+            },
+        }
+    }
+
+    // Machine Invocation
+    pub const MachineInvocationResult = union(enum) {
+        halt: []const u8,
+        terminal: union(enum) {
+            panic,
+            out_of_gas,
+        },
+
+        pub fn isError(self: @This()) bool {
+            return self == .terminal;
+        }
+
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+            switch (self.*) {
+                .halt => |result| allocator.free(result),
+                .terminal => {}, // No allocated memory to free
+            }
+            self.* = undefined;
+        }
+    };
+
+    pub fn machineInvocation(allocator: std.mem.Allocator, context: *ExecutionContext) Error!MachineInvocationResult {
+        switch (try hostcallInvocation(context)) {
+            .terminal => |terminal| {
+                switch (terminal) {
+                    .halt => {
+                        // if memory range in valid memory
+                        // read the memory range and return it
+                        const return_value = context.readSliceBetweenRegister7AndRegister8();
+                        return .{ .halt = try allocator.dupe(u8, return_value) };
+                    },
+                    .out_of_gas => {
+                        return .{ .terminal = .out_of_gas };
+                    },
+                    else => {
+                        return .{ .terminal = .panic };
+                    },
+                }
+            },
         }
     }
 
@@ -164,7 +235,7 @@ pub const PVM = struct {
 
     const PcOffset = i32;
     const signExtendToU64 = @import("./pvm/sign_extention.zig").signExtendToU64;
-    fn executeInstruction(context: *ExecutionContext, i: InstructionWithArgs) Error!ExecutionStepResult {
+    fn executeInstruction(context: *ExecutionContext, i: InstructionWithArgs) Error!SingleStepResult {
         switch (i.instruction) {
             // A.5.1 Instructions without Arguments
             .trap => return .{ .terminal = .panic },
@@ -219,7 +290,7 @@ pub const PVM = struct {
                     @truncate(context.registers[args.register_index] +% args.immediate),
                 ) catch |err| {
                     return if (err == error.JumpAddressHalt)
-                        .{ .terminal = .{ .halt = &[_]u8{} } }
+                        .{ .terminal = .halt }
                     else
                         .{ .terminal = .panic };
                 };
@@ -738,7 +809,7 @@ pub const PVM = struct {
                     @truncate(context.registers[args.second_register_index] +% args.second_immediate),
                 ) catch |err| {
                     return if (err == error.JumpAddressHalt)
-                        .{ .terminal = .{ .halt = &[_]u8{} } }
+                        .{ .terminal = .halt }
                     else
                         .{ .terminal = .panic };
                 };

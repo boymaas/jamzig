@@ -10,6 +10,48 @@ comptime {
     // _ = @import("pvm_test/host_call.zig");
 }
 
+test "pvm:jamduna_service_code:machine_invocation" {
+    const allocator = std.testing.allocator;
+
+    const program_code = @embedFile("pvm_test/fixtures/jam_duna_service_code.pvm");
+
+    var result = try pvmlib.invoke.machineInvocation(
+        allocator,
+        program_code,
+        5,
+        std.math.maxInt(u32),
+        &[_]u8{0} ** 20,
+        .{},
+    );
+    defer result.deinit(allocator);
+
+    std.debug.print("{}", .{result});
+}
+
+test "pvm:jamduna_service_code" {
+    const allocator = std.testing.allocator;
+    const raw_program = @embedFile("pvm_test/fixtures/jam_duna_service_code.pvm");
+
+    var execution_context = try pvmlib.PVM.ExecutionContext.initStandardProgramCodeFormat(
+        allocator,
+        raw_program,
+        &[_]u8{3} ** 32,
+        std.math.maxInt(u32),
+    );
+    defer execution_context.deinit(allocator);
+
+    try execution_context.debugProgram(std.io.getStdErr().writer());
+
+    // execution_context.clearRegisters();
+
+    execution_context.pc = 5; // for accumulate
+    const status = try pvmlib.PVM.basicInvocation(&execution_context);
+
+    if (status.terminal != .halt) {
+        std.debug.print("Expected .halt got {any}\n", .{status});
+    }
+}
+
 test "pvm:simple" {
     const allocator = std.testing.allocator;
 
@@ -37,16 +79,22 @@ test "pvm:simple" {
         73, 147, 82, 213, 0, //
     };
 
-    var execution_context = try pvmlib.PVM.ExecutionContext.initSimple(allocator, &raw_program, 1024, 4, std.math.maxInt(u32));
+    var execution_context = try pvmlib.PVM.ExecutionContext.initSimple(
+        allocator,
+        &raw_program,
+        1024,
+        4,
+        std.math.maxInt(u32),
+    );
     defer execution_context.deinit(allocator);
 
     execution_context.clearRegisters();
     execution_context.registers[0] = 4294901760;
     execution_context.registers[7] = 9;
 
-    const status = try pvmlib.PVM.execute(&execution_context);
+    const status = try pvmlib.PVM.basicInvocation(&execution_context);
 
-    if (status != .halt) {
+    if (status.terminal != .halt) {
         std.debug.print("Expected .halt got {any}\n", .{status});
     }
 

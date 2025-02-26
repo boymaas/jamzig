@@ -5,8 +5,6 @@ const Program = @import("program.zig").Program;
 const Decoder = @import("decoder.zig").Decoder;
 const Memory = @import("memory.zig").Memory;
 
-const HostCallFn = @import("host_calls.zig").HostCallFn;
-
 const trace = @import("../tracing.zig").scoped(.pvm);
 
 pub const ExecutionContext = struct {
@@ -14,16 +12,88 @@ pub const ExecutionContext = struct {
     decoder: Decoder,
     registers: [13]u64,
     memory: Memory,
-    host_calls: std.AutoHashMap(u32, HostCallFn),
+    // NOTE: we cannot use HostCallMap here due to circular dep
+    host_calls: std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext) HostCallResult),
 
     gas: i64,
     pc: u32,
     error_data: ?ErrorData,
 
+    pub const HostCallResult = union(enum) {
+        play,
+        page_fault: u32,
+    };
+    pub const HostCallFn = *const fn (*ExecutionContext) HostCallResult;
+    pub const HostCallMap = std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext) HostCallResult);
+
     pub const ErrorData = union(enum) {
         page_fault: u32,
         host_call: u32,
     };
+
+    pub fn initStandardProgramCodeFormat(
+        allocator: Allocator,
+        program_code: []const u8,
+        input: []const u8,
+        max_gas: u32,
+    ) !ExecutionContext {
+        // To keep track wehere we are
+        var remaining_bytes = program_code[0..];
+
+        if (remaining_bytes.len < 11) {
+            return error.IncompleteHeader;
+        }
+
+        // first 3 is lenght of read only
+        const read_only_size_in_bytes = std.mem.readInt(u24, program_code[0..3], .little);
+        // next 3 is lenght of read write
+        const read_write_size_in_bytes = std.mem.readInt(u24, program_code[3..6], .little);
+        // next 2 is heap in pages
+        const heap_size_in_pages = std.mem.readInt(u16, program_code[6..8], .little);
+        // next 3 is size of stack
+        const stack_size_in_bytes = std.mem.readInt(u24, program_code[8..11], .little);
+
+        // Register we are just behind the header
+        remaining_bytes = remaining_bytes[11..];
+
+        if (remaining_bytes.len < read_only_size_in_bytes + read_write_size_in_bytes) {
+            return error.MemoryDataSegmentTooSmall;
+        }
+
+        // then read the length of read only
+        const read_only_data = remaining_bytes[0..read_only_size_in_bytes];
+        // then read the length of write only
+        const read_write_data = remaining_bytes[read_only_size_in_bytes..][0..read_write_size_in_bytes];
+
+        // Update we are at the beginning of our code_data_segment
+        remaining_bytes = remaining_bytes[read_only_size_in_bytes + read_write_size_in_bytes ..];
+
+        // read lenght of code
+        if (remaining_bytes.len < 4) {
+            return error.ProgramCodeFormatCodeDataSegmentTooSmall;
+        }
+        const code_len_in_bytes = std.mem.readInt(u32, remaining_bytes[0..4], .little);
+
+        remaining_bytes = remaining_bytes[4..];
+
+        if (remaining_bytes.len < code_len_in_bytes) {
+            return error.ProgramCodeFormatCodeDataSegmentTooSmall;
+        }
+
+        const code_data = remaining_bytes[0..code_len_in_bytes];
+
+        // then read the actual codeu
+        return try initWithMemorySegments(
+            allocator,
+            code_data,
+            read_only_data,
+            read_write_data,
+            input, // FIXME: need to add input here
+            stack_size_in_bytes,
+            heap_size_in_pages,
+            max_gas,
+        );
+    }
 
     pub fn initSimple(
         allocator: Allocator,
@@ -87,7 +157,7 @@ pub const ExecutionContext = struct {
         return ExecutionContext{
             .memory = memory,
             .decoder = Decoder.init(program.code, program.mask),
-            .host_calls = std.AutoHashMap(u32, HostCallFn).init(allocator),
+            .host_calls = .{},
             .program = program,
             .registers = [_]u64{0} ** 13,
             .pc = 0,
@@ -109,14 +179,38 @@ pub const ExecutionContext = struct {
         @memset(&self.registers, 0);
     }
 
+    /// Construct the return value by looking determining if we can
+    /// read the range between registers 7 and 8. If the range is invalid we return []
+    pub fn readSliceBetweenRegister7AndRegister8(self: *@This()) []const u8 {
+        const span = trace.span(.return_value_as_slice);
+        defer span.deinit();
+
+        if (self.registers[7] < self.registers[8]) {
+            const reg7 = @as(u32, @truncate(self.registers[7]));
+            const reg8 = @as(u32, @truncate(self.registers[8]));
+            return self.memory.readSlice(reg7, reg8 - reg7) catch {
+                return &[_]u8{};
+            };
+        }
+
+        return &[_]u8{};
+    }
+
     pub fn deinit(self: *ExecutionContext, allocator: Allocator) void {
         self.memory.deinit();
-        self.host_calls.deinit();
+        self.host_calls.deinit(allocator);
         self.program.deinit(allocator);
     }
 
-    pub fn registerHostCall(self: *ExecutionContext, idx: u32, handler: HostCallFn) !void {
-        try self.host_calls.put(idx, handler);
+    pub fn registerHostCall(self: *ExecutionContext, allocator: std.mem.Allocator, idx: u32, handler: HostCallFn) !void {
+        try self.host_calls.put(allocator, idx, handler);
+    }
+
+    pub fn setHostCalls(self: *ExecutionContext, allocator: std.mem.Allocator, new_host_calls: HostCallMap) void {
+        // Deinit the old host calls map
+        self.host_calls.deinit(allocator);
+        // Replace with the new one
+        self.host_calls = new_host_calls;
     }
 
     pub fn debugProgram(self: *const ExecutionContext, writer: anytype) !void {
