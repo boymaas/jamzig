@@ -9,6 +9,7 @@ comptime {
     _ = @import("jamtestvectors/erasure_coding.zig");
     _ = @import("jamtestvectors/assurances.zig");
     _ = @import("jamtestvectors/fisher_yates.zig");
+    _ = @import("jamtestvectors/authorizations.zig");
 
     _ = @import("codec.zig");
     _ = @import("codec_test.zig");
