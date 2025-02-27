@@ -7,15 +7,63 @@ const BASE_PATH = "src/jamtestvectors/data/authorizations/";
 // O = 8
 // Q = 80
 // Core const
+pub const AuthPool = struct {
+    items: []types.OpaqueHash,
+
+    pub fn init() AuthPool {
+        const empty_items = &[_]types.OpaqueHash{};
+        return AuthPool{ .items = empty_items };
+    }
+
+    pub fn deinit(self: *AuthPool, allocator: std.mem.Allocator) void {
+        allocator.free(self.items);
+        self.* = undefined;
+    }
+};
+
+pub const AuthQueue = struct {
+    items: []types.OpaqueHash,
+
+    pub fn items_size(params: jam_params.Params) usize {
+        return params.max_authorizations_queue_items;
+    }
+
+    pub fn init() AuthQueue {
+        const empty_items = &[_]types.OpaqueHash{};
+        return AuthQueue{ .items = empty_items };
+    }
+
+    pub fn deinit(self: *AuthQueue, allocator: std.mem.Allocator) void {
+        allocator.free(self.items);
+        self.* = undefined;
+    }
+};
 
 pub fn State(params: jam_params.Params) type {
     return struct {
-        auth_pools: [params.core_count][]types.OpaqueHash,
-        auth_queues: [params.core_count][params.max_authorizations_queue_items]types.OpaqueHash,
+        auth_pools: [params.core_count]AuthPool,
+        auth_queues: [params.core_count]AuthQueue,
+
+        pub fn init() !@This() {
+            const state: @This() = undefined;
+
+            for (state.auth_pools) |*pool| {
+                pool.* = AuthPool.init();
+            }
+
+            for (state.auth_queues) |*queue| {
+                queue.* = AuthQueue.init();
+            }
+
+            return state;
+        }
 
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-            for (self.auth_pools) |pool| {
-                allocator.free(pool);
+            for (&self.auth_pools) |*pool| {
+                pool.deinit(allocator);
+            }
+            for (&self.auth_queues) |*queue| {
+                queue.deinit(allocator);
             }
             self.* = undefined;
         }
@@ -43,6 +91,9 @@ pub const Input = struct {
 
 pub const Output = void;
 
+// LLM: This TestCase becombes big when using the FULL_PARAMS, we need to fix this essentially
+// move the pre_state and post state to the heap or another solution. Like change the State to store not in a fixed array
+// but in a dynamic.
 pub fn TestCase(comptime params: jam_params.Params) type {
     return struct {
         input: Input,
@@ -50,16 +101,29 @@ pub fn TestCase(comptime params: jam_params.Params) type {
         // output: Output,
         post_state: State(params),
 
+        pub fn init(allocator: std.mem.Allocator) !@This() {
+            return .{
+                .input = .{
+                    .slot = 0,
+                    .auths = &[_]CoreAuthorizer{},
+                },
+                .pre_state = try State(params).init(allocator),
+                .post_state = try State(params).init(allocator),
+            };
+        }
+
         pub fn buildFrom(
             allocator: std.mem.Allocator,
             bin_file_path: []const u8,
         ) !@This() {
-            return try @import("./loader.zig").loadAndDeserializeTestVector(
+            const test_case = try @import("./loader.zig").loadAndDeserializeTestVector(
                 TestCase(params),
                 params,
                 allocator,
                 bin_file_path,
             );
+
+            return test_case;
         }
 
         pub fn debugInput(self: *const @This()) void {
@@ -106,7 +170,7 @@ test "authorizations:single" {
     }
 }
 
-test "authorizations:tiny" {
+test "authorizations_vector:tiny" {
     const allocator = std.testing.allocator;
 
     const dir = @import("dir.zig");
@@ -119,7 +183,7 @@ test "authorizations:tiny" {
     defer test_vectors.deinit();
 }
 
-test "authorizations:full" {
+test "authorizations_vector:full" {
     const allocator = std.testing.allocator;
 
     const dir = @import("dir.zig");

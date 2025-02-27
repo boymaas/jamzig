@@ -25,10 +25,10 @@ pub fn convertToAlpha(
 
     // For each core in the test state, add authorizers to the Alpha pools
     for (test_state.auth_pools, 0..) |pool, core_idx| {
-        span.debug("Processing core {d} with {d} authorizers", .{ core_idx, pool.len });
+        span.debug("Processing core {d} with {d} authorizers", .{ core_idx, pool.items.len });
 
         // Add each hash in the pool to the Alpha instance
-        for (pool) |hash| {
+        for (pool.items) |hash| {
             // Skip empty hashes (all zeros)
             if (isEmptyHash(&hash)) continue;
 
@@ -58,15 +58,15 @@ pub fn convertToPhi(
 
     // For each core in the test state, add authorizers to the Phi queues
     for (test_state.auth_queues, 0..) |queue, core_idx| {
-        span.debug("Processing core {d} queue", .{core_idx});
+        span.debug("Processing core {d} queue with {d} items", .{ core_idx, queue.items.len });
 
         // Add each hash in the queue to the Phi instance
-        for (queue) |hash| {
+        for (queue.items) |hash| {
             // Skip empty hashes (all zeros)
             if (isEmptyHash(&hash)) continue;
 
             try phi.addAuthorization(core_idx, hash);
-            span.trace("Added authorization hash to core {d} queue: {s}", .{
+            span.trace("Added authorizor hash to core {d} queue: {s}", .{
                 core_idx,
                 std.fmt.fmtSliceHexLower(&hash),
             });

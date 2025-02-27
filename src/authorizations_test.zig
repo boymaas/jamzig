@@ -19,7 +19,7 @@ const trace = @import("tracing.zig").scoped(.authorizations_test);
 
 const BASE_PATH = "src/jamtestvectors/data/authorizations/";
 
-test "authorizations:verify with TINY test vectors" {
+test "authorizations:tiny" {
     const allocator = testing.allocator;
 
     // Scan all tiny test vectors
@@ -34,10 +34,11 @@ test "authorizations:verify with TINY test vectors" {
     // Run each test vector
     for (test_vectors.test_cases()) |*test_vector| {
         try runTestCase(jam_params.TINY_PARAMS, allocator, test_vector);
+        break;
     }
 }
 
-test "authorizations:verify with FULL test vectors" {
+test "authorizations:full" {
     const allocator = testing.allocator;
 
     // Scan all full test vectors

@@ -46,7 +46,7 @@ pub const Params = struct {
     // N: The number of ticket entries per validator
     max_ticket_entries_per_validator: u8 = 2, // N
     // O: The maximum number of items in the authorizations pool
-    max_authorizations_pool_items: u8 = 8, // O
+    max_authorizations_pool_items: u8 = 8, // O // TODO: rename to authorizors
     // P: The slot period, in seconds
     slot_period: u8 = 6, // P TODO: integrate these params into Tau and Safrole
     // Q: The maximum number of items in the authorizations queue
