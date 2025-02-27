@@ -190,8 +190,8 @@ pub const Mmr = struct {
 };
 
 pub const ReportedWorkPackage = struct {
-    work_package_hash: WorkReportHash, // Inconsistent with test vectors
-    segment_tree_root: ExportsRoot, // Inconstisten with test vectors
+    hash: WorkReportHash, // Inconsistent with test vectors
+    exports_root: ExportsRoot, // Inconstisten with test vectors
 };
 
 pub const BlockInfo = struct {
@@ -342,14 +342,14 @@ pub const LookupMetaKey = struct {
 
 pub const LookupMetaEntry = struct {
     key: LookupMetaKey,
-    value: []U32,
+    value: ?[]U32,
 };
 
 pub const AccountData = struct {
     service: ServiceInfo,
-    preimages: []PreimageEntry,
+    preimages: ?[]PreimageEntry,
     lookup_meta: []LookupMetaEntry,
-    // storage: std.StringHashMap(HexBytes), // FIXME:
+    // storage: ?std.StringHashMap(HexBytes), // FIXME:
 };
 
 pub const Account = struct {

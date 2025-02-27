@@ -128,7 +128,7 @@ pub fn expectFormattedEqual(
     expected: T,
 ) !void {
     var diff = try diffBasedOnFormat(allocator, actual, expected);
-    defer diff.deinit();
+    defer diff.deinit(allocator);
     try diff.debugPrintAndReturnErrorOnDiff();
 }
 
@@ -145,6 +145,6 @@ pub fn expectTypesFmtEqual(
     defer allocator.free(expected_str);
 
     var diff = try diffBasedOnStrings(allocator, actual_str, expected_str);
-    defer diff.deinit();
-    try diff.debugPrintAndReturnErrorOnDiff(allocator);
+    defer diff.deinit(allocator);
+    try diff.debugPrintAndReturnErrorOnDiff();
 }

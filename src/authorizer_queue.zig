@@ -97,14 +97,14 @@ pub fn Phi(
         }
 
         // Remove and return the first authorization from the queue for a specific core
-        pub fn popAuthorization(self: *@This(), core: usize) ?AuthorizerHash {
+        pub fn popAuthorization(self: *@This(), core: usize) !?AuthorizerHash {
             if (core >= core_count) return error.InvalidCore;
             if (self.queue[core].items.len == 0) return null;
             return self.queue[core].orderedRemove(0);
         }
 
         // Get the number of authorizations in the queue for a specific core
-        pub fn getQueueLength(self: *@This(), core: usize) usize {
+        pub fn getQueueLength(self: *@This(), core: usize) !usize {
             if (core >= core_count) return error.InvalidCore;
             return self.queue[core].items.len;
         }
@@ -143,7 +143,7 @@ test "AuthorizationQueue - add and pop authorizations" {
     try testing.expectEqual(@as(usize, 1), auth_queue.getQueueLength(0));
 
     // Pop from core 0
-    const popped_hash = auth_queue.popAuthorization(0);
+    const popped_hash = try auth_queue.popAuthorization(0);
     try testing.expect(popped_hash != null);
     try testing.expectEqualSlices(u8, &test_hash, &popped_hash.?);
     try testing.expectEqual(@as(usize, 0), auth_queue.getQueueLength(0));
@@ -171,8 +171,8 @@ test "AuthorizationQueue - invalid core error" {
     const test_hash = [_]u8{1} ** H;
 
     try testing.expectError(error.InvalidCore, auth_queue.addAuthorization(2, test_hash));
-    try testing.expect(auth_queue.popAuthorization(2) == null);
-    try testing.expectEqual(@as(usize, 0), auth_queue.getQueueLength(2));
+    try testing.expect(auth_queue.popAuthorization(2) == error.InvalidCore);
+    try testing.expectEqual(error.InvalidCore, auth_queue.getQueueLength(2));
 }
 
 test "AuthorizationQueue - multiple cores" {
@@ -188,8 +188,8 @@ test "AuthorizationQueue - multiple cores" {
     try testing.expectEqual(@as(usize, 1), auth_queue.getQueueLength(0));
     try testing.expectEqual(@as(usize, 1), auth_queue.getQueueLength(1));
 
-    const popped_hash1 = auth_queue.popAuthorization(0);
-    const popped_hash2 = auth_queue.popAuthorization(1);
+    const popped_hash1 = try auth_queue.popAuthorization(0);
+    const popped_hash2 = try auth_queue.popAuthorization(1);
 
     try testing.expectEqualSlices(u8, &test_hash1, &popped_hash1.?);
     try testing.expectEqualSlices(u8, &test_hash2, &popped_hash2.?);
@@ -199,7 +199,7 @@ test "AuthorizationQueue - pop from empty queue" {
     var auth_queue = try Phi(2, 6).init(testing.allocator);
     defer auth_queue.deinit();
 
-    try testing.expect(auth_queue.popAuthorization(0) == null);
+    try testing.expect(try auth_queue.popAuthorization(0) == null);
 }
 
 test "AuthorizationQueue - FIFO order" {
@@ -214,7 +214,7 @@ test "AuthorizationQueue - FIFO order" {
     try auth_queue.addAuthorization(0, test_hash2);
     try auth_queue.addAuthorization(0, test_hash3);
 
-    try testing.expectEqualSlices(u8, &test_hash1, &auth_queue.popAuthorization(0).?);
-    try testing.expectEqualSlices(u8, &test_hash2, &auth_queue.popAuthorization(0).?);
-    try testing.expectEqualSlices(u8, &test_hash3, &auth_queue.popAuthorization(0).?);
+    try testing.expectEqualSlices(u8, &test_hash1, &(try auth_queue.popAuthorization(0)).?);
+    try testing.expectEqualSlices(u8, &test_hash2, &(try auth_queue.popAuthorization(0)).?);
+    try testing.expectEqualSlices(u8, &test_hash3, &(try auth_queue.popAuthorization(0)).?);
 }
