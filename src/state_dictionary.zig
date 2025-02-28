@@ -460,7 +460,7 @@ pub const MerklizationDictionary = struct {
     entries: std.AutoHashMap([32]u8, DictEntry),
 
     // FIX: move these entries to a shared type file
-    const MerkleEntry = @import("merkle.zig").Entry;
+    pub const MerkleEntry = @import("merkle.zig").Entry;
 
     pub fn init(allocator: std.mem.Allocator) MerklizationDictionary {
         return .{

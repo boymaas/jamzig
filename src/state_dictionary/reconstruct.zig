@@ -4,6 +4,8 @@ const state_decoding = @import("../state_decoding.zig");
 const types = @import("../types.zig");
 const delta_reconstruction = @import("delta_reconstruction.zig");
 
+const state_dictionary = @import("../state_dictionary.zig");
+
 const MerklizationDictionary = @import("../state_dictionary.zig").MerklizationDictionary;
 const Params = @import("../jam_params.zig").Params;
 
@@ -32,10 +34,7 @@ pub fn reconstructState(
     span.debug("Initialized empty JamState", .{});
 
     // Buffer for storing preimage lookup entries until we can process them
-    var preimage_lookup_buffer = std.ArrayList(struct {
-        key: [32]u8,
-        value: []const u8,
-    }).init(allocator);
+    var preimage_lookup_buffer = std.ArrayList(state_dictionary.DictEntry).init(allocator);
     defer preimage_lookup_buffer.deinit();
 
     // Helper function to get reader for value
@@ -172,11 +171,12 @@ pub fn reconstructState(
                 try delta_reconstruction.reconstructPreimageEntry(allocator, &jam_state.delta.?, jam_state.tau, dict_entry);
             },
             .delta_preimage_lookup => {
-                var lookup_span = entry_span.child(.process_delta_preimage_lookup);
+                var lookup_span = entry_span.child(.buffer_delta_preimage_lookup);
                 defer lookup_span.deinit();
-                lookup_span.debug("Processing delta lookup entry", .{});
+                lookup_span.debug("Buffering delta lookup entry for later processing", .{});
 
-                try delta_reconstruction.reconstructPreimageLookupEntry(allocator, &jam_state.delta.?, dict_entry);
+                // Buffer this entry for processing after all other entries
+                try preimage_lookup_buffer.append(dict_entry);
             },
         }
     }
@@ -186,6 +186,14 @@ pub fn reconstructState(
     defer lookup_span.deinit();
 
     lookup_span.debug("Processing {d} buffered preimage lookup entries", .{preimage_lookup_buffer.items.len});
+
+    for (preimage_lookup_buffer.items, 0..) |buffered, i| {
+        var entry_span = lookup_span.child(.process_buffered_lookup);
+        defer entry_span.deinit();
+
+        entry_span.debug("Processing buffered lookup entry {d}/{d}", .{ i + 1, preimage_lookup_buffer.items.len });
+        try delta_reconstruction.reconstructPreimageLookupEntry(allocator, &jam_state.delta.?, buffered);
+    }
 
     span.debug("State reconstruction completed successfully. Processed {d} entries total", .{
         entry_count,
