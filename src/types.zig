@@ -466,7 +466,7 @@ pub const ValidatorSet = struct {
         const field_name = comptime switch (key_type) {
             .BlsPublic => "bls",
             .BandersnatchPublic => "bandersnatch",
-            .Ed25519Public => "edwards",
+            .Ed25519Public => "ed25519",
         };
 
         for (self.validators, 0..) |validator, i| {

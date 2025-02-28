@@ -307,20 +307,54 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
 
             // Check service ID exists
-            for (guarantee.report.results) |result| {
-                if (jam_state.delta.?.getAccount(result.service_id)) |service| {
-                    // Validate code hash matches
-                    if (!std.mem.eql(u8, &service.code_hash, &result.code_hash)) {
-                        return Error.BadCodeHash;
-                    }
+            {
+                const service_span = span.child(.validate_services);
+                defer service_span.deinit();
+                service_span.debug("Validating {d} service results", .{guarantee.report.results.len});
 
-                    // Check gas limits
-                    if (result.accumulate_gas < service.min_gas_accumulate) {
-                        return Error.ServiceItemGasTooLow;
+                for (guarantee.report.results, 0..) |result, i| {
+                    const result_span = service_span.child(.validate_service_result);
+                    defer result_span.deinit();
+
+                    result_span.debug("Validating service ID {d} for result {d}", .{ result.service_id, i });
+                    result_span.trace("Code hash: {s}, gas: {d}", .{
+                        std.fmt.fmtSliceHexLower(&result.code_hash),
+                        result.accumulate_gas,
+                    });
+
+                    if (jam_state.delta.?.getAccount(result.service_id)) |service| {
+                        result_span.debug("Found service account, validating code hash and gas", .{});
+                        result_span.trace("Service code hash: {s}, min gas: {d}", .{
+                            std.fmt.fmtSliceHexLower(&service.code_hash),
+                            service.min_gas_accumulate,
+                        });
+
+                        // Validate code hash matches
+                        if (!std.mem.eql(u8, &service.code_hash, &result.code_hash)) {
+                            result_span.err("Code hash mismatch - expected: {s}, got: {s}", .{
+                                std.fmt.fmtSliceHexLower(&service.code_hash),
+                                std.fmt.fmtSliceHexLower(&result.code_hash),
+                            });
+                            return Error.BadCodeHash;
+                        }
+
+                        // Check gas limits
+                        if (result.accumulate_gas < service.min_gas_accumulate) {
+                            result_span.err("Insufficient gas: {d} < minimum {d}", .{
+                                result.accumulate_gas,
+                                service.min_gas_accumulate,
+                            });
+                            return Error.ServiceItemGasTooLow;
+                        }
+
+                        result_span.debug("Service validation successful", .{});
+                    } else {
+                        result_span.err("Service ID {d} not found", .{result.service_id});
+                        return Error.BadServiceId;
                     }
-                } else {
-                    return Error.BadServiceId;
                 }
+
+                service_span.debug("All service validations passed", .{});
             }
 
             // Check core is not engaged
@@ -330,72 +364,206 @@ pub const ValidatedGuaranteeExtrinsic = struct {
 
             // Validate report prerequisites exist
             // TODO: move this to recent_blocks
-            for (guarantee.report.context.prerequisites) |prereq| {
-                var found_prereq = false;
-                outer: for (jam_state.beta.?.blocks.items) |block| {
-                    for (block.work_reports) |report| {
-                        if (std.mem.eql(u8, &report.hash, &prereq)) {
-                            found_prereq = true;
-                            break :outer;
+            {
+                const prereq_span = span.child(.validate_prerequisites);
+                defer prereq_span.deinit();
+
+                prereq_span.debug("Validating {d} prerequisites", .{guarantee.report.context.prerequisites.len});
+
+                for (guarantee.report.context.prerequisites, 0..) |prereq, i| {
+                    const single_prereq_span = prereq_span.child(.validate_prerequisite);
+                    defer single_prereq_span.deinit();
+
+                    single_prereq_span.debug("Checking prerequisite {d}: {s}", .{ i, std.fmt.fmtSliceHexLower(&prereq) });
+
+                    var found_prereq = false;
+
+                    // First check in recent blocks
+                    {
+                        const blocks_span = single_prereq_span.child(.check_recent_blocks);
+                        defer blocks_span.deinit();
+
+                        blocks_span.debug("Searching in {d} recent blocks", .{jam_state.beta.?.blocks.items.len});
+
+                        outer: for (jam_state.beta.?.blocks.items, 0..) |block, block_idx| {
+                            blocks_span.trace("Checking block {d} with {d} reports", .{ block_idx, block.work_reports.len });
+
+                            for (block.work_reports, 0..) |report, report_idx| {
+                                blocks_span.trace("Comparing with report {d}: {s}", .{ report_idx, std.fmt.fmtSliceHexLower(&report.hash) });
+
+                                if (std.mem.eql(u8, &report.hash, &prereq)) {
+                                    blocks_span.debug("Found prerequisite in block {d}, report {d}", .{ block_idx, report_idx });
+                                    found_prereq = true;
+                                    break :outer;
+                                }
+                            }
+                        }
+
+                        if (!found_prereq) {
+                            blocks_span.debug("Prerequisite not found in recent blocks", .{});
                         }
                     }
-                }
 
-                // walk the guarantees to see if the prereq is there
-                for (guarantees.data) |g| {
-                    if (std.mem.eql(u8, &g.report.package_spec.hash, &prereq)) {
-                        found_prereq = true;
-                        break;
+                    // If not found in blocks, check current guarantees
+                    if (!found_prereq) {
+                        const guarantees_span = single_prereq_span.child(.check_current_guarantees);
+                        defer guarantees_span.deinit();
+
+                        guarantees_span.debug("Searching in {d} current guarantees", .{guarantees.data.len});
+
+                        for (guarantees.data, 0..) |g, g_idx| {
+                            guarantees_span.trace("Comparing with guarantee {d}: {s}", .{ g_idx, std.fmt.fmtSliceHexLower(&g.report.package_spec.hash) });
+
+                            if (std.mem.eql(u8, &g.report.package_spec.hash, &prereq)) {
+                                guarantees_span.debug("Found prerequisite in current guarantee {d}", .{g_idx});
+                                found_prereq = true;
+                                break;
+                            }
+                        }
+
+                        if (!found_prereq) {
+                            guarantees_span.debug("Prerequisite not found in current guarantees", .{});
+                        }
                     }
+
+                    if (!found_prereq) {
+                        single_prereq_span.err("Prerequisite {d} not found: {s}", .{ i, std.fmt.fmtSliceHexLower(&prereq) });
+                        return Error.DependencyMissing;
+                    }
+
+                    single_prereq_span.debug("Prerequisite {d} validated successfully", .{i});
                 }
 
-                if (!found_prereq) {
-                    return Error.DependencyMissing;
-                }
+                prereq_span.debug("All prerequisites validated successfully", .{});
             }
 
             // Verify segment root lookup is valid
             // TODO: move this to recent_blocks
-            for (guarantee.report.segment_root_lookup) |segment| {
-                var found_package = false;
-                var matching_segment_root = false;
+            {
+                const segment_span = span.child(.validate_segment_roots);
+                defer segment_span.deinit();
 
-                // First check recent blocks
-                outer: for (jam_state.beta.?.blocks.items) |block| {
-                    for (block.work_reports) |report| {
-                        if (std.mem.eql(u8, &report.hash, &segment.work_package_hash)) {
-                            found_package = true;
-                            // TODO: Validate segment root matches
-                            // We would need access to the actual segment root from history
+                segment_span.debug("Validating {d} segment root lookups", .{guarantee.report.segment_root_lookup.len});
 
-                            for (block.work_reports) |reported_work_package| {
-                                if (std.mem.eql(u8, &reported_work_package.exports_root, &segment.segment_tree_root)) {
+                for (guarantee.report.segment_root_lookup, 0..) |segment, i| {
+                    const lookup_span = segment_span.child(.validate_segment_lookup);
+                    defer lookup_span.deinit();
+
+                    lookup_span.debug("Validating segment lookup {d}: package hash {s}", .{
+                        i,
+                        std.fmt.fmtSliceHexLower(&segment.work_package_hash),
+                    });
+                    lookup_span.trace("Segment tree root: {s}", .{
+                        std.fmt.fmtSliceHexLower(&segment.segment_tree_root),
+                    });
+
+                    var found_package = false;
+                    var matching_segment_root = false;
+
+                    // First check recent blocks
+                    {
+                        const blocks_span = lookup_span.child(.check_recent_blocks);
+                        defer blocks_span.deinit();
+
+                        blocks_span.debug("Searching in {d} recent blocks", .{jam_state.beta.?.blocks.items.len});
+
+                        outer: for (jam_state.beta.?.blocks.items, 0..) |block, block_idx| {
+                            blocks_span.trace("Checking block {d} with {d} reports", .{
+                                block_idx,
+                                block.work_reports.len,
+                            });
+
+                            for (block.work_reports, 0..) |report, report_idx| {
+                                blocks_span.trace("Comparing with report {d}: {s}", .{
+                                    report_idx,
+                                    std.fmt.fmtSliceHexLower(&report.hash),
+                                });
+
+                                if (std.mem.eql(u8, &report.hash, &segment.work_package_hash)) {
+                                    blocks_span.debug("Found matching package in block {d}, report {d}", .{
+                                        block_idx,
+                                        report_idx,
+                                    });
+                                    found_package = true;
+
+                                    // Check segment root
+                                    blocks_span.trace("Checking segment root against exports root: {s}", .{
+                                        std.fmt.fmtSliceHexLower(&report.exports_root),
+                                    });
+
+                                    for (block.work_reports) |reported_work_package| {
+                                        if (std.mem.eql(u8, &reported_work_package.exports_root, &segment.segment_tree_root)) {
+                                            blocks_span.debug("Found matching segment root", .{});
+                                            matching_segment_root = true;
+                                        }
+                                        break;
+                                    }
+                                    break :outer;
+                                }
+                            }
+                        }
+
+                        if (found_package) {
+                            blocks_span.debug("Package found in recent blocks, segment root match: {}", .{matching_segment_root});
+                        } else {
+                            blocks_span.debug("Package not found in recent blocks", .{});
+                        }
+                    }
+
+                    // If not found in blocks, check current guarantees
+                    if (!found_package) {
+                        const guarantees_span = lookup_span.child(.check_current_guarantees);
+                        defer guarantees_span.deinit();
+
+                        guarantees_span.debug("Searching in {d} current guarantees", .{guarantees.data.len});
+
+                        for (guarantees.data, 0..) |g, g_idx| {
+                            guarantees_span.trace("Comparing with guarantee {d}: {s}", .{
+                                g_idx,
+                                std.fmt.fmtSliceHexLower(&g.report.package_spec.hash),
+                            });
+
+                            if (std.mem.eql(u8, &g.report.package_spec.hash, &segment.work_package_hash)) {
+                                guarantees_span.debug("Found matching package in current guarantee {d}", .{g_idx});
+                                found_package = true;
+
+                                guarantees_span.trace("Checking segment root against exports root: {s}", .{
+                                    std.fmt.fmtSliceHexLower(&g.report.package_spec.exports_root),
+                                });
+
+                                if (std.mem.eql(u8, &g.report.package_spec.exports_root, &segment.segment_tree_root)) {
+                                    guarantees_span.debug("Found matching segment root", .{});
                                     matching_segment_root = true;
                                 }
                                 break;
                             }
-                            break :outer;
+                        }
+
+                        if (found_package) {
+                            guarantees_span.debug("Package found in current guarantees, segment root match: {}", .{matching_segment_root});
+                        } else {
+                            guarantees_span.debug("Package not found in current guarantees", .{});
                         }
                     }
-                }
 
-                // Then check current block's guarantees
-                for (guarantees.data) |g| {
-                    if (std.mem.eql(u8, &g.report.package_spec.hash, &segment.work_package_hash)) {
-                        found_package = true;
-                        if (std.mem.eql(u8, &g.report.package_spec.exports_root, &segment.segment_tree_root)) {
-                            matching_segment_root = true;
-                        }
-                        break;
+                    if (!found_package) {
+                        lookup_span.err("Package not found: {s}", .{
+                            std.fmt.fmtSliceHexLower(&segment.work_package_hash),
+                        });
+                        return Error.SegmentRootLookupInvalid;
                     }
+
+                    if (found_package and !matching_segment_root) {
+                        lookup_span.err("Segment root mismatch for package: {s}", .{
+                            std.fmt.fmtSliceHexLower(&segment.work_package_hash),
+                        });
+                        return Error.SegmentRootLookupInvalid;
+                    }
+
+                    lookup_span.debug("Segment lookup {d} validated successfully", .{i});
                 }
 
-                if (!found_package) {
-                    return Error.SegmentRootLookupInvalid;
-                }
-                if (found_package and !matching_segment_root) {
-                    return Error.SegmentRootLookupInvalid;
-                }
+                segment_span.debug("All segment root lookups validated successfully", .{});
             }
 
             // Check timeslot is within valid range
@@ -592,6 +760,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 }
                 dup_span.debug("No duplicates found for package hash", .{});
             }
+            // TODO: should we add this?
             // // Check sufficient guarantors
             // if (guarantee.signatures.len < params.validators_super_majority) {
             //     return Error.InsufficientGuarantees;

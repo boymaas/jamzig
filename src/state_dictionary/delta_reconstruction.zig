@@ -8,7 +8,7 @@ const services = @import("../services.zig");
 const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
 const trace = @import("../tracing.zig").scoped(.codec);
 
-const log = std.log.scoped(.state_dictionary_reconstruct);
+const log = std.log.scoped(.state_dictionary);
 
 /// Reconstructs base service account data from key type 255
 pub fn reconstructServiceAccountBase(

@@ -13,7 +13,6 @@ pub const Error = error{
 };
 
 /// Validates if a validator is assigned to a core for a specific timeslot
-/// This implements the validation part of equation 11.27
 pub fn validateGuarantorAssignment(
     comptime params: @import("jam_params.zig").Params,
     allocator: std.mem.Allocator,
@@ -27,7 +26,7 @@ pub fn validateGuarantorAssignment(
     const span = trace.span(.validate_assignment);
     defer span.deinit();
 
-    span.debug("Validating assignemnt @ current_slot {d}", .{current_slot});
+    span.debug("Validating assignment @ current_slot {d}", .{current_slot});
     span.debug("Validating assignment for validator {d} on core {d} at guarantee.slot {d}", .{ validator_index, core_index, guarantee_slot });
 
     // Calculate current and report rotations
@@ -53,7 +52,7 @@ pub fn validateGuarantorAssignment(
     var result = if (is_current_rotation)
         try guarantor_assignments.buildForTimeSlot(params, allocator, current_entropy, current_slot)
     else
-        try guarantor_assignments.buildForTimeSlot(params, allocator, previous_entropy, guarantee_slot);
+        try guarantor_assignments.buildForTimeSlot(params, allocator, previous_entropy, current_slot - params.validator_rotation_period);
     defer result.deinit(allocator);
 
     span.debug("Built guarantor assignments successfully", .{});

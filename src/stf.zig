@@ -81,7 +81,7 @@ pub fn stateTransition(
         params,
         allocator,
         state_transition,
-        new_block.extrinsic.guarantees,
+        new_block,
     );
 
     // Process authorizations using guarantees extrinsic data
