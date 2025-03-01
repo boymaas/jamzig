@@ -87,7 +87,7 @@ pub fn convertReadyQueue(
     return theta;
 }
 
-pub fn convertAccumulated(
+pub fn convertAccumulatedQueue(
     comptime epoch_size: usize,
     allocator: std.mem.Allocator,
     accumulated: tv_types.AccumulatedQueue,

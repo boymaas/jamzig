@@ -51,7 +51,7 @@ pub fn runAccumulateTest(comptime params: Params, allocator: std.mem.Allocator, 
     );
     defer pre_state_ready.deinit();
 
-    var pre_state_accumulated = try converters.convertAccumulated(
+    var pre_state_accumulated = try converters.convertAccumulatedQueue(
         params.epoch_length,
         allocator,
         test_case.pre_state.accumulated,
@@ -78,7 +78,7 @@ pub fn runAccumulateTest(comptime params: Params, allocator: std.mem.Allocator, 
     );
     defer expected_ready.deinit();
 
-    var expected_accumulated = try converters.convertAccumulated(
+    var expected_accumulated = try converters.convertAccumulatedQueue(
         params.epoch_length,
         allocator,
         test_case.post_state.accumulated,
