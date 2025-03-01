@@ -13,33 +13,36 @@ const Params = @import("../jam_params.zig").Params;
 pub fn convertTestStateIntoJamState(
     comptime params: Params,
     allocator: std.mem.Allocator,
-    testcase_pre_state: tv_types.State,
+    test_state: tv_types.State,
 ) !state.JamState(params) {
     // Create a JamState to use as the base state
     var jam_state = try state.JamState(params).init(allocator);
     errdefer jam_state.deinit(allocator);
 
+    jam_state.tau = test_state.slot;
+    jam_state.eta = [_][32]u8{test_state.entropy} ++ [_][32]u8{[_]u8{0} ** 32} ** 3;
+
     // Convert and set the individual components
     jam_state.delta = try convertServiceAccounts(
         allocator,
-        testcase_pre_state.accounts,
+        test_state.accounts,
     );
 
     jam_state.chi = try convertPrivileges(
         allocator,
-        testcase_pre_state.privileges,
+        test_state.privileges,
     );
 
     jam_state.theta = try convertReadyQueue(
         params.epoch_length,
         allocator,
-        testcase_pre_state.ready_queue,
+        test_state.ready_queue,
     );
 
     jam_state.xi = try convertAccumulatedQueue(
         params.epoch_length,
         allocator,
-        testcase_pre_state.accumulated,
+        test_state.accumulated,
     );
 
     return jam_state;

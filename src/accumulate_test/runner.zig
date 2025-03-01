@@ -23,12 +23,20 @@ pub fn processAccumulateReports(
     );
     defer stx.deinit();
 
-    // Call the accumulate function with StateTransition
-    return try accumulate.processAccumulateReports(
+    // Transition time, with input slot
+    try @import("../stf/time.zig").transition(params, &stx, test_case.input.slot);
+
+    // Process the newly available reports
+    const results = try accumulate.processAccumulateReports(
         params,
         &stx,
         test_case.input.reports,
     );
+
+    // Merge prime into base
+    try stx.mergePrimeOntoBase();
+
+    return results;
 }
 
 pub fn runAccumulateTest(comptime params: Params, allocator: std.mem.Allocator, test_case: tvector.TestCase) !void {
