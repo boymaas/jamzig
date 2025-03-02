@@ -64,12 +64,13 @@ fn processAccumulationQueue(
     // 2. Use their work package hashes to resolve dependencies of queued reports
     // 3. Repeat until no more dependencies can be resolved
     // This creates a natural accumulation order that respects dependencies
-    var resolved = ResolvedReports
-        .init(allocator);
+    var resolved = ResolvedReports.init(allocator);
     errdefer resolved.deinit();
 
     // Simulate recursion
     while (true) {
+        // NOTE: we start assuming there "can" be resolved entries, if there
+        // are none. We exit immediatly without iterating. See: processAccumulateReports@12.5.
         resolved.clearRetainingCapacity();
         for (queued.items) |*wradeps| {
             if (wradeps.dependencies.count() == 0) {
@@ -162,12 +163,12 @@ pub fn processAccumulateReports(
     }
 
     // 12.12: Build the initial set of pending_reports
-    var theta: *state.Theta(params.epoch_length) = try stx.ensure(.theta_prime);
 
     var pending_reports_queue = QueuedWorkReportAndDeps.init(allocator);
     defer deinitEntriesAndObject(allocator, pending_reports_queue);
 
     // 12.12: walk theta(current_slot_in_epoch..) join theta(..current_slot_in_epoch)
+    var theta: *state.Theta(params.epoch_length) = try stx.ensure(.theta_prime);
     var pending_reports = theta.iteratorStartingFrom(stx.time.current_slot_in_epoch);
     while (pending_reports.next()) |wradeps| {
         try pending_reports_queue.append(try wradeps.deepClone(allocator));
@@ -179,7 +180,10 @@ pub fn processAccumulateReports(
     }
 
     // Now resolve dependenceies using E 12.7
-    queueEditingFunction(&pending_reports_queue, accumulatable.items); // accumulatable is immediate
+    queueEditingFunction(
+        &pending_reports_queue,
+        accumulatable.items, // accumulatable contains immediate
+    );
 
     // 12.11 Process reports that are ready from the queue and add to accumulatable
     try processAccumulationQueue(
