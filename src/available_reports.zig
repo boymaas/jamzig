@@ -33,6 +33,16 @@ pub fn Theta(comptime epoch_size: usize) type {
             try self.entries[time_slot].append(self.allocator, entry);
         }
 
+        pub fn clearTimeSlot(self: *@This(), time_slot: types.TimeSlot) void {
+            // Deinit all WorkReportAndDeps objects in the time slot
+            for (self.entries[time_slot].items) |*entry| {
+                entry.deinit(self.allocator);
+            }
+
+            // Clear the array list without deallocating its memory
+            self.entries[time_slot].clearRetainingCapacity();
+        }
+
         /// Add a work report to the newest time slot (last slot in the array)
         pub fn addWorkReport(
             self: *@This(),
