@@ -7,26 +7,6 @@ const state_delta = @import("state_delta.zig");
 const WorkReportAndDeps = state.available_reports.WorkReportAndDeps;
 const Params = @import("jam_params.zig").Params;
 
-/// Partitions reports into those ready for immediate accumulation and those
-/// that need to be queued due to dependencies
-fn partitionReports(
-    reports: []const types.WorkReport,
-    immediate: *std.ArrayList(types.WorkReport),
-    queued: *std.ArrayList(types.WorkReport),
-) !void {
-    for (reports) |report| {
-        // A report can be accumulated immediately if it has no prerequisites
-        // and no segment root lookups
-        if (report.context.prerequisites.len == 0 and
-            report.segment_root_lookup.len == 0)
-        {
-            try immediate.append(report);
-        } else {
-            try queued.append(report);
-        }
-    }
-}
-
 fn deinitEntriesAndObject(allocator: std.mem.Allocator, aggregate: anytype) void {
     for (aggregate.items) |*item| {
         item.deinit(allocator);
@@ -34,129 +14,77 @@ fn deinitEntriesAndObject(allocator: std.mem.Allocator, aggregate: anytype) void
     aggregate.deinit();
 }
 
-/// Process the Accumulation Queue returing an ordered list of accumulatable
-/// work reports in the correct order
-fn processAccumulationQueue(
-    comptime params: Params,
-    stx: *state_delta.StateTransition(params),
-    reports_immediate: []const types.WorkReport,
-    reports_queued: []const types.WorkReport,
-) !std.ArrayList(types.WorkReport) {
-    const allocator = stx.allocator;
-    const time = stx.time;
+pub const QueuedWorkReportAndDeps = std.ArrayList(WorkReportAndDeps);
+pub const QueuedWorkReportAndDepsRefs = std.ArrayList(*WorkReportAndDeps);
+pub const AccumulatableReports = std.ArrayList(*types.WorkReport);
+pub const ResolvedReports = std.ArrayList(*types.WorkReport);
 
-    // Initialize the necessary state components
-    var xi = try stx.ensureT(state.Xi(params.epoch_length), .xi_prime);
-    var theta = try stx.ensureT(state.Theta(params.epoch_length), .theta_prime);
+// 12.7 Walks the queued, updates dependencies and removes those who are already resolved
+fn queueEditingFunction(
+    queued: *QueuedWorkReportAndDepsRefs,
+    resolved_reports: *const ResolvedReports,
+) void {
+    var idx: usize = 0;
+    while (idx < queued.items.len) {
+        const wradeps = queued.items[idx];
 
-    // Transform reports_queued to a WorkReportAndDeps queue
-    var reports_queued_w_deps = try std.ArrayList(WorkReportAndDeps).initCapacity(allocator, reports_queued.len);
-    defer deinitEntriesAndObject(allocator, reports_queued_w_deps);
+        for (resolved_reports.items) |report| {
+            if (std.mem.eql(u8, &wradeps.work_report.package_spec.hash, &report.package_spec.hash)) {
+                _ = queued.orderedRemove(idx);
+                continue;
+            }
 
-    // 12.5 Resolve the dependencies of our new reports queued against our already processed work_packages
-    // The end result should be a set of work reports with unresolved dependencies, and if we for some
-    // reason already accumulated this work report it will be removed from this list
-    for (reports_queued) |queued_report| {
-        var qr_w_d = try WorkReportAndDeps.fromWorkReport(allocator, queued_report);
-        errdefer qr_w_d.deinit(allocator);
+            // when dependencies are 0 essentially we can conclude that
+            if (wradeps.dependencies.count() == 0) {
+                continue;
+            }
 
-        if (xi.containsWorkPackage(queued_report.package_spec.hash)) {
-            // we already processed this
-            continue;
-        }
-        for (qr_w_d.dependencies.keys()) |workpackage_hash| {
-            if (xi.containsWorkPackage(workpackage_hash)) {
-                _ = qr_w_d.dependencies.swapRemove(workpackage_hash);
-                if (qr_w_d.dependencies.count() == 0) {
-                    // no more dependencies to resolve
-                    // NOTE: this does not play well with the algo below, as there
-                    // we skip an entry based on their dependency count
-                    break;
-                }
+            // else try to remove and resolve
+            _ = wradeps.dependencies.swapRemove(report.package_spec.hash);
+            // resolved?
+            if (wradeps.dependencies.count() == 0) {
+                break; // Exit inner loop since we've resolved this report
             }
         }
-        try reports_queued_w_deps.append(qr_w_d);
+        idx += 1;
     }
+}
 
-    // Prepare the full pending_reports_queue, this will hold all pending workreports
-    // with pending dependencies.
-    var pending_reports_queue = std.ArrayList(*WorkReportAndDeps).init(allocator);
-    defer pending_reports_queue.deinit();
-
-    // walk theta(current_slot_in_epoch..) join theta(..current_slot_in_epoch)
-    var pending_reports = theta.iteratorStartingFrom(time.current_slot_in_epoch);
-    while (pending_reports.next()) |wradeps| {
-        try pending_reports_queue.append(wradeps);
-    }
-    for (reports_queued_w_deps.items) |*wradeps| {
-        try pending_reports_queue.append(wradeps);
-    }
-
-    // Now create the return set taking ownership of the appropiate values
-    var accumulatable = std.ArrayList(types.WorkReport).init(allocator);
-    errdefer accumulatable.deinit();
-
-    // add the immediates as these can be processed immediately
-    for (reports_immediate) |work_report| {
-        try accumulatable.append(work_report);
-    }
-
+// 12.8 We further define the accumulation priority queue function Q, which
+// provides the sequence of work-reports which are accumulatable given a set of
+// not-yet-accumulated work-reports and their dependencies.
+fn processAccumulationQueue(
+    allocator: std.mem.Allocator,
+    queued: *QueuedWorkReportAndDepsRefs,
+    accumulatable: *AccumulatableReports,
+) !void {
     // Process work reports in dependency order:
     // 1. Start with immediately executable reports (no dependencies)
     // 2. Use their work package hashes to resolve dependencies of queued reports
     // 3. Repeat until no more dependencies can be resolved
     // This creates a natural accumulation order that respects dependencies
-    var resolved_reports = try std.ArrayList(*const types.WorkPackageHash)
-        .initCapacity(allocator, reports_immediate.len);
-    errdefer resolved_reports.deinit();
+    var resolved = ResolvedReports
+        .init(allocator);
+    errdefer resolved.deinit();
 
-    // Start with the immediate reports, as these will allow for the
-    // resolving of dependencies
-    for (reports_immediate) |wr| {
-        try resolved_reports.append(&wr.package_spec.hash);
-    }
-
-    // The newly resolved
-    var resolved_reports_new = std.ArrayList(*const types.WorkPackageHash).init(allocator);
-    defer resolved_reports_new.deinit();
-
+    // Simulate recursion
     while (true) {
-        // Now also process our queued_reports where we already resolved the dependencies
-        // against our database of processed workpackages
-        // Process queued reports, using while loop to handle removals correctly
-        var idx: usize = 0;
-        while (idx < pending_reports_queue.items.len) : (idx += 1) {
-            var wradeps = pending_reports_queue.items[idx];
-
-            // when dependencies are 0 essentially we can conclude that
-            // this dependency is removed. This avoids doing an ordered remove
+        resolved.clearRetainingCapacity();
+        for (queued.items) |wradeps| {
             if (wradeps.dependencies.count() == 0) {
-                continue;
-            }
-
-            for (resolved_reports.items) |work_package_hash| {
-                _ = wradeps.dependencies.swapRemove(work_package_hash.*);
-                // after this remove we ended up with an empty set
-                // of deps which means this works report dependencies are completely
-                // resolved.
-                if (wradeps.dependencies.count() == 0) {
-                    try resolved_reports_new.append(&wradeps.work_report.package_spec.hash);
-                    try accumulatable.append(wradeps.work_report);
-                    break; // Exit inner loop since we've resolved this report
-                }
+                try accumulatable.append(&wradeps.work_report);
+                try resolved.append(&wradeps.work_report);
             }
         }
 
-        if (resolved_reports.items.len == 0) {
+        // exit condition
+        if (resolved.items.len == 0) {
             break;
         }
 
-        // now repeat and try to resolve more dependencies
-        std.mem.swap(std.ArrayList(*const types.WorkPackageHash), &resolved_reports, &resolved_reports_new);
-        resolved_reports_new.clearRetainingCapacity();
+        // update our queue
+        queueEditingFunction(queued, &resolved);
     }
-
-    return accumulatable;
 }
 
 // 1. History and Queuing (12.1):
@@ -189,27 +117,74 @@ pub fn processAccumulateReports(
     var xi: *state.Xi(params.epoch_length) = try stx.ensure(.xi_prime);
 
     // Initialize lists for various report categories
-    var immediate = std.ArrayList(types.WorkReport).init(allocator);
-    defer immediate.deinit();
-    var queued = std.ArrayList(types.WorkReport).init(allocator);
+    var accumulatable = AccumulatableReports.init(allocator);
+    defer accumulatable.deinit();
+    var queued = QueuedWorkReportAndDeps.init(allocator);
     defer queued.deinit();
 
     // Partition reports into immediate and queued based on dependencies
-    try partitionReports(reports, &immediate, &queued);
+    for (reports) |*report| {
+        // 12.4 A report can be accumulated immediately if it has no prerequisites
+        // and no segment root lookups
+        if (report.context.prerequisites.len == 0 and
+            report.segment_root_lookup.len == 0)
+        {
+            try accumulatable.append(report);
+        } else {
+            try queued.append(try WorkReportAndDeps.fromWorkReport(allocator, report.*));
+        }
+    }
+    // 12,5
+    // Filter out any reports which we already accumulated, and remove any dependencies
+    // which we already acummulated. This can potentially produce new resolved work reports
+    var idx: usize = 0;
+    while (idx < queued.items.len) {
+        if (xi.containsWorkPackage(queued.items[idx].work_report.package_spec.hash)) {
+            _ = queued.orderedRemove(idx); // TODO: optimize
+            continue;
+        }
+        for (queued.items[idx].dependencies.keys()) |workpackage_hash| {
+            if (xi.containsWorkPackage(workpackage_hash)) {
+                _ = queued.items[idx].dependencies.swapRemove(workpackage_hash);
+                if (queued.items[idx].dependencies.count() == 0) {
+                    break;
+                }
+            }
+        }
+        idx += 1;
+    }
 
-    // Process reports that are ready from the queue
-    var accumulatable_reports = try processAccumulationQueue(
-        params,
-        stx,
-        immediate.items,
-        queued.items,
+    // 12.12: Build the initial set of pending_reports
+    var theta: *state.Theta(params.epoch_length) = try stx.ensure(.theta_prime);
+
+    var pending_reports_queue = QueuedWorkReportAndDepsRefs.init(allocator);
+    defer pending_reports_queue.deinit();
+
+    // 12.12: walk theta(current_slot_in_epoch..) join theta(..current_slot_in_epoch)
+    var pending_reports = theta.iteratorStartingFrom(stx.time.current_slot_in_epoch);
+    while (pending_reports.next()) |wradeps| {
+        try pending_reports_queue.append(wradeps);
+    }
+
+    // add the new queued imports
+    for (queued.items) |*wradeps| {
+        try pending_reports_queue.append(wradeps);
+    }
+
+    // Now resolve dependenceies using E 12.7
+    queueEditingFunction(&pending_reports_queue, &accumulatable); // accumulatable is immediate
+
+    // 12.11 Process reports that are ready from the queue and add to accumulatable
+    try processAccumulationQueue(
+        allocator,
+        &pending_reports_queue,
+        &accumulatable,
     );
-    defer accumulatable_reports.deinit();
 
     // NOTE: here we should execute
 
     // Add ready reports to accumulation history
-    for (accumulatable_reports.items) |report| {
+    for (accumulatable.items) |report| {
         const work_package_hash = report.package_spec.hash;
         try xi.addWorkPackage(work_package_hash);
     }
