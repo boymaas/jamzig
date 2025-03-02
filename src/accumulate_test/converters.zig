@@ -112,15 +112,20 @@ pub fn convertReadyQueue(
         if (slot_records.len == 0) continue;
 
         // Create a new ready queue entry for this slot
-        var slot_entries = theta.entries[slot_index];
+        var slot_entries = &theta.entries[slot_index];
 
         // Convert each record in the slot
         for (slot_records) |slot_record| {
-            const entry = try state_theta.WorkReportAndDeps.initWithDependencies(
+            var cloned_slot_report = try slot_record.report.deepClone(allocator);
+            errdefer cloned_slot_report.deinit(allocator);
+
+            var entry = try state_theta.WorkReportAndDeps.initWithDependencies(
                 allocator,
-                try slot_record.report.deepClone(allocator),
+                cloned_slot_report,
                 slot_record.dependencies,
             );
+            errdefer entry.deinit(allocator);
+
             try slot_entries.append(allocator, entry);
         }
     }

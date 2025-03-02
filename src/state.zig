@@ -401,6 +401,8 @@ const StateHelpers = struct {
             return;
         }
 
+        // std.debug.print("deallocating " ++ @typeName(@TypeOf(value)) ++ "\n", .{});
+
         // Check if the type has a deinit method
         if (!@hasDecl(ValueType, "deinit")) {
             @panic("Please implement deinit for: " ++ @typeName(ValueType));

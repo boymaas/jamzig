@@ -38,10 +38,10 @@ test "tiny/process_one_immediate_report-1.bin" {
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/process_one_immediate_report-1.bin");
 }
 
-// test "tiny/enqueue_and_unlock_simple-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_simple-1.bin");
-// }
+test "tiny/enqueue_and_unlock_simple-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_simple-1.bin");
+}
 //
 // test "tiny/enqueue_and_unlock_simple-2.bin" {
 //     const allocator = std.testing.allocator;

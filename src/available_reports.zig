@@ -120,11 +120,11 @@ pub fn Theta(comptime epoch_size: usize) type {
         }
 
         pub fn deinit(self: *@This()) void {
-            for (self.entries) |slot_entries| {
+            for (&self.entries) |*slot_entries| {
                 for (slot_entries.items) |*entry| {
-                    @constCast(entry).deinit(self.allocator);
+                    entry.deinit(self.allocator);
                 }
-                @constCast(&slot_entries).deinit(self.allocator);
+                slot_entries.deinit(self.allocator);
             }
             self.* = undefined;
         }
@@ -181,6 +181,7 @@ pub const WorkReportAndDeps = struct {
     }
 
     pub fn deinit(self: *WorkReportAndDeps, allocator: std.mem.Allocator) void {
+        self.work_report.deinit(allocator);
         self.dependencies.deinit(allocator);
         self.* = undefined;
     }

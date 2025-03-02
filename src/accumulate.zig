@@ -120,7 +120,13 @@ pub fn processAccumulateReports(
     var accumulatable = AccumulatableReports.init(allocator);
     defer accumulatable.deinit();
     var queued = QueuedWorkReportAndDeps.init(allocator);
-    defer queued.deinit();
+    defer {
+        for (queued.items) |*q| {
+            q.deinit(allocator);
+        }
+
+        queued.deinit();
+    }
 
     // Partition reports into immediate and queued based on dependencies
     for (reports) |*report| {
@@ -131,7 +137,7 @@ pub fn processAccumulateReports(
         {
             try accumulatable.append(report);
         } else {
-            try queued.append(try WorkReportAndDeps.fromWorkReport(allocator, report.*));
+            try queued.append(try WorkReportAndDeps.fromWorkReport(allocator, try report.deepClone(allocator)));
         }
     }
     // 12,5
@@ -192,9 +198,9 @@ pub fn processAccumulateReports(
     try xi.shiftDown();
 
     // Queue remaining unprocessed reports in theta for later epochs
-    // for (queued.items) |report| {
-    //     try theta.addWorkReport(time.current_slot_in_epoch, report);
-    // }
+    for (pending_reports_queue.items) |wradeps| {
+        try theta.addEntryToTimeSlot(stx.time.current_slot_in_epoch, try wradeps.deepClone(allocator));
+    }
 
     return [_]u8{0} ** 32;
 }
