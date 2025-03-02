@@ -70,16 +70,27 @@ pub fn JamStateDiff(
             std.debug.print("{}\n", .{self});
         }
 
-        pub fn build(allocator: std.mem.Allocator, before: *const state.JamState(params), after: *const state.JamState(params)) !JamStateDiff(params) {
+        pub fn build(
+            allocator: std.mem.Allocator,
+            before: *const state.JamState(params),
+            after: *const state.JamState(params),
+        ) !JamStateDiff(params) {
             var state_diff = @This().init(allocator);
             var fields = &state_diff.fields;
             inline for (std.meta.fields(state.JamState(params))) |field| {
                 try fields.put(field.name, try diff.diffBasedOnFormat(
                     allocator,
-                    types.fmt.format(@field(before, field.name)),
-                    types.fmt.format(@field(after, field.name)),
+                    types.fmt.formatWithOptions(
+                        @field(before, field.name),
+                        .{ .ignore_fields = &[_][]const u8{"global_index"} },
+                    ),
+                    types.fmt.formatWithOptions(
+                        @field(after, field.name),
+                        .{ .ignore_fields = &[_][]const u8{"global_index"} },
+                    ),
                 ));
             }
+
             return state_diff;
         }
 

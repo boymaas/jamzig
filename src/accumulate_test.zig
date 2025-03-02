@@ -73,10 +73,10 @@ test "tiny/enqueue_and_unlock_chain-3.bin" {
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain-3.bin");
 }
 
-// test "tiny/enqueue_and_unlock_chain-4.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain-4.bin");
-// }
+test "tiny/enqueue_and_unlock_chain-4.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain-4.bin");
+}
 //
 // test "tiny/enqueue_and_unlock_chain_wraps-1.bin" {
 //     const allocator = std.testing.allocator;

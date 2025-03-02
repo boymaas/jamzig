@@ -145,7 +145,7 @@ fn detectContainerType(comptime T: type) ContainerType {
     return detected_type;
 }
 
-fn formatContainer(comptime T: type, value: anytype, writer: anytype) !bool {
+fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: Options) !bool {
     switch (comptime detectContainerType(T)) {
         .list => {
             // Handle array-like containers (ArrayList, BoundedArray)
@@ -178,7 +178,7 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype) !bool {
                 writer.context.indent();
                 for (items, 0..) |item, i| {
                     try writer.print("{d}: ", .{i});
-                    try formatValue(item, writer);
+                    try formatValue(item, writer, options);
                 }
                 writer.context.outdent();
                 try writer.writeAll("]\n");
@@ -202,22 +202,24 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype) !bool {
                 value.count(),
             });
 
+            // LLM: we need the keys of the hash to be sorted, how can we do this
+            // without an allocator
             var it = value.iterator();
             if (it.next()) |first| {
                 writer.context.indent();
 
                 // Format first entry
                 try writer.writeAll("key: ");
-                try formatValue(first.key_ptr.*, writer);
+                try formatValue(first.key_ptr.*, writer, options);
                 try writer.writeAll("value: ");
-                try formatValue(first.value_ptr.*, writer);
+                try formatValue(first.value_ptr.*, writer, options);
 
                 // Format remaining entries
                 while (it.next()) |entry| {
                     try writer.writeAll("key: ");
-                    try formatValue(entry.key_ptr.*, writer);
+                    try formatValue(entry.key_ptr.*, writer, options);
                     try writer.writeAll("value: ");
-                    try formatValue(entry.value_ptr.*, writer);
+                    try formatValue(entry.value_ptr.*, writer, options);
                 }
                 writer.context.outdent();
             } else {
@@ -231,7 +233,7 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype) !bool {
     }
 }
 
-pub fn formatValue(value: anytype, writer: anytype) !void {
+pub fn formatValue(value: anytype, writer: anytype, options: Options) !void {
     const span = trace.span(.format_value);
     defer span.deinit();
 
@@ -255,7 +257,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
             // check it's a generic data structure we recognize, if that is the case
             // we can format it in a more human-readable way
             @setEvalBranchQuota(10_000);
-            if (try formatContainer(T, value, writer)) return;
+            if (try formatContainer(T, value, writer, options)) return;
 
             try writer.writeAll(@typeName(T));
             try writer.writeAll("\n");
@@ -264,7 +266,14 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
             inline for (info.fields) |field| {
                 try writer.writeAll(field.name);
                 try writer.writeAll(": ");
-                try formatValue(@field(value, field.name), writer);
+                if (options.ignoreField(field.name)) {
+                    try writer.writeAll(@typeName(field.type) ++ "\n");
+                    writer.context.indent();
+                    try writer.writeAll("<field ommited per types.fmt.Options>\n");
+                    writer.context.outdent();
+                } else {
+                    try formatValue(@field(value, field.name), writer, options);
+                }
             }
             writer.context.outdent();
         },
@@ -286,7 +295,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                     if (field.type == void) {
                         try writer.writeAll("void");
                     } else {
-                        try formatValue(@field(value, field.name), writer);
+                        try formatValue(@field(value, field.name), writer, options);
                     }
                 }
             }
@@ -310,7 +319,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                             for (value, 0..) |item, idx| {
                                 try writer.print("{d}: ", .{idx});
                                 writer.context.indent();
-                                try formatValue(item, writer);
+                                try formatValue(item, writer, options);
                                 writer.context.outdent();
                             }
                             writer.context.outdent();
@@ -332,7 +341,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                         } else if (child_type_info == .@"opaque") {
                             try writer.print("<opaque type: {s}>\n", .{@typeName(ChildType)});
                         } else {
-                            try formatValue(value.*, writer);
+                            try formatValue(value.*, writer, options);
                         }
                     },
                     else => {
@@ -356,7 +365,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
                 writer.context.indent();
                 for (value, 0..) |item, idx| {
                     try writer.print("{d}: ", .{idx});
-                    try formatValue(item, writer);
+                    try formatValue(item, writer, options);
                 }
                 writer.context.outdent();
                 try writer.writeAll("]\n");
@@ -369,7 +378,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
 
             if (value) |v| {
                 opt_span.debug("Optional has value", .{});
-                try formatValue(v, writer);
+                try formatValue(v, writer, options);
             } else {
                 opt_span.debug("Optional is null", .{});
 
@@ -396,6 +405,7 @@ pub fn formatValue(value: anytype, writer: anytype) !void {
 pub fn Format(comptime T: type) type {
     return struct {
         value: T,
+        options: Options = .{},
 
         pub fn format(
             self: @This(),
@@ -404,13 +414,36 @@ pub fn Format(comptime T: type) type {
             writer: anytype,
         ) !void {
             var indented = IndentedWriter(@TypeOf(writer)).init(writer);
-            try formatValue(self.value, indented.writer());
+            try formatValue(
+                self.value,
+                indented.writer(),
+                self.options,
+            );
         }
     };
 }
 
+const Options = struct {
+    ignore_fields: ?[]const []const u8 = null,
+
+    pub fn ignoreField(self: Options, field_name: []const u8) bool {
+        if (self.ignore_fields) |ignore_fields| {
+            for (ignore_fields) |ignored| {
+                if (std.mem.eql(u8, field_name, ignored)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+};
+
 pub fn format(value: anytype) Format(@TypeOf(value)) {
     return .{ .value = value };
+}
+
+pub fn formatWithOptions(value: anytype, options: Options) Format(@TypeOf(value)) {
+    return .{ .value = value, .options = options };
 }
 
 pub fn formatAlloc(allocator: std.mem.Allocator, value: anytype) ![]u8 {
