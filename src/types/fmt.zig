@@ -202,18 +202,74 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
                 value.count(),
             });
 
-            var it = value.iterator();
-            if (it.next()) |first| {
+            if (value.count() == 0) {
                 writer.context.indent();
+                try writer.writeAll("<empty hashmap>\n");
+                writer.context.outdent();
+                return true;
+            }
 
-                // Format first entry
-                try writer.writeAll("key: ");
-                try formatValue(first.key_ptr.*, writer, options);
-                try writer.writeAll("value: ");
-                try formatValue(first.value_ptr.*, writer, options);
+            // Sort keys if requested and we have an allocator
+            if (options.sort_hash_fields) {
+                if (options.allocator == null) {
+                    @panic("Need and allocator in options to be able to sort hash fields");
+                }
 
-                // Format remaining entries
+                const span = trace.span(.sort_hash_keys);
+                defer span.deinit();
+                span.debug("Sorting hash map keys", .{});
+
+                const allocator = options.allocator.?;
+                const count = value.count();
+
+                const KVPair = @TypeOf(value).Entry;
+
+                var kv_pairs = std.ArrayList(KVPair).init(allocator);
+                defer kv_pairs.deinit();
+                try kv_pairs.ensureTotalCapacity(count);
+
+                // Collect all entries
+                var it = value.iterator();
                 while (it.next()) |entry| {
+                    try kv_pairs.append(.{
+                        .key_ptr = entry.key_ptr,
+                        .value_ptr = entry.value_ptr,
+                    });
+                }
+
+                // Sort the entries based on string representation of keys
+                // This is a basic approach - for complex key types,
+                // a more sophisticated comparison might be needed
+                const KeyCompareContext = struct {
+                    pub fn compare(ctx: @This(), a: KVPair, b: KVPair) bool {
+                        _ = ctx;
+                        const KeyT = std.meta.FieldType(KVPair, .key_ptr);
+
+                        // For strings and slices, use string comparison
+                        if (@typeInfo(KeyT) == .pointer and
+                            @typeInfo(KeyT).pointer.child == u8)
+                        {
+                            return std.mem.lessThan(u8, a.key_ptr.*, b.key_ptr.*);
+                        }
+
+                        // For integers and enums, use numeric comparison
+                        if (@typeInfo(KeyT) == .int or @typeInfo(KeyT) == .@"enum") {
+                            return @as(u64, @intCast(@intFromEnum(a.key_ptr.*))) <
+                                @as(u64, @intCast(@intFromEnum(b.key_ptr.*)));
+                        }
+
+                        // Default: compare memory
+                        const a_bytes = std.mem.asBytes(a.key_ptr);
+                        const b_bytes = std.mem.asBytes(b.key_ptr);
+                        return std.mem.lessThan(u8, a_bytes, b_bytes);
+                    }
+                };
+
+                std.sort.insertion(KVPair, kv_pairs.items, KeyCompareContext{}, KeyCompareContext.compare);
+
+                // Format entries in sorted order
+                writer.context.indent();
+                for (kv_pairs.items) |entry| {
                     try writer.writeAll("key: ");
                     try formatValue(entry.key_ptr.*, writer, options);
                     try writer.writeAll("value: ");
@@ -221,9 +277,30 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
                 }
                 writer.context.outdent();
             } else {
-                writer.context.indent();
-                try writer.writeAll("<empty hashmap>\n");
-                writer.context.outdent();
+                // Original unsorted output logic
+                var it = value.iterator();
+                if (it.next()) |first| {
+                    writer.context.indent();
+
+                    // Format first entry
+                    try writer.writeAll("key: ");
+                    try formatValue(first.key_ptr.*, writer, options);
+                    try writer.writeAll("value: ");
+                    try formatValue(first.value_ptr.*, writer, options);
+
+                    // Format remaining entries
+                    while (it.next()) |entry| {
+                        try writer.writeAll("key: ");
+                        try formatValue(entry.key_ptr.*, writer, options);
+                        try writer.writeAll("value: ");
+                        try formatValue(entry.value_ptr.*, writer, options);
+                    }
+                    writer.context.outdent();
+                } else {
+                    writer.context.indent();
+                    try writer.writeAll("<empty hashmap>\n");
+                    writer.context.outdent();
+                }
             }
             return true;
         },
@@ -425,7 +502,7 @@ const Options = struct {
     ignore_fields: ?[]const []const u8 = null,
 
     sort_hash_fields: bool = false,
-    allocator: ?std.mem.Allocator,
+    allocator: ?std.mem.Allocator = null,
 
     pub fn ignoreField(self: Options, field_name: []const u8) bool {
         if (self.ignore_fields) |ignore_fields| {
