@@ -3,6 +3,8 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 
+const pvm_invocation = @import("../pvm/invocation.zig");
+
 const Params = @import("../jam_params.zig").Params;
 
 // 12.13 State components needed for Accumulation
