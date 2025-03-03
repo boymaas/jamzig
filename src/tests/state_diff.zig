@@ -82,11 +82,19 @@ pub fn JamStateDiff(
                     allocator,
                     types.fmt.formatWithOptions(
                         @field(before, field.name),
-                        .{ .ignore_fields = &[_][]const u8{"global_index"} },
+                        .{
+                            .ignore_fields = &[_][]const u8{"global_index"},
+                            .sort_hash_fields = true,
+                            .allocator = allocator,
+                        },
                     ),
                     types.fmt.formatWithOptions(
                         @field(after, field.name),
-                        .{ .ignore_fields = &[_][]const u8{"global_index"} },
+                        .{
+                            .ignore_fields = &[_][]const u8{"global_index"},
+                            .sort_hash_fields = true,
+                            .allocator = allocator,
+                        },
                     ),
                 ));
             }

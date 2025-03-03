@@ -202,8 +202,6 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
                 value.count(),
             });
 
-            // LLM: we need the keys of the hash to be sorted, how can we do this
-            // without an allocator
             var it = value.iterator();
             if (it.next()) |first| {
                 writer.context.indent();
@@ -425,6 +423,9 @@ pub fn Format(comptime T: type) type {
 
 const Options = struct {
     ignore_fields: ?[]const []const u8 = null,
+
+    sort_hash_fields: bool = false,
+    allocator: ?std.mem.Allocator,
 
     pub fn ignoreField(self: Options, field_name: []const u8) bool {
         if (self.ignore_fields) |ignore_fields| {

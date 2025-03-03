@@ -91,9 +91,6 @@ pub const Input = struct {
 
 pub const Output = void;
 
-// LLM: This TestCase becombes big when using the FULL_PARAMS, we need to fix this essentially
-// move the pre_state and post state to the heap or another solution. Like change the State to store not in a fixed array
-// but in a dynamic.
 pub fn TestCase(comptime params: jam_params.Params) type {
     return struct {
         input: Input,

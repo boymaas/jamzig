@@ -77,31 +77,31 @@ test "tiny/enqueue_and_unlock_chain-4.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain-4.bin");
 }
-//
-// test "tiny/enqueue_and_unlock_chain_wraps-1.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-1.bin");
-// }
-//
-// test "tiny/enqueue_and_unlock_chain_wraps-2.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-2.bin");
-// }
-//
-// test "tiny/enqueue_and_unlock_chain_wraps-3.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-3.bin");
-// }
-//
-// test "tiny/enqueue_and_unlock_chain_wraps-4.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-4.bin");
-// }
-//
-// test "tiny/enqueue_and_unlock_chain_wraps-5.bin" {
-//     const allocator = std.testing.allocator;
-//     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-5.bin");
-// }
+
+test "tiny/enqueue_and_unlock_chain_wraps-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-1.bin");
+}
+
+test "tiny/enqueue_and_unlock_chain_wraps-2.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-2.bin");
+}
+
+test "tiny/enqueue_and_unlock_chain_wraps-3.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-3.bin");
+}
+
+test "tiny/enqueue_and_unlock_chain_wraps-4.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-4.bin");
+}
+
+test "tiny/enqueue_and_unlock_chain_wraps-5.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/enqueue_and_unlock_chain_wraps-5.bin");
+}
 //
 //
 // test "tiny/enqueue_self_referential-1.bin" {
