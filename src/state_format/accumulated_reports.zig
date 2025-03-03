@@ -33,7 +33,7 @@ pub fn format(
             try iw.print("slot {d}:\n", .{slot});
             iw.context.indent();
 
-            try tfmt.formatValue(slot_entries, iw);
+            try tfmt.formatValue(slot_entries, iw, .{});
 
             iw.context.outdent();
         }

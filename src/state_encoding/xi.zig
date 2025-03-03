@@ -9,7 +9,7 @@ const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
 
 /// Xi (ξ) is defined as a dictionary mapping hashes to hashes: D⟨H → H⟩E
 /// where H represents 32-byte hashes
-pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *const [epoch_size]std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
+pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *const [epoch_size]std.AutoHashMapUnmanaged([32]u8, void), writer: anytype) !void {
     const span = trace.span(.encode);
     defer span.deinit();
     span.debug("Starting Xi encoding for {d} epochs", .{epoch_size});
@@ -22,7 +22,7 @@ pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *con
     span.debug("Successfully encoded all epochs", .{});
 }
 
-pub fn encodeTimeslotEntry(allocator: std.mem.Allocator, xi: *const std.AutoHashMapUnmanaged([32]u8, [32]u8), writer: anytype) !void {
+pub fn encodeTimeslotEntry(allocator: std.mem.Allocator, xi: *const std.AutoHashMapUnmanaged([32]u8, void), writer: anytype) !void {
     const span = trace.span(.encode_timeslot);
     defer span.deinit();
 
@@ -49,13 +49,10 @@ pub fn encodeTimeslotEntry(allocator: std.mem.Allocator, xi: *const std.AutoHash
 
     // Write each key-value pair in sorted order
     for (keys.items, 0..) |key, i| {
-        const value = xi.get(key).?;
-        span.trace("Writing pair {d}/{d} - key: {any}, value: {any}", .{ i + 1, keys.items.len, std.fmt.fmtSliceHexLower(&key), std.fmt.fmtSliceHexLower(&value) });
+        span.trace("Writing {d}/{d} - key: {any}", .{ i + 1, keys.items.len, std.fmt.fmtSliceHexLower(&key) });
 
         // Write key
         try writer.writeAll(&key);
-        // Write corresponding value
-        try writer.writeAll(&value);
     }
 
     span.debug("Successfully encoded timeslot entry", .{});
@@ -66,17 +63,15 @@ test "Xi encode" {
     const allocator = testing.allocator;
 
     // Create test xi mapping
-    var xi: std.AutoHashMapUnmanaged([32]u8, [32]u8) = .{};
+    var xi: std.AutoHashMapUnmanaged([32]u8, void) = .{};
     defer xi.deinit(allocator);
 
     // Create some test hashes
     const key1 = [_]u8{3} ** 32;
-    const val1 = [_]u8{2} ** 32;
     const key2 = [_]u8{1} ** 32;
-    const val2 = [_]u8{4} ** 32;
 
-    try xi.put(allocator, key1, val1);
-    try xi.put(allocator, key2, val2);
+    try xi.put(allocator, key1, {});
+    try xi.put(allocator, key2, {});
 
     // Create buffer for output
     var buffer = std.ArrayList(u8).init(allocator);
@@ -91,11 +86,9 @@ test "Xi encode" {
     // Should be followed by sorted key-value pairs
     // Key2 should come first as dicst should be sorted
     try testing.expectEqualSlices(u8, &key2, buffer.items[1..33]);
-    try testing.expectEqualSlices(u8, &val2, buffer.items[33..65]);
-    try testing.expectEqualSlices(u8, &key1, buffer.items[65..97]);
-    try testing.expectEqualSlices(u8, &val1, buffer.items[97..129]);
+    try testing.expectEqualSlices(u8, &key1, buffer.items[33..65]);
 
     // Total size should be:
-    // 1 byte length prefix + (2 pairs * (32 bytes key + 32 bytes value))
-    try testing.expectEqual(@as(usize, 129), buffer.items.len);
+    // 1 byte length prefix + (2 pairs * 32 bytes key)
+    try testing.expectEqual(@as(usize, 65), buffer.items.len);
 }

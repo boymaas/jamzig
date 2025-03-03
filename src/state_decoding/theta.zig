@@ -17,7 +17,7 @@ pub fn decode(comptime epoch_size: usize, allocator: std.mem.Allocator, reader: 
     return theta;
 }
 
-fn decodeSlotEntries(allocator: std.mem.Allocator, slot_entries: *available_reports.SlotEntries, reader: anytype) !void {
+fn decodeSlotEntries(allocator: std.mem.Allocator, slot_entries: *available_reports.TimeslotEntries, reader: anytype) !void {
     const entry_count = try codec.readInteger(reader);
     var i: usize = 0;
     while (i < entry_count) : (i += 1) {
@@ -26,11 +26,11 @@ fn decodeSlotEntries(allocator: std.mem.Allocator, slot_entries: *available_repo
     }
 }
 
-fn decodeEntry(allocator: std.mem.Allocator, reader: anytype) !available_reports.Entry {
+fn decodeEntry(allocator: std.mem.Allocator, reader: anytype) !available_reports.WorkReportAndDeps {
     // Decode work report
     const work_report = try codec.deserializeAlloc(WorkReport, {}, allocator, reader);
 
-    var entry = available_reports.Entry{
+    var entry = available_reports.WorkReportAndDeps{
         .work_report = work_report,
         .dependencies = .{},
     };
@@ -56,13 +56,13 @@ test "encode/decode" {
     var original = available_reports.Theta(4).init(allocator);
     defer original.deinit();
 
-    var entry1 = available_reports.Entry{
+    var entry1 = available_reports.WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{1} ** 32),
         .dependencies = .{},
     };
     try entry1.dependencies.put(allocator, [_]u8{3} ** 32, {});
 
-    var entry2 = available_reports.Entry{
+    var entry2 = available_reports.WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{2} ** 32),
         .dependencies = .{},
     };

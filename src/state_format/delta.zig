@@ -18,7 +18,7 @@ pub fn format(
     try iw.writeAll("Delta\n");
     iw.context.indent();
 
-    try tfmt.formatValue(self.*, iw);
+    try tfmt.formatValue(self.*, iw, .{});
 }
 
 // Test helper to demonstrate formatting

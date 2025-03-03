@@ -58,7 +58,7 @@ pub fn encodeSlotEntry(allocator: std.mem.Allocator, slot_entries: Theta.SlotEnt
     span.debug("Completed slot entries encoding", .{});
 }
 
-pub fn encodeEntry(allocator: std.mem.Allocator, entry: available_reports.Entry, writer: anytype) !void {
+pub fn encodeEntry(allocator: std.mem.Allocator, entry: available_reports.WorkReportAndDeps, writer: anytype) !void {
     const span = trace.span(.encode_entry);
     defer span.deinit();
     span.debug("Starting entry encoding", .{});
@@ -72,25 +72,19 @@ pub fn encodeEntry(allocator: std.mem.Allocator, entry: available_reports.Entry,
     try codec.writeInteger(dependency_count, writer);
     span.debug("Writing {d} dependencies", .{dependency_count});
 
-    // TODO: this pattern of having a dictionary and needing to sort by key
-    // is all over the place, we need a utility for this.
-    var keys = entry.dependencies.keyIterator();
-    var key_list = try std.ArrayList(types.Hash).initCapacity(allocator, dependency_count);
-    defer key_list.deinit();
-
-    while (keys.next()) |hash| {
-        try key_list.append(hash.*);
-    }
-    span.trace("Collected {d} hash keys", .{key_list.items.len});
+    // we need to dupe, otherwise in place sort can invalidate the
+    // arrayhashmap
+    const keys = try allocator.dupe(types.WorkPackageHash, entry.dependencies.keys());
+    defer allocator.free(keys);
 
     // NOTE: assuming short lists of deps
-    sort.insertion([32]u8, key_list.items, {}, lessThanSliceOfHashes);
+    sort.insertion([32]u8, keys, {}, lessThanSliceOfHashes);
     span.debug("Sorted dependency hashes", .{});
 
-    for (key_list.items, 0..) |hash, i| {
+    for (keys, 0..) |hash, i| {
         const hash_span = span.child(.hash);
         defer hash_span.deinit();
-        hash_span.trace("Writing hash {d} of {d}: {s}", .{ i + 1, key_list.items.len, std.fmt.fmtSliceHexLower(&hash) });
+        hash_span.trace("Writing hash {d} of {d}: {s}", .{ i + 1, keys.len, std.fmt.fmtSliceHexLower(&hash) });
         try writer.writeAll(&hash);
     }
     span.debug("Completed entry encoding", .{});
@@ -105,7 +99,7 @@ test "encode" {
     const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
 
     // Create a sample ThetaEntry slice
-    var entry1 = available_reports.Entry{
+    var entry1 = available_reports.WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{1} ** 32),
         .dependencies = .{},
     };
@@ -113,7 +107,7 @@ test "encode" {
     try entry1.dependencies.put(allocator, [_]u8{4} ** 32, {});
     try entry1.dependencies.put(allocator, [_]u8{3} ** 32, {});
 
-    var entry2 = available_reports.Entry{
+    var entry2 = available_reports.WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{5} ** 32),
         .dependencies = .{},
     };

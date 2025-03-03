@@ -29,7 +29,7 @@ pub fn format(
             has_pools = true;
             try iw.print("core {d}: ", .{i});
             iw.context.indent();
-            try tfmt.formatValue(pool, iw);
+            try tfmt.formatValue(pool, iw, .{});
             iw.context.outdent();
         }
     }

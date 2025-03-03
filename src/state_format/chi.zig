@@ -15,7 +15,7 @@ pub fn format(
 
     try iw.writeAll("Chi\n");
     iw.context.indent();
-    try tfmt.formatValue(chi.*, iw);
+    try tfmt.formatValue(chi.*, iw, .{});
     iw.context.outdent();
 }
 

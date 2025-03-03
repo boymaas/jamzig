@@ -255,11 +255,11 @@ test "Theta - getReportsAtSlot" {
     const work_report2 = createEmptyWorkReport([_]u8{2} ** 32);
 
     // Create two sample Entries
-    const entry1 = Theta(12).WorkReportAndDeps{
+    const entry1 = Theta(12).Entry{
         .work_report = work_report1,
         .dependencies = .{},
     };
-    const entry2 = Theta(12).WorkReportAndDeps{
+    const entry2 = Theta(12).Entry{
         .work_report = work_report2,
         .dependencies = .{},
     };
@@ -289,7 +289,7 @@ test "Theta - init, add entries, and verify" {
     const work_report = createEmptyWorkReport([_]u8{1} ** 32);
 
     // Create a sample Entry
-    var entry = Theta(12).WorkReportAndDeps{
+    var entry = Theta(12).Entry{
         .work_report = work_report,
         .dependencies = .{},
     };
@@ -322,15 +322,15 @@ test "Theta - iterator basic functionality" {
     const work_report3 = createEmptyWorkReport([_]u8{3} ** 32);
 
     // Create entries and add them to different slots
-    const entry1 = Theta(12).WorkReportAndDeps{
+    const entry1 = Theta(12).Entry{
         .work_report = work_report1,
         .dependencies = .{},
     };
-    const entry2 = Theta(12).WorkReportAndDeps{
+    const entry2 = Theta(12).Entry{
         .work_report = work_report2,
         .dependencies = .{},
     };
-    const entry3 = Theta(12).WorkReportAndDeps{
+    const entry3 = Theta(12).Entry{
         .work_report = work_report3,
         .dependencies = .{},
     };
@@ -363,23 +363,23 @@ test "Theta - iterator multiple entries per slot" {
     defer theta.deinit();
 
     // Create entries with distinct IDs
-    const entry1 = Theta(12).WorkReportAndDeps{
+    const entry1 = Theta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{1} ** 32),
         .dependencies = .{},
     };
-    const entry2 = Theta(12).WorkReportAndDeps{
+    const entry2 = Theta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{2} ** 32),
         .dependencies = .{},
     };
-    const entry3 = Theta(12).WorkReportAndDeps{
+    const entry3 = Theta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{3} ** 32),
         .dependencies = .{},
     };
-    const entry4 = Theta(12).WorkReportAndDeps{
+    const entry4 = Theta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{4} ** 32),
         .dependencies = .{},
     };
-    const entry5 = Theta(12).WorkReportAndDeps{
+    const entry5 = Theta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{5} ** 32),
         .dependencies = .{},
     };

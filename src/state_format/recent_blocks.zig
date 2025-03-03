@@ -22,7 +22,7 @@ pub fn format(
     if (self.blocks.items.len > 0) {
         try iw.writeAll("blocks:\n");
         iw.context.indent();
-        try tfmt.formatValue(self.blocks.items, iw);
+        try tfmt.formatValue(self.blocks.items, iw, .{});
         iw.context.outdent();
     } else {
         try iw.writeAll("blocks: <empty>\n");

@@ -22,7 +22,7 @@ pub fn format(
         if (slot_entries.items.len > 0) {
             try iw.print("Slot {d}: ", .{i});
             iw.context.indent();
-            try tfmt.formatValue(slot_entries, iw);
+            try tfmt.formatValue(slot_entries, iw, .{});
             iw.context.outdent();
         }
     }
@@ -36,7 +36,7 @@ test "Theta - format" {
     var theta = Theta(4).init(allocator);
     defer theta.deinit();
 
-    const WorkReportsAndDeps = @import("../available_reports.zig").Theta(4).WorkReportAndDeps;
+    const WorkReportsAndDeps = @import("../available_reports.zig").Theta(4).Entry;
     const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
 
     // Create a report with some test data

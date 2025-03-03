@@ -31,7 +31,7 @@ pub fn format(
         try iw.writeAll("queues:\n");
         iw.context.indent();
 
-        try tfmt.formatValue(self.queue, iw);
+        try tfmt.formatValue(self.queue, iw, .{});
 
         iw.context.outdent();
     } else {

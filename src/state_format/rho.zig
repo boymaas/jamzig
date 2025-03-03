@@ -34,7 +34,7 @@ pub fn format(
             iw.context.indent();
             defer iw.context.outdent();
 
-            try tfmt.formatValue(e.assignment, iw);
+            try tfmt.formatValue(e.assignment, iw, .{});
         } else {
             // try iw.print("Core {d}: no pending reports\n", .{i});
         }

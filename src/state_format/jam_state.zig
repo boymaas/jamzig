@@ -25,7 +25,7 @@ pub fn format(
 
     inline for (std.meta.fields(@TypeOf(self.*))) |field| {
         try iw.print("{s}: ", .{field.name});
-        try tfmt.formatValue(@field(self.*, field.name), iw);
+        try tfmt.formatValue(@field(self.*, field.name), iw, .{});
     }
 }
 

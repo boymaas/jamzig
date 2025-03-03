@@ -15,7 +15,7 @@ pub fn format(
     var indented_writer = tfmt.IndentedWriter(@TypeOf(writer)).init(writer);
     const iw = indented_writer.writer();
 
-    try tfmt.formatValue(self.*, iw);
+    try tfmt.formatValue(self.*, iw, .{});
 }
 
 test "format JamParams" {
