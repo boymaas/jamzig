@@ -13,7 +13,7 @@ pub const ExecutionContext = struct {
     registers: [13]u64,
     memory: Memory,
     // NOTE: we cannot use HostCallMap here due to circular dep
-    host_calls: std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext) HostCallResult),
+    host_calls: std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext, *anyopaque) HostCallResult),
 
     gas: i64,
     pc: u32,
@@ -21,10 +21,10 @@ pub const ExecutionContext = struct {
 
     pub const HostCallResult = union(enum) {
         play,
-        page_fault: u32,
+        terminal: @import("../pvm.zig").PVM.InvocationException,
     };
-    pub const HostCallFn = *const fn (*ExecutionContext) HostCallResult;
-    pub const HostCallMap = std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext) HostCallResult);
+    pub const HostCallFn = *const fn (*ExecutionContext, *anyopaque) HostCallResult;
+    pub const HostCallMap = std.AutoHashMapUnmanaged(u32, HostCallFn);
 
     pub const ErrorData = union(enum) {
         page_fault: u32,

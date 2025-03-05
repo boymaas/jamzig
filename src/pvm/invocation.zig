@@ -12,6 +12,7 @@ pub fn machineInvocation(
     gas: u32,
     args: []const u8,
     host_call_fns: PVM.HostCallMap,
+    host_call_ctx: *anyopaque,
 ) PVM.Error!PVM.MachineInvocationResult {
     const span = trace.span(.machine_invocation);
     defer span.deinit();
@@ -37,5 +38,5 @@ pub fn machineInvocation(
     exec_ctx.setHostCalls(allocator, host_call_fns);
 
     // Run the machine invocation
-    return PVM.machineInvocation(allocator, &exec_ctx);
+    return PVM.machineInvocation(allocator, &exec_ctx, host_call_ctx);
 }
