@@ -82,7 +82,7 @@ pub fn invoke(
     try host_call_map.put(allocator, @intFromEnum(HostCallId.gas), host_calls.gasRemaining);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.lookup), host_calls.lookupPreimage);
     // try host_call_map.put(allocator, @intFromEnum(HostCallId.read), host_calls.readStorage);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.write), host_calls.writeStorage);
+    try host_call_map.put(allocator, @intFromEnum(HostCallId.write), host_calls.writeStorage);
     // try host_call_map.put(allocator, @intFromEnum(HostCallId.info), host_calls.getServiceInfo);
     // try host_call_map.put(allocator, @intFromEnum(HostCallId.bless), host_calls.blessService);
     // try host_call_map.put(allocator, @intFromEnum(HostCallId.assign), host_calls.callAssignCore);
@@ -445,6 +445,100 @@ pub fn AccumulateHostCalls(params: Params) type {
 
             // Success result
             exec_ctx.registers[7] = preimage.len; // Success status
+            return .play;
+        }
+
+        /// Host call implementation for write storage (Ω_W)
+        fn writeStorage(
+            exec_ctx: *pvm.PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) pvm.PVM.HostCallResult {
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+
+            // Get registers per graypaper B.7: (k_o, k_z, v_o, v_z)
+            const k_o = exec_ctx.registers[7]; // Key offset
+            const k_z = exec_ctx.registers[8]; // Key size
+            const v_o = exec_ctx.registers[9]; // Value offset
+            const v_z = exec_ctx.registers[10]; // Value size
+
+            // Get service account - always use the current service for writing
+            const service_account = host_ctx.context.service_accounts.getAccount(host_ctx.service_id) orelse {
+                // Service not found, should never happen but handle gracefully
+                return .{ .terminal = .panic };
+            };
+
+            // Read key data from memory
+            const key_data = exec_ctx.memory.readSlice(@truncate(k_o), @truncate(k_z)) catch {
+                return .{ .terminal = .panic };
+            };
+
+            // Construct storage key: H(E_4(service_id) ⌢ key_data)
+            var key_input = std.ArrayList(u8).init(host_ctx.allocator);
+            defer key_input.deinit();
+
+            // Add service ID as bytes (4 bytes in little-endian)
+            var service_id_bytes: [4]u8 = undefined;
+            std.mem.writeInt(u32, &service_id_bytes, host_ctx.service_id, .little);
+            key_input.appendSlice(&service_id_bytes) catch {
+                return .{ .terminal = .panic };
+            };
+
+            // Add key data
+            key_input.appendSlice(key_data) catch {
+                return .{ .terminal = .panic };
+            };
+
+            // Hash to get final storage key
+            var storage_key: [32]u8 = undefined;
+            std.crypto.hash.blake2.Blake2b256.hash(key_input.items, &storage_key, .{});
+
+            // Check if this is a removal operation (v_z == 0)
+            if (v_z == 0) {
+                // Remove the key from storage
+                if (service_account.storage.fetchRemove(storage_key)) |*entry| {
+                    // Return the previous length
+                    exec_ctx.registers[7] = entry.value.len;
+                    host_ctx.allocator.free(entry.value);
+                    return .play;
+                }
+                exec_ctx.registers[7] = 0;
+                return .play;
+            }
+
+            // Get current value length if key exists
+            var existing_len: u64 = 0;
+            if (service_account.storage.get(storage_key)) |existing_value| {
+                existing_len = existing_value.len;
+            }
+
+            // Read value from memory
+            const value_slice = exec_ctx.memory.readSlice(@truncate(v_o), @truncate(v_z)) catch {
+                return .{ .terminal = .panic };
+            };
+
+            // Create a copy of the value data
+            const value = host_ctx.allocator.dupe(u8, value_slice) catch {
+                return .{ .terminal = .panic };
+            };
+            errdefer host_ctx.allocator.free(value);
+
+            // Check if service has enough balance to store this data
+            // This is a simplification - proper implementation would calculate
+            // the balance threshold based on the new storage size
+            const footprint = service_account.storageFootprint();
+            if (footprint.a_t > service_account.balance) {
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.FULL);
+                return .play;
+            }
+
+            // Write to storage
+            service_account.writeStorage(storage_key, value) catch {
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.FULL);
+                return .play;
+            };
+
+            // Return the previous length per graypaper
+            exec_ctx.registers[7] = existing_len;
             return .play;
         }
 
