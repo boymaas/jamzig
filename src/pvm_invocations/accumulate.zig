@@ -74,7 +74,7 @@ pub fn invoke(
     // FIXME: make this map at compile time
     // Set up host call functions
     var host_call_map = std.AutoHashMapUnmanaged(u32, pvm.PVM.HostCallFn){};
-    defer host_call_map.deinit(allocator);
+    // errdefer host_call_map.deinit(allocator); // host_call_map will be owned by ExecutionContext
 
     const host_calls = AccumulateHostCalls(params);
 
@@ -106,8 +106,7 @@ pub fn invoke(
         .deferred_transfers = std.ArrayList(DeferredTransfer).init(allocator),
         .accumulation_output = null,
     };
-
-    defer host_call_context.deferred_transfers.deinit();
+    defer host_call_context.deinit();
 
     // Execute the PVM invocation
     const code = service_account.getPreimage(service_account.code_hash) orelse {
@@ -193,15 +192,7 @@ pub const AccumulationOperand = struct {
         errdefer {
             // Clean up any already initialized operands
             for (operands) |*operand| {
-                // Only clean up successfully initialized operands
-                if (@hasField(@TypeOf(operand.output), "success")) {
-                    if (operand.output == .success) {
-                        allocator.free(operand.output.success);
-                    }
-                }
-                if (operand.authorization_output.len > 0) {
-                    allocator.free(operand.authorization_output);
-                }
+                operand.deinit(allocator);
             }
             allocator.free(operands);
         }
@@ -246,6 +237,7 @@ pub const AccumulationOperand = struct {
 
         // Free the authorization output
         allocator.free(self.authorization_output);
+        self.* = undefined;
     }
 };
 
@@ -383,6 +375,11 @@ pub fn AccumulateHostCalls(params: Params) type {
             new_service_id: types.ServiceId,
             deferred_transfers: std.ArrayList(DeferredTransfer),
             accumulation_output: ?types.AccumulateRoot,
+
+            pub fn deinit(self: *@This()) void {
+                self.deferred_transfers.deinit();
+                self.* = undefined;
+            }
         };
 
         /// Host call implementation for gas remaining (Ω_G)
