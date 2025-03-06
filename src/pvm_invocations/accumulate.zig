@@ -69,7 +69,6 @@ pub fn invoke(
 
     span.debug("Setting up host call functions", .{});
     const host_call_map = try HostCallMap.buildOrGetCached(params, allocator);
-    defer HostCallMap.deinitCachedMap(allocator);
 
     // Initialize host call context B.6
     span.debug("Initializing host call context", .{});

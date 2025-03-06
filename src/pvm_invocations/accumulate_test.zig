@@ -102,6 +102,9 @@ test "accumulate_invocation" {
     const entropy = libentropy.update(pre_state.eta.?[0], try block.header.getEntropy());
 
     // Invoke accumulation
+    //
+    // ensure we free the possiblity allocated Cached HostFn map
+    defer @import("accumulate/host_calls_map.zig").deinitCachedMap(allocator);
     var result = try accumulate.invoke(
         JAMDUNA_PARAMS,
         allocator,
