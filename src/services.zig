@@ -195,7 +195,7 @@ pub const ServiceAccount = struct {
 
     pub fn storageFootprint(self: *const ServiceAccount) StorageFootprint {
         // a_i
-        const a_i: u32 = 2 * self.preimage_lookups.count() + self.storage.count();
+        const a_i: u32 = (2 * self.preimage_lookups.count()) + self.storage.count();
         // a_l
         var plkeys = self.preimage_lookups.keyIterator();
         var a_l: u64 = 0;
@@ -208,6 +208,7 @@ pub const ServiceAccount = struct {
             a_l += 32 + @as(u64, @intCast(value.len));
         }
 
+        // FIXME: this comes for JamParams
         // a_t
         const a_t: Balance = B_S + B_I * a_i + B_L * a_l;
 

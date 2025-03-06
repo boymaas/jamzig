@@ -15,13 +15,19 @@ test "pvm:jamduna_service_code:machine_invocation" {
 
     const program_code = @embedFile("pvm_test/fixtures/jam_duna_service_code.pvm");
 
+    var map = pvmlib.PVM.HostCallMap{};
+    defer map.deinit(allocator);
+
+    var ctx = .{ .empty = true };
+
     var result = try pvmlib.invoke.machineInvocation(
         allocator,
         program_code,
         5,
         std.math.maxInt(u32),
         &[_]u8{0} ** 20,
-        .{},
+        &map,
+        @ptrCast(&ctx),
     );
     defer result.deinit(allocator);
 

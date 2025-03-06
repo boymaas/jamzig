@@ -342,6 +342,7 @@ pub const Pi = validator_stats.Pi;
 pub const init = @import("state_params_init.zig");
 
 // Helper functions that will be used by our comptime methods
+// TODO: move this into src/meta.zig as these patterns occur more
 const StateHelpers = struct {
     // Helper for merging a single field
     fn mergeField(self: anytype, other: anytype, struct_field: *const std.builtin.Type.StructField, allocator: std.mem.Allocator) !void {

@@ -96,7 +96,12 @@ pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, t
                 const state_kappa = &pre_state_validators;
 
                 const available_reports = try available_assignments.getWorkReports(allocator);
-                defer allocator.free(available_reports);
+                defer {
+                    for (available_reports) |*r| {
+                        r.deinit(allocator);
+                    }
+                    allocator.free(available_reports);
+                }
 
                 // Verify outputs match expected results
                 diff.expectTypesFmtEqual([]types.WorkReport, allocator, available_reports, expected_marks.reported) catch {

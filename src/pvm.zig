@@ -159,24 +159,26 @@ pub const PVM = struct {
 
     // Host call invocation invocation
     // Calls basicInvocation until we against
-    pub fn hostcallInvocation(context: *ExecutionContext) Error!HostCallInvocationResult {
+    pub fn hostcallInvocation(context: *ExecutionContext, call_ctx: *anyopaque) Error!HostCallInvocationResult {
         switch (try basicInvocation(context)) {
             .host_call => |params| {
-                if (context.host_calls.get(params.idx)) |host_call_fn| {
-                    switch (host_call_fn(context)) {
-                        .play => {
-                            context.pc = params.next_pc;
-                            return try hostcallInvocation(context);
-                        },
-                        .page_fault => |addr| {
-                            return .{
-                                .terminal = .{ .page_fault = addr },
-                            };
-                        },
+                if (context.host_calls) |host_calls| {
+                    if (host_calls.get(params.idx)) |host_call_fn| {
+                        switch (host_call_fn(context, call_ctx)) {
+                            .play => {
+                                context.pc = params.next_pc;
+                                return try hostcallInvocation(context, call_ctx);
+                            },
+                            .terminal => |result| {
+                                return .{
+                                    .terminal = result,
+                                };
+                            },
+                        }
                     }
-                } else {
-                    return Error.NonExistentHostCall;
                 }
+
+                return Error.NonExistentHostCall;
             },
             .terminal => |terminal| {
                 return .{ .terminal = terminal };
@@ -205,14 +207,14 @@ pub const PVM = struct {
         }
     };
 
-    pub fn machineInvocation(allocator: std.mem.Allocator, context: *ExecutionContext) Error!MachineInvocationResult {
-        switch (try hostcallInvocation(context)) {
+    pub fn machineInvocation(allocator: std.mem.Allocator, exec_ctx: *ExecutionContext, call_ctx: *anyopaque) Error!MachineInvocationResult {
+        switch (try hostcallInvocation(exec_ctx, call_ctx)) {
             .terminal => |terminal| {
                 switch (terminal) {
                     .halt => {
                         // if memory range in valid memory
                         // read the memory range and return it
-                        const return_value = context.readSliceBetweenRegister7AndRegister8();
+                        const return_value = exec_ctx.readSliceBetweenRegister7AndRegister8();
                         return .{ .halt = try allocator.dupe(u8, return_value) };
                     },
                     .out_of_gas => {

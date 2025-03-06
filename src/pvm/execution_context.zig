@@ -13,7 +13,7 @@ pub const ExecutionContext = struct {
     registers: [13]u64,
     memory: Memory,
     // NOTE: we cannot use HostCallMap here due to circular dep
-    host_calls: std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext) HostCallResult),
+    host_calls: ?*const std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext, *anyopaque) HostCallResult),
 
     gas: i64,
     pc: u32,
@@ -21,10 +21,10 @@ pub const ExecutionContext = struct {
 
     pub const HostCallResult = union(enum) {
         play,
-        page_fault: u32,
+        terminal: @import("../pvm.zig").PVM.InvocationException,
     };
-    pub const HostCallFn = *const fn (*ExecutionContext) HostCallResult;
-    pub const HostCallMap = std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext) HostCallResult);
+    pub const HostCallFn = *const fn (*ExecutionContext, *anyopaque) HostCallResult;
+    pub const HostCallMap = std.AutoHashMapUnmanaged(u32, HostCallFn);
 
     pub const ErrorData = union(enum) {
         page_fault: u32,
@@ -157,7 +157,7 @@ pub const ExecutionContext = struct {
         return ExecutionContext{
             .memory = memory,
             .decoder = Decoder.init(program.code, program.mask),
-            .host_calls = .{},
+            .host_calls = null,
             .program = program,
             .registers = [_]u64{0} ** 13,
             .pc = 0,
@@ -197,18 +197,13 @@ pub const ExecutionContext = struct {
     }
 
     pub fn deinit(self: *ExecutionContext, allocator: Allocator) void {
+        // Hostcalls are not owned by us
         self.memory.deinit();
-        self.host_calls.deinit(allocator);
         self.program.deinit(allocator);
+        self.* = undefined;
     }
 
-    pub fn registerHostCall(self: *ExecutionContext, allocator: std.mem.Allocator, idx: u32, handler: HostCallFn) !void {
-        try self.host_calls.put(allocator, idx, handler);
-    }
-
-    pub fn setHostCalls(self: *ExecutionContext, allocator: std.mem.Allocator, new_host_calls: HostCallMap) void {
-        // Deinit the old host calls map
-        self.host_calls.deinit(allocator);
+    pub fn setHostCalls(self: *ExecutionContext, new_host_calls: *const HostCallMap) void {
         // Replace with the new one
         self.host_calls = new_host_calls;
     }
