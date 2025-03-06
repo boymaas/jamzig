@@ -17,6 +17,8 @@ const HostCallId = @import("accumulate/host_calls.zig").HostCallId;
 
 const Params = @import("../jam_params.zig").Params;
 
+const HostCallMap = @import("accumulate/host_calls_map.zig");
+
 // Add tracing import
 const trace = @import("../tracing.zig").scoped(.accumulate);
 
@@ -65,33 +67,9 @@ pub fn invoke(
 
     try codec.serialize(AccumulateArgs, .{}, args_buffer.writer(), arguments);
 
-    // FIXME: make this map at compile time
     span.debug("Setting up host call functions", .{});
-    // Set up host call functions
-    var host_call_map = std.AutoHashMapUnmanaged(u32, pvm.PVM.HostCallFn){};
-    // errdefer host_call_map.deinit(allocator); // host_call_map will be owned by ExecutionContext
-
-    const host_calls = AccumulateHostCalls(params);
-
-    // Register host calls
-    span.debug("Registering host call functions", .{});
-    try host_call_map.put(allocator, @intFromEnum(HostCallId.gas), host_calls.gasRemaining);
-    try host_call_map.put(allocator, @intFromEnum(HostCallId.lookup), host_calls.lookupPreimage);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.read), host_calls.readStorage);
-    try host_call_map.put(allocator, @intFromEnum(HostCallId.write), host_calls.writeStorage);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.info), host_calls.getServiceInfo);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.bless), host_calls.blessService);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.assign), host_calls.callAssignCore);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.designate), host_calls.designateValidators);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.checkpoint), host_calls.checkpoint);
-    try host_call_map.put(allocator, @intFromEnum(HostCallId.new), host_calls.newService);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.upgrade), host_calls.upgradeService);
-    try host_call_map.put(allocator, @intFromEnum(HostCallId.transfer), host_calls.transfer);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.eject), host_calls.ejectService);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.query), host_calls.queryPreimage);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.solicit), host_calls.solicitPreimage);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.forget), host_calls.forgetPreimage);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.yield), host_calls.yieldAccumulateResult);
+    const host_call_map = try HostCallMap.buildOrGetCached(params, allocator);
+    defer HostCallMap.deinitCachedMap(allocator);
 
     // Initialize host call context B.6
     span.debug("Initializing host call context", .{});

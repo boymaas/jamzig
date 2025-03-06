@@ -162,21 +162,23 @@ pub const PVM = struct {
     pub fn hostcallInvocation(context: *ExecutionContext, call_ctx: *anyopaque) Error!HostCallInvocationResult {
         switch (try basicInvocation(context)) {
             .host_call => |params| {
-                if (context.host_calls.get(params.idx)) |host_call_fn| {
-                    switch (host_call_fn(context, call_ctx)) {
-                        .play => {
-                            context.pc = params.next_pc;
-                            return try hostcallInvocation(context, call_ctx);
-                        },
-                        .terminal => |result| {
-                            return .{
-                                .terminal = result,
-                            };
-                        },
+                if (context.host_calls) |host_calls| {
+                    if (host_calls.get(params.idx)) |host_call_fn| {
+                        switch (host_call_fn(context, call_ctx)) {
+                            .play => {
+                                context.pc = params.next_pc;
+                                return try hostcallInvocation(context, call_ctx);
+                            },
+                            .terminal => |result| {
+                                return .{
+                                    .terminal = result,
+                                };
+                            },
+                        }
                     }
-                } else {
-                    return Error.NonExistentHostCall;
                 }
+
+                return Error.NonExistentHostCall;
             },
             .terminal => |terminal| {
                 return .{ .terminal = terminal };
