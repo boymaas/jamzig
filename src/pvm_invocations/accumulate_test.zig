@@ -29,8 +29,7 @@ test "accumulate_invocation" {
     );
     defer state_transition_guarantee.deinit(allocator);
 
-    const block = state_transition_guarantee.block();
-    const work_report = block.extrinsic.guarantees.data[0].report;
+    const work_report = state_transition_guarantee.block().extrinsic.guarantees.data[0].report;
 
     // The point in assurances we should accumulate 1 immediate report
     var state_transition = try loader.loadTestVector(
@@ -38,6 +37,8 @@ test "accumulate_invocation" {
         "src/jamtestnet/teams/jamduna/data/assurances/state_transitions/1_005.bin",
     );
     defer state_transition.deinit(allocator);
+
+    const block = state_transition.block();
 
     // Reconstruct our state
     var pre_state_mdict = try state_transition.preStateAsMerklizationDict(allocator);
@@ -48,6 +49,16 @@ test "accumulate_invocation" {
         &pre_state_mdict,
     );
     defer pre_state.deinit(allocator);
+
+    // Get the expected post-state that we should compare against
+    var post_state_mdict = try state_transition.postStateAsMerklizationDict(allocator);
+    defer post_state_mdict.deinit();
+    var post_state = try state_dict.reconstruct.reconstructState(
+        JAMDUNA_PARAMS,
+        allocator,
+        &post_state_mdict,
+    );
+    defer post_state.deinit(allocator);
 
     // Build accumulation context
     const accumulation_context = accumulate.AccumulationContext(JAMDUNA_PARAMS){
@@ -70,8 +81,8 @@ test "accumulate_invocation" {
 
     // Get the single result
 
-    // Invoke accumulation with the current time slot from the pre-state
-    const current_tau = pre_state.tau.?;
+    // This has to be H_t
+    const current_tau = block.header.slot;
 
     // Use the service ID from the first result, we should iterate over all of the
     const service_id = work_report.results[0].service_id;
@@ -86,8 +97,9 @@ test "accumulate_invocation" {
         allocator.free(operands);
     }
 
-    // entropy (for new_service_id)
-    const entropy = pre_state.eta.?[0];
+    // entropy (for new_service_id) n0'
+    const libentropy = @import("../entropy.zig");
+    const entropy = libentropy.update(pre_state.eta.?[0], try block.header.getEntropy());
 
     // Invoke accumulation
     const result = try accumulate.invoke(
@@ -110,16 +122,6 @@ test "accumulate_invocation" {
     } else {
         std.debug.print("No accumulation output provided\n", .{});
     }
-
-    // Get the expected post-state that we should compare against
-    var post_state_mdict = try state_transition.postStateAsMerklizationDict(allocator);
-    defer post_state_mdict.deinit();
-    var post_state = try state_dict.reconstruct.reconstructState(
-        JAMDUNA_PARAMS,
-        allocator,
-        &post_state_mdict,
-    );
-    defer post_state.deinit(allocator);
 
     // Create a filtered version of both states containing only components that should be affected by accumulation
     try removeUnusedStateComponents(JAMDUNA_PARAMS, &pre_state);
