@@ -295,6 +295,10 @@ pub fn AccumulationResult(params: Params) type {
 
         /// Amount of gas consumed during accumulation
         gas_used: types.Gas,
+
+        pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {
+            alloc.free(self.transfers);
+        }
     };
 }
 

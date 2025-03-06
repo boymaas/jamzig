@@ -102,7 +102,7 @@ test "accumulate_invocation" {
     const entropy = libentropy.update(pre_state.eta.?[0], try block.header.getEntropy());
 
     // Invoke accumulation
-    const result = try accumulate.invoke(
+    var result = try accumulate.invoke(
         JAMDUNA_PARAMS,
         allocator,
         accumulation_context,
@@ -112,10 +112,21 @@ test "accumulate_invocation" {
         gas_limit,
         operands,
     );
+    defer result.deinit(allocator);
 
     // Check basic results
     std.debug.print("Accumulation completed with gas used: {d}\n", .{result.gas_used});
     std.debug.print("Transfers count: {d}\n", .{result.transfers.len});
+
+    // Apply the transfers, transfer already deducted from sender
+    for (result.transfers) |transfer| {
+        // const sender = pre_state.delta.?.getAccount(transfer.sender).?;
+        const destination = pre_state.delta.?.getAccount(transfer.destination).?;
+
+        // sender.balance -= transfer.amount;
+        destination.balance += transfer.amount;
+        std.debug.print("Applied transfer: {}", .{types.fmt.format(transfer)});
+    }
 
     if (result.accumulation_output) |accum_output| {
         std.debug.print("Accumulation output: {any}\n", .{accum_output});
