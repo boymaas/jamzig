@@ -68,19 +68,6 @@ test "accumulate_invocation" {
         .privileges = &pre_state.chi.?,
     };
 
-    // "results": [
-    //     {
-    //         "service_id": 0,
-    //         "code_hash": "0xbd87fb6de829abf2bb25a15b82618432c94e82848d9dd204f5d775d4b880ae0d",
-    //         "payload_hash": "0x1696c28b7d5556f392dd7e882ab52cd49994fe6c5a3f5c80d4fa52302dff0b6b",
-    //         "accumulate_gas": 9111,
-    //         "result": {
-    //             "ok": "0xda81fb234123c13b77808557789a8716de33f226e25b9a26d669eabf8d56fec397040000"
-    //         }
-    //     }
-
-    // Get the single result
-
     // This has to be H_t
     const current_tau = block.header.slot;
 
