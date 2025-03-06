@@ -3,6 +3,8 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 
+const codec = @import("../codec.zig");
+
 const pvm = @import("../pvm.zig");
 const pvm_invocation = @import("../pvm/invocation.zig");
 
@@ -10,6 +12,12 @@ const Params = @import("../jam_params.zig").Params;
 
 // Add tracing import
 const trace = @import("../tracing.zig").scoped(.accumulate);
+
+const AccumulateArgs = struct {
+    timeslot: types.TimeSlot,
+    service_id: types.ServiceId,
+    operands: []const AccumulationOperand,
+};
 
 /// Accumulation Invocation
 pub fn invoke(
@@ -41,60 +49,13 @@ pub fn invoke(
     var args_buffer = std.ArrayList(u8).init(allocator);
     defer args_buffer.deinit();
 
-    // Serialize the timeslot (tau) as first argument
-    try args_buffer.writer().writeInt(types.TimeSlot, tau, .little);
-    span.trace("Serialized timeslot: {d}", .{tau});
+    const arguments = AccumulateArgs{
+        .timeslot = tau,
+        .service_id = service_id,
+        .operands = accumulation_operands,
+    };
 
-    // Serialize the service ID
-    try args_buffer.writer().writeInt(types.ServiceId, service_id, .little);
-    span.trace("Serialized service ID: {d}", .{service_id});
-
-    // Serialize the operands
-    const operands_count: u32 = @intCast(accumulation_operands.len);
-    try args_buffer.writer().writeInt(u32, operands_count, .little);
-    span.debug("Serializing {d} operands", .{operands_count});
-
-    for (accumulation_operands, 0..) |operand, i| {
-        const op_span = span.child(.operand_serialize);
-        defer op_span.deinit();
-        op_span.debug("Serializing operand {d}/{d}", .{ i + 1, operands_count });
-
-        // Add work_package_hash
-        try args_buffer.appendSlice(&operand.work_package_hash);
-        op_span.trace("Work package hash: {s}", .{std.fmt.fmtSliceHexLower(&operand.work_package_hash)});
-
-        // Add payload_hash
-        try args_buffer.appendSlice(&operand.payload_hash);
-        op_span.trace("Payload hash: {s}", .{std.fmt.fmtSliceHexLower(&operand.payload_hash)});
-
-        // Add authorization output
-        try args_buffer.writer().writeInt(u32, @intCast(operand.authorization_output.len), .little);
-        try args_buffer.appendSlice(operand.authorization_output);
-        op_span.trace("Auth output length: {d}", .{operand.authorization_output.len});
-
-        // Add the output or error
-        switch (operand.output) {
-            .success => |data| {
-                // Write tag 0 for success
-                try args_buffer.writer().writeByte(0);
-                try args_buffer.writer().writeInt(u32, @intCast(data.len), .little);
-                try args_buffer.appendSlice(data);
-                op_span.debug("Success output, length: {d}", .{data.len});
-            },
-            .err => |err_code| {
-                // Write error code tag (1-5)
-                const code: u8 = switch (err_code) {
-                    .OutOfGas => 1,
-                    .ProgramTermination => 2,
-                    .InvalidExportCount => 3,
-                    .ServiceCodeUnavailable => 4,
-                    .ServiceCodeTooLarge => 5,
-                };
-                try args_buffer.writer().writeByte(code);
-                op_span.debug("Error output: {s}", .{@tagName(err_code)});
-            },
-        }
-    }
+    try codec.serialize(AccumulateArgs, .{}, args_buffer.writer(), arguments);
 
     // FIXME: make this map at compile time
     span.debug("Setting up host call functions", .{});
