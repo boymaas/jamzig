@@ -104,10 +104,10 @@ pub fn invoke(
         @ptrCast(&host_call_context),
     );
 
-    pvm_span.debug("PVM invocation completed: {s}", .{@tagName(result)});
+    pvm_span.debug("PVM invocation completed: {s}", .{@tagName(result.result)});
 
     // Calculate gas used
-    const gas_used = 10; // FIXME: add gas calc here
+    const gas_used = result.gas_used;
     span.debug("Gas used for invocation: {d}", .{gas_used});
 
     // Build the result array of deferred transfers

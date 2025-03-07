@@ -319,11 +319,54 @@ pub fn processAccumulateReports(
     const execute_span = span.child(.execute_accumulatable);
     defer execute_span.deinit();
 
-    // NOTE: here we should execute within the gas limit, lets assume we can process 20
-    const n = @min(20, accumulatable.items.len);
-    execute_span.debug("Executing up to 20 accumulatable reports, actual: {d}", .{n});
+    execute_span.debug("Calculating gas limit for accumulation", .{});
+    // Calculate the gas limit according to equation 12.20:
+    // let g = max(G_T, G_A ⋅ C + ∑_{x∈V(χ_g)}(x))
+    var gas_limit: u64 = params.total_gas_alloc_accumulation;
 
-    const accumulated = accumulatable.items[0..n];
+    // Calculate G_A * C (gas per core * core count)
+    const core_gas = @as(u64, params.gas_alloc_accumulation) * @as(u64, params.core_count);
+
+    // Get the privileges state to access free services
+    const chi = try stx.ensure(.chi_prime);
+
+    // Add the sum of gas values for free services
+    var free_services_gas: u64 = 0;
+    var it = chi.always_accumulate.iterator();
+    while (it.next()) |entry| {
+        free_services_gas += entry.value_ptr.*;
+    }
+
+    // Take the maximum
+    const calculated_gas = core_gas + free_services_gas;
+    if (calculated_gas > gas_limit) {
+        gas_limit = calculated_gas;
+    }
+
+    execute_span.debug("Gas limit calculated: {d} (G_T: {d}, core gas: {d}, free services gas: {d})", .{ gas_limit, params.total_gas_alloc_accumulation, core_gas, free_services_gas });
+
+    const accumulated = accumulatable.items[0..@min(accumulatable.items.len, params.core_count)];
+    execute_span.debug("Executing outer accumulation with {d} reports and gas limit {d}", .{ accumulated.len, gas_limit });
+
+    // Build accumulation context
+    const accumulation_context = @import("pvm_invocations/accumulate.zig").AccumulationContext(params){
+        .service_accounts = try stx.ensure(.delta_prime),
+        .validator_keys = try stx.ensure(.iota_prime),
+        .authorizer_queue = try stx.ensure(.phi_prime),
+        .privileges = try stx.ensure(.chi_prime),
+    };
+    const result = try @import("accumulate/execution.zig").outerAccumulation(
+        params,
+        allocator,
+        gas_limit,
+        accumulated,
+        accumulation_context,
+        chi.always_accumulate,
+        stx.time.current_slot,
+        (try stx.ensure(.eta_prime))[0],
+    );
+
+    _ = result;
 
     // Add ready reports to accumulation history
     execute_span.debug("Shifting down xi, make place for new entry", .{});

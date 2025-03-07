@@ -1,9 +1,23 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const types = @import("../types.zig");
+
 const PVM = @import("../pvm.zig").PVM;
 
 const trace = @import("../tracing.zig").scoped(.pvm);
+
+const MachineInvocationResult = struct {
+    gas_used: types.Gas,
+    result: PVM.MachineInvocationResult,
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        self.result.deinit(allocator);
+
+        // Mark as undefined to prevent use-after-free
+        self.* = undefined;
+    }
+};
 
 pub fn machineInvocation(
     allocator: std.mem.Allocator,
@@ -13,7 +27,7 @@ pub fn machineInvocation(
     args: []const u8,
     host_call_fns: *const PVM.HostCallMap,
     host_call_ctx: *anyopaque,
-) PVM.Error!PVM.MachineInvocationResult {
+) PVM.Error!MachineInvocationResult {
     const span = trace.span(.machine_invocation);
     defer span.deinit();
     span.debug("Starting machine invocation with {d} gas", .{gas});
@@ -24,9 +38,9 @@ pub fn machineInvocation(
         allocator,
         program_code,
         args,
-        std.math.maxInt(u32),
+        gas,
     ) catch {
-        return .{ .terminal = .panic };
+        return .{ .gas_used = 0, .result = .{ .terminal = .panic } };
     };
     defer exec_ctx.deinit(allocator);
 
@@ -38,5 +52,8 @@ pub fn machineInvocation(
     exec_ctx.setHostCalls(host_call_fns);
 
     // Run the machine invocation
-    return PVM.machineInvocation(allocator, &exec_ctx, host_call_ctx);
+    return .{
+        .gas_used = @intCast(@as(i64, gas) - exec_ctx.gas),
+        .result = try PVM.machineInvocation(allocator, &exec_ctx, host_call_ctx),
+    };
 }
