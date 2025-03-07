@@ -366,7 +366,69 @@ pub fn processAccumulateReports(
         (try stx.ensure(.eta_prime))[0],
     );
 
-    _ = result;
+    // Apply deferred transfers as per 12.23 and 12.24
+    const transfer_span = execute_span.child(.apply_deferred_transfers);
+    defer transfer_span.deinit();
+
+    transfer_span.debug("Applying {d} deferred transfers", .{result.transfers.len});
+
+    // Get delta for service accounts
+    var delta_prime: *state.Delta = try stx.ensure(.delta_prime);
+
+    // 12.24: Apply all deferred transfers to the service accounts
+    // δ‡ = {s ↦ ΨT(δ†, τ′, s, R(t, s)) | (s ↦ a) ∈ δ†}
+    if (result.transfers.len > 0) {
+        transfer_span.debug("Processing transfers for destination services", .{});
+
+        // Group transfers by destination service
+        var grouped_transfers = std.AutoHashMap(types.ServiceId, std.ArrayList(types.ServiceId)).init(allocator);
+        defer {
+            var vit = grouped_transfers.valueIterator();
+            while (vit.next()) |transfers_list| {
+                transfers_list.deinit();
+            }
+            grouped_transfers.deinit();
+        }
+
+        // Process transfers for each destination service
+        for (result.transfers) |transfer| {
+            transfer_span.trace("Transfer: {d} -> {d}, amount: {d}", .{ transfer.sender, transfer.destination, transfer.amount });
+
+            // Get or create the list for this destination
+            var entry = try grouped_transfers.getOrPut(transfer.destination);
+            if (!entry.found_existing) {
+                entry.value_ptr.* = std.ArrayList(types.ServiceId).init(allocator);
+            }
+
+            // Add the sender to the list
+            try entry.value_ptr.append(transfer.sender);
+
+            // TODO: call ΨT
+            // For now, we just log the transfers
+
+            // Sender balance is updated in the transfer function
+            // if (delta_prime.getAccount(transfer.sender)) |sender_account| {
+            //     if (sender_account.balance >= transfer.amount) {
+            //         sender_account.balance -= transfer.amount;
+            //         transfer_span.trace("Reduced balance of sender {d} by {d}", .{ transfer.sender, transfer.amount });
+            //     } else {
+            //         transfer_span.err("Sender {d} has insufficient balance {d} for transfer {d}", .{ transfer.sender, sender_account.balance, transfer.amount });
+            //     }
+            // }
+
+            // Update recipient balance
+            if (delta_prime.getAccount(transfer.destination)) |dest_account| {
+                dest_account.balance += transfer.amount;
+                transfer_span.trace("Increased balance of destination {d} by {d}", .{ transfer.destination, transfer.amount });
+            } else {
+                transfer_span.err("Destination account {d} not found", .{transfer.destination});
+            }
+        }
+
+        transfer_span.debug("Transfers applied successfully", .{});
+    } else {
+        transfer_span.debug("No transfers to apply", .{});
+    }
 
     // Add ready reports to accumulation history
     execute_span.debug("Shifting down xi, make place for new entry", .{});
