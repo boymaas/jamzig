@@ -46,7 +46,7 @@ pub fn stateTransition(
         new_block.header.slot,
     );
     var state_transition = try StateTransition(params).initHeap(allocator, current_state, transition_time);
-    errdefer state_transition.deinit();
+    errdefer state_transition.deinitHeap();
 
     try time.transition(
         params,

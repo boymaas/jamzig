@@ -35,9 +35,9 @@ pub fn AccumulationContext(params: Params) type {
 
         pub fn commit(self: *@This()) !void {
             // Commit changes from each CopyOnWrite component
-            try self.validator_keys.commit();
-            try self.authorizer_queue.commit();
-            try self.privileges.commit();
+            self.validator_keys.commit();
+            self.authorizer_queue.commit();
+            self.privileges.commit();
             // Commit the changes f
             try self.service_accounts.commit();
         }
@@ -49,17 +49,20 @@ pub fn AccumulationContext(params: Params) type {
                 // Keep references to the other components as they are
                 .validator_keys = try self.validator_keys.deepClone(),
                 .authorizer_queue = try self.authorizer_queue.deepClone(),
-                .privileges = self.privileges.deepClone(),
+                .privileges = try self.privileges.deepClone(),
             };
         }
 
-        // pub fn buildFromState(jam_state: state.JamState(params)) @This() {
-        //     return @This(){
-        //         .service_accounts = DeltaSnapshot.init(&jam_state.delta.?),
-        //         .validator_keys = &jam_state.iota.?,
-        //         .authorizer_queue = &jam_state.phi.?,
-        //         .privileges = &jam_state.chi.?,
-        //     };
-        // }
+        pub fn deinit(self: *@This()) void {
+            // Deinitialize all CopyOnWrite components
+            self.validator_keys.deinit();
+            self.authorizer_queue.deinit();
+            self.privileges.deinit();
+            // Deinitialize the DeltaSnapshot
+            self.service_accounts.deinit();
+
+            // Set self to undefined to prevent use-after-free
+            self.* = undefined;
+        }
     };
 }

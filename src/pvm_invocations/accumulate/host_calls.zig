@@ -48,8 +48,26 @@ pub const HostCallReturnCode = enum(u64) {
 
 pub fn HostCalls(params: Params) type {
     return struct {
-        /// Context maintained during host call execution
         pub const Context = struct {
+            regular: Dimension,
+            exceptional: Dimension,
+
+            pub fn constructUsingRegular(regular: Dimension) !Context {
+                return .{
+                    .regular = regular,
+                    .exceptional = try regular.deepClone(),
+                };
+            }
+
+            pub fn deinit(self: *Context) void {
+                self.regular.deinit();
+                self.exceptional.deinit();
+                self.* = undefined;
+            }
+        };
+
+        /// Context maintained during host call execution
+        pub const Dimension = struct {
             allocator: std.mem.Allocator,
             context: AccumulationContext(params),
             service_id: types.ServiceId,
@@ -61,14 +79,14 @@ pub fn HostCalls(params: Params) type {
                 try self.context.commit();
             }
 
-            pub fn deepClone(self: *@This(), allocator: std.mem.Allocator) !@This() {
+            pub fn deepClone(self: *const @This()) !@This() {
                 // Create a new context with the same allocator
                 const new_context = @This(){
-                    .allocator = allocator,
-                    .context = self.context.deepClone(),
+                    .allocator = self.allocator,
+                    .context = try self.context.deepClone(),
                     .service_id = self.service_id,
                     .new_service_id = self.new_service_id,
-                    .deferred_transfers = self.deferred_transfers.clone(),
+                    .deferred_transfers = try self.deferred_transfers.clone(),
                     .accumulation_output = self.accumulation_output,
                 };
 
@@ -77,6 +95,7 @@ pub fn HostCalls(params: Params) type {
 
             pub fn deinit(self: *@This()) void {
                 self.deferred_transfers.deinit();
+                self.context.deinit();
                 self.* = undefined;
             }
         };
@@ -107,6 +126,7 @@ pub fn HostCalls(params: Params) type {
             defer span.deinit();
 
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular = host_ctx.regular;
             const service_id = exec_ctx.registers[7];
             const hash_ptr = exec_ctx.registers[8];
             const output_ptr = exec_ctx.registers[9];
@@ -119,12 +139,12 @@ pub fn HostCalls(params: Params) type {
             span.debug("Offset: {d}, Limit: {d}", .{ offset, limit });
 
             // Get service account based on special cases as per graypaper
-            const service_account = if (service_id == host_ctx.service_id or service_id == 0xFFFFFFFFFFFFFFFF) blk: {
-                span.debug("Using current service ID: {d}", .{host_ctx.service_id});
-                break :blk host_ctx.context.service_accounts.getReadOnly(host_ctx.service_id);
+            const service_account = if (service_id == ctx_regular.service_id or service_id == 0xFFFFFFFFFFFFFFFF) blk: {
+                span.debug("Using current service ID: {d}", .{ctx_regular.service_id});
+                break :blk ctx_regular.context.service_accounts.getReadOnly(ctx_regular.service_id);
             } else blk: {
                 span.debug("Looking up service ID: {d}", .{service_id});
-                break :blk host_ctx.context.service_accounts.getReadOnly(@intCast(service_id));
+                break :blk ctx_regular.context.service_accounts.getReadOnly(@intCast(service_id));
             };
 
             if (service_account == null) {
@@ -183,6 +203,7 @@ pub fn HostCalls(params: Params) type {
             defer span.deinit();
 
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular: *Dimension = &host_ctx.regular;
 
             // Get registers per graypaper B.7: (k_o, k_z, v_o, v_z)
             const k_o = exec_ctx.registers[7]; // Key offset
@@ -190,14 +211,14 @@ pub fn HostCalls(params: Params) type {
             const v_o = exec_ctx.registers[9]; // Value offset
             const v_z = exec_ctx.registers[10]; // Value size
 
-            span.debug("Host call: write storage for service {d}", .{host_ctx.service_id});
+            span.debug("Host call: write storage for service {d}", .{ctx_regular.service_id});
             span.debug("Key ptr: 0x{x}, Key size: {d}, Value ptr: 0x{x}, Value size: {d}", .{
                 k_o, k_z, v_o, v_z,
             });
 
             // Get service account - always use the current service for writing
             span.debug("Looking up service account", .{});
-            const service_account = host_ctx.context.service_accounts.getMutable(host_ctx.service_id) catch {
+            const service_account = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 // Service not found, should never happen but handle gracefully
                 span.err("Could get create mutable instance of service accounts", .{});
                 return .{ .terminal = .panic };
@@ -217,12 +238,12 @@ pub fn HostCalls(params: Params) type {
 
             // Construct storage key: H(E_4(service_id) ⌢ key_data)
             span.debug("Constructing storage key", .{});
-            var key_input = std.ArrayList(u8).init(host_ctx.allocator);
+            var key_input = std.ArrayList(u8).init(ctx_regular.allocator);
             defer key_input.deinit();
 
             // Add service ID as bytes (4 bytes in little-endian)
             var service_id_bytes: [4]u8 = undefined;
-            std.mem.writeInt(u32, &service_id_bytes, host_ctx.service_id, .little);
+            std.mem.writeInt(u32, &service_id_bytes, ctx_regular.service_id, .little);
             key_input.appendSlice(&service_id_bytes) catch {
                 span.err("Failed to append service ID to key input", .{});
                 return .{ .terminal = .panic };
@@ -247,7 +268,7 @@ pub fn HostCalls(params: Params) type {
                     // Return the previous length
                     span.debug("Key found and removed, previous value length: {d}", .{entry.value.len});
                     exec_ctx.registers[7] = entry.value.len;
-                    host_ctx.allocator.free(entry.value);
+                    ctx_regular.allocator.free(entry.value);
                     return .play;
                 }
                 span.debug("Key not found, returning 0", .{});
@@ -306,6 +327,7 @@ pub fn HostCalls(params: Params) type {
             defer span.deinit();
 
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular: *Dimension = &host_ctx.regular;
 
             // Get registers per graypaper B.7: [d, a, l, o]
             const destination_id = exec_ctx.registers[7]; // Destination service ID
@@ -314,7 +336,7 @@ pub fn HostCalls(params: Params) type {
             const memo_ptr = exec_ctx.registers[10]; // Pointer to memo data
 
             span.debug("Host call: transfer from service {d} to {d}", .{
-                host_ctx.service_id, destination_id,
+                ctx_regular.service_id, destination_id,
             });
             span.debug("Amount: {d}, Gas limit: {d}, Memo ptr: 0x{x}", .{
                 amount, gas_limit, memo_ptr,
@@ -322,7 +344,7 @@ pub fn HostCalls(params: Params) type {
 
             // Get source service account
             span.debug("Looking up source service account", .{});
-            const source_service = host_ctx.context.service_accounts.getMutable(host_ctx.service_id) catch {
+            const source_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable of service account", .{});
                 return .{ .terminal = .panic };
             } orelse {
@@ -332,7 +354,7 @@ pub fn HostCalls(params: Params) type {
 
             // Check if destination service exists
             span.debug("Looking up destination service account", .{});
-            const destination_service = host_ctx.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
+            const destination_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
                 span.debug("Destination service not found, returning WHO error", .{});
                 exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.WHO); // Error: destination not found
                 return .play;
@@ -375,7 +397,7 @@ pub fn HostCalls(params: Params) type {
             // Create a deferred transfer
             span.debug("Creating deferred transfer", .{});
             const deferred_transfer = DeferredTransfer{
-                .sender = host_ctx.service_id,
+                .sender = ctx_regular.service_id,
                 .destination = @intCast(destination_id),
                 .amount = @intCast(amount),
                 .memo = memo,
@@ -384,7 +406,7 @@ pub fn HostCalls(params: Params) type {
 
             // Add the transfer to the list of deferred transfers
             span.debug("Adding transfer to deferred transfers list", .{});
-            host_ctx.deferred_transfers.append(deferred_transfer) catch {
+            ctx_regular.deferred_transfers.append(deferred_transfer) catch {
                 // Out of memory
                 span.err("Failed to append transfer to list, out of memory", .{});
                 return .{ .terminal = .panic };
@@ -414,12 +436,14 @@ pub fn HostCalls(params: Params) type {
             }
 
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular: *Dimension = &host_ctx.regular;
+
             const code_hash_ptr = exec_ctx.registers[7];
             const code_len: u32 = @truncate(exec_ctx.registers[8]);
             const min_gas_limit = exec_ctx.registers[9];
             const min_memo_gas = exec_ctx.registers[10];
 
-            span.debug("Host call: new service from service {d}", .{host_ctx.service_id});
+            span.debug("Host call: new service from service {d}", .{ctx_regular.service_id});
             span.debug("Code hash ptr: 0x{x}, Code len: {d}", .{ code_hash_ptr, code_len });
             span.debug("Min gas limit: {d}, Min memo gas: {d}", .{ min_gas_limit, min_memo_gas });
 
@@ -434,7 +458,7 @@ pub fn HostCalls(params: Params) type {
 
             // Check if the calling service has enough balance for the initial funding
             span.debug("Looking up calling service account", .{});
-            const calling_service = host_ctx.context.service_accounts.getMutable(host_ctx.service_id) catch {
+            const calling_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable instance", .{});
                 return .{ .terminal = .panic };
             } orelse {
@@ -461,8 +485,8 @@ pub fn HostCalls(params: Params) type {
             }
 
             // Create the new service account
-            span.debug("Creating new service account with ID: {d}", .{host_ctx.new_service_id});
-            var new_account = host_ctx.context.service_accounts.createService(host_ctx.new_service_id) catch {
+            span.debug("Creating new service account with ID: {d}", .{ctx_regular.new_service_id});
+            var new_account = ctx_regular.context.service_accounts.createService(ctx_regular.new_service_id) catch {
                 span.err("Failed to create new service account", .{});
                 return .{ .terminal = .panic };
             };
@@ -485,10 +509,10 @@ pub fn HostCalls(params: Params) type {
 
             // Success result
             span.debug("Service created successfully, returning service ID: {d}", .{
-                host_ctx.new_service_id,
+                ctx_regular.new_service_id,
             });
-            exec_ctx.registers[7] = host_ctx.new_service_id; // Return the new service ID on success
-            host_ctx.new_service_id = service_util.check(&host_ctx.context.service_accounts, host_ctx.new_service_id); // Return the new service ID on success
+            exec_ctx.registers[7] = ctx_regular.new_service_id; // Return the new service ID on success
+            ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, ctx_regular.new_service_id); // Return the new service ID on success
             return .play;
         }
     };

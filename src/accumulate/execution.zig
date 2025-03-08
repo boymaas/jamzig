@@ -416,7 +416,7 @@ pub fn parallelizedAccumulation(
 
     // Return collected results
     return .{
-        .context = context,
+        .context = context, // FIXME: remove this context??
         .gas_used = total_gas_used,
         .transfers = try all_transfers.toOwnedSlice(),
         .service_results = service_results,

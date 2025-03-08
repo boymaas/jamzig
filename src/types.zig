@@ -537,7 +537,7 @@ pub const ValidatorSet = struct {
         return self.validators;
     }
 
-    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
+    pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
             .validators = try allocator.dupe(ValidatorData, self.validators),
         };

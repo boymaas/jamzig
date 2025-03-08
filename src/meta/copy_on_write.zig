@@ -16,10 +16,10 @@ pub fn CopyOnWrite(comptime T: type) type {
             };
         }
 
-        pub fn deepClone(self: *@This()) @This() {
+        pub fn deepClone(self: *const @This()) !@This() {
             return Self{
                 .source = self.source,
-                .mutable = if (self.mutable) |m| blk: {
+                .mutable = if (self.mutable) |*m| blk: {
                     break :blk try meta.callDeepClone(m, self.allocator);
                 } else null,
                 .allocator = self.allocator,
@@ -27,7 +27,7 @@ pub fn CopyOnWrite(comptime T: type) type {
         }
 
         pub fn deinit(self: *Self) void {
-            if (self.mutable) |m| {
+            if (self.mutable) |*m| {
                 meta.callDeinit(m, self.allocator);
                 self.mutable = null;
             }
@@ -45,7 +45,7 @@ pub fn CopyOnWrite(comptime T: type) type {
             return if (self.mutable) |*m| m else self.source;
         }
 
-        pub fn commit(self: *Self) !void {
+        pub fn commit(self: *Self) void {
             if (self.mutable) |m| {
                 const source = @constCast(self.source);
                 meta.callDeinit(source, self.allocator);

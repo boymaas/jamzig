@@ -72,16 +72,16 @@ pub fn invoke(
 
     // Initialize host call context B.6
     span.debug("Initializing host call context", .{});
-    var host_call_context = AccumulateHostCalls(params).Context{
+    var host_call_context = try AccumulateHostCalls(params).Context.constructUsingRegular(.{
         .allocator = allocator,
         .service_id = service_id,
-        .context = context,
+        .context = try context.deepClone(),
         .new_service_id = service_util.generateServiceId(&context.service_accounts, service_id, entropy, tau),
         .deferred_transfers = std.ArrayList(DeferredTransfer).init(allocator),
         .accumulation_output = null,
-    };
+    });
     defer host_call_context.deinit();
-    span.debug("Generated new service ID: {d}", .{host_call_context.new_service_id});
+    span.debug("Generated new service ID: {d}", .{host_call_context.regular.new_service_id});
 
     // Execute the PVM invocation
     const code = service_account.getPreimage(service_account.code_hash) orelse {
@@ -109,7 +109,7 @@ pub fn invoke(
     //
     // All other accumulation host functions operate solely on the regular domain.
 
-    const result = try pvm_invocation.machineInvocation(
+    var result = try pvm_invocation.machineInvocation(
         allocator,
         code,
         5, // Accumulation entry point index per section 9.1
@@ -118,27 +118,22 @@ pub fn invoke(
         host_call_map,
         @ptrCast(&host_call_context),
     );
+    defer result.deinit(allocator);
 
     pvm_span.debug("PVM invocation completed: {s}", .{@tagName(result.result)});
 
     // B12. Based on result we collapse to either the regular domain or the exceptional domain
-    if (result.result.isSuccess()) { // TODO: wrap the isSuccess
-        // TODO: do the other elements
-        // AccumulateContex
-        // Deferred Transfers
-        // Outcome
-        // Gas will remain untouched
-        // XXXPENDING
-        // try host_call_context.context.service_accounts.checkpoint();
-        try host_call_context.commit();
-    }
+    var collapsed_dimension = if (result.result.isSuccess())
+        &host_call_context.regular
+    else
+        &host_call_context.exceptional;
 
     // Calculate gas used
     const gas_used = result.gas_used;
     span.debug("Gas used for invocation: {d}", .{gas_used});
 
     // Build the result array of deferred transfers
-    const transfers = try host_call_context.deferred_transfers.toOwnedSlice();
+    const transfers = try collapsed_dimension.deferred_transfers.toOwnedSlice();
     span.debug("Number of deferred transfers created: {d}", .{transfers.len});
 
     for (transfers, 0..) |transfer, i| {
@@ -156,9 +151,9 @@ pub fn invoke(
             }
             // else we use the accumulation_output of the context potentially set by the yield
             // host call
-            break :outer host_call_context.accumulation_output;
+            break :outer collapsed_dimension.accumulation_output;
         },
-        else => null, // FIXME: exceptional domain
+        else => null,
     };
 
     if (accumulation_output) |output| {
@@ -166,6 +161,9 @@ pub fn invoke(
     } else {
         span.debug("No accumulation output produced", .{});
     }
+
+    // Commit our changes of the collapsed dimension to the state
+    try collapsed_dimension.commit();
 
     span.debug("Accumulation invocation completed successfully", .{});
     return AccumulationResult(params){
@@ -351,6 +349,7 @@ pub fn AccumulationResult(params: Params) type {
 
         pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {
             alloc.free(self.transfers);
+            self.state_context.deinit();
             self.* = undefined;
         }
     };
