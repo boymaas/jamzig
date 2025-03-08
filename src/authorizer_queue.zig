@@ -29,11 +29,7 @@ pub fn Phi(
         pub fn init(allocator: std.mem.Allocator) !Phi(core_count, max_authorizations_queue_items) {
             var queue: [core_count]std.ArrayList(AuthorizerHash) = undefined;
             for (0..core_count) |i| {
-                // FIXME: errdefer
-                queue[i] = try std.ArrayList(AuthorizerHash).initCapacity(
-                    allocator,
-                    max_authorizations_queue_items,
-                );
+                queue[i] = std.ArrayList(AuthorizerHash).init(allocator);
             }
             return .{ .queue = queue, .allocator = allocator };
         }
@@ -49,13 +45,7 @@ pub fn Phi(
             // Deep copy each core's queue
             for (0..core_count) |i| {
                 // Create a new ArrayList with exact capacity needed
-                cloned.queue[i] = try std.ArrayList(AuthorizerHash).initCapacity(
-                    self.allocator,
-                    self.queue[i].items.len,
-                );
-
-                // Copy all items from the original queue
-                try cloned.queue[i].appendSlice(self.queue[i].items);
+                cloned.queue[i] = try self.queue[i].clone();
             }
 
             return cloned;

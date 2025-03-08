@@ -349,12 +349,12 @@ pub fn processAccumulateReports(
     execute_span.debug("Executing outer accumulation with {d} reports and gas limit {d}", .{ accumulated.len, gas_limit });
 
     // Build accumulation context
-    const accumulation_context = @import("pvm_invocations/accumulate.zig").AccumulationContext(params){
+    const accumulation_context = @import("pvm_invocations/accumulate.zig").AccumulationContext(params).build(allocator, .{
         .service_accounts = try stx.ensure(.delta_prime),
         .validator_keys = try stx.ensure(.iota_prime),
         .authorizer_queue = try stx.ensure(.phi_prime),
         .privileges = try stx.ensure(.chi_prime),
-    };
+    });
     var result = try @import("accumulate/execution.zig").outerAccumulation(
         params,
         allocator,

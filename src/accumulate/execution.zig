@@ -1,15 +1,15 @@
 const std = @import("std");
 
-const pvm_invoke = @import("../pvm_invocations/accumulate.zig");
+const pvm_accumulate = @import("../pvm_invocations/accumulate.zig");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 const jam_params = @import("../jam_params.zig");
 
 const trace = @import("../tracing.zig").scoped(.accumulate_execution);
 
-const AccumulationContext = pvm_invoke.AccumulationContext;
-const AccumulationOperand = pvm_invoke.AccumulationOperand;
-const AccumulationResult = pvm_invoke.AccumulationResult;
+const AccumulationContext = pvm_accumulate.AccumulationContext;
+const AccumulationOperand = pvm_accumulate.AccumulationOperand;
+const AccumulationResult = pvm_accumulate.AccumulationResult;
 const DeferredTransfer = @import("../pvm_invocations/accumulate/types.zig").DeferredTransfer;
 
 /// Helper struct to hold service accumulation results
@@ -443,8 +443,8 @@ pub fn singleServiceAccumulation(
         service_id, operands.len,
     });
 
-    // This is essentially a wrapper around the pvm_invoke function
-    return try pvm_invoke.invoke(
+    // This is essentially a wrapper around the pvm_accumulate function
+    return try pvm_accumulate.invoke(
         params,
         allocator,
         context,

@@ -194,6 +194,10 @@ pub const PVM = struct {
             out_of_gas,
         },
 
+        pub fn isSuccess(self: @This()) bool {
+            return self == .halt;
+        }
+
         pub fn isError(self: @This()) bool {
             return self == .terminal;
         }

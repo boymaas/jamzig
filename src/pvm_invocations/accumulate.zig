@@ -47,7 +47,7 @@ pub fn invoke(
     span.trace("Entropy: {s}", .{std.fmt.fmtSliceHexLower(&entropy)});
 
     // Look up the service account
-    const service_account = context.service_accounts.getAccount(service_id) orelse {
+    const service_account = context.service_accounts.getReadOnly(service_id) orelse {
         span.err("Service {d} not found", .{service_id});
         return error.ServiceNotFound;
     };
@@ -76,7 +76,7 @@ pub fn invoke(
         .allocator = allocator,
         .service_id = service_id,
         .context = context,
-        .new_service_id = service_util.generateServiceId(context.service_accounts, service_id, entropy, tau),
+        .new_service_id = service_util.generateServiceId(&context.service_accounts, service_id, entropy, tau),
         .deferred_transfers = std.ArrayList(DeferredTransfer).init(allocator),
         .accumulation_output = null,
     };
@@ -120,6 +120,18 @@ pub fn invoke(
     );
 
     pvm_span.debug("PVM invocation completed: {s}", .{@tagName(result.result)});
+
+    // B12. Based on result we collapse to either the regular domain or the exceptional domain
+    if (result.result.isSuccess()) { // TODO: wrap the isSuccess
+        // TODO: do the other elements
+        // AccumulateContex
+        // Deferred Transfers
+        // Outcome
+        // Gas will remain untouched
+        // XXXPENDING
+        // try host_call_context.context.service_accounts.checkpoint();
+        try host_call_context.commit();
+    }
 
     // Calculate gas used
     const gas_used = result.gas_used;

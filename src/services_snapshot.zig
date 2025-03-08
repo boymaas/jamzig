@@ -168,7 +168,8 @@ pub const DeltaSnapshot = struct {
     }
 
     /// Apply all changes from this snapshot to the destination Delta
-    pub fn commit(self: *DeltaSnapshot, destination: *Delta) !void {
+    pub fn commit(self: *DeltaSnapshot) !void {
+        var destination = @constCast(self.original);
         // First handle deleted services
         var deleted_it = self.deleted_services.keyIterator();
         while (deleted_it.next()) |id| {
@@ -222,6 +223,9 @@ pub const DeltaSnapshot = struct {
 
         return result;
     }
+
+    /// Alias for checkpoint
+    pub const deepClone = checkpoint;
 };
 
 test "DeltaSnapshot basic functionality" {
@@ -274,16 +278,13 @@ test "DeltaSnapshot basic functionality" {
     // Verify changes are being tracked
     try testing.expect(snapshot.hasChanges());
 
-    // Commit changes to a new Delta
-    var destination = Delta.init(allocator);
-    defer destination.deinit();
-
-    try snapshot.commit(&destination);
+    // Commit changes back to the original Delta
+    try snapshot.commit();
 
     // Check that the changes were applied
-    try testing.expect(!destination.accounts.contains(original_id));
+    try testing.expect(!original.accounts.contains(original_id));
 
-    const committed_account = destination.getAccount(new_id);
+    const committed_account = original.getAccount(new_id);
     try testing.expect(committed_account != null);
     try testing.expectEqual(committed_account.?.balance, 3000);
 

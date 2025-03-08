@@ -49,14 +49,31 @@ pub const HostCallReturnCode = enum(u64) {
 pub fn HostCalls(params: Params) type {
     return struct {
         /// Context maintained during host call execution
-        pub const Context =
-            struct {
+        pub const Context = struct {
             allocator: std.mem.Allocator,
             context: AccumulationContext(params),
             service_id: types.ServiceId,
             new_service_id: types.ServiceId,
             deferred_transfers: std.ArrayList(DeferredTransfer),
             accumulation_output: ?types.AccumulateRoot,
+
+            pub fn commit(self: *@This()) !void {
+                try self.context.commit();
+            }
+
+            pub fn deepClone(self: *@This(), allocator: std.mem.Allocator) !@This() {
+                // Create a new context with the same allocator
+                const new_context = @This(){
+                    .allocator = allocator,
+                    .context = self.context.deepClone(),
+                    .service_id = self.service_id,
+                    .new_service_id = self.new_service_id,
+                    .deferred_transfers = self.deferred_transfers.clone(),
+                    .accumulation_output = self.accumulation_output,
+                };
+
+                return new_context;
+            }
 
             pub fn deinit(self: *@This()) void {
                 self.deferred_transfers.deinit();
@@ -104,10 +121,10 @@ pub fn HostCalls(params: Params) type {
             // Get service account based on special cases as per graypaper
             const service_account = if (service_id == host_ctx.service_id or service_id == 0xFFFFFFFFFFFFFFFF) blk: {
                 span.debug("Using current service ID: {d}", .{host_ctx.service_id});
-                break :blk host_ctx.context.service_accounts.getAccount(host_ctx.service_id);
+                break :blk host_ctx.context.service_accounts.getReadOnly(host_ctx.service_id);
             } else blk: {
                 span.debug("Looking up service ID: {d}", .{service_id});
-                break :blk host_ctx.context.service_accounts.getAccount(@intCast(service_id));
+                break :blk host_ctx.context.service_accounts.getReadOnly(@intCast(service_id));
             };
 
             if (service_account == null) {
@@ -180,7 +197,11 @@ pub fn HostCalls(params: Params) type {
 
             // Get service account - always use the current service for writing
             span.debug("Looking up service account", .{});
-            const service_account = host_ctx.context.service_accounts.getAccount(host_ctx.service_id) orelse {
+            const service_account = host_ctx.context.service_accounts.getMutable(host_ctx.service_id) catch {
+                // Service not found, should never happen but handle gracefully
+                span.err("Could get create mutable instance of service accounts", .{});
+                return .{ .terminal = .panic };
+            } orelse {
                 // Service not found, should never happen but handle gracefully
                 span.err("Service account not found, this should never happen", .{});
                 return .{ .terminal = .panic };
@@ -301,14 +322,17 @@ pub fn HostCalls(params: Params) type {
 
             // Get source service account
             span.debug("Looking up source service account", .{});
-            const source_service = host_ctx.context.service_accounts.getAccount(host_ctx.service_id) orelse {
+            const source_service = host_ctx.context.service_accounts.getMutable(host_ctx.service_id) catch {
+                span.err("Could not get mutable of service account", .{});
+                return .{ .terminal = .panic };
+            } orelse {
                 span.err("Source service account not found, this should never happen", .{});
                 return .{ .terminal = .panic };
             };
 
             // Check if destination service exists
             span.debug("Looking up destination service account", .{});
-            const destination_service = host_ctx.context.service_accounts.getAccount(@intCast(destination_id)) orelse {
+            const destination_service = host_ctx.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
                 span.debug("Destination service not found, returning WHO error", .{});
                 exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.WHO); // Error: destination not found
                 return .play;
@@ -410,7 +434,10 @@ pub fn HostCalls(params: Params) type {
 
             // Check if the calling service has enough balance for the initial funding
             span.debug("Looking up calling service account", .{});
-            const calling_service = host_ctx.context.service_accounts.getAccount(host_ctx.service_id) orelse {
+            const calling_service = host_ctx.context.service_accounts.getMutable(host_ctx.service_id) catch {
+                span.err("Could not get mutable instance", .{});
+                return .{ .terminal = .panic };
+            } orelse {
                 span.err("Calling service account not found, this should never happen", .{});
                 return .{ .terminal = .panic };
             };
@@ -435,7 +462,7 @@ pub fn HostCalls(params: Params) type {
 
             // Create the new service account
             span.debug("Creating new service account with ID: {d}", .{host_ctx.new_service_id});
-            var new_account = host_ctx.context.service_accounts.getOrCreateAccount(host_ctx.new_service_id) catch {
+            var new_account = host_ctx.context.service_accounts.createService(host_ctx.new_service_id) catch {
                 span.err("Failed to create new service account", .{});
                 return .{ .terminal = .panic };
             };
@@ -461,7 +488,7 @@ pub fn HostCalls(params: Params) type {
                 host_ctx.new_service_id,
             });
             exec_ctx.registers[7] = host_ctx.new_service_id; // Return the new service ID on success
-            host_ctx.new_service_id = service_util.check(host_ctx.context.service_accounts, host_ctx.new_service_id); // Return the new service ID on success
+            host_ctx.new_service_id = service_util.check(&host_ctx.context.service_accounts, host_ctx.new_service_id); // Return the new service ID on success
             return .play;
         }
     };

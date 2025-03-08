@@ -166,7 +166,7 @@ pub const ServiceAccount = struct {
         try self.preimages.put(hash, new_preimage);
     }
 
-    pub fn getPreimage(self: *ServiceAccount, hash: Hash) ?[]const u8 {
+    pub fn getPreimage(self: *const ServiceAccount, hash: Hash) ?[]const u8 {
         return self.preimages.get(hash);
     }
 
@@ -255,6 +255,8 @@ pub const ServiceAccount = struct {
 pub const Delta = struct {
     accounts: std.AutoHashMap(ServiceId, ServiceAccount),
     allocator: Allocator,
+
+    pub const Snapshot = @import("services_snapshot.zig").DeltaSnapshot;
 
     pub fn format(
         self: *const @This(),
