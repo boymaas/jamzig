@@ -73,6 +73,7 @@ comptime {
     _ = @import("state_format/safrole_state.zig"); // TODO: rename to gamma
 
     _ = @import("services.zig");
+    _ = @import("services_snapshot.zig");
     _ = @import("services_priviledged.zig");
 
     _ = @import("recent_blocks.zig");

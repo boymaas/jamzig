@@ -100,6 +100,39 @@ pub const ServiceAccount = struct {
         };
     }
 
+    pub fn deepClone(self: *const ServiceAccount, allocator: Allocator) !ServiceAccount {
+        var clone = ServiceAccount.init(allocator);
+        errdefer clone.deinit();
+
+        // Clone storage map
+        var storage_it = self.storage.iterator();
+        while (storage_it.next()) |entry| {
+            const new_value = try allocator.dupe(u8, entry.value_ptr.*);
+            try clone.storage.put(entry.key_ptr.*, new_value);
+        }
+
+        // Clone preimages map
+        var preimage_it = self.preimages.iterator();
+        while (preimage_it.next()) |entry| {
+            const new_value = try allocator.dupe(u8, entry.value_ptr.*);
+            try clone.preimages.put(entry.key_ptr.*, new_value);
+        }
+
+        // Clone preimage lookups
+        var lookup_it = self.preimage_lookups.iterator();
+        while (lookup_it.next()) |entry| {
+            try clone.preimage_lookups.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+
+        // Copy simple fields
+        clone.code_hash = self.code_hash;
+        clone.balance = self.balance;
+        clone.min_gas_accumulate = self.min_gas_accumulate;
+        clone.min_gas_on_transfer = self.min_gas_on_transfer;
+
+        return clone;
+    }
+
     pub fn deinit(self: *ServiceAccount) void {
         var storage_it = self.storage.valueIterator();
         while (storage_it.next()) |value| {
