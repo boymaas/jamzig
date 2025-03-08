@@ -360,8 +360,8 @@ pub fn processAccumulateReports(
         allocator,
         gas_limit,
         accumulated,
-        accumulation_context,
-        chi.always_accumulate,
+        &accumulation_context,
+        &chi.always_accumulate,
         stx.time.current_slot,
         (try stx.ensure(.eta_prime))[0],
     );

@@ -25,26 +25,23 @@ pub const ServiceAccumulationResult = struct {
 };
 
 /// Result of the outer accumulation function
-pub fn OuterAccumulationResult(comptime params: @import("../jam_params.zig").Params) type {
-    return struct {
-        accumulated_count: usize,
-        context: AccumulationContext(params),
-        transfers: []DeferredTransfer,
-        accumulation_outputs: std.AutoHashMap(types.ServiceId, types.AccumulateOutput),
+pub const OuterAccumulationResult = struct {
+    accumulated_count: usize,
+    transfers: []DeferredTransfer,
+    accumulation_outputs: std.AutoHashMap(types.ServiceId, types.AccumulateOutput),
 
-        pub fn takeTransfers(self: *@This()) []DeferredTransfer {
-            const result = self.transfers;
-            self.transfers = &[_]DeferredTransfer{};
-            return result;
-        }
+    pub fn takeTransfers(self: *@This()) []DeferredTransfer {
+        const result = self.transfers;
+        self.transfers = &[_]DeferredTransfer{};
+        return result;
+    }
 
-        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-            allocator.free(self.transfers);
-            self.accumulation_outputs.deinit();
-            self.* = undefined;
-        }
-    };
-}
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.transfers);
+        self.accumulation_outputs.deinit();
+        self.* = undefined;
+    }
+};
 
 /// 12.16 Outer accumulation function Δ+
 /// Transforms a gas limit, sequence of work reports, initial partial state,
@@ -58,11 +55,11 @@ pub fn outerAccumulation(
     allocator: std.mem.Allocator,
     gas_limit: types.Gas,
     work_reports: []const types.WorkReport,
-    context: AccumulationContext(params),
-    free_accumulation_services: std.AutoHashMap(types.ServiceId, types.Gas),
+    context: *const AccumulationContext(params),
+    privileged_services: *const std.AutoHashMap(types.ServiceId, types.Gas),
     tau: types.TimeSlot,
     entropy: types.Entropy,
-) !OuterAccumulationResult(params) {
+) !OuterAccumulationResult {
     const span = trace.span(.outer_accumulation);
     defer span.deinit();
     span.debug("Starting outer accumulation with gas limit: {d}", .{gas_limit});
@@ -79,7 +76,6 @@ pub fn outerAccumulation(
         span.debug("No work reports to process", .{});
         return .{
             .accumulated_count = 0,
-            .context = context,
             .transfers = &[_]DeferredTransfer{},
             .accumulation_outputs = accumulation_outputs,
         };
@@ -129,7 +125,6 @@ pub fn outerAccumulation(
         span.debug("No reports can be processed within gas limit", .{});
         return .{
             .accumulated_count = 0,
-            .context = context,
             .transfers = &[_]DeferredTransfer{},
             .accumulation_outputs = accumulation_outputs,
         };
@@ -141,7 +136,7 @@ pub fn outerAccumulation(
         allocator,
         context,
         work_reports[0..reports_to_process],
-        free_accumulation_services,
+        privileged_services,
         tau,
         entropy,
     );
@@ -168,7 +163,6 @@ pub fn outerAccumulation(
         span.debug("Processed all work reports", .{});
         return .{
             .accumulated_count = reports_to_process,
-            .context = parallelized_result.context,
             .transfers = try transfers.toOwnedSlice(),
             .accumulation_outputs = accumulation_outputs,
         };
@@ -185,8 +179,8 @@ pub fn outerAccumulation(
         allocator,
         remaining_gas,
         work_reports[reports_to_process..],
-        parallelized_result.context,
-        free_accumulation_services,
+        context,
+        privileged_services,
         tau,
         entropy,
     );
@@ -204,43 +198,39 @@ pub fn outerAccumulation(
 
     return .{
         .accumulated_count = reports_to_process + recursive_result.accumulated_count,
-        .context = recursive_result.context,
         .transfers = try transfers.toOwnedSlice(),
         .accumulation_outputs = accumulation_outputs,
     };
 }
 
-pub fn ParallelizedAccumulationResult(comptime params: jam_params.Params) type {
-    return struct {
-        context: AccumulationContext(params),
-        gas_used: types.Gas,
-        transfers: []DeferredTransfer,
-        service_results: std.AutoHashMap(types.ServiceId, ServiceAccumulationResult),
+pub const ParallelizedAccumulationResult = struct {
+    gas_used: types.Gas,
+    transfers: []DeferredTransfer,
+    service_results: std.AutoHashMap(types.ServiceId, ServiceAccumulationResult),
 
-        /// Takes ownership of the transfers slice, setting internal transfers to empty
-        pub fn takeTransfers(self: *@This()) []DeferredTransfer {
-            const result = self.transfers;
-            self.transfers = &[_]DeferredTransfer{};
-            return result;
+    /// Takes ownership of the transfers slice, setting internal transfers to empty
+    pub fn takeTransfers(self: *@This()) []DeferredTransfer {
+        const result = self.transfers;
+        self.transfers = &[_]DeferredTransfer{};
+        return result;
+    }
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        // Free the transfers array
+        allocator.free(self.transfers);
+
+        // Clean up service results
+        var it = self.service_results.iterator();
+        while (it.next()) |entry| {
+            // _ = entry;
+            entry.value_ptr.deinit(allocator);
         }
+        self.service_results.deinit();
 
-        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-            // Free the transfers array
-            allocator.free(self.transfers);
-
-            // Clean up service results
-            var it = self.service_results.iterator();
-            while (it.next()) |entry| {
-                // _ = entry;
-                entry.value_ptr.deinit(allocator);
-            }
-            self.service_results.deinit();
-
-            // Mark as undefined to prevent use-after-free
-            self.* = undefined;
-        }
-    };
-}
+        // Mark as undefined to prevent use-after-free
+        self.* = undefined;
+    }
+};
 
 /// 12.17 Parallelized accumulation function Δ*
 /// Transforms an initial state context, sequence of work reports,
@@ -252,12 +242,12 @@ pub fn ParallelizedAccumulationResult(comptime params: jam_params.Params) type {
 pub fn parallelizedAccumulation(
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
-    context: AccumulationContext(params),
+    context: *const AccumulationContext(params),
     work_reports: []const types.WorkReport,
-    privileged_services: std.AutoHashMap(types.ServiceId, types.Gas),
+    privileged_services: *const std.AutoHashMap(types.ServiceId, types.Gas),
     tau: types.TimeSlot,
     entropy: types.Entropy,
-) !ParallelizedAccumulationResult(params) {
+) !ParallelizedAccumulationResult {
     const span = trace.span(.parallelized_accumulation);
     defer span.deinit();
     span.debug("Starting parallelized accumulation for {d} work reports", .{work_reports.len});
@@ -416,7 +406,6 @@ pub fn parallelizedAccumulation(
 
     // Return collected results
     return .{
-        .context = context, // FIXME: remove this context??
         .gas_used = total_gas_used,
         .transfers = try all_transfers.toOwnedSlice(),
         .service_results = service_results,
@@ -430,13 +419,13 @@ pub fn parallelizedAccumulation(
 pub fn singleServiceAccumulation(
     comptime params: @import("../jam_params.zig").Params,
     allocator: std.mem.Allocator,
-    context: AccumulationContext(params),
+    context: *const AccumulationContext(params),
     tau: types.TimeSlot,
     entropy: types.Entropy,
     service_id: types.ServiceId,
     gas_limit: types.Gas,
     operands: []const AccumulationOperand,
-) !AccumulationResult(params) {
+) !AccumulationResult {
     const span = trace.span(.single_service_accumulation);
     defer span.deinit();
     span.debug("Starting accumulation for service {d} with {d} operands", .{

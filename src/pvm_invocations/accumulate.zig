@@ -33,13 +33,13 @@ const AccumulateArgs = struct {
 pub fn invoke(
     comptime params: Params,
     allocator: std.mem.Allocator,
-    context: AccumulationContext(params),
+    context: *const AccumulationContext(params),
     tau: types.TimeSlot,
     entropy: types.Entropy, // n0
     service_id: types.ServiceId,
     gas_limit: types.Gas,
     accumulation_operands: []const AccumulationOperand, // O
-) !AccumulationResult(params) {
+) !AccumulationResult {
     const span = trace.span(.invoke);
     defer span.deinit();
     span.debug("Starting accumulation invocation for service {d}", .{service_id});
@@ -166,8 +166,7 @@ pub fn invoke(
     try collapsed_dimension.commit();
 
     span.debug("Accumulation invocation completed successfully", .{});
-    return AccumulationResult(params){
-        .state_context = context,
+    return AccumulationResult{
         .transfers = transfers,
         .accumulation_output = accumulation_output,
         .gas_used = gas_used,
@@ -327,30 +326,24 @@ const WorkExecutionError = enum {
 };
 
 /// Return type for the accumulation invoke function,
-pub fn AccumulationResult(params: Params) type {
-    return struct {
-        /// Updated state context after accumulation
-        state_context: AccumulationContext(params),
+pub const AccumulationResult = struct {
+    /// Sequence of deferred transfers resulting from accumulation
+    transfers: []DeferredTransfer,
 
-        /// Sequence of deferred transfers resulting from accumulation
-        transfers: []DeferredTransfer,
+    /// Optional accumulation output hash (null if no output was produced)
+    accumulation_output: ?types.AccumulateOutput,
 
-        /// Optional accumulation output hash (null if no output was produced)
-        accumulation_output: ?types.AccumulateOutput,
+    /// Amount of gas consumed during accumulation
+    gas_used: types.Gas,
 
-        /// Amount of gas consumed during accumulation
-        gas_used: types.Gas,
+    pub fn takeTransfers(self: *@This()) []DeferredTransfer {
+        const result = self.transfers;
+        self.transfers = &[_]DeferredTransfer{};
+        return result;
+    }
 
-        pub fn takeTransfers(self: *@This()) []DeferredTransfer {
-            const result = self.transfers;
-            self.transfers = &[_]DeferredTransfer{};
-            return result;
-        }
-
-        pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {
-            alloc.free(self.transfers);
-            self.state_context.deinit();
-            self.* = undefined;
-        }
-    };
-}
+    pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {
+        alloc.free(self.transfers);
+        self.* = undefined;
+    }
+};
