@@ -13,6 +13,7 @@ comptime {
     _ = @import("jamtestvectors/fisher_yates.zig");
     _ = @import("jamtestvectors/authorizations.zig");
     _ = @import("jamtestvectors/accumulate.zig");
+    _ = @import("jamtestvectors/preimages.zig");
 
     _ = @import("codec.zig");
     _ = @import("codec_test.zig");
@@ -104,6 +105,9 @@ comptime {
 
     _ = @import("accumulate.zig");
     _ = @import("accumulate_test.zig");
+
+    _ = @import("preimages.zig");
+    _ = @import("preimages_test.zig");
 
     _ = @import("jamtestnet.zig");
     _ = @import("jamtestnet/parsers/jamduna/state_snapshot.zig");

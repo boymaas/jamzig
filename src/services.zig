@@ -42,6 +42,19 @@ pub const PreimageLookup = struct {
     // 3. h ∈ ⟦NT⟧2: The preimage was available from h[0] until h[1], now unavailable.
     // 4. h ∈ ⟦NT⟧3: The preimage is available since h[2], was previously available
     status: [3]?Timeslot,
+
+    pub fn asSlice(self: *const @This()) []const ?Timeslot {
+        // Else we have an existing one, now set the appropiate
+        // value based on the tailing count
+        var non_null_len: usize = 0;
+        for (self.status) |e| {
+            if (e != null) {
+                non_null_len += 1;
+            } else break;
+        }
+
+        return self.status[0..non_null_len];
+    }
 };
 
 pub const PreimageLookupKey = struct {
@@ -189,19 +202,97 @@ pub const ServiceAccount = struct {
         return self.preimages.get(hash);
     }
 
+    pub fn hasPreimage(self: *const ServiceAccount, hash: Hash) bool {
+        return self.preimages.contains(hash);
+    }
+
+    //  PreImageLookups assume correct state, that is when you sollicit a
+    //  preimage. It should not be available already.
+
+    /// Created an entry in preimages_lookups indicating we need a preimage
+    pub fn solicitPreimage(self: *ServiceAccount, hash: Hash, length: u32) !void {
+        const key = PreimageLookupKey{ .hash = hash, .length = length };
+
+        // Check if we already have an entry for this hash/length
+        if (self.preimage_lookups.get(key)) |_| {
+            return error.AlreadySolicited;
+        } else {
+            // If no lookup exists yet, create a new one with an empty status
+            const new_lookup = PreimageLookup{
+                .status = .{ null, null, null },
+            };
+            try self.preimage_lookups.put(key, new_lookup);
+        }
+    }
+
+    // method to determine if this service needs a preimage
+    pub fn needsPreImage(self: *const ServiceAccount, hash: Hash, length: u32, current_timeslot: Timeslot) bool {
+        // Check if we have an entry in preimage_lookups
+        const key = PreimageLookupKey{ .hash = hash, .length = length };
+
+        if (self.preimage_lookups.get(key)) |*lookup| {
+            const status = lookup.asSlice();
+
+            // Case 1: Empty status - never supplied after solicitation
+            if (status.len == 0) {
+                return true;
+            }
+
+            // Case 2: One-element status [t1, null, null] - available since t1
+            if (status.len == 1) {
+                return false; // Already available
+            }
+
+            // Case 3: Two-element status [t1, t2, null] - was available but now unavailable
+            if (status.len == 2) {
+                return current_timeslot >= status[1].?; // Needed if current time is past unavailability time
+            }
+
+            // Case 4: Three-element status [t1, t2, t3] - available again since t3
+            if (status.len == 3) {
+                return false; // Already available again
+            }
+        }
+
+        // No lookup entry for this hash/length
+        return false;
+    }
+
     // method to always set the pre-image lookup value
-    pub fn integratePreimageLookup(
+    pub fn registerPreImageAvailable(
         self: *ServiceAccount,
         hash: Hash,
         length: u32,
         timeslot: ?Timeslot,
     ) !void {
         const key = PreimageLookupKey{ .hash = hash, .length = length };
-        const lookup = self.preimage_lookups.get(key) orelse PreimageLookup{
-            .status = .{ timeslot, null, null },
+
+        // If we do not have one, easy just set first on and ready
+        const existing_lookup = self.preimage_lookups.get(key) orelse {
+            // If no lookup exists yet, create a new one with timeslot as the first entry
+            const new_lookup = PreimageLookup{
+                .status = .{ timeslot, null, null },
+            };
+            try self.preimage_lookups.put(key, new_lookup);
+            return;
         };
 
-        try self.preimage_lookups.put(key, lookup);
+        const status = existing_lookup.asSlice();
+
+        // Create a modified lookup based on the existing one
+        var updated_lookup = existing_lookup;
+
+        // Update the status based on the current state:
+        // - If all slots are null, set the first slot
+        // - If first slot is set but second is and third null, set update te first slot
+        // - If first and second slots are set, set the third slot (marking available again)
+        if (status.len <= 1) {
+            updated_lookup.status[0] = timeslot;
+        } else if (status.len >= 2) {
+            updated_lookup.status[2] = timeslot;
+        }
+
+        try self.preimage_lookups.put(key, updated_lookup);
     }
 
     // 9.2.2 Implement the historical lookup function

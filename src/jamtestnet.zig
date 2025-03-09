@@ -118,7 +118,7 @@ pub fn runStateTransitionTests(
         defer pre_state_mdict.deinit();
 
         // std.debug.print("{}", .{types.fmt.format(pre_state_mdict)});
-        // std.debug.print("{}", .{types.fmt.format(state_transition.block())});
+        std.debug.print("{}", .{types.fmt.format(state_transition.block())});
 
         // Validator Root Calculations
         try state_transition.validateRoots(allocator);
