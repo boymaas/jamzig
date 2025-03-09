@@ -21,6 +21,7 @@ pub const reports = @import("stf/reports.zig");
 pub const validator_stats = @import("stf/validator_stats.zig");
 pub const assurances = @import("stf/assurances.zig");
 pub const accumulate = @import("stf/accumulate.zig");
+pub const preimages = @import("stf/preimages.zig");
 
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.stf);
@@ -99,6 +100,13 @@ pub fn stateTransition(
         allocator,
         state_transition,
         work_reports,
+    );
+
+    try preimages.transition(
+        params,
+        state_transition,
+        new_block.extrinsic.preimages,
+        new_block.header.author_index,
     );
 
     try recent_history.transition(

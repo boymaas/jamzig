@@ -848,6 +848,20 @@ pub const Preimage = struct {
 pub const PreimagesExtrinsic = struct {
     data: []Preimage,
 
+    /// Number of preimages
+    pub fn count(self: *const @This()) u32 {
+        return @intCast(self.data.len);
+    }
+
+    /// Calculates the total number of bytes (octets) across all preimages in this extrinsic
+    pub fn calcOctetsAcrossPreimages(self: *const @This()) u32 {
+        var total_bytes: u32 = 0;
+        for (self.data) |preimage| {
+            total_bytes += @intCast(preimage.blob.len);
+        }
+        return total_bytes;
+    }
+
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         var cloned_data = try allocator.alloc(Preimage, self.data.len);
         errdefer allocator.free(cloned_data);
