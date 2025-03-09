@@ -51,9 +51,12 @@ pub fn machineInvocation(
     // Register host calls
     exec_ctx.setHostCalls(host_call_fns);
 
+    // result
+    const result = try PVM.machineInvocation(allocator, &exec_ctx, host_call_ctx);
+
     // Run the machine invocation
     return .{
+        .result = result,
         .gas_used = @intCast(@as(i64, gas) - exec_ctx.gas),
-        .result = try PVM.machineInvocation(allocator, &exec_ctx, host_call_ctx),
     };
 }

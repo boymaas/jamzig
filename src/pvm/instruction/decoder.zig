@@ -60,7 +60,7 @@ pub fn decodeNoArgs(bytes: []const u8) Error!InstructionArgs.NoArgsType {
 }
 
 pub fn decodeOneImm(bytes: []const u8) Error!InstructionArgs.OneImmType {
-    if (bytes.len < 1) return Error.SliceTooShort;
+    // if (bytes.len < 1) return Error.SliceTooShort;
 
     const l_x = @min(4, bytes.len);
     return .{

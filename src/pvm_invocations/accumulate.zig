@@ -167,7 +167,7 @@ pub fn invoke(
     // Commit our changes of the collapsed dimension to the state
     try collapsed_dimension.commit();
 
-    span.debug("Accumulation invocation completed successfully", .{});
+    span.debug("Accumulation invocation completed", .{});
     return AccumulationResult{
         .transfers = transfers,
         .accumulation_output = accumulation_output,
