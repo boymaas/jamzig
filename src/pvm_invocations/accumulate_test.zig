@@ -61,12 +61,16 @@ test "accumulate_invocation" {
     defer post_state.deinit(allocator);
 
     // Build accumulation context
-    const accumulation_context = accumulate.AccumulationContext(JAMDUNA_PARAMS){
-        .service_accounts = &pre_state.delta.?,
-        .validator_keys = &pre_state.iota.?,
-        .authorizer_queue = &pre_state.phi.?,
-        .privileges = &pre_state.chi.?,
-    };
+    var accumulation_context = accumulate.AccumulationContext(JAMDUNA_PARAMS).build(
+        allocator,
+        .{
+            .service_accounts = &pre_state.delta.?,
+            .validator_keys = &pre_state.iota.?,
+            .authorizer_queue = &pre_state.phi.?,
+            .privileges = &pre_state.chi.?,
+        },
+    );
+    defer accumulation_context.deinit();
 
     // This has to be H_t
     const current_tau = block.header.slot;
@@ -76,12 +80,15 @@ test "accumulate_invocation" {
     // Since we have only one report use this gas, normally we would add privileged services and ..
     const gas_limit = work_report.results[0].accumulate_gas;
 
-    const operands = try accumulate.AccumulationOperand.fromWorkReport(allocator, work_report);
+    var operands = try accumulate.AccumulationOperand.fromWorkReport(allocator, work_report);
+    defer operands.deinit(allocator);
+
+    const operands_slice = try operands.toOwnedSlice(allocator);
     defer {
-        for (operands) |*op| {
+        for (operands_slice) |*op| {
             op.deinit(allocator);
         }
-        allocator.free(operands);
+        allocator.free(operands_slice);
     }
 
     // entropy (for new_service_id) n0'
@@ -93,12 +100,12 @@ test "accumulate_invocation" {
     var result = try accumulate.invoke(
         JAMDUNA_PARAMS,
         allocator,
-        accumulation_context,
+        &accumulation_context,
         current_tau,
         entropy,
         service_id,
         gas_limit,
-        operands,
+        operands_slice,
     );
     defer result.deinit(allocator);
 
@@ -142,6 +149,7 @@ test "accumulate_invocation" {
 
 fn removeUnusedStateComponents(comptime params: jam_params.Params, jam_state: *state.JamState(params)) !void {
     const callDeinit = @import("../meta.zig").callDeinit;
+    const isComplexType = @import("../meta.zig").isComplexType;
 
     // Define which components we want to keep (relevant for accumulation)
     const componentsToKeep = [_][]const u8{
@@ -166,7 +174,8 @@ fn removeUnusedStateComponents(comptime params: jam_params.Params, jam_state: *s
             // Check if the field is not null (initialized)
             if (@field(jam_state, field.name)) |*value| {
                 // Use the existing deinitField helper
-                callDeinit(value, std.testing.allocator);
+                if (comptime isComplexType(@TypeOf(value)))
+                    callDeinit(value, std.testing.allocator);
 
                 // Set the field to null (deinitField doesn't do this for us)
                 @field(jam_state, field.name) = null;

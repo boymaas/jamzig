@@ -22,6 +22,12 @@ pub fn convertTestStateIntoJamState(
     jam_state.tau = test_state.slot;
     jam_state.eta = [_][32]u8{test_state.entropy} ++ [_][32]u8{[_]u8{0} ** 32} ** 3;
 
+    jam_state.iota = try types.ValidatorSet.init(allocator, 0);
+    jam_state.phi = try state.Phi(
+        params.core_count,
+        params.max_authorizations_queue_items,
+    ).init(allocator);
+
     // Convert and set the individual components
     jam_state.delta = try convertServiceAccounts(
         allocator,
@@ -75,7 +81,7 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
     // Add all preimages
     for (account.data.preimages) |preimage| {
         try service_account.addPreimage(preimage.hash, preimage.blob);
-        try service_account.integratePreimageLookup(preimage.hash, @intCast(preimage.blob.len), null);
+        try service_account.solicitPreimage(preimage.hash, @intCast(preimage.blob.len));
     }
 
     return service_account;

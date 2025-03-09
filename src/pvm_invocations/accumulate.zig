@@ -183,8 +183,8 @@ pub const AccumulationOperands = struct {
             if (self.item) |*operand| {
                 operand.deinit(allocator);
                 self.item = null;
-                self.* = undefined;
             }
+            self.* = undefined;
         }
 
         pub fn take(self: *@This()) !AccumulationOperand {
@@ -196,7 +196,25 @@ pub const AccumulationOperands = struct {
             return item;
         }
     };
+
     items: []MaybeNull,
+
+    /// takes all items out of the MaybeNull, this clears all the items, as such your cannot
+    /// use this struct anymore
+    pub fn toOwnedSlice(self: *@This(), allocator: std.mem.Allocator) ![]AccumulationOperand {
+        var result = try allocator.alloc(AccumulationOperand, self.items.len);
+        errdefer allocator.free(result);
+
+        for (self.items, 0..) |*maybe_null, idx| {
+            result[idx] = try maybe_null.take();
+            maybe_null.deinit(allocator);
+        }
+
+        allocator.free(self.items);
+        self.items = &[_]MaybeNull{};
+
+        return result;
+    }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         // Clean up each AccumulationOperand in the items array

@@ -39,7 +39,7 @@ test "Delta format demo" {
 
     // Add some preimages
     try account1.addPreimage([_]u8{0xC1} ++ [_]u8{0} ** 31, "test_preimage");
-    try account1.integratePreimageLookup([_]u8{0xC1} ++ [_]u8{0} ** 31, 12, 42);
+    try account1.solicitPreimage([_]u8{0xC1} ++ [_]u8{0} ** 31, 12);
 
     // Add account to delta
     try delta.putAccount(1, account1);

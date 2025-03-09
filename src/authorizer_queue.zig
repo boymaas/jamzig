@@ -14,6 +14,7 @@ const std = @import("std");
 
 const AuthorizerHash = [32]u8;
 
+// TODO: Authorization to Authorizer
 // Define the AuthorizationQueue type
 pub fn Phi(
     comptime core_count: u16,

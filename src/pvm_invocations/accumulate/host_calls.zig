@@ -498,7 +498,7 @@ pub fn HostCalls(params: Params) type {
             new_account.balance = initial_balance;
 
             span.debug("Integrating preimage lookup", .{});
-            new_account.integratePreimageLookup(code_hash, code_len, null) catch {
+            new_account.solicitPreimage(code_hash, code_len) catch {
                 span.err("Failed to integrate preimage lookup, out of memory", .{});
                 return .{ .terminal = .panic };
             };
