@@ -77,7 +77,7 @@ pub const AccountUpdate = struct {
 /// See GP0.4.1p@Ch9
 pub const ServiceAccount = struct {
     // Storage data on-chain
-    storage: std.AutoHashMap(Hash, []u8),
+    storage: std.AutoHashMap(Hash, []const u8),
 
     // Preimages for in-core access. This enables the Refine logic of the
     // service to use the data. The service manages this through its 'p'
@@ -86,7 +86,7 @@ pub const ServiceAccount = struct {
     // Preimage data, once supplied, may not be removed freely; instead it goes
     // through a process of being marked as unavailable, and only after a period of
     // time may it be removed from state
-    preimages: std.AutoHashMap(Hash, []u8),
+    preimages: std.AutoHashMap(Hash, []const u8),
     preimage_lookups: std.AutoHashMap(PreimageLookupKey, PreimageLookup),
 
     // Must be present in pre-image lookup, this in self.preimages
@@ -103,8 +103,8 @@ pub const ServiceAccount = struct {
 
     pub fn init(allocator: Allocator) ServiceAccount {
         return .{
-            .storage = std.AutoHashMap(Hash, []u8).init(allocator),
-            .preimages = std.AutoHashMap(Hash, []u8).init(allocator),
+            .storage = std.AutoHashMap(Hash, []const u8).init(allocator),
+            .preimages = std.AutoHashMap(Hash, []const u8).init(allocator),
             .preimage_lookups = std.AutoHashMap(PreimageLookupKey, PreimageLookup).init(allocator),
             .code_hash = undefined,
             .balance = 0,
@@ -182,14 +182,18 @@ pub const ServiceAccount = struct {
         }
     }
 
-    pub fn writeStorage(self: *ServiceAccount, key: Hash, value: []const u8) !void {
+    pub fn writeStorage(self: *ServiceAccount, key: Hash, value: []const u8) !?[]const u8 {
         // Clear the old, otherwise we are leaking
-        if (self.storage.getPtr(key)) |old_value_ptr| {
-            self.storage.allocator.free(old_value_ptr.*);
-        }
+        const old_value = self.storage.get(key);
 
-        const new_value = try self.storage.allocator.dupe(u8, value);
-        try self.storage.put(key, new_value);
+        try self.storage.put(key, value);
+
+        return old_value;
+    }
+
+    pub fn writeStorageFreeOldValue(self: *ServiceAccount, key: Hash, value: []const u8) !void {
+        const maybe_old_value = try self.writeStorage(key, value);
+        if (maybe_old_value) |old_value| self.storage.allocator.free(old_value);
     }
 
     // Functions to add and manage preimages correspond to the discussion in Section 4.9.2 and Appendix D.

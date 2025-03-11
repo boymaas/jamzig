@@ -718,6 +718,11 @@ pub const Memory = struct {
         return result;
     }
 
+    pub fn readSliceOwned(self: *Memory, address: u32, size: usize) ![]const u8 {
+        const slice = try self.readSlice(address, size);
+        return self.allocator.dupe(u8, slice);
+    }
+
     /// Write a slice to memory, not allowing cross-page writes
     /// FIXME: this should be able to cross pages
     pub fn writeSlice(self: *Memory, address: u32, slice: []const u8) !void {

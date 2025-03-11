@@ -271,18 +271,9 @@ pub fn HostCalls(params: Params) type {
                     ctx_regular.allocator.free(entry.value);
                     return .play;
                 }
-                span.debug("Key not found, returning 0", .{});
-                exec_ctx.registers[7] = 0;
+                span.debug("Key not found, returning NONE", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.NONE);
                 return .play;
-            }
-
-            // Get current value length if key exists
-            var existing_len: u64 = 0;
-            if (service_account.storage.get(storage_key)) |existing_value| {
-                existing_len = existing_value.len;
-                span.debug("Existing value found, length: {d}", .{existing_len});
-            } else {
-                span.debug("No existing value found", .{});
             }
 
             // Read value from memory
@@ -291,30 +282,59 @@ pub fn HostCalls(params: Params) type {
                 span.err("Memory access failed while reading value data", .{});
                 return .{ .terminal = .panic };
             };
-            span.trace("Value data (first 32 bytes max): {s}", .{
+            span.trace("Value data len={d} (first 32 bytes max): {s}", .{
+                value.len,
                 std.fmt.fmtSliceHexLower(value[0..@min(32, value.len)]),
             });
+
+            // Write to storage
+            span.debug("Writing to storage, value size: {d}", .{value.len});
+            // Get current value length if key exists
+
+            // Write and get the prior value owned
+            var maybe_prior_value: ?[]const u8 = pv: {
+                const value_owned = ctx_regular.allocator.dupe(u8, value) catch {
+                    return .{ .terminal = .panic };
+                };
+                break :pv service_account.writeStorage(storage_key, value_owned) catch {
+                    ctx_regular.allocator.free(value_owned);
+                    span.err("Failed to write to storage, returning FULL", .{});
+                    return .{ .terminal = .panic };
+                };
+            };
+            defer if (maybe_prior_value) |pv| ctx_regular.allocator.free(pv);
+
+            if (maybe_prior_value) |_| {
+                span.debug("Prior value found, length: {d}", .{maybe_prior_value.?});
+            } else {
+                span.debug("No prior value found", .{});
+            }
 
             // Check if service has enough balance to store this data
             span.debug("Checking storage footprint against balance", .{});
             const footprint = service_account.storageFootprint();
             if (footprint.a_t > service_account.balance) {
                 span.debug("Insufficient balance for storage, returning FULL", .{});
+                // Restore old value, if we had a prior value, otherwise
+                // we remove the storage key, as we do not have enough balance
+                if (maybe_prior_value) |prior_value| {
+                    service_account.writeStorageFreeOldValue(storage_key, prior_value) catch {
+                        return .{ .terminal = .panic };
+                    };
+                    maybe_prior_value = null; // to avoid deferred deint
+                } else {
+                    service_account.removeStorage(storage_key);
+                }
                 exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.FULL);
                 return .play;
             }
 
-            // Write to storage
-            span.debug("Writing to storage, value size: {d}", .{value.len});
-            service_account.writeStorage(storage_key, value) catch {
-                span.err("Failed to write to storage, returning FULL", .{});
-                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.FULL);
-                return .play;
-            };
-
             // Return the previous length per graypaper
-            span.debug("Storage write successful, returning previous length: {d}", .{existing_len});
-            exec_ctx.registers[7] = existing_len;
+            exec_ctx.registers[7] = if (maybe_prior_value) |_|
+                maybe_prior_value.?.len
+            else
+                @intFromEnum(HostCallReturnCode.NONE);
+
             return .play;
         }
 
@@ -330,10 +350,10 @@ pub fn HostCalls(params: Params) type {
             min_item_gas: types.Gas,
             /// Gas limit for on_transfer operations (tm)
             min_memo_gas: types.Gas,
+            /// Total number of items in storage (ti)
+            total_items: u32,
             /// Total storage size in bytes (tl)
             total_storage_size: u64,
-            /// Total number of items in storage (ti)
-            total_items: u64,
         };
 
         /// Host call implementation for info service (Ω_I)
@@ -380,11 +400,15 @@ pub fn HostCalls(params: Params) type {
                 .min_item_gas = service_account.?.min_gas_accumulate,
                 .min_memo_gas = service_account.?.min_gas_on_transfer,
                 .total_storage_size = fprint.a_l,
-                .total_items = fprint.a_l,
+                .total_items = fprint.a_i,
             };
 
             var service_info_buffer: [@sizeOf(ServiceInfo)]u8 = undefined;
             var fb = std.io.fixedBufferStream(&service_info_buffer);
+
+            // FIXME: this is to conform to JamDuna format
+            // remove once fixed
+            fb.writer().writeByte(0x07) catch {};
 
             // Serialize
             @import("../../codec.zig").serialize(
@@ -398,8 +422,10 @@ pub fn HostCalls(params: Params) type {
             };
 
             // Write the info to memory
-            span.debug("Writing info to memory at 0x{x}", .{output_ptr});
-            exec_ctx.memory.writeSlice(@truncate(output_ptr), fb.getWritten()) catch {
+            const encoded = fb.getWritten();
+            span.debug("Writing info encoded in {d} bytes to memory at 0x{x}", .{ encoded.len, output_ptr });
+            span.trace("Encoded Info: {}", .{std.fmt.fmtSliceHexLower(encoded)});
+            exec_ctx.memory.writeSlice(@truncate(output_ptr), encoded) catch {
                 span.err("Memory access failed while writing info data", .{});
                 return .{ .terminal = .panic };
             };
@@ -605,6 +631,42 @@ pub fn HostCalls(params: Params) type {
             });
             exec_ctx.registers[7] = ctx_regular.new_service_id; // Return the new service ID on success
             ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, ctx_regular.new_service_id); // Return the new service ID on success
+            return .play;
+        }
+
+        /// Host call implementation for yield (Ω_P)
+        pub fn yieldAccumulationResult(
+            exec_ctx: *PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) PVM.HostCallResult {
+            const span = trace.span(.host_call_yield);
+            defer span.deinit();
+
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular: *Dimension = &host_ctx.regular;
+
+            // Get registers: hash pointer to read from
+            const hash_ptr = exec_ctx.registers[7];
+
+            span.debug("Host call: yield accumulation result", .{});
+            span.debug("Hash pointer: 0x{x}", .{hash_ptr});
+
+            // Read hash from memory
+            span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
+            const hash_slice = exec_ctx.memory.readSlice(@truncate(hash_ptr), 32) catch {
+                // Error: memory access failed
+                span.err("Memory access failed while reading hash", .{});
+                return .{ .terminal = .panic };
+            };
+
+            span.debug("Accumulation output hash: {s}", .{std.fmt.fmtSliceHexLower(hash_slice)});
+
+            // Set the accumulation output
+            ctx_regular.accumulation_output = hash_slice[0..32].*;
+
+            // Return success
+            span.debug("Yield successful", .{});
+            exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.OK);
             return .play;
         }
     };

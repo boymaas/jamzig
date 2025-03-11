@@ -104,6 +104,8 @@ pub fn diffBasedOnStrings(allocator: std.mem.Allocator, before_str: []const u8, 
         .allocator = allocator,
         .argv = &[_][]const u8{
             "diff",
+            "-U",
+            "10",
             "-u",
             before_file.abs_path,
             after_file.abs_path,
