@@ -5,6 +5,8 @@ const Memory = PVM.Memory;
 const ExecutionContext = PVM.ExecutionContext;
 const InstructionWithArgs = PVM.InstructionWithArgs;
 
+const codec = @import("../codec.zig");
+
 const trace = @import("../tracing.zig").scoped(.pvm_test);
 
 pub const InstructionExecutionResult = struct {
@@ -91,14 +93,31 @@ pub const TestEnvironment = struct {
         // Encode the instruction into the program's code section
         const encoded = try instruction.encodeOwned();
 
-        const raw_program_header = [_]u8{ 0, 0, encoded.len };
-        const raw_program_tail = [_]u8{0x01};
+        // Use ArrayList to build the program
+        var program_buffer = std.ArrayList(u8).init(self.allocator);
+        defer program_buffer.deinit();
 
-        const raw_program = try self.allocator.alloc(u8, raw_program_header.len + encoded.len + raw_program_tail.len);
+        // Create a writer for the ArrayList
+        const writer = program_buffer.writer();
+
+        // Write program header
+        try writer.writeByte(0);
+        try writer.writeByte(0);
+        try codec.writeInteger(encoded.len, writer);
+
+        // Write encoded instruction
+        try writer.writeAll(encoded.asSlice());
+
+        // Write program mask
+        const mask_bytes = try std.math.divCeil(usize, encoded.len, 8);
+        try writer.writeByte(0x01);
+        if (mask_bytes > 1) {
+            try writer.writeByte(0x00);
+        }
+
+        // Get the final program
+        const raw_program = try program_buffer.toOwnedSlice();
         defer self.allocator.free(raw_program);
-        @memcpy(raw_program[0..raw_program_header.len], &raw_program_header);
-        @memcpy(raw_program[raw_program_header.len..][0..encoded.len], encoded.asSlice());
-        @memcpy(raw_program[raw_program_header.len + encoded.len ..][0..raw_program_tail.len], &raw_program_tail);
 
         var execution_context = try ExecutionContext.initSimple(
             self.allocator,

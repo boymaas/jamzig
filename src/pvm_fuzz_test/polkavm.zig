@@ -95,16 +95,20 @@ pub const TestEnvironment = struct {
         const encoded_instruction = try instruction.encodeOwned();
 
         // Create bitmask (the simplest one - just a single instruction)
-        const bitmask = [_]u8{0b00000001};
+        const bitmask = &switch (try std.math.divCeil(usize, encoded_instruction.len, 8)) {
+            1 => [_]u8{0b00000001},
+            2 => [_]u8{ 0b00000001, 0x00 },
+            else => @panic("unexpected case"),
+        };
 
         // Create jump table (simplest possible)
-        const jump_table = [_]u32{1};
+        const jump_table = [_]u32{0};
 
         // Build the program
         const raw_program = try polkavm.ProgramBuilder.init(
             self.allocator,
             encoded_instruction.asSlice(),
-            &bitmask,
+            bitmask,
             &jump_table,
             &[_]u8{}, // ro_data
             &[_]u8{}, // rw_data

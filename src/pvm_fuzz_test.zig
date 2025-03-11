@@ -95,15 +95,53 @@ test "instruction_fuzzer_with_config" {
     // Create custom config
     const config = FuzzerConfig{
         .seed = 42,
-        .num_cases = 50,
+        .num_cases = 1_000_000_000_000,
         .verbose = true,
     };
 
     var fzzr = InstructionFuzzer.initWithConfig(allocator, config);
 
     var iter = fzzr.iterator(config.num_cases);
+    var counter: usize = 0;
     while (iter.next()) |instruction| {
-        std.debug.print("Instruction: {any}\n", .{instruction.args});
+        if (counter % 10_000 == 0) {
+            std.debug.print("\nCase: {d}", .{counter});
+        }
+        counter += 1;
+        // std.debug.print("Instruction: {}\r", .{instruction});
+
+        // Not yet implemented
+        if (instruction.instruction == .sbrk) {
+            continue;
+        }
+
+        // Ignore for now
+        if (instruction.isTerminationInstruction()) {
+            continue;
+        }
+
+        // Ignore for now
+        if (instruction.getMemoryAccess()) |access| {
+            _ = access;
+            continue;
+        }
+
+        var ccheck = try crosscheck.CrossCheck.init(allocator);
+        defer ccheck.deinit();
+
+        // Load up with large register values so
+        // we will wrap around
+        for (&ccheck.initial_registers) |*reg_value| {
+            reg_value.* = fzzr.seed_gen.randomRegisterValue();
+        }
+
+        var result = try ccheck.compareInstruction(instruction);
+        defer result.deinit(allocator);
+        if (!result.matchesExactly()) {
+            std.debug.print("\n\n", .{});
+            try result.getDifferenceReport(std.io.getStdErr().writer());
+            break;
+        }
     }
 }
 
