@@ -272,7 +272,7 @@ pub const ServiceAccount = struct {
                 _ = self.preimage_lookups.remove(lookup_key);
                 _ = self.preimages.remove(hash);
             } else if (pi.len == 1) {
-                pi[1] = current_slot; // [x, t]
+                preimage_lookup.status[1] = current_slot; // [x, t]
             } else if (pi.len == 2 and pi[1].? < current_slot -| preimage_expungement_period) {
                 _ = self.preimage_lookups.remove(lookup_key);
                 _ = self.preimages.remove(hash);

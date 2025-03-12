@@ -665,6 +665,39 @@ pub fn HostCalls(params: Params) type {
             return .play;
         }
 
+        /// Host call implementation for checkpoint (Ω_C)
+        pub fn checkpoint(
+            exec_ctx: *PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) PVM.HostCallResult {
+            const span = trace.span(.host_call_checkpoint);
+            defer span.deinit();
+
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
+
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+
+            // According to graypaper B.7, the checkpoint operation:
+            // 1. Sets the exceptional dimension to the value of the regular dimension
+            // 2. Returns the remaining gas in register 7
+
+            span.debug("Host call: checkpoint - cloning regular context to exceptional", .{});
+
+            // Clone the regular context to the exceptional context
+            // This involves a deep copy of all state to ensure complete isolation
+            host_ctx.exceptional.deinit();
+            host_ctx.exceptional = host_ctx.regular.deepClone() catch {
+                return .{ .terminal = .panic };
+            };
+
+            // Return the remaining gas as per the specification
+            exec_ctx.registers[7] = @intCast(exec_ctx.gas);
+
+            span.debug("Checkpoint created successfully, remaining gas: {d}", .{exec_ctx.gas});
+            return .play;
+        }
+
         /// Host call implementation for new service (Ω_N)
         pub fn newService(
             exec_ctx: *PVM.ExecutionContext,
