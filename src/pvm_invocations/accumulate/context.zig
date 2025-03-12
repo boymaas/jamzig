@@ -16,12 +16,14 @@ pub fn AccumulationContext(params: Params) type {
         validator_keys: CopyOnWrite(state.Iota), // i ∈ ⟦K⟧_V
         authorizer_queue: CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)), // q ∈ _C⟦H⟧^Q_H_C
         privileges: CopyOnWrite(state.Chi), // x ∈ (N_S, N_S, N_S, D⟨N_S → N_G⟩)
+        time: *const params.Time(),
 
         const InitArgs = struct {
             service_accounts: *state.Delta,
             validator_keys: *state.Iota,
             authorizer_queue: *state.Phi(params.core_count, params.max_authorizations_queue_items),
             privileges: *state.Chi,
+            time: *const params.Time(),
         };
 
         pub fn build(allocator: std.mem.Allocator, args: InitArgs) @This() {
@@ -30,6 +32,7 @@ pub fn AccumulationContext(params: Params) type {
                 .validator_keys = CopyOnWrite(state.Iota).init(allocator, args.validator_keys),
                 .authorizer_queue = CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)).init(allocator, args.authorizer_queue),
                 .privileges = CopyOnWrite(state.Chi).init(allocator, args.privileges),
+                .time = args.time,
             };
         }
 
@@ -42,6 +45,8 @@ pub fn AccumulationContext(params: Params) type {
             try self.service_accounts.commit();
         }
 
+        // TODO: since its deepCloning the wrappers and not really the wrapped objects
+        // maybe we should rename this function as its not really a deepClone
         pub fn deepClone(self: @This()) !@This() {
             return @This(){
                 // Create a deep clone of the DeltaSnapshot,
@@ -50,6 +55,9 @@ pub fn AccumulationContext(params: Params) type {
                 .validator_keys = try self.validator_keys.deepClone(),
                 .authorizer_queue = try self.authorizer_queue.deepClone(),
                 .privileges = try self.privileges.deepClone(),
+                // The above deepClones clone the wrappers, the references stay intack
+                // since time is not a wrapper. We just pass the pointer, as this will never be mutated
+                .time = self.time,
             };
         }
 

@@ -360,6 +360,7 @@ pub fn processAccumulateReports(
             .validator_keys = try stx.ensure(.iota_prime),
             .authorizer_queue = try stx.ensure(.phi_prime),
             .privileges = try stx.ensure(.chi_prime),
+            .time = &stx.time,
         },
     );
     defer accumulation_context.deinit();

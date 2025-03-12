@@ -756,6 +756,63 @@ pub fn HostCalls(params: Params) type {
             return .play;
         }
 
+        /// Host call implementation for forget preimage (Ω_F)
+        pub fn forgetPreimage(
+            exec_ctx: *PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) PVM.HostCallResult {
+            const span = trace.span(.host_call_forget);
+            defer span.deinit();
+
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
+
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            var ctx_regular = &host_ctx.regular;
+            const current_timeslot = ctx_regular.context.time.current_slot;
+
+            // Get registers: [o, z] - hash pointer and size
+            const hash_ptr = exec_ctx.registers[7];
+            const preimage_size = exec_ctx.registers[8];
+
+            span.debug("Host call: forget preimage", .{});
+            span.debug("Hash ptr: 0x{x}, Hash size: {d}", .{ hash_ptr, preimage_size });
+
+            // Read hash from memory
+            span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
+            const hash_slice = exec_ctx.memory.readSlice(@truncate(hash_ptr), 32) catch {
+                span.err("Memory access failed while reading hash", .{});
+                return .{ .terminal = .panic };
+            };
+
+            const hash: [32]u8 = hash_slice[0..32].*;
+            span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
+
+            // Get mutable service account
+            span.debug("Getting mutable service account ID: {d}", .{ctx_regular.service_id});
+            const service_account = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
+                span.err("Could not get mutable instance of service account", .{});
+                return .{ .terminal = .panic };
+            } orelse {
+                span.err("Service account not found", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
+                return .play;
+            };
+
+            // Try to forget the preimage, this either succeeds and mutates the service, or fails and it did not mutate
+            span.debug("Attempting to forget preimage", .{});
+            service_account.forgetPreimage(hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch {
+                span.err("Error while forgetting preimage", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
+                return .play;
+            };
+
+            // Success result
+            span.debug("Preimage forgotten successfully", .{});
+            exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.OK);
+            return .play;
+        }
+
         /// Host call implementation for yield (Ω_P)
         pub fn yieldAccumulationResult(
             exec_ctx: *PVM.ExecutionContext,

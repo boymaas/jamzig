@@ -55,6 +55,19 @@ pub const PreimageLookup = struct {
 
         return self.status[0..non_null_len];
     }
+
+    pub fn asSliceMut(self: *@This()) []?Timeslot {
+        // Else we have an existing one, now set the appropiate
+        // value based on the tailing count
+        var non_null_len: usize = 0;
+        for (self.status) |e| {
+            if (e != null) {
+                non_null_len += 1;
+            } else break;
+        }
+
+        return self.status[0..non_null_len];
+    }
 };
 
 pub const PreimageLookupKey = struct {
@@ -226,6 +239,38 @@ pub const ServiceAccount = struct {
                 .status = .{ null, null, null },
             };
             try self.preimage_lookups.put(key, new_lookup);
+        }
+    }
+
+    /// Forgets a preimage
+    pub fn forgetPreimage(
+        self: *ServiceAccount,
+        hash: Hash,
+        length: u32,
+        current_slot: types.TimeSlot,
+        preimage_expungement_period: u32,
+    ) !void {
+        // we can remove the entries when timeout occurred
+        const lookup_key = PreimageLookupKey{ .hash = hash, .length = length };
+        if (self.preimage_lookups.getPtr(lookup_key)) |preimage_lookup| {
+            var pi = preimage_lookup.asSliceMut();
+            if (pi.len == 0) {
+                _ = self.preimage_lookups.remove(lookup_key);
+                _ = self.preimages.remove(hash);
+            } else if (pi.len == 1) {
+                pi[1] = current_slot; // [x, t]
+            } else if (pi.len == 2 and pi[1].? < current_slot -| preimage_expungement_period) {
+                _ = self.preimage_lookups.remove(lookup_key);
+                _ = self.preimages.remove(hash);
+            } else if (pi.len == 3 and pi[1].? < current_slot -| preimage_expungement_period) {
+                // [x,y,w]
+                pi[0] = pi[2];
+                pi[1] = current_slot;
+                pi[2] = null;
+            } else {
+                // TODO: check this against GP
+                return error.IncorrectPreimageLookupState;
+            }
         }
     }
 
