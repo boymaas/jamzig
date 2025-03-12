@@ -107,7 +107,7 @@ pub fn runStateTransitionTests(
         if (current_state) |*cs| cs.deinit(allocator);
     }
 
-    for (state_transition_vectors.items()[14..15]) |state_transition_vector| {
+    for (state_transition_vectors.items()[14..]) |state_transition_vector| {
         // std.debug.print("\nProcessing transition {d}/{d}\n", .{ i + 1, state_transition_vectors.items().len });
 
         var state_transition = try loader.loadTestVector(allocator, state_transition_vector.bin.path);

@@ -227,11 +227,21 @@ pub const ServiceAccount = struct {
     //  preimage. It should not be available already.
 
     /// Created an entry in preimages_lookups indicating we need a preimage
-    pub fn solicitPreimage(self: *ServiceAccount, hash: Hash, length: u32) !void {
+    pub fn solicitPreimage(
+        self: *ServiceAccount,
+        hash: Hash,
+        length: u32,
+        current_timeslot: types.TimeSlot,
+    ) !void {
         const key = PreimageLookupKey{ .hash = hash, .length = length };
 
         // Check if we already have an entry for this hash/length
-        if (self.preimage_lookups.get(key)) |_| {
+        if (self.preimage_lookups.getPtr(key)) |preimage_lookup| {
+            const pi = preimage_lookup.asSlice();
+            if (pi.len == 2) { // [x,y]
+                preimage_lookup.status[2] = current_timeslot;
+                return;
+            }
             return error.AlreadySolicited;
         } else {
             // If no lookup exists yet, create a new one with an empty status

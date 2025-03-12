@@ -738,7 +738,7 @@ pub fn HostCalls(params: Params) type {
             new_account.balance = initial_balance;
 
             span.debug("Integrating preimage lookup", .{});
-            new_account.solicitPreimage(code_hash, code_len) catch {
+            new_account.solicitPreimage(code_hash, code_len, ctx_regular.context.time.current_slot) catch {
                 span.err("Failed to integrate preimage lookup, out of memory", .{});
                 return .{ .terminal = .panic };
             };
@@ -753,6 +753,79 @@ pub fn HostCalls(params: Params) type {
             });
             exec_ctx.registers[7] = ctx_regular.new_service_id; // Return the new service ID on success
             ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, ctx_regular.new_service_id); // Return the new service ID on success
+            return .play;
+        }
+
+        /// Host call implementation for solicit preimage (Ω_S)
+        pub fn solicitPreimage(
+            exec_ctx: *PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) PVM.HostCallResult {
+            const span = trace.span(.host_call_solicit);
+            defer span.deinit();
+
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
+
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular: *Dimension = &host_ctx.regular;
+            const current_timeslot = ctx_regular.context.time.current_slot;
+
+            // Get registers per graypaper B.7: [o, z]
+            const hash_ptr = exec_ctx.registers[7]; // Hash pointer
+            const preimage_size = exec_ctx.registers[8]; // Preimage size
+
+            span.debug("Host call: solicit preimage for service {d}", .{ctx_regular.service_id});
+            span.debug("Hash ptr: 0x{x}, Preimage size: {d}", .{ hash_ptr, preimage_size });
+
+            // Read hash from memory
+            span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
+            const hash_slice = exec_ctx.memory.readSlice(@truncate(hash_ptr), 32) catch {
+                span.err("Memory access failed while reading hash", .{});
+                return .{ .terminal = .panic };
+            };
+
+            const hash: [32]u8 = hash_slice[0..32].*;
+            span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
+
+            // Get mutable service account
+            span.debug("Getting mutable service account ID: {d}", .{ctx_regular.service_id});
+            const service_account = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
+                span.err("Could not get mutable instance of service account", .{});
+                return .{ .terminal = .panic };
+            } orelse {
+                span.err("Service account not found", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
+                return .play;
+            };
+
+            // Calculate storage footprint for the preimage
+            const additional_storage_size: u64 = 81 + preimage_size; // 81 bytes overhead + preimage size
+
+            // Check if service has enough balance to store this data
+            span.debug("Checking if service has enough balance to store preimage", .{});
+            const footprint = service_account.storageFootprint();
+            const additional_balance_needed = params.min_balance_per_item +
+                params.min_balance_per_octet * additional_storage_size;
+
+            if (footprint.a_t + additional_balance_needed > service_account.balance) {
+                span.debug("Insufficient balance for soliciting preimage, returning FULL", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.FULL);
+                return .play;
+            }
+
+            // Try to solicit the preimage
+            span.debug("Attempting to solicit preimage", .{});
+            if (service_account.solicitPreimage(hash, @intCast(preimage_size), current_timeslot)) |_| {
+                // Success, preimage solicited
+                span.debug("Preimage solicited successfully", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.OK);
+            } else |err| {
+                // Error occurred while soliciting preimage
+                span.err("Error while soliciting preimage: {}", .{err});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
+            }
+
             return .play;
         }
 
