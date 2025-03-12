@@ -271,6 +271,8 @@ pub const ServiceAccount = struct {
                 // TODO: check this against GP
                 return error.IncorrectPreimageLookupState;
             }
+        } else {
+            return error.PreimageLookupKeyMissing;
         }
     }
 

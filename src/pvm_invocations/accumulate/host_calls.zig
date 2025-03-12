@@ -444,14 +444,14 @@ pub fn HostCalls(params: Params) type {
 
             // Return the previous length per graypaper
             // FIXME: (JAMDUNA) returns here 12
-            // exec_ctx.registers[7] = value.len;
+            exec_ctx.registers[7] = value.len;
             // https://github.com/jam-duna/jamtestnet/issues/144
 
             // This is GP
-            exec_ctx.registers[7] = if (maybe_prior_value) |_|
-                maybe_prior_value.?.len
-            else
-                @intFromEnum(HostCallReturnCode.NONE);
+            // exec_ctx.registers[7] = if (maybe_prior_value) |_|
+            //     maybe_prior_value.?.len
+            // else
+            //     @intFromEnum(HostCallReturnCode.NONE);
 
             return .play;
         }
@@ -801,6 +801,7 @@ pub fn HostCalls(params: Params) type {
 
             // Try to forget the preimage, this either succeeds and mutates the service, or fails and it did not mutate
             span.debug("Attempting to forget preimage", .{});
+            // span.trace("Service Account: {}", .{types.fmt.format(service_account)});
             service_account.forgetPreimage(hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch {
                 span.err("Error while forgetting preimage", .{});
                 exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);

@@ -95,7 +95,8 @@ pub const PVM = struct {
 
         // Decode instruction
         const instruction = try context.decoder.decodeInstruction(context.pc);
-        span.trace("JAMDUNA PC {d} {s} g={d} reg={any}", .{ context.pc, instruction, context.gas, context.registers });
+        const pc_before = context.pc;
+        defer span.trace("JAMDUNA PC {d} {s} g={d} reg={any}", .{ pc_before, instruction, context.gas, context.registers });
         //  PC 2512 STORE_IMM_IND_U8            g=9071 pvmHash=b4dc..84ac reg="[8 4278056032 0 256 0 2953942612 4278058975 9071 1 4278056408 8 4278056408 0]"
         span.debug("Executing instruction at PC: 0x{d:0>8}: {}", .{ context.pc, instruction });
 
