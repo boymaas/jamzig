@@ -853,6 +853,122 @@ pub fn HostCalls(params: Params) type {
             return .play;
         }
 
+        /// Host call implementation for eject service (Ω_J)
+        pub fn ejectService(
+            exec_ctx: *PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) PVM.HostCallResult {
+            const span = trace.span(.host_call_eject);
+            defer span.deinit();
+
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
+
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular: *Dimension = &host_ctx.regular;
+
+            // Get registers per graypaper B.7: [d, o]
+            const target_service_id = exec_ctx.registers[7]; // Service ID to eject (d)
+            const hash_ptr = exec_ctx.registers[8]; // Hash pointer (o)
+
+            span.debug("Host call: eject service {d}", .{target_service_id});
+            span.debug("Hash pointer: 0x{x}", .{hash_ptr});
+
+            // Check if target service is current service (can't eject self)
+            if (target_service_id == ctx_regular.service_id) {
+                span.debug("Cannot eject current service, returning WHO error", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.WHO);
+                return .play;
+            }
+
+            // Get target service account (must exist)
+            const target_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(target_service_id)) orelse {
+                span.debug("Target service not found, returning WHO error", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.WHO);
+                return .play;
+            };
+
+            // Read hash from memory
+            span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
+            const hash_slice = exec_ctx.memory.readSlice(@truncate(hash_ptr), 32) catch {
+                span.err("Memory access failed while reading hash", .{});
+                return .{ .terminal = .panic };
+            };
+            const hash: [32]u8 = hash_slice[0..32].*;
+            span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
+
+            // Get the current_service
+            const current_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
+                span.err("Could not get mutable instance of current service", .{});
+                return .{ .terminal = .panic };
+            } orelse {
+                span.err("Current service not found (should never happen)", .{});
+                return .{ .terminal = .panic };
+            };
+
+            if (!std.mem.eql(u8, &current_service.code_hash, &target_service.code_hash)) {
+                span.debug("Target service code hash doesn't match current code hah, returning WHO error", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.WHO);
+                return .play;
+            }
+
+            // Per graypaper, check if the lookup status has a valid record
+            // First determine the length
+            const footprint = target_service.storageFootprint();
+            const l = @max(81, footprint.a_o) - 81;
+            const lookup_status = target_service.getPreimageLookup(hash, @intCast(l)) orelse {
+                span.debug("Hash lookup not found, returning HUH error", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
+                return .play;
+            };
+
+            // Seems we should only have one preimage_lookup and nothing in the storage
+            // that is the only way this can a_i
+            if (footprint.a_i != 2) {
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
+                return .play;
+            }
+
+            const current_timeslot = ctx_regular.context.time.current_slot;
+            const status = lookup_status.asSlice();
+
+            // Check various conditions for lookup status per graypaper B.7
+            // d_i != 2: The lookup item index must be 2
+            if (status.len != 2) {
+                span.debug("Lookup status length is not 2, returning HUH error", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
+                return .play;
+            }
+
+            // Check if time condition is met for preimage expungement
+            if (status[1].? >= current_timeslot -| params.preimage_expungement_period) {
+                span.debug("Preimage not yet expired, returning HUH error", .{});
+                exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
+                return .play;
+            }
+
+            // All checks passed, can eject the service
+            span.debug("Ejecting service {d}", .{target_service_id});
+
+            const target_balance = target_service.balance;
+
+            // Remove the service from the state, do this first, as this could fail
+            // and we do not want to have altered state
+            _ = ctx_regular.context.service_accounts.removeService(@intCast(target_service_id)) catch {
+                span.err("Failed to remove service", .{});
+                return .{ .terminal = .panic };
+            };
+
+            // Transfer the ejected service's balance to the current service
+            span.debug("Transferring balance {d} from ejected service to current service", .{target_balance});
+            current_service.balance += target_balance;
+
+            // Return success
+            span.debug("Service ejected successfully", .{});
+            exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.OK);
+            return .play;
+        }
+
         /// Host call implementation for query preimage (Ω_Q)
         pub fn queryPreimage(
             exec_ctx: *PVM.ExecutionContext,

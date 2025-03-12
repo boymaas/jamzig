@@ -28,6 +28,7 @@ pub const Timeslot = types.TimeSlot;
 pub const StorageFootprint = struct {
     a_i: u32,
     a_l: u64,
+    a_o: u64,
     a_t: Balance,
 };
 
@@ -420,7 +421,8 @@ pub const ServiceAccount = struct {
         // a_t
         const a_t: Balance = B_S + B_I * a_i + B_L * a_l;
 
-        return .{ .a_i = a_i, .a_l = a_l, .a_t = a_t };
+        // TODO: remove a_l, is old name
+        return .{ .a_i = a_i, .a_l = a_l, .a_o = a_l, .a_t = a_t };
     }
 };
 
