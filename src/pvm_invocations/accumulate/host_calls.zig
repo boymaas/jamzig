@@ -443,15 +443,16 @@ pub fn HostCalls(params: Params) type {
             }
 
             // Return the previous length per graypaper
-            // FIXME: (JAMDUNA) returns here 12
-            exec_ctx.registers[7] = value.len;
+            // DONE: (JAMDUNA) returns here 12
+            // exec_ctx.registers[7] = value.len;
             // https://github.com/jam-duna/jamtestnet/issues/144
+            // Wed 12 Mar 2025 17:11:17 CET Can be removed
 
             // This is GP
-            // exec_ctx.registers[7] = if (maybe_prior_value) |_|
-            //     maybe_prior_value.?.len
-            // else
-            //     @intFromEnum(HostCallReturnCode.NONE);
+            exec_ctx.registers[7] = if (maybe_prior_value) |_|
+                maybe_prior_value.?.len
+            else
+                @intFromEnum(HostCallReturnCode.NONE);
 
             return .play;
         }
