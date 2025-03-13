@@ -32,7 +32,6 @@ pub fn convertTestStateIntoJamState(
     jam_state.delta = try convertServiceAccounts(
         allocator,
         test_state.accounts,
-        test_state.slot,
     );
 
     jam_state.chi = try convertPrivileges(
@@ -58,19 +57,18 @@ pub fn convertTestStateIntoJamState(
 pub fn convertServiceAccounts(
     allocator: std.mem.Allocator,
     accounts: []tv_types.ServiceAccount,
-    slot: types.TimeSlot,
 ) !state.Delta {
     var delta = state.Delta.init(allocator);
     errdefer delta.deinit();
 
     for (accounts) |account| {
-        try delta.accounts.put(account.id, try convertServiceAccount(allocator, account, slot));
+        try delta.accounts.put(account.id, try convertServiceAccount(allocator, account));
     }
 
     return delta;
 }
 
-pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.ServiceAccount, slot: types.TimeSlot) !state.services.ServiceAccount {
+pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.ServiceAccount) !state.services.ServiceAccount {
     var service_account = state.services.ServiceAccount.init(allocator);
     errdefer service_account.deinit();
 
@@ -83,7 +81,7 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
     // Add all preimages
     for (account.data.preimages) |preimage| {
         try service_account.addPreimage(preimage.hash, preimage.blob);
-        try service_account.registerPreimageAvailable(preimage.hash, @intCast(preimage.blob.len), slot);
+        try service_account.registerPreimageAvailable(preimage.hash, @intCast(preimage.blob.len), null);
     }
 
     return service_account;

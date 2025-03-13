@@ -28,13 +28,13 @@ fn parseLengthFromDesc(desc: []const u8) !u32 {
 }
 
 fn parseKFromDesc(desc: []const u8) ![32]u8 {
-    std.debug.print("{s}", .{desc});
+    // std.debug.print("{s}", .{desc});
     const k_prefix = " k=0x";
     const k_start = std.mem.indexOf(u8, desc, k_prefix) orelse return error.InvalidDescFormat;
     const hex_start = k_start + k_prefix.len;
 
     const hex_string = desc[hex_start..][0..64];
-    std.debug.print("{s}\n", .{hex_string});
+    // std.debug.print("{s}\n", .{hex_string});
 
     // Parse the hex string into bytes
     var masked_bytes: [32]u8 = undefined;
