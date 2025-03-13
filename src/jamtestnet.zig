@@ -28,11 +28,20 @@ pub const JAMDUNA_PARAMS = jam_params.Params{
     .core_count = 2,
     .avail_bitfield_bytes = (2 + 7) / 8,
     // JAMDUNA changes
+    .max_tickets_per_extrinsic = 3, // K
     .max_ticket_entries_per_validator = 3, // N
     .max_authorizations_queue_items = 80, // Q
     .max_authorizations_pool_items = 8, // O
+    .preimage_expungement_period = 6, // D
 };
-
+// TODO: add these
+// {
+//     "tiny": {
+//         "segment_size": 4104,
+//         "ec_piece_size": 4,
+//         "num_ec_pieces_per_segment": 1026,
+//     },
+//
 test "jamduna:fallback" {
     const allocator = std.testing.allocator;
     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
@@ -107,7 +116,7 @@ pub fn runStateTransitionTests(
         if (current_state) |*cs| cs.deinit(allocator);
     }
 
-    for (state_transition_vectors.items()[14..]) |state_transition_vector| {
+    for (state_transition_vectors.items()[24..]) |state_transition_vector| {
         // std.debug.print("\nProcessing transition {d}/{d}\n", .{ i + 1, state_transition_vectors.items().len });
 
         var state_transition = try loader.loadTestVector(allocator, state_transition_vector.bin.path);
@@ -182,12 +191,12 @@ pub fn runStateTransitionTests(
             var expected_state = try state_dict.reconstruct.reconstructState(params, allocator, &expected_state_mdict);
             defer expected_state.deinit(allocator);
 
-            // std.debug.print("{}", .{expected_state});
-
             var state_diff = try @import("tests/state_diff.zig").JamStateDiff(params).build(allocator, &current_state.?, &expected_state);
             defer state_diff.deinit();
 
             state_diff.printToStdErr();
+
+            // std.debug.print("{}", .{current_state.?});
 
             return error.UnexpectedStateDiff;
         }

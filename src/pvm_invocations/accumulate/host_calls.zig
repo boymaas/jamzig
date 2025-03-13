@@ -831,6 +831,10 @@ pub fn HostCalls(params: Params) type {
             // Create a sequence of authorizer hashes
             const authorizer_hashes = std.mem.bytesAsSlice(types.AuthorizerHash, hashes_data);
 
+            for (authorizer_hashes, 0..) |hash, i| {
+                span.trace("Authorizer hash {d}: {s}", .{ i, std.fmt.fmtSliceHexLower(&hash) });
+            }
+
             // Get mutable access to the authorizer queue
             span.debug("Updating authorizer queue for core {d}", .{core_index});
             const auth_queue: *state.Phi(params.core_count, params.max_authorizations_queue_items) = ctx_regular.context.authorizer_queue.getMutable() catch {
@@ -1252,7 +1256,7 @@ pub fn HostCalls(params: Params) type {
             span.debug("Attempting to solicit preimage", .{});
             if (service_account.solicitPreimage(hash, @intCast(preimage_size), current_timeslot)) |_| {
                 // Success, preimage solicited
-                span.debug("Preimage solicited successfully", .{});
+                span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(hash, @intCast(preimage_size))});
                 exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.OK);
             } else |err| {
                 // Error occurred while soliciting preimage
@@ -1308,9 +1312,9 @@ pub fn HostCalls(params: Params) type {
 
             // Try to forget the preimage, this either succeeds and mutates the service, or fails and it did not mutate
             span.debug("Attempting to forget preimage", .{});
-            // span.trace("Service Account: {}", .{types.fmt.format(service_account)});
-            service_account.forgetPreimage(hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch {
-                span.err("Error while forgetting preimage", .{});
+            // span.trace("Service Account: {}", .{types.fmt.format(service_account.preimage_lookup)});
+            service_account.forgetPreimage(hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch |err| {
+                span.err("Error while forgetting preimage: {}", .{err});
                 exec_ctx.registers[7] = @intFromEnum(HostCallReturnCode.HUH);
                 return .play;
             };

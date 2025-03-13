@@ -5,7 +5,7 @@ const types = @import("../types.zig");
 const state = @import("../state.zig");
 const jam_params = @import("../jam_params.zig");
 
-const trace = @import("../tracing.zig").scoped(.accumulate_execution);
+const trace = @import("../tracing.zig").scoped(.accumulate);
 
 const AccumulationContext = pvm_accumulate.AccumulationContext;
 const AccumulationOperand = pvm_accumulate.AccumulationOperand;
@@ -63,6 +63,8 @@ pub fn outerAccumulation(
     const span = trace.span(.outer_accumulation);
     defer span.deinit();
     span.debug("Starting outer accumulation with gas limit: {d}", .{gas_limit});
+
+    span.trace("Processing following work_reports: {}", .{types.fmt.format(work_reports)});
 
     // Initialize output containers
     var transfers = std.ArrayList(DeferredTransfer).init(allocator);
@@ -386,7 +388,7 @@ pub fn parallelizedAccumulation(
             entropy,
             service_id,
             gas_limit,
-            if (operands_opt) |operands| operands.items.ptr[0..operands.items.len] else &[_]AccumulationOperand{},
+            if (operands_opt) |operands| operands.items else &[_]AccumulationOperand{},
         );
         defer result.deinit(allocator);
 

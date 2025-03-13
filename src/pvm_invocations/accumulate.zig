@@ -65,7 +65,11 @@ pub fn invoke(
         .operands = accumulation_operands,
     };
 
+    span.trace("AccumulateArgs:  {}\n", .{types.fmt.format(arguments)});
+
     try codec.serialize(AccumulateArgs, .{}, args_buffer.writer(), arguments);
+
+    span.trace("AccumulateArgs Encoded: {}", .{std.fmt.fmtSliceHexLower(args_buffer.items)});
 
     span.debug("Setting up host call functions", .{});
     var host_call_map = try HostCallMap.buildOrGetCached(params, allocator);
