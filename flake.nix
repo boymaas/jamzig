@@ -27,10 +27,10 @@
       # Check the flake.nix in zig2nix project for more options:
       # <https://github.com/Cloudef/zig2nix/blob/master/flake.nix>
       env = zig2nix.outputs.zig-env.${system} {
-        zig =  zig2nix.outputs.packages.${system}.zig."master".bin;
+        zig =  zig2nix.outputs.packages.${system}.zig-master;
       };
       system-triple = env.lib.zigTripleFromString system;
-    in with builtins; with env.lib; with env.pkgs.lib; rec {
+    in with builtins;  rec {
       # nix build .#target.{zig-target}
       # e.g. nix build .#target.x86_64-linux-gnu
       packages.target = genAttrs allTargetTriples (target: env.packageForTarget target ({

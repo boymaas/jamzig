@@ -90,7 +90,10 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
-        .test_runner = b.path("src/tests/runner.zig"),
+        .test_runner = .{
+            .path = b.path("src/tests/runner.zig"),
+            .mode = .simple,
+        },
         .filters = test_filters,
     });
 

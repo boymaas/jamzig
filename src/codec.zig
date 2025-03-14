@@ -244,7 +244,7 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
                 array_span.err("Arrays with sentinels are not supported", .{});
                 @compileError("Arrays with sentinels are not supported for deserialization");
             }
-            return try deserializeArray(arrayInfo.child, arrayInfo.len, allocator, reader);
+            return try deserializeArray(arrayInfo.child, arrayInfo.len, params, allocator, reader);
         },
         .pointer => |pointerInfo| {
             const ptr_span = span.child(.pointer);
@@ -337,7 +337,7 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
     }
 }
 
-fn deserializeArray(comptime T: type, comptime len: usize, allocator: std.mem.Allocator, reader: anytype) ![len]T {
+fn deserializeArray(comptime T: type, comptime len: usize, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype) ![len]T {
     const span = trace.span(.array_deserialize);
     defer span.deinit();
     span.debug("Deserializing fixed array - type: {s}, length: {d}", .{ @typeName(T), len });
@@ -358,7 +358,7 @@ fn deserializeArray(comptime T: type, comptime len: usize, allocator: std.mem.Al
             const element_span = span.child(.array_element);
             defer element_span.deinit();
             element_span.debug("Deserializing element {d} of {d}", .{ i + 1, len });
-            element.* = try recursiveDeserializeLeaky(T, .{}, allocator, reader);
+            element.* = try recursiveDeserializeLeaky(T, params, allocator, reader);
         }
     }
 
