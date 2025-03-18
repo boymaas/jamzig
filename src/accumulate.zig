@@ -6,35 +6,10 @@ const state_delta = @import("state_delta.zig");
 
 const WorkReportAndDeps = state.reports_ready.WorkReportAndDeps;
 const Params = @import("jam_params.zig").Params;
+const meta = @import("meta.zig");
 
 // Add tracing import
 const trace = @import("tracing.zig").scoped(.accumulate);
-
-fn deinitEntriesAndObject(allocator: std.mem.Allocator, aggregate: anytype) void {
-    for (aggregate.items) |*item| {
-        item.deinit(allocator);
-    }
-    aggregate.deinit();
-}
-
-fn mapWorkPackageHash(buffer: anytype, items: anytype) ![]types.WorkReportHash {
-    buffer.clearRetainingCapacity();
-    for (items) |item| {
-        try buffer.append(item.package_spec.hash);
-    }
-
-    return buffer.items;
-}
-
-pub fn Queued(T: type) type {
-    return std.ArrayList(T);
-}
-pub fn Accumulatable(T: type) type {
-    return std.ArrayList(T);
-}
-pub fn Resolved(T: type) type {
-    return std.ArrayList(T);
-}
 
 // 12.7 Walks the queued, updates dependencies and removes those who are already resolved
 fn queueEditingFunction(
@@ -176,9 +151,9 @@ pub fn processAccumulateReports(
 
     // Initialize lists for various report categories
     var accumulatable_buffer = Accumulatable(types.WorkReport).init(allocator);
-    defer deinitEntriesAndObject(allocator, accumulatable_buffer);
+    defer meta.deinit.deinitEntriesAndAggregate(allocator, accumulatable_buffer);
     var queued = Queued(WorkReportAndDeps).init(allocator);
-    defer deinitEntriesAndObject(allocator, queued);
+    defer meta.deinit.deinitEntriesAndAggregate(allocator, queued);
 
     span.debug("Initialized accumulatable and queued containers", .{});
 
@@ -275,7 +250,7 @@ pub fn processAccumulateReports(
     pending_span.debug("Building initial set of pending reports", .{});
 
     var pending_reports_queue = Queued(WorkReportAndDeps).init(allocator);
-    defer deinitEntriesAndObject(allocator, pending_reports_queue);
+    defer meta.deinit.deinitEntriesAndAggregate(allocator, pending_reports_queue);
 
     // 12.12: walk theta(current_slot_in_epoch..) join theta(..current_slot_in_epoch)
     var theta: *state.Theta(params.epoch_length) = try stx.ensure(.theta_prime);
@@ -345,8 +320,9 @@ pub fn processAccumulateReports(
 
     execute_span.debug("Gas limit calculated: {d} (G_T: {d}, core gas: {d}, free services gas: {d})", .{ gas_limit, params.total_gas_alloc_accumulation, core_gas, free_services_gas });
 
-    // TODO: assurances_test test vectors fail because of this limitation which is I believe in the graypaper. Check the testvectors if we need to use other params
-    // now just disabled this constraint
+    // TODO: assurances_test test vectors fail because of this limitation which
+    // is I believe in the graypaper. Check the testvectors if we need to use
+    // other params now just disabled this constraint
     // const accumulatable = accumulatable_buffer.items[0..@min(accumulatable_buffer.items.len, params.core_count)];
     const accumulatable = accumulatable_buffer.items;
     execute_span.debug("Executing outer accumulation with {d} reports and gas limit {d}", .{ accumulatable.len, gas_limit });
@@ -396,13 +372,7 @@ pub fn processAccumulateReports(
 
         // Group transfers by destination service
         var grouped_transfers = std.AutoHashMap(types.ServiceId, std.ArrayList(types.ServiceId)).init(allocator);
-        defer {
-            var vit = grouped_transfers.valueIterator();
-            while (vit.next()) |transfers_list| {
-                transfers_list.deinit();
-            }
-            grouped_transfers.deinit();
-        }
+        defer meta.deinit.deinitHashMapValuesAndMap(stx.allocator, grouped_transfers);
 
         // Process transfers for each destination service
         for (result.transfers) |transfer| {
@@ -523,12 +493,7 @@ pub fn processAccumulateReports(
 
     // Prepare blobs for Merkle tree
     var blobs = try std.ArrayList([]u8).initCapacity(allocator, result.accumulation_outputs.count());
-    defer {
-        for (blobs.items) |b| {
-            allocator.free(b);
-        }
-        blobs.deinit();
-    }
+    defer meta.deinit.allocFreeEntriesAndAggregate(stx.allocator, blobs);
 
     root_span.debug("Creating blobs for Merkle tree calculation", .{});
     for (keys.items, 0..) |key, i| {
@@ -557,4 +522,23 @@ pub fn processAccumulateReports(
 
     span.debug("Process accumulate reports completed successfully", .{});
     return accumulate_root;
+}
+
+fn mapWorkPackageHash(buffer: anytype, items: anytype) ![]types.WorkReportHash {
+    buffer.clearRetainingCapacity();
+    for (items) |item| {
+        try buffer.append(item.package_spec.hash);
+    }
+
+    return buffer.items;
+}
+
+pub fn Queued(T: type) type {
+    return std.ArrayList(T);
+}
+pub fn Accumulatable(T: type) type {
+    return std.ArrayList(T);
+}
+pub fn Resolved(T: type) type {
+    return std.ArrayList(T);
 }
