@@ -76,6 +76,18 @@ test "jamduna:assurances" {
     );
 }
 
+test "jamduna:orderedaccumulation" {
+    const allocator = std.testing.allocator;
+
+    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
+    try runStateTransitionTests(
+        JAMDUNA_PARAMS,
+        loader.loader(),
+        allocator,
+        "src/jamtestnet/teams/jamduna/data/orderedaccumulation/state_transitions",
+    );
+}
+
 test "javajam:safrole" {
     const allocator = std.testing.allocator;
     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};

@@ -501,6 +501,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                                         }
                                         break;
                                     }
+
                                     break :outer;
                                 }
                             }
@@ -514,31 +515,35 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                     }
 
                     // If not found in blocks, check current guarantees
-                    if (!found_package) {
+                    if (!found_package or true) {
                         const guarantees_span = lookup_span.child(.check_current_guarantees);
                         defer guarantees_span.deinit();
 
                         guarantees_span.debug("Searching in {d} current guarantees", .{guarantees.data.len});
 
-                        for (guarantees.data, 0..) |g, g_idx| {
+                        scan_guarantees: for (guarantees.data, 0..) |g, g_idx| {
                             guarantees_span.trace("Comparing with guarantee {d}: {s}", .{
                                 g_idx,
                                 std.fmt.fmtSliceHexLower(&g.report.package_spec.hash),
                             });
 
-                            if (std.mem.eql(u8, &g.report.package_spec.hash, &segment.work_package_hash)) {
-                                guarantees_span.debug("Found matching package in current guarantee {d}", .{g_idx});
-                                found_package = true;
+                            // std.debug.print("{}\n", .{types.fmt.format(g)});
 
-                                guarantees_span.trace("Checking segment root against exports root: {s}", .{
-                                    std.fmt.fmtSliceHexLower(&g.report.package_spec.exports_root),
-                                });
+                            for (g.report.segment_root_lookup) |srl| {
+                                if (std.mem.eql(u8, &srl.work_package_hash, &segment.work_package_hash)) {
+                                    guarantees_span.debug("Found matching package in current guarantee {d} segment_root_lookup", .{g_idx});
+                                    found_package = true;
 
-                                if (std.mem.eql(u8, &g.report.package_spec.exports_root, &segment.segment_tree_root)) {
-                                    guarantees_span.debug("Found matching segment root", .{});
-                                    matching_segment_root = true;
+                                    guarantees_span.trace("Checking segment root against exports root: {s}", .{
+                                        std.fmt.fmtSliceHexLower(&srl.segment_tree_root),
+                                    });
+
+                                    if (std.mem.eql(u8, &srl.segment_tree_root, &segment.segment_tree_root)) {
+                                        guarantees_span.debug("Found matching segment root", .{});
+                                        matching_segment_root = true;
+                                    }
+                                    break :scan_guarantees;
                                 }
-                                break;
                             }
                         }
 
