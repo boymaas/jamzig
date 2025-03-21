@@ -60,17 +60,25 @@ jobs:
       - uses: DeterminateSystems/flakehub-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
 
-      - name: Build and test for ${{ matrix.target }}
+      - name: Test Debug ${{ matrix.target }}
         if: ${{ matrix.can_test }}
         run: |
-          # Build and test
           nix run .#test -- --target ${{ matrix.target }} --progress
 
-      - name: Build and test-ffi for ${{ matrix.target }}
+      - name: Test ReleaseFast ${{ matrix.target }}
         if: ${{ matrix.can_test }}
         run: |
-          # Build and test
-          nix run .#test -- --target ${{ matrix.target }} --progress
+          nix run .#test-release-fast -- --target ${{ matrix.target }} --progress
+
+      - name: TestFFI Debug for ${{ matrix.target }}
+        if: ${{ matrix.can_test }}
+        run: |
+          nix run .#test-ffi -- --target ${{ matrix.target }} --progress
+
+      - name: TestFFI ReleaseFast for ${{ matrix.target }}
+        if: ${{ matrix.can_test }}
+        run: |
+          nix run .#test-ffi-release-fast -- --target ${{ matrix.target }} --progress
 
       - name: Build only for ${{ matrix.target }}
         if: ${{ !matrix.can_test }}
