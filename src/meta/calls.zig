@@ -32,13 +32,30 @@ pub fn callDeinit(value: anytype, allocator: std.mem.Allocator) void {
     }
 
     // Check the number of parameters the method expects
-    const params_len = method_info.@"fn".params.len;
+    const params = method_info.@"fn".params;
+    const params_0_info = @typeInfo(params[0].type.?);
+    const value_info = @typeInfo(@TypeOf(value));
 
-    // Call the method with the appropriate number of parameters
-    switch (params_len) {
-        1 => return @field(ValueType, "deinit")(value),
-        2 => return @field(ValueType, "deinit")(value, allocator),
-        else => @panic("deinit must take 0 or 1 parameters for: " ++ @typeName(ValueType)),
+    // Check if it expects a pointer
+    if ((params_0_info == .pointer and value_info == .pointer) or (params_0_info != .pointer and value_info != .pointer)) {
+        // Call the method with the appropriate number of parameters
+        switch (params.len) {
+            1 => return @field(ValueType, "deinit")(value),
+            2 => return @field(ValueType, "deinit")(value, allocator),
+            else => @panic("deinit must take 0 or 1 parameters for: " ++ @typeName(ValueType)),
+        }
+    } else if (params_0_info != .pointer and value_info == .pointer) {
+        switch (params.len) {
+            1 => return @field(ValueType, "deinit")(value.*),
+            2 => return @field(ValueType, "deinit")(value.*, allocator),
+            else => @panic("deinit must take 0 or 1 parameters for: " ++ @typeName(ValueType)),
+        }
+    } else {
+        switch (params.len) {
+            1 => return @field(ValueType, "deinit")(@constCast(&value)),
+            2 => return @field(ValueType, "deinit")(@constCast(&value), allocator),
+            else => @panic("deinit must take 0 or 1 parameters for: " ++ @typeName(ValueType)),
+        }
     }
 }
 

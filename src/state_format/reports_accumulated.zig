@@ -1,6 +1,6 @@
 const std = @import("std");
 const tfmt = @import("../types/fmt.zig");
-const Xi = @import("../accumulated_reports.zig").Xi;
+const Xi = @import("../reports_accumulated.zig").Xi;
 
 pub fn format(
     comptime epoch_size: usize,

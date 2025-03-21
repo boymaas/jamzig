@@ -1,7 +1,7 @@
 const std = @import("std");
 const state = @import("../state.zig");
 
-const Rho = @import("../pending_reports.zig").Rho;
+const Rho = @import("../reports_pending.zig").Rho;
 
 pub fn jsonStringify(
     comptime core_count: u16,

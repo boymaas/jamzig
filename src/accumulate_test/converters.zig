@@ -5,7 +5,7 @@ const state_delta = @import("../state_delta.zig");
 const accumulate = @import("../accumulate.zig");
 
 const services = @import("../services.zig");
-const state_theta = @import("../available_reports.zig");
+const state_theta = @import("../reports_ready.zig");
 
 const tv_types = @import("../jamtestvectors/accumulate.zig");
 const Params = @import("../jam_params.zig").Params;

@@ -60,9 +60,9 @@ comptime {
     _ = @import("state_encoding.zig");
     _ = @import("state_decoding.zig");
 
-    _ = @import("state_format/accumulated_reports.zig"); // TODO: rename to xi
+    _ = @import("state_format/reports_accumulated.zig"); // TODO: rename to xi
     _ = @import("state_format/authorization.zig"); // TODO: rename to alpha
-    _ = @import("state_format/available_reports.zig"); // TODO: rename to theta
+    _ = @import("state_format/reports_ready.zig"); // TODO: rename to theta
     _ = @import("state_format/chi.zig");
     _ = @import("state_format/delta.zig");
     _ = @import("state_format/jam_params.zig");
@@ -98,9 +98,9 @@ comptime {
     _ = @import("recent_blocks.zig");
     _ = @import("recent_blocks_test.zig");
 
-    _ = @import("pending_reports.zig");
-    _ = @import("available_reports.zig");
-    _ = @import("accumulated_reports.zig");
+    _ = @import("reports_pending.zig");
+    _ = @import("reports_ready.zig");
+    _ = @import("reports_accumulated.zig");
 
     _ = @import("validator_stats.zig");
 

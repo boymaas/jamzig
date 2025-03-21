@@ -331,6 +331,14 @@ pub const WorkReport = struct {
     segment_root_lookup: SegmentRootLookup,
     results: []WorkResult, // SIZE(1..4)
 
+    pub fn totalAccumulateGas(self: *const @This()) types.Gas {
+        var total: types.Gas = 0;
+        for (self.results) |result| {
+            total += result.accumulate_gas;
+        }
+        return total;
+    }
+
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
             .package_spec = self.package_spec,

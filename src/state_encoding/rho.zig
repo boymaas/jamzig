@@ -8,7 +8,7 @@ const jam_params = @import("../jam_params.zig");
 const encoder = @import("../codec/encoder.zig");
 const codec = @import("../codec.zig");
 
-const pending_reports = @import("../pending_reports.zig");
+const pending_reports = @import("../reports_pending.zig");
 const Rho = pending_reports.Rho;
 
 const trace = @import("../tracing.zig").scoped(.codec);

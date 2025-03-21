@@ -1,6 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
-const pending_reports = @import("../pending_reports.zig");
+const pending_reports = @import("../reports_pending.zig");
 const types = @import("../types.zig");
 const Rho = pending_reports.Rho;
 const codec = @import("../codec.zig");

@@ -106,7 +106,7 @@ pub fn transition(
     };
 }
 
-//  Merges the gamma_a and extrinsic tickets into a new ticket
+// Merges the gamma_a and extrinsic tickets into a new ticket
 // accumulator, limited by the epoch length.
 fn mergeTicketsIntoTicketAccumulatorGammaA(
     allocator: std.mem.Allocator,

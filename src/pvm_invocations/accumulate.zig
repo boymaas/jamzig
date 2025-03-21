@@ -11,7 +11,7 @@ const pvm_invocation = @import("../pvm/invocation.zig");
 const service_util = @import("accumulate/service_util.zig");
 
 pub const AccumulationContext = @import("accumulate/context.zig").AccumulationContext;
-const DeferredTransfer = @import("accumulate/types.zig").DeferredTransfer;
+pub const DeferredTransfer = @import("accumulate/types.zig").DeferredTransfer;
 const AccumulateHostCalls = @import("accumulate/host_calls.zig").HostCalls;
 const HostCallId = @import("accumulate/host_calls.zig").HostCallId;
 
@@ -359,6 +359,12 @@ pub const AccumulationResult = struct {
 
     /// Amount of gas consumed during accumulation
     gas_used: types.Gas,
+
+    pub const Empty = @This(){
+        .transfers = &[_]DeferredTransfer{},
+        .accumulation_output = null,
+        .gas_used = 0,
+    };
 
     pub fn takeTransfers(self: *@This()) []DeferredTransfer {
         const result = self.transfers;

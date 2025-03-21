@@ -1,5 +1,5 @@
 const std = @import("std");
-const Theta = @import("../available_reports.zig").Theta;
+const Theta = @import("../reports_ready.zig").Theta;
 
 pub fn jsonStringify(comptime epoch_size: usize, self: *const Theta(epoch_size), jw: anytype) !void {
     try jw.beginArray();

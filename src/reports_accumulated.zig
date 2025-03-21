@@ -59,7 +59,7 @@ pub fn Xi(comptime epoch_size: usize) type {
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-            try @import("state_json/accumulated_reports.zig").jsonStringify(epoch_size, self, jw);
+            try @import("state_json/reports_accumulated.zig").jsonStringify(epoch_size, self, jw);
         }
 
         pub fn format(
@@ -68,7 +68,7 @@ pub fn Xi(comptime epoch_size: usize) type {
             options: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
-            try @import("state_format/accumulated_reports.zig").format(epoch_size, self, fmt, options, writer);
+            try @import("state_format/reports_accumulated.zig").format(epoch_size, self, fmt, options, writer);
         }
 
         pub fn addWorkPackage(
@@ -183,7 +183,7 @@ test "Xi - simulation across multiple epochs" {
     }
 }
 
-test "Xi - deep clone with active packages" {
+test "Xi - deep clone with active reports" {
     const test_epoch_size = 4;
     const allocator = testing.allocator;
 

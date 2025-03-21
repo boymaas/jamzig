@@ -1,26 +1,3 @@
-/// Rho (ρ) State Implementation
-///
-/// This file implements the rho (ρ) state for the Jam protocol. Rho is a critical
-/// component of the reporting and availability system in Jam.
-///
-/// Purpose:
-/// - Rho tracks work-reports that have been reported but are not yet known to be
-///   available to a super-majority of validators.
-/// - It maintains a mapping of cores to their currently assigned work-reports and
-///   the time at which each report was made.
-///
-/// Key characteristics:
-/// - There are C (341) cores, each capable of having one assigned work-report.
-/// - Only one report may be assigned to a core at any given time.
-/// - Each entry in rho contains a work-report and its reporting timeslot.
-/// - Rho is used in the block production process to manage the lifecycle of
-///   work-reports from reporting to availability confirmation.
-///
-/// This implementation provides functionality to:
-/// - Initialize the rho state
-/// - Set a work-report for a specific core
-/// - Retrieve a work-report for a specific core
-/// - Clear a work-report from a specific core
 const std = @import("std");
 
 const types = @import("types.zig");
@@ -134,7 +111,7 @@ pub fn Rho(comptime core_count: u16) type {
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-            try @import("state_json/pending_reports.zig").jsonStringify(core_count, self, jw);
+            try @import("state_json/reports_pending.zig").jsonStringify(core_count, self, jw);
         }
 
         pub fn init(allocator: std.mem.Allocator) @This() {

@@ -1,5 +1,5 @@
 const std = @import("std");
-const Xi = @import("../accumulated_reports.zig").Xi;
+const Xi = @import("../reports_accumulated.zig").Xi;
 
 pub fn jsonStringify(comptime epoch_size: usize, self: *const Xi(epoch_size), jw: anytype) !void {
     try jw.beginArray();

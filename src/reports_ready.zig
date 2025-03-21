@@ -5,11 +5,6 @@ const WorkReport = types.WorkReport;
 pub const TimeslotEntries = std.ArrayListUnmanaged(WorkReportAndDeps);
 pub const WorkPackageHashSet = std.AutoArrayHashMapUnmanaged(types.WorkPackageHash, void);
 
-// We also maintain knowledge of ready (i.e. available and/or audited) but
-// not-yet-accumulated work-reports in the state item ϑ. Each of these were
-// made available at most one epoch ago but have or had unfulfilled dependen-
-// cies. Alongside the work-report itself, we retain its un- accumulated
-// dependencies, a set of work-package hashes.
 pub fn Theta(comptime epoch_size: usize) type {
     return struct {
         entries: [epoch_size]TimeslotEntries,
@@ -24,7 +19,6 @@ pub fn Theta(comptime epoch_size: usize) type {
             };
         }
 
-        /// Add a new work report with its dependencies
         pub fn addEntryToTimeSlot(
             self: *@This(),
             time_slot: types.TimeSlot,
@@ -34,30 +28,24 @@ pub fn Theta(comptime epoch_size: usize) type {
         }
 
         pub fn clearTimeSlot(self: *@This(), time_slot: types.TimeSlot) void {
-            // Deinit all WorkReportAndDeps objects in the time slot
             for (self.entries[time_slot].items) |*entry| {
                 entry.deinit(self.allocator);
             }
 
-            // Clear the array list without deallocating its memory
             self.entries[time_slot].clearRetainingCapacity();
         }
 
-        /// Add a work report to the newest time slot (last slot in the array)
         pub fn addWorkReport(
             self: *@This(),
             time_slot: types.TimeSlot,
             work_report: WorkReport,
         ) !void {
-            // Create WorkReportAndDeps from the work report
             var entry = try WorkReportAndDeps.fromWorkReport(self.allocator, work_report);
             errdefer entry.deinit(self.allocator);
 
-            // Add to the newest time slot (last slot in the array)
             try self.addEntryToTimeSlot(time_slot, entry);
         }
 
-        /// Remove all WorkReports which have no dependencies from a specific time slot
         pub fn removeReportsWithoutDependenciesAtSlot(self: *@This(), time_slot: types.TimeSlot) void {
             var slot_entries = &self.entries[time_slot];
             var i: usize = 0;
@@ -168,7 +156,7 @@ pub fn Theta(comptime epoch_size: usize) type {
         }
 
         pub fn jsonStringify(self: *const @This(), jw: anytype) !void {
-            try @import("state_json/available_reports.zig").jsonStringify(epoch_size, self, jw);
+            try @import("state_json/reports_ready.zig").jsonStringify(epoch_size, self, jw);
         }
 
         pub fn format(
@@ -177,7 +165,7 @@ pub fn Theta(comptime epoch_size: usize) type {
             options: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
-            try @import("state_format/available_reports.zig").format(epoch_size, self, fmt, options, writer);
+            try @import("state_format/reports_ready.zig").format(epoch_size, self, fmt, options, writer);
         }
     };
 }

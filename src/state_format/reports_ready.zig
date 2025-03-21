@@ -1,5 +1,5 @@
 const std = @import("std");
-const Theta = @import("../available_reports.zig").Theta;
+const Theta = @import("../reports_ready.zig").Theta;
 
 const tfmt = @import("../types/fmt.zig");
 
@@ -36,7 +36,7 @@ test "Theta - format" {
     var theta = Theta(4).init(allocator);
     defer theta.deinit();
 
-    const WorkReportsAndDeps = @import("../available_reports.zig").Theta(4).Entry;
+    const WorkReportsAndDeps = @import("../reports_ready.zig").Theta(4).Entry;
     const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
 
     // Create a report with some test data

@@ -1,6 +1,6 @@
 const std = @import("std");
 const types = @import("../types.zig");
-const available_reports = @import("../available_reports.zig");
+const available_reports = @import("../reports_ready.zig");
 const codec = @import("../codec.zig");
 const WorkReport = types.WorkReport;
 

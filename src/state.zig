@@ -306,11 +306,11 @@ pub fn JamStateView(comptime params: Params) type {
 // Core imports
 pub const authorizer_pool = @import("authorizer_pool.zig");
 pub const recent_blocks = @import("recent_blocks.zig");
-pub const accumulated_reports = @import("accumulated_reports.zig");
-pub const available_reports = @import("available_reports.zig");
+pub const accumulated_reports = @import("reports_accumulated.zig");
+pub const reports_ready = @import("reports_ready.zig");
 pub const safrole_state = @import("safrole_state.zig");
 pub const services = @import("services.zig");
-pub const pending_reports = @import("pending_reports.zig");
+pub const pending_reports = @import("reports_pending.zig");
 pub const authorizer_queue = @import("authorizer_queue.zig");
 pub const services_priviledged = @import("services_priviledged.zig");
 pub const disputes = @import("disputes.zig");
@@ -322,7 +322,7 @@ pub const Beta = recent_blocks.RecentHistory;
 
 // History and Queuing of work reports
 pub const Xi = accumulated_reports.Xi;
-pub const Theta = available_reports.Theta;
+pub const Theta = reports_ready.Theta;
 
 // Validator and network state
 pub const Gamma = safrole_state.Gamma;

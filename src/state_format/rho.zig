@@ -1,5 +1,5 @@
 const std = @import("std");
-const Rho = @import("../pending_reports.zig").Rho;
+const Rho = @import("../reports_pending.zig").Rho;
 
 const tfmt = @import("../types/fmt.zig");
 

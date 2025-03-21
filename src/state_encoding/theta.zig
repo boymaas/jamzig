@@ -5,8 +5,8 @@ const encoder = @import("../codec/encoder.zig");
 const codec = @import("../codec.zig");
 const sort = std.sort;
 
-const available_reports = @import("../available_reports.zig");
-const Theta = available_reports.Theta;
+const reports_ready = @import("../reports_ready.zig");
+const Theta = reports_ready.Theta;
 
 const makeLessThanSliceOfFn = @import("../utils/sort.zig").makeLessThanSliceOfFn;
 const lessThanSliceOfHashes = makeLessThanSliceOfFn(types.Hash);
@@ -58,7 +58,7 @@ pub fn encodeSlotEntry(allocator: std.mem.Allocator, slot_entries: Theta.SlotEnt
     span.debug("Completed slot entries encoding", .{});
 }
 
-pub fn encodeEntry(allocator: std.mem.Allocator, entry: available_reports.WorkReportAndDeps, writer: anytype) !void {
+pub fn encodeEntry(allocator: std.mem.Allocator, entry: reports_ready.WorkReportAndDeps, writer: anytype) !void {
     const span = trace.span(.encode_entry);
     defer span.deinit();
     span.debug("Starting entry encoding", .{});
@@ -99,7 +99,7 @@ test "encode" {
     const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
 
     // Create a sample ThetaEntry slice
-    var entry1 = available_reports.WorkReportAndDeps{
+    var entry1 = reports_ready.WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{1} ** 32),
         .dependencies = .{},
     };
@@ -107,7 +107,7 @@ test "encode" {
     try entry1.dependencies.put(allocator, [_]u8{4} ** 32, {});
     try entry1.dependencies.put(allocator, [_]u8{3} ** 32, {});
 
-    var entry2 = available_reports.WorkReportAndDeps{
+    var entry2 = reports_ready.WorkReportAndDeps{
         .work_report = createEmptyWorkReport([_]u8{5} ** 32),
         .dependencies = .{},
     };
