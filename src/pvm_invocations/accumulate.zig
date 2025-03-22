@@ -89,11 +89,31 @@ pub fn invoke(
     span.debug("Generated new service ID: {d}", .{host_call_context.regular.new_service_id});
 
     // Execute the PVM invocation
-    const code = service_account.getPreimage(service_account.code_hash) orelse {
+    const code_preimage = service_account.getPreimage(service_account.code_hash) orelse {
         span.err("Service code not available for hash: {s}", .{std.fmt.fmtSliceHexLower(&service_account.code_hash)});
         return error.ServiceCodeNotAvailable;
     };
-    span.debug("Retrieved service code, length: {d} bytes", .{code.len});
+
+    // Now this has some metadata attached to it
+    const CodeWithMetadata = struct {
+        metadata: []const u8,
+        code: []const u8,
+
+        pub fn decode(data: []const u8) !@This() {
+            const result = try codec.decoder.decodeInteger(data);
+            if (result.value + result.bytes_read > data.len) {
+                return error.MetadataSizeTooLarge;
+            }
+            const metadata = data[result.bytes_read..result.value];
+            const code = data[result.bytes_read + result.value ..];
+
+            return .{ .code = code, .metadata = metadata };
+        }
+    };
+
+    const code_with_metadata = try CodeWithMetadata.decode(code_preimage);
+
+    span.debug("Retrieved service code, length: {d} bytes. Metadata: {d} bytes", .{ code_with_metadata.code.len, code_with_metadata.metadata.len });
 
     span.debug("Starting PVM machine invocation", .{});
     const pvm_span = span.child(.pvm_invocation);
@@ -116,7 +136,7 @@ pub fn invoke(
 
     var result = try pvm_invocation.machineInvocation(
         allocator,
-        code,
+        code_with_metadata.code,
         5, // Accumulation entry point index per section 9.1
         @intCast(gas_limit),
         args_buffer.items,
@@ -236,44 +256,100 @@ pub const AccumulationOperands = struct {
 
 /// 12.18 AccumulationOperand represents a wrangled tuple of operands used by the PVM Accumulation function.
 /// It contains the rephrased work items for a specific service within work reports.
+/// Following JAM protocol naming conventions: h, e, a, o, y, d
 pub const AccumulationOperand = struct {
     pub const Output = union(enum) {
+        /// Represents possible error types from work execution
+        const WorkExecutionError = enum(u8) {
+            OutOfGas = 1, // ∞
+            ProgramTermination = 2, // ☇
+            InvalidExportCount = 3, // ⊚
+            ServiceCodeUnavailable = 4, // BAD
+            ServiceCodeTooLarge = 5, // BIG
+        };
+
         /// Successful execution output as an octet sequence
         success: []const u8,
         /// Error code if execution failed
         err: WorkExecutionError,
+
+        pub fn encode(value: *const @This(), _: anytype, writer: anytype) !void {
+            // First write a tag byte based on the union variant
+            switch (value.*) {
+                .success => |data| {
+                    // For success, write 0 followed by the length and data
+                    try writer.writeByte(0);
+                    try codec.writeInteger(@intCast(data.len), writer);
+                    try writer.writeAll(data);
+                },
+                .err => |err_code| {
+                    // For error types, simply write the error code's integer value
+                    try writer.writeByte(@intFromEnum(err_code));
+                },
+            }
+        }
+
+        pub fn decode(_: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
+            // Read the tag byte to determine the variant
+            const tag = try reader.readByte();
+
+            // Tag 0 indicates success, other values map to error codes
+            return switch (tag) {
+                0 => blk: {
+                    // Success variant contains length-prefixed data
+                    const length = try codec.readInteger(reader);
+                    const data = try allocator.alloc(u8, @intCast(length)); // FIXME: check on max size before allocating
+                    errdefer allocator.free(data);
+
+                    try reader.readNoEof(data);
+                    break :blk .{ .success = data };
+                },
+                1 => .{ .err = .OutOfGas },
+                2 => .{ .err = .ProgramTermination },
+                3 => .{ .err = .InvalidExportCount },
+                4 => .{ .err = .ServiceCodeUnavailable },
+                5 => .{ .err = .ServiceCodeTooLarge },
+                else => error.InvalidOutputTag,
+            };
+        }
     };
 
-    /// The output or error of the work item execution.
-    /// Can be either an octet sequence (Y) or an error (J).
-    output: Output,
+    /// h: The hash of the work package
+    h: [32]u8,
 
-    /// The hash of the payload within the work item
-    /// that was executed in the refine stage
-    payload_hash: [32]u8,
+    /// e: The segment root containing the export
+    e: [32]u8,
 
-    /// The hash of the work package
-    work_package_hash: [32]u8,
+    /// a: The authorizer hash
+    a: [32]u8,
 
-    /// The authorization output blob for the work item
-    authorization_output: []const u8,
+    /// o: The authorization output blob
+    o: []const u8,
+
+    /// y: The hash of the payload within the work item
+    y: [32]u8,
+
+    /// d: The data output (success or error)
+    d: Output,
 
     pub fn deepClone(self: @This(), alloc: std.mem.Allocator) !@This() {
         // Create a new operand with deep copies of all dynamic data
         var cloned = @This(){
-            .payload_hash = self.payload_hash,
-            .work_package_hash = self.work_package_hash,
-            .authorization_output = try alloc.dupe(u8, self.authorization_output),
-            .output = undefined, // Will be set below
+            .h = self.h,
+            .e = self.e,
+            .a = self.a,
+            .y = self.y,
+            .o = try alloc.dupe(u8, self.o),
+            .d = undefined,
         };
 
         // Deep copy the output based on its type
-        switch (self.output) {
+        switch (self.d) {
             .success => |data| {
-                cloned.output = .{ .success = try alloc.dupe(u8, data) };
+                cloned.d = .{ .success = try alloc.dupe(u8, data) };
             },
             .err => |err_code| {
-                cloned.output = .{ .err = err_code };
+                cloned.d = .{ .err = err_code };
             },
         }
 
@@ -317,37 +393,80 @@ pub const AccumulationOperand = struct {
                 },
             };
 
-            // Set up the operand
-            operands[i] = .{ .item = .{
-                .output = output,
-                .payload_hash = result.payload_hash,
-                .work_package_hash = report.package_spec.hash,
-                .authorization_output = try allocator.dupe(u8, report.auth_output),
-            } };
+            // Set up the operand according to JAM protocol fields (h, e, a, o, y, d)
+            operands[i] = .{
+                .item = .{
+                    .h = report.package_spec.hash, // Work package hash
+                    .e = report.package_spec.exports_root, // Segment root
+                    .a = report.authorizer_hash, // Authorizer hash
+                    .o = try allocator.dupe(u8, report.auth_output), // Authorization output
+                    .y = result.payload_hash, // Payload hash
+                    .d = output, // Data output (success or error)
+                },
+            };
         }
 
         return .{ .items = operands };
     }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        if (self.output == .success) {
-            allocator.free(self.output.success);
+        if (self.d == .success) {
+            allocator.free(self.d.success);
         }
 
         // Free the authorization output
-        allocator.free(self.authorization_output);
+        allocator.free(self.o);
         self.* = undefined;
     }
 };
 
-/// Represents possible error types from work execution
-const WorkExecutionError = enum {
-    OutOfGas, // ∞
-    ProgramTermination, // ☇
-    InvalidExportCount, // ⊚
-    ServiceCodeUnavailable, // BAD
-    ServiceCodeTooLarge, // BIG
-};
+test "AccumulationOperand.Output encode/decode" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Test all possible Output variants
+    const test_cases = [_]AccumulationOperand.Output{
+        .{ .success = try alloc.dupe(u8, &[_]u8{ 1, 2, 3, 4, 5 }) },
+        .{ .err = .OutOfGas },
+        .{ .err = .ProgramTermination },
+        .{ .err = .InvalidExportCount },
+        .{ .err = .ServiceCodeUnavailable },
+        .{ .err = .ServiceCodeTooLarge },
+    };
+
+    for (test_cases) |output| {
+        // Encode
+        var buffer = std.ArrayList(u8).init(alloc);
+        defer buffer.deinit();
+
+        try output.encode(.{}, buffer.writer());
+        const encoded = buffer.items;
+
+        // Decode
+        var fbs = std.io.fixedBufferStream(encoded);
+        const reader = fbs.reader();
+        const decoded = try AccumulationOperand.Output.decode(.{}, reader, alloc);
+        defer {
+            if (decoded == .success) {
+                alloc.free(decoded.success);
+            }
+        }
+
+        // Compare
+        try testing.expectEqual(@as(std.meta.Tag(AccumulationOperand.Output), output), @as(std.meta.Tag(AccumulationOperand.Output), decoded));
+
+        switch (output) {
+            .success => |data| {
+                try testing.expectEqualSlices(u8, data, decoded.success);
+            },
+            .err => |code| {
+                try testing.expectEqual(code, decoded.err);
+            },
+        }
+    }
+}
 
 /// Return type for the accumulation invoke function,
 pub const AccumulationResult = struct {

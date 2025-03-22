@@ -37,10 +37,16 @@ pub const ExecutionContext = struct {
         input: []const u8,
         max_gas: u32,
     ) !ExecutionContext {
+        const span = trace.span(.init_standard_program);
+        defer span.deinit();
+        span.debug("Initializing with standard program code format", .{});
+        span.trace("Program code size: {d} bytes, input size: {d} bytes", .{ program_code.len, input.len });
+
         // To keep track wehere we are
         var remaining_bytes = program_code[0..];
 
         if (remaining_bytes.len < 11) {
+            span.err("Incomplete header: expected at least 11 bytes, got {d}", .{remaining_bytes.len});
             return error.IncompleteHeader;
         }
 
@@ -53,10 +59,21 @@ pub const ExecutionContext = struct {
         // next 3 is size of stack
         const stack_size_in_bytes = std.mem.readInt(u24, program_code[8..11], .little);
 
+        span.debug("Header parsed: RO={d} bytes, RW={d} bytes, heap={d} pages, stack={d} bytes", .{
+            read_only_size_in_bytes,
+            read_write_size_in_bytes,
+            heap_size_in_pages,
+            stack_size_in_bytes,
+        });
+
         // Register we are just behind the header
         remaining_bytes = remaining_bytes[11..];
 
         if (remaining_bytes.len < read_only_size_in_bytes + read_write_size_in_bytes) {
+            span.err("Memory data segment too small: need {d} bytes, got {d}", .{
+                read_only_size_in_bytes + read_write_size_in_bytes,
+                remaining_bytes.len,
+            });
             return error.MemoryDataSegmentTooSmall;
         }
 
@@ -65,22 +82,36 @@ pub const ExecutionContext = struct {
         // then read the length of write only
         const read_write_data = remaining_bytes[read_only_size_in_bytes..][0..read_write_size_in_bytes];
 
+        span.trace("Read-only data: {any}", .{std.fmt.fmtSliceHexLower(read_only_data[0..@min(16, read_only_data.len)])});
+        if (read_only_data.len > 16) span.trace("... ({d} more bytes)", .{read_only_data.len - 16});
+
+        span.trace("Read-write data: {any}", .{std.fmt.fmtSliceHexLower(read_write_data[0..@min(16, read_write_data.len)])});
+        if (read_write_data.len > 16) span.trace("... ({d} more bytes)", .{read_write_data.len - 16});
+
         // Update we are at the beginning of our code_data_segment
         remaining_bytes = remaining_bytes[read_only_size_in_bytes + read_write_size_in_bytes ..];
 
         // read lenght of code
         if (remaining_bytes.len < 4) {
+            span.err("Code data segment too small for code length: need 4 bytes, got {d}", .{remaining_bytes.len});
             return error.ProgramCodeFormatCodeDataSegmentTooSmall;
         }
         const code_len_in_bytes = std.mem.readInt(u32, remaining_bytes[0..4], .little);
+        span.debug("Code length: {d} bytes", .{code_len_in_bytes});
 
         remaining_bytes = remaining_bytes[4..];
 
         if (remaining_bytes.len < code_len_in_bytes) {
+            span.err("Code data segment too small for code: need {d} bytes, got {d}", .{
+                code_len_in_bytes,
+                remaining_bytes.len,
+            });
             return error.ProgramCodeFormatCodeDataSegmentTooSmall;
         }
 
         const code_data = remaining_bytes[0..code_len_in_bytes];
+        span.trace("Code data starts with: {any}", .{std.fmt.fmtSliceHexLower(code_data[0..@min(16, code_data.len)])});
+        if (code_data.len > 16) span.trace("... ({d} more bytes)", .{code_data.len - 16});
 
         // then read the actual codeu
         return try initWithMemorySegments(
@@ -102,6 +133,15 @@ pub const ExecutionContext = struct {
         heap_size_in_pages: u16,
         max_gas: u32,
     ) !ExecutionContext {
+        const span = trace.span(.init_simple);
+        defer span.deinit();
+        span.debug("Initializing with simple configuration", .{});
+        span.trace("Program size: {d} bytes, stack: {d} bytes, heap: {d} pages", .{
+            raw_program.len,
+            stack_size_in_bytes,
+            heap_size_in_pages,
+        });
+
         return try initWithMemorySegments(
             allocator,
             raw_program,
@@ -125,6 +165,16 @@ pub const ExecutionContext = struct {
         heap_size_in_pages: u16,
         max_gas: u32,
     ) !ExecutionContext {
+        const span = trace.span(.init_with_memory_segments);
+        defer span.deinit();
+        span.debug("Initializing with memory segments", .{});
+        span.trace("Program: {d} bytes, RO: {d} bytes, RW: {d} bytes, input: {d} bytes", .{
+            raw_program.len,
+            read_only.len,
+            read_write.len,
+            input.len,
+        });
+
         // Configure memory layout with provided segments
         var memory = try Memory.initWithData(
             allocator,
@@ -134,10 +184,15 @@ pub const ExecutionContext = struct {
             stack_size_in_bytes,
             heap_size_in_pages,
         );
-        errdefer memory.deinit();
+        errdefer {
+            span.debug("Error occurred, cleaning up memory", .{});
+            memory.deinit();
+        }
 
+        span.debug("Memory initialized, creating execution context", .{});
         var exec_ctx = try initWithMemory(allocator, raw_program, memory, max_gas);
         exec_ctx.initRegisters(input.len);
+        span.debug("Execution context initialized successfully", .{});
 
         return exec_ctx;
     }
@@ -149,10 +204,21 @@ pub const ExecutionContext = struct {
         memory: Memory,
         max_gas: u32,
     ) !ExecutionContext {
-        // Decode program
-        var program = try Program.decode(allocator, raw_program);
-        errdefer program.deinit(allocator);
+        const span = trace.span(.init_with_memory);
+        defer span.deinit();
+        span.debug("Initializing with memory and raw program", .{});
+        span.trace("Program size: {d} bytes, max gas: {d}", .{ raw_program.len, max_gas });
+        span.trace("Program starts with: {any}", .{std.fmt.fmtSliceHexLower(raw_program[0..@min(16, raw_program.len)])});
 
+        // Decode program
+        span.debug("Decoding program", .{});
+        var program = try Program.decode(allocator, raw_program);
+        errdefer {
+            span.debug("Error occurred, cleaning up program", .{});
+            program.deinit(allocator);
+        }
+
+        span.debug("Program decoded successfully, creating execution context", .{});
         // Initialize registers according to specification
         return ExecutionContext{
             .memory = memory,
@@ -168,15 +234,32 @@ pub const ExecutionContext = struct {
 
     /// Initialize the registers
     pub fn initRegisters(self: *@This(), input_len: usize) void {
+        const span = trace.span(.init_registers);
+        defer span.deinit();
+        span.debug("Initializing registers", .{});
+
         self.registers[0] = HALT_PC_VALUE; // 0xFFFF0000 Halt PC value
         self.registers[1] = Memory.STACK_BASE_ADDRESS; // Stack pointer
         self.registers[7] = Memory.INPUT_ADDRESS;
         self.registers[8] = input_len;
+
+        span.debug("r0=0x{x:0>16} (HALT_PC), r1=0x{x:0>16} (stack), r7=0x{x:0>16} (input), r8={d} (len)", .{
+            self.registers[0],
+            self.registers[1],
+            self.registers[7],
+            self.registers[8],
+        });
     }
 
     /// Clear all registers by setting them to zero
     pub fn clearRegisters(self: *@This()) void {
+        const span = trace.span(.clear_registers);
+        defer span.deinit();
+        span.debug("Clearing all registers", .{});
+
         @memset(&self.registers, 0);
+
+        span.debug("Registers reset to zero", .{});
     }
 
     /// Construct the return value by looking determining if we can
@@ -204,21 +287,41 @@ pub const ExecutionContext = struct {
     }
 
     pub fn deinit(self: *ExecutionContext, allocator: Allocator) void {
+        const span = trace.span(.deinit);
+        defer span.deinit();
+        span.debug("Deinitializing execution context", .{});
+
         // Hostcalls are not owned by us
+        span.debug("Deinitializing memory", .{});
         self.memory.deinit();
+
+        span.debug("Deinitializing program", .{});
         self.program.deinit(allocator);
+
+        span.debug("Execution context deinitialized", .{});
         self.* = undefined;
     }
 
     pub fn setHostCalls(self: *ExecutionContext, new_host_calls: *const HostCallMap) void {
+        const span = trace.span(.set_host_calls);
+        defer span.deinit();
+        span.debug("Setting host calls", .{});
+
         // Replace with the new one
         self.host_calls = new_host_calls;
+
+        span.debug("Host calls set successfully", .{});
     }
 
     pub fn debugProgram(self: *const ExecutionContext, writer: anytype) !void {
+        const span = trace.span(.debug_program);
+        defer span.deinit();
+        span.debug("Generating program debug output", .{});
+
         try writer.writeAll("\x1b[1mPROGRAM DECOMPILATION\x1b[0m\n\n");
 
         // Print register state
+        span.debug("Writing register state", .{});
         try writer.writeAll("Registers:\n");
         for (self.registers, 0..) |reg, i| {
             try writer.print("  r{d:<2} = {d:<16} (0x{x:0>16})\n", .{ i, reg, reg });
@@ -263,8 +366,14 @@ pub const ExecutionContext = struct {
     }
 
     pub fn debugState(self: *const ExecutionContext, context_size_in_instructions: u32, writer: anytype) !void {
+        const span = trace.span(.debug_state);
+        defer span.deinit();
+        span.debug("Generating debug state around PC={d}", .{self.pc});
+
         const context_size = context_size_in_instructions * 8; // TODO: MaxInstructionSize=16
         const start_pc = if (self.pc >= context_size) self.pc - context_size else 0;
+
+        span.debug("Context window: start_pc={d}, size={d} bytes", .{ start_pc, context_size * 2 });
 
         // Print here the state of the PC
         std.debug.print("\x1b[1mDEBUG STATE AROUND CURRENT PC @ {}\x1b[0m\n\n", .{self.pc});

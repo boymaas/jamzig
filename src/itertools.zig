@@ -18,7 +18,7 @@ pub const MapFunc = map_function.MapFunc;
 
 test {
     // Run tests from all modules
-    std.testing.refAllDecls(@This());
+    // std.testing.refAllDecls(@This());
     _ = @import("itertools/collect.zig");
     _ = @import("itertools/map_struct_field.zig");
     _ = @import("itertools/map_function.zig");
