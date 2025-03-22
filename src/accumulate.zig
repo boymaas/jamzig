@@ -463,8 +463,13 @@ pub fn processAccumulateReports(
             theta.clearTimeSlot(@intCast(widx));
         } else if (i >= stx.time.current_slot - stx.time.prior_slot) {
             update_span.debug("Processing entries for time slot {d}", .{widx});
+            // Temporarily convert to managed back to unmanaged. Not doing this explicitly creates
+            // some problems, items removed in the managed version stay in the unmanaged. This
+            // because the Slice could have been moved in memory on orderedRemoves
             var entries = theta.entries[widx].toManaged(allocator);
-            queueEditingFunction(&entries, try mapWorkPackageHash(&map_buffer, accumulated));
+            queueEditingFunction(&entries, try mapWorkPackageHash(&map_buffer, accumulated)); // HERE IT IS!
+            theta.entries[widx] = entries.moveToUnmanaged();
+
             // NOTE: testvectors are empty, but queue editing function does not remove items on 0 deps
             // TODO: check this against GP
             theta.removeReportsWithoutDependenciesAtSlot(@intCast(widx));

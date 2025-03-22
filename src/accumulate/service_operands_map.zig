@@ -102,13 +102,12 @@ pub const ServiceAccumulationOperandsMap = struct {
     }
 
     pub fn deinit(self: *@This()) void {
-        var it = self.map.iterator();
-        while (it.next()) |entry| {
-            const slice = entry.value_ptr.slice();
-            for (slice.items(.operand)) |*operand| {
+        var it = self.map.valueIterator();
+        while (it.next()) |operands| {
+            for (operands.items(.operand)) |*operand| {
                 operand.deinit(self.allocator);
             }
-            entry.value_ptr.deinit(self.allocator);
+            operands.deinit(self.allocator);
         }
         self.map.deinit();
         self.* = undefined;

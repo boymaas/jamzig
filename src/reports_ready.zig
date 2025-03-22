@@ -53,10 +53,8 @@ pub fn Theta(comptime epoch_size: usize) type {
                 // If this entry has no dependencies, remove it
                 if (slot_entries.items[i].dependencies.count() == 0) {
                     // Deinit the entry we're removing
-                    slot_entries.items[i].deinit(self.allocator);
-
-                    // Remove the entry from the slot by swapping with the last item
-                    _ = slot_entries.orderedRemove(i);
+                    var item = slot_entries.orderedRemove(i);
+                    item.deinit(self.allocator);
                     continue;
                 }
 

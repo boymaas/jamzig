@@ -394,6 +394,7 @@ const StateHelpers = struct {
         return type_info == .@"struct" or type_info == .@"union";
     }
 
+    // TODO: use the meta implementation?
     fn callDeinit(value: anytype, allocator: std.mem.Allocator) void {
         const ValueType = std.meta.Child(@TypeOf(value));
 
