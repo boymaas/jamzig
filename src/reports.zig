@@ -495,12 +495,9 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                                         std.fmt.fmtSliceHexLower(&report.exports_root),
                                     });
 
-                                    for (block.work_reports) |reported_work_package| {
-                                        if (std.mem.eql(u8, &reported_work_package.exports_root, &segment.segment_tree_root)) {
-                                            blocks_span.debug("Found matching segment root", .{});
-                                            matching_segment_root = true;
-                                        }
-                                        break;
+                                    if (std.mem.eql(u8, &report.exports_root, &segment.segment_tree_root)) {
+                                        blocks_span.debug("Found matching segment root", .{});
+                                        matching_segment_root = true;
                                     }
 
                                     break :outer;
