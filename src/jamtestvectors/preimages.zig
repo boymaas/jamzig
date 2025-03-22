@@ -125,6 +125,7 @@ pub const Input = struct {
 
 pub const ErrorCode = enum {
     preimage_unneeded,
+    preimages_not_sorted_unique,
 };
 
 pub const Output = union(enum) {

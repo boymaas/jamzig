@@ -8,6 +8,27 @@ const Params = @import("jam_params.zig").Params;
 // Add tracing import
 const trace = @import("tracing.zig").scoped(.preimages);
 
+/// Compares two preimages for ordering
+fn comparePreimages(lhs: types.Preimage, rhs: types.Preimage) bool {
+    // First compare by requester
+    if (lhs.requester != rhs.requester) {
+        return lhs.requester < rhs.requester;
+    }
+
+    // If requesters are equal, compare the blobs lexicographically
+    const min_len = @min(lhs.blob.len, rhs.blob.len);
+
+    // Compare byte by byte
+    for (0..min_len) |i| {
+        if (lhs.blob[i] != rhs.blob[i]) {
+            return lhs.blob[i] < rhs.blob[i];
+        }
+    }
+
+    // If all bytes compared so far are equal, shorter blob comes first
+    return lhs.blob.len < rhs.blob.len;
+}
+
 /// Processes preimage extrinsics
 pub fn processPreimagesExtrinsic(
     comptime params: Params,
@@ -18,6 +39,32 @@ pub fn processPreimagesExtrinsic(
     defer span.deinit();
 
     span.debug("Starting preimages extrinsic processing with {d} preimages", .{preimages.data.len});
+
+    // Validate uniqueness and ordering of preimages
+    if (preimages.data.len > 1) {
+        // Check that preimages are ordered by requester and then by blob content
+        for (preimages.data[0 .. preimages.data.len - 1], preimages.data[1..]) |prev, curr| {
+            // Compare using our ordering function
+            if (!comparePreimages(prev, curr)) {
+                // If not in ascending order, check if they're equal (which would be a duplicate)
+                if (prev.requester == curr.requester) {
+                    // Check if blobs are identical
+                    const prev_hash = try calculatePreimageHash(prev.blob);
+                    const curr_hash = try calculatePreimageHash(curr.blob);
+
+                    if (std.mem.eql(u8, &prev_hash, &curr_hash)) {
+                        span.err("Duplicate preimage found for requester {d}", .{prev.requester});
+                        return error.DuplicatePreimage;
+                    }
+
+                    span.err("Preimages are not correctly ordered for requester {d}", .{prev.requester});
+                } else {
+                    span.err("Preimages are not ordered by requester: {d} > {d}", .{ prev.requester, curr.requester });
+                }
+                return error.PreimagesNotOrdered;
+            }
+        }
+    }
 
     // Ensure the delta prime state is available
     var delta_prime: *state.Delta = try stx.ensure(.delta_prime);
