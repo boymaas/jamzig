@@ -12,22 +12,15 @@ jobs:
     strategy:
       matrix:
         target:
+          # https://nix.dev/guides/faq#how-to-run-non-nix-executables
           # Linux targets
-          - x86_64-linux-gnu
           - x86_64-linux-musl
-          - aarch64-linux-gnu
           - aarch64-linux-musl
           # Darwin/macOS targets
           - x86_64-macos
           - aarch64-macos
         include:
-          - target: x86_64-linux-gnu
-            os: ubuntu-24.04
-            can_test: true
           - target: x86_64-linux-musl
-            os: ubuntu-24.04
-            can_test: true
-          - target: aarch64-linux-gnu
             os: ubuntu-24.04
             can_test: true
           - target: aarch64-linux-musl
