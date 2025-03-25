@@ -113,8 +113,8 @@
       # nix run .#deps
       apps.deps = env.showExternalDeps;
 
-      # nix run .#zon2nix
-      apps.zon2nix = env.app [env.zon2nix] "zon2nix \"$@\"";
+      # nix run .#zig2nix
+      apps.zig2nix = env.app [env.zig2nix] "zig2nix \"$@\"";
 
       # nix develop
       devShells.default = env.mkShell {
@@ -131,7 +131,7 @@
             ];
             
 
-        # # https://github.com/ziglang/zig/issues/18998
+        # Zig2Nix leaks these variables, for now just unset them
         shellHook = ''
           unset ZIG_LOCAL_CACHE_DIR
           unset ZIG_GLOBAL_CACHE_DIR
