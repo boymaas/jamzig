@@ -15,15 +15,12 @@
     flake-utils = zig2nix.inputs.flake-utils;
   in (flake-utils.lib.eachDefaultSystem (system: let
 
-      zigCacheDir = "$TMPDIR/zig-cache";
-
       pkgs = import nixpkgs {
             inherit system;
             overlays = [ rust.overlays.default ];
       };
 
       zls-pkg = zls.packages.${system}.default;
-      rust-pkg = rust.packages.${system}.default;
 
       # Zig flake helper
       # Check the flake.nix in zig2nix project for more options:
@@ -37,10 +34,10 @@
       # Produces clean binaries meant to be ship'd outside of nix
       # nix build .#foreign
       packages.foreign = env.package {
-        # src = cleanSource ./.;
+        src = cleanSource ./.;
 
         # Packages required for compiling
-        nativeBuildInputs = with env.pkgs; [
+        nativeBuildInputs =  [
             # Cross compilation tools: Brackets are important here
             (pkgs.rust-bin.beta.latest.default.override {
               targets = [ 
@@ -58,7 +55,7 @@
           ];
 
         # Packages required for linking
-        buildInputs = with env.pkgs; [];
+        buildInputs =  [];
 
         # Smaller binaries and avoids shipping glibc.
         zigPreferMusl = true;
@@ -77,7 +74,7 @@
 
         # Executables required for runtime
         # These packages will be added to the PATH
-        zigWrapperBins = with env.pkgs; [];
+        zigWrapperBins =  [];
 
         # Libraries required for runtime
         # These packages will be added to the LD_LIBRARY_PATH
@@ -127,9 +124,10 @@
             
 
         # # https://github.com/ziglang/zig/issues/18998
-        # shellHook = ''
-        #   unset NIX_CFLAGS_COMPILE
-        # '';
+        shellHook = ''
+          unset ZIG_LOCAL_CACHE_DIR
+          unset ZIG_GLOBAL_CACHE_DIR
+        '';
       };
     }));
 }
