@@ -12,25 +12,18 @@ jobs:
     strategy:
       matrix:
         target:
+          # https://nix.dev/guides/faq#how-to-run-non-nix-executables
           # Linux targets
-          - x86_64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-gnu
-          - aarch64-unknown-linux-musl
+          - x86_64-linux-musl
+          - aarch64-linux-musl
           # Darwin/macOS targets
           - x86_64-macos
           - aarch64-macos
         include:
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-linux-musl
             os: ubuntu-24.04
             can_test: true
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-24.04
-            can_test: true
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04
-            can_test: true
-          - target: aarch64-unknown-linux-musl
+          - target: aarch64-linux-musl
             os: ubuntu-24.04
             can_test: true
           - target: x86_64-macos
@@ -60,21 +53,18 @@ jobs:
       - uses: DeterminateSystems/flakehub-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
 
-      - name: Build and test for ${{ matrix.target }}
+      - name: Test Debug ${{ matrix.target }}
         if: ${{ matrix.can_test }}
         run: |
-          # Build and test
-          nix run .#test -- --target ${{ matrix.target }} --progress
+          nix run .#test -- -Dtarget=${{ matrix.target }} -- --progress
 
-      - name: Build and test-ffi for ${{ matrix.target }}
+      - name: Test ReleaseFast ${{ matrix.target }}
         if: ${{ matrix.can_test }}
         run: |
-          # Build and test
-          nix run .#test -- --target ${{ matrix.target }} --progress
+          nix run .#test -- -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -- --progress
 
       - name: Build only for ${{ matrix.target }}
         if: ${{ !matrix.can_test }}
         run: |
           # Build only
           nix run .#build -- -Dtarget=${{ matrix.target }}
-

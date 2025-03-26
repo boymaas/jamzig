@@ -255,29 +255,26 @@ fn buildRustDep(b: *std.Build, deps: *RustDeps, name: []const u8, target: std.Bu
 fn buildRustDepTests(b: *std.Build, name: []const u8, target: std.Build.ResolvedTarget, optimize_mode: std.builtin.OptimizeMode) !*std.Build.Step {
     const manifest_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/Cargo.toml", .{name});
     defer b.allocator.free(manifest_path);
-
     const target_triple = try getRustTargetTriple(target);
 
-    // Create cargo test command
-    var cmd = switch (optimize_mode) {
-        .Debug => b.addSystemCommand(&[_][]const u8{
-            "cargo",
-            "test",
-            "--target",
-            target_triple,
-            "--manifest-path",
-            manifest_path,
-        }),
-        .ReleaseSafe, .ReleaseSmall, .ReleaseFast => b.addSystemCommand(&[_][]const u8{
-            "cargo",
-            "test",
-            "--release",
-            "--target",
-            target_triple,
-            "--manifest-path",
-            manifest_path,
-        }),
-    };
+    // Base cargo command
+    var cargo_args = std.ArrayList([]const u8).init(b.allocator);
+    defer cargo_args.deinit();
+    try cargo_args.appendSlice(&[_][]const u8{
+        "cargo",
+        "test",
+        "--target",
+        target_triple,
+        "--manifest-path",
+        manifest_path,
+    });
+
+    if (optimize_mode != .Debug) {
+        try cargo_args.append("--release");
+    }
+
+    // Create the cargo command
+    var cmd = b.addSystemCommand(cargo_args.items);
 
     return &cmd.step;
 }
@@ -292,4 +289,14 @@ pub fn buildRustDependencies(b: *std.Build, target: std.Build.ResolvedTarget, op
     try buildRustDep(b, &deps, "polkavm_ffi", target, optimize_mode);
 
     return deps;
+}
+
+fn toUpperStringWithUnderscore(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    const upper_string = try std.ascii.allocUpperString(allocator, input);
+    for (upper_string) |*c| {
+        if (c.* == '-') {
+            c.* = '_';
+        }
+    }
+    return upper_string;
 }

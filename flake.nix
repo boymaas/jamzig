@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
-    zls.url = "github:zigtools/zls?ref=master";
+    zls.url = "github:zigtools/zls/7485feeeda45d1ad09422ae83af73307ab9e6c9e"; # v0.14.0
     zig2nix.url = "github:Cloudef/zig2nix";
 
     rust.url = "github:oxalica/rust-overlay";
@@ -20,114 +20,121 @@
             overlays = [ rust.overlays.default ];
       };
 
-      zls-pkg = zls.packages.${system}.default;
-      rust-pkg = rust.packages.${system}.default;
+
+      zig-pkg = zig2nix.outputs.packages.${system}.zig-0_14_0;
+
+      zls-pkg = zls.packages.${system}.zls.overrideAttrs (old: {
+                  nativeBuildInputs = [ zig-pkg ];
+      });
+
+
+      # Define the rust toolchain once so it can be reused
+      rustToolchain = pkgs.rust-bin.beta.latest.default.override {
+        targets = [ 
+          "x86_64-unknown-linux-gnu"
+          "x86_64-unknown-linux-musl"
+          "aarch64-unknown-linux-gnu"
+          "aarch64-unknown-linux-musl"
+          "aarch64-apple-darwin"
+          "x86_64-apple-darwin"
+          "powerpc64-unknown-linux-gnu"
+        ];
+        extensions = ["rust-analyzer" "rust-src"];
+      };
 
       # Zig flake helper
       # Check the flake.nix in zig2nix project for more options:
       # <https://github.com/Cloudef/zig2nix/blob/master/flake.nix>
       env = zig2nix.outputs.zig-env.${system} {
-        zig =  zig2nix.outputs.packages.${system}.zig-0_14_0;
+        zig =  zig-pkg;
       };
-      system-triple = env.lib.zigTripleFromString system;
-    in with builtins;  rec {
-      # nix build .#target.{zig-target}
-      # e.g. nix build .#target.x86_64-linux-gnu
-      packages.target = genAttrs allTargetTriples (target: env.packageForTarget target ({
+    in with builtins; with env.pkgs.lib; rec {
+      # Produces clean binaries meant to be ship'd outside of nix
+      # nix build .#foreign
+      packages.foreign = env.package {
         src = cleanSource ./.;
 
+        # Packages required for compiling
         nativeBuildInputs = with env.pkgs; [
+            # Cross compilation tools: Brackets are important here
+            rustToolchain
+            pkgs.qemu
           ];
-        buildInputs = with env.pkgsForTarget target; [];
+
+        # Packages required for linking
+        buildInputs = with env.pkgs.ForTarget target;  [];
 
         # Smaller binaries and avoids shipping glibc.
         zigPreferMusl = true;
-
-        # This disables LD_LIBRARY_PATH mangling, binary patching etc...
-        # The package won't be usable inside nix.
-        zigDisableWrap = true;
-      } // optionalAttrs (!pathExists ./build.zig.zon) {
-        pname = "jamzig";
-        version = "0.1.0";
-      }));
+      };
 
       # nix build .
-      packages.default = packages.target.${system-triple}.override {
+      packages.default = packages.foreign.override (attrs: {
+        # src = cleanSource ./.;
+
         # Prefer nix friendly settings.
         zigPreferMusl = false;
-        zigDisableWrap = false;
-      };
+
+        nativeBuildInputs = attrs.nativeBuildInputs ++ [];
+
+          buildInputs = attrs.buildInputs ++ [];
+
+        # Executables required for runtime
+        # These packages will be added to the PATH
+        zigWrapperBins =  [];
+
+        # Libraries required for runtime
+        # These packages will be added to the LD_LIBRARY_PATH
+        zigWrapperLibs = attrs.buildInputs or [];
+      });
+
+      # Common dependencies for all app environments
+      commonDeps = [
+        rustToolchain
+        pkgs.qemu
+      ];
 
       # For bundling with nix bundle for running outside of nix
       # example: https://github.com/ralismark/nix-appimage
-      apps.bundle.target = genAttrs allTargetTriples (target: let
-        pkg = packages.target.${target};
-      in {
+      apps.bundle = {
         type = "app";
-        program = "${pkg}/bin/default";
-      });
-
-      # default bundle
-      apps.bundle.default = apps.bundle.target.${system-triple};
+        program = "${packages.foreign}/bin/default";
+      };
 
       # nix run .
-      apps.default = env.app [] "zig build run -- \"$@\"";
+      apps.default = env.app commonDeps "zig build run \"$@\"";
 
       # nix run .#build
-      apps.build = env.app [] "zig build \"$@\"";
+      apps.build = env.app commonDeps "zig build \"$@\"";
 
       # nix run .#test
-      apps.test = env.app [] "zig build test -- \"$@\"";
-
-      # nix run .#test
-      apps.test-release-fast = env.app [] "zig build test -Doptimize=ReleaseFast -- \"$@\"";
-
-      # nix run .#test-ffi
-      apps.test-ffi = env.app [] "zig build test-ffi -- \"$@\"";
-      apps.test-ffi-release-fast = env.app [] "zig build test-ffi -Doptimize=ReleaseFast -- \"$@\"";
+      apps.test = env.app commonDeps "zig build test -fqemu \"$@\"";
 
       # nix run .#docs
-      apps.docs = env.app [] "zig build docs -- \"$@\"";
+      apps.docs = env.app commonDeps "zig build docs \"$@\"";
 
       # nix run .#deps
       apps.deps = env.showExternalDeps;
 
-      # nix run .#zon2json
-      apps.zon2json = env.app [env.zon2json] "zon2json \"$@\"";
-
-      # nix run .#zon2json-lock
-      apps.zon2json-lock = env.app [env.zon2json-lock] "zon2json-lock \"$@\"";
-
-      # nix run .#zon2nix
-      apps.zon2nix = env.app [env.zon2nix] "zon2nix \"$@\"";
+      # nix run .#zig2nix
+      apps.zig2nix = env.app [env.zig2nix] "zig2nix \"$@\"";
 
       # nix develop
       devShells.default = env.mkShell {
+        # Packages required for compiling, linking and running
+        # Libraries added here will be automatically added to the LD_LIBRARY_PATH and PKG_CONFIG_PATH
         nativeBuildInputs = [ 
             zls-pkg 
-
-            # Cross compilation tools: Brackets are important here
-            (pkgs.rust-bin.beta.latest.default.override {
-              targets = [ 
-                "x86_64-unknown-linux-gnu"
-                "x86_64-unknown-linux-musl"
-                "aarch64-unknown-linux-gnu"
-                "aarch64-unknown-linux-musl"
-                "aarch64-apple-darwin"
-                "x86_64-apple-darwin"
-                "powerpc64-unknown-linux-gnu"
-              ];
-              extensions = ["rust-analyzer" "rust-src"];
-            })
+            rustToolchain
             pkgs.qemu
           ];
-        buildInputs = [ 
-          ];
-        # https://github.com/ziglang/zig/issues/18998
-        shellHook = ''
-          unset NIX_CFLAGS_COMPILE
-        '';
+            
 
-        };
+        # Zig2Nix leaks these variables, for now just unset them
+        shellHook = ''
+          unset ZIG_LOCAL_CACHE_DIR
+          unset ZIG_GLOBAL_CACHE_DIR
+        '';
+      };
     }));
 }
