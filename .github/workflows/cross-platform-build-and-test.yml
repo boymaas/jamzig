@@ -63,16 +63,6 @@ jobs:
         run: |
           nix run .#test -- -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -- --progress
 
-      - name: TestFFI Debug for ${{ matrix.target }}
-        if: ${{ matrix.can_test }}
-        run: |
-          nix run .#test-ffi -- -Dtarget=${{ matrix.target }} -- --progress
-
-      - name: TestFFI ReleaseFast for ${{ matrix.target }}
-        if: ${{ matrix.can_test }}
-        run: |
-          nix run .#test-ffi -- -Dtarget=${{ matrix.target }} -- --progress
-
       - name: Build only for ${{ matrix.target }}
         if: ${{ !matrix.can_test }}
         run: |

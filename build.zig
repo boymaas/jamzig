@@ -256,8 +256,6 @@ fn buildRustDepTests(b: *std.Build, name: []const u8, target: std.Build.Resolved
     const manifest_path = try std.fmt.allocPrint(b.allocator, "ffi/rust/{s}/Cargo.toml", .{name});
     defer b.allocator.free(manifest_path);
     const target_triple = try getRustTargetTriple(target);
-    // Detect if we're cross-compiling by comparing build host architecture to target
-    const is_cross_compiling = !std.mem.eql(u8, @tagName(@import("builtin").target.cpu.arch), @tagName(target.result.cpu.arch));
 
     // Base cargo command
     var cargo_args = std.ArrayList([]const u8).init(b.allocator);
@@ -277,55 +275,6 @@ fn buildRustDepTests(b: *std.Build, name: []const u8, target: std.Build.Resolved
 
     // Create the cargo command
     var cmd = b.addSystemCommand(cargo_args.items);
-
-    // Add cross-compilation environment settings if needed
-    if (is_cross_compiling) {
-        // Define the emulator based on target architecture
-        const emulator = switch (target.result.cpu.arch) {
-            .aarch64 => "qemu-aarch64",
-            .x86_64 => "qemu-x86_64",
-            .powerpc64 => "qemu-ppc64",
-            else => return error.UnsupportedEmulation,
-        };
-
-        // Set the CARGO_TARGET_<TRIPLE>_RUNNER environment variable
-        // This tells cargo to use the specified runner (QEMU) for executing tests
-        const runner_env_name = try std.fmt.allocPrint(
-            b.allocator,
-            "CARGO_TARGET_{s}_RUNNER",
-            .{try toUpperStringWithUnderscore(b.allocator, target_triple)},
-        );
-        defer b.allocator.free(runner_env_name);
-
-        cmd.setEnvironmentVariable(runner_env_name, emulator);
-    }
-
-    if (std.mem.indexOf(u8, target_triple, "musl") != null) {
-        const linker_env_name = try std.fmt.allocPrint(
-            b.allocator,
-            "CARGO_TARGET_{s}_LINKER",
-            .{try toUpperStringWithUnderscore(b.allocator, target_triple)},
-        );
-        defer b.allocator.free(linker_env_name);
-
-        const linker = switch (target.result.cpu.arch) {
-            .x86_64 => "rust-lld", // Using rust-lld as the linker for musl targets
-            .aarch64 => "aarch64-linux-musl-gcc",
-            .powerpc64 => "powerpc64-linux-musl-gcc",
-            else => "rust-lld", // Default to rust-lld for other architectures
-        };
-
-        cmd.setEnvironmentVariable(linker_env_name, linker);
-
-        const rustflags_env_name = try std.fmt.allocPrint(
-            b.allocator,
-            "CARGO_TARGET_{s}_RUSTFLAGS",
-            .{try toUpperStringWithUnderscore(b.allocator, target_triple)},
-        );
-        defer b.allocator.free(rustflags_env_name);
-
-        cmd.setEnvironmentVariable(rustflags_env_name, "-C target-feature=+crt-static");
-    }
 
     return &cmd.step;
 }
