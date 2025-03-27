@@ -132,8 +132,8 @@
 
         # Zig2Nix leaks these variables, for now just unset them
         shellHook = ''
-          unset ZIG_LOCAL_CACHE_DIR
-          unset ZIG_GLOBAL_CACHE_DIR
+          # unset ZIG_LOCAL_CACHE_DIR
+          # unset ZIG_GLOBAL_CACHE_DIR
         '';
       };
     }));
