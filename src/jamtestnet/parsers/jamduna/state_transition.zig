@@ -299,10 +299,10 @@ pub fn loadTestVector(
     comptime params: @import("../../../jam_params.zig").Params,
     allocator: std.mem.Allocator,
     file_path: []const u8,
-) !TestStateTransition {
+) !codec.Deserialized(TestStateTransition) {
     const file = try std.fs.cwd().openFile(file_path, .{});
     defer file.close();
 
     const reader = file.reader();
-    return try codec.deserializeAlloc(TestStateTransition, params, allocator, reader);
+    return try codec.deserialize(TestStateTransition, params, allocator, reader);
 }

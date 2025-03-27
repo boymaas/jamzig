@@ -33,12 +33,11 @@ pub fn deserialize(
     comptime T: type,
     comptime params: anytype,
     parent_allocator: std.mem.Allocator,
-    data: []const u8,
+    reader: anytype,
 ) !Deserialized(T) {
     const span = trace.span(.deserialize);
     defer span.deinit();
     span.debug("Starting deserialization for type {s}", .{@typeName(T)});
-    span.trace("Input data length: {d} bytes", .{data.len});
 
     var result = Deserialized(T){
         .arena = try parent_allocator.create(ArenaAllocator),
@@ -54,9 +53,6 @@ pub fn deserialize(
         span.debug("Cleanup after error - deinitializing arena", .{});
         result.arena.deinit();
     }
-
-    var fbs = std.io.fixedBufferStream(data);
-    const reader = fbs.reader();
 
     result.value = try recursiveDeserializeLeaky(T, params, result.arena.allocator(), reader);
 

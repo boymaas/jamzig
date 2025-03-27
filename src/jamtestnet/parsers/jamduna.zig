@@ -3,6 +3,8 @@ const types = @import("../../types.zig");
 pub const state_dictionary = @import("../../state_dictionary.zig");
 pub const state_transition = @import("jamduna/state_transition.zig");
 
+const codec = @import("../../codec.zig");
+
 const Params = @import("../../jam_params.zig").Params;
 
 const MerklizationDictionary = state_dictionary.MerklizationDictionary;
@@ -35,12 +37,12 @@ pub fn Loader(comptime params: Params) type {
 }
 
 pub const StateTransition = struct {
-    state_transition: TestStateTransition,
+    state_transition: codec.Deserialized(TestStateTransition),
 
     const Context = @This();
 
     ///
-    pub fn initOnHeap(allocator: std.mem.Allocator, transition: TestStateTransition) !*StateTransition {
+    pub fn initOnHeap(allocator: std.mem.Allocator, transition: codec.Deserialized(TestStateTransition)) !*StateTransition {
         const self = try allocator.create(@This());
         self.state_transition = transition;
         return self;
@@ -60,39 +62,39 @@ pub const StateTransition = struct {
         ctx: *anyopaque,
         allocator: std.mem.Allocator,
     ) anyerror!MerklizationDictionary {
-        return try @as(*TestStateTransition, @alignCast(@ptrCast(ctx))).preStateAsMerklizationDict(allocator);
+        return try @as(*codec.Deserialized(TestStateTransition), @alignCast(@ptrCast(ctx))).value.preStateAsMerklizationDict(allocator);
     }
 
     fn preStateRoot(ctx: *anyopaque) types.StateRoot {
-        return @as(*TestStateTransition, @alignCast(@ptrCast(ctx))).preStateRoot();
+        return @as(*codec.Deserialized(TestStateTransition), @alignCast(@ptrCast(ctx))).value.preStateRoot();
     }
 
     fn block(ctx: *anyopaque) types.Block {
-        return @as(*TestStateTransition, @alignCast(@ptrCast(ctx))).block;
+        return @as(*codec.Deserialized(TestStateTransition), @alignCast(@ptrCast(ctx))).value.block;
     }
 
     fn postStateAsMerklizationDict(
         ctx: *anyopaque,
         allocator: std.mem.Allocator,
     ) !MerklizationDictionary {
-        return try @as(*TestStateTransition, @alignCast(@ptrCast(ctx))).postStateAsMerklizationDict(allocator);
+        return try @as(*codec.Deserialized(TestStateTransition), @alignCast(@ptrCast(ctx))).value.postStateAsMerklizationDict(allocator);
     }
 
     fn postStateRoot(ctx: *anyopaque) types.StateRoot {
-        return @as(*TestStateTransition, @alignCast(@ptrCast(ctx))).postStateRoot();
+        return @as(*codec.Deserialized(TestStateTransition), @alignCast(@ptrCast(ctx))).value.postStateRoot();
     }
 
     fn validateRoots(
         ctx: *anyopaque,
         allocator: std.mem.Allocator,
     ) !void {
-        return @as(*TestStateTransition, @alignCast(@ptrCast(ctx))).validateRoots(allocator);
+        return @as(*codec.Deserialized(TestStateTransition), @alignCast(@ptrCast(ctx))).value.validateRoots(allocator);
     }
 
     fn deinit(
         ctx: *anyopaque,
-        allocator: std.mem.Allocator,
+        _: std.mem.Allocator,
     ) void {
-        return @as(*TestStateTransition, @alignCast(@ptrCast(ctx))).deinitHeap(allocator);
+        return @as(*codec.Deserialized(TestStateTransition), @alignCast(@ptrCast(ctx))).deinit();
     }
 };
