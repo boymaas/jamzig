@@ -255,11 +255,21 @@ fn recursiveDeserializeLeaky(comptime T: type, comptime params: anytype, allocat
                     const slice = try allocator.alloc(pointerInfo.child, @intCast(len));
                     ptr_span.trace("Allocated slice of size {d}", .{len});
 
-                    for (slice, 0..) |*item, i| {
-                        const item_span = ptr_span.child(.slice_item);
-                        defer item_span.deinit();
-                        item_span.debug("Deserializing item {d} of {d}", .{ i + 1, len });
-                        item.* = try recursiveDeserializeLeaky(pointerInfo.child, params, allocator, reader);
+                    if (pointerInfo.child == u8) {
+                        span.debug("Optimized path for byte array", .{});
+                        const bytes_read = try reader.readAll(slice);
+                        if (bytes_read != len) {
+                            span.err("Incomplete read - expected {d} bytes, got {d}", .{ len, bytes_read });
+                            return error.EndOfStream;
+                        }
+                        span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(slice)});
+                    } else {
+                        for (slice, 0..) |*item, i| {
+                            const item_span = ptr_span.child(.slice_item);
+                            defer item_span.deinit();
+                            item_span.debug("Deserializing item {d} of {d}", .{ i + 1, len });
+                            item.* = try recursiveDeserializeLeaky(pointerInfo.child, params, allocator, reader);
+                        }
                     }
                     return slice;
                 },
@@ -461,6 +471,17 @@ pub fn recursiveSerializeLeaky(comptime T: type, comptime params: anytype, write
         .@"struct" => |structInfo| {
             const struct_span = span.child(.struct_serialize);
             defer struct_span.deinit();
+
+            if (@hasDecl(T, "encode")) {
+                struct_span.debug("Encoding using custom encode method", .{});
+
+                return try @call(.auto, @field(T, "encode"), .{
+                    &value,
+                    params,
+                    writer,
+                });
+            }
+
             struct_span.debug("Serializing struct with {d} fields", .{structInfo.fields.len});
 
             inline for (structInfo.fields) |field| {

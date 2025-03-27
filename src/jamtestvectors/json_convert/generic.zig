@@ -99,6 +99,13 @@ fn convertField(conversionFunctions: anytype, allocator: anytype, fromValue: any
             .@"struct" => {
                 const FromTypeInfo = @typeInfo(FromType);
 
+                // First check if we have a direct typemapping function available for this struct type
+                const toTypeNameInfo = comptime getTypeNameInfo(ToType);
+                if (@hasDecl(conversionFunctions, toTypeNameInfo.typeNameWithoutPath)) {
+                    return try callConversionFunction(conversionFunctions, allocator, fromValue, ToType);
+                }
+
+                // If no direct mapping function exists, proceed with field-by-field conversion
                 var to: ToType = undefined;
                 if (FromTypeInfo == .@"struct") {
                     inline for (toTypeInfo.@"struct".fields) |toField| {

@@ -79,13 +79,8 @@ const TypeMapping = struct {
         return e;
     }
 
-    pub fn WorkItem(allocator: Allocator, from: []const tv_lib_codec.WorkItem) !lib_codec.WorkItemsExtrinsic {
-        var e: lib_codec.WorkItemsExtrinsic = undefined;
-        e.data = try allocator.alloc(lib_codec.WorkItem, from.len);
-        for (from, e.data) |fr, *to| {
-            to.* = try convertWorkItem(allocator, fr);
-        }
-        return e;
+    pub fn WorkReport(allocator: Allocator, from: tv_lib_codec.WorkReport) !lib_codec.WorkReport {
+        return try convertWorkReport(allocator, from);
     }
 };
 
@@ -179,5 +174,25 @@ fn convertWorkItem(allocator: Allocator, from: tv_lib_codec.WorkItem) !lib_codec
         .import_segments = try allocator.dupe(lib_codec.ImportSpec, from.import_segments),
         .extrinsic = try allocator.dupe(lib_codec.ExtrinsicSpec, from.extrinsic),
         .export_count = from.export_count,
+    };
+}
+
+fn convertWorkReport(allocator: Allocator, from: tv_lib_codec.WorkReport) !lib_codec.WorkReport {
+    return lib_codec.WorkReport{
+        .package_spec = try convert(tv_lib_codec.WorkPackageSpec, lib_codec.WorkPackageSpec, allocator, from.package_spec),
+        .context = try convert(
+            tv_lib_codec.RefineContext,
+            lib_codec.RefineContext,
+            allocator,
+            from.context,
+        ),
+        .core_index = from.core_index,
+        .authorizer_hash = from.authorizer_hash.bytes,
+        .auth_output = try allocator.dupe(u8, from.auth_output.bytes),
+        .segment_root_lookup = try convert(tv_lib_codec.SegmentRootLookup, lib_codec.SegmentRootLookup, allocator, from.segment_root_lookup),
+        .results = try convert([]tv_lib_codec.WorkResult, []lib_codec.WorkResult, allocator, from.results),
+        .stats = .{
+            .auth_gas_used = from.auth_gas_used,
+        },
     };
 }

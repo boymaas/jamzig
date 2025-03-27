@@ -150,12 +150,21 @@ pub const WorkExecResult = union(enum(u8)) {
     }
 };
 
+pub const RefineLoad = struct {
+    gas_used: U64,
+    imports: U16,
+    extrinsic_count: U16,
+    extrinsic_size: U32,
+    exports: U16,
+};
+
 pub const WorkResult = struct {
     service_id: ServiceId,
     code_hash: OpaqueHash,
     payload_hash: OpaqueHash,
     accumulate_gas: Gas,
     result: WorkExecResult,
+    refine_load: RefineLoad,
 };
 
 pub const WorkPackageSpec = struct {
@@ -173,6 +182,10 @@ pub const SegmentRootLookupItem = struct {
 
 pub const SegmentRootLookup = []SegmentRootLookupItem;
 
+pub const WorkReportStats = struct {
+    auth_gas_used: Gas,
+};
+
 pub const WorkReport = struct {
     package_spec: WorkPackageSpec,
     context: RefineContext,
@@ -181,6 +194,7 @@ pub const WorkReport = struct {
     auth_output: HexBytes,
     segment_root_lookup: SegmentRootLookup,
     results: []WorkResult, // SIZE(1..4)
+    auth_gas_used: Gas,
 };
 
 pub const MmrPeak = ?OpaqueHash;
@@ -203,10 +217,15 @@ pub const BlockInfo = struct {
 
 pub const BlocksHistory = []BlockInfo; // SIZE(0..max_blocks_history)
 
+pub const EpochMarkValidatorsKeys = struct {
+    bandersnatch: BandersnatchPublic,
+    ed25519: Ed25519Public,
+};
+
 pub const EpochMark = struct {
     entropy: Entropy,
     tickets_entropy: Entropy,
-    validators: []BandersnatchPublic, // SIZE(validators_count)
+    validators: []EpochMarkValidatorsKeys, // SIZE(validators_count)
 };
 
 pub const TicketBody = struct {

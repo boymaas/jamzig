@@ -234,6 +234,7 @@ pub const WorkExecResult = union(enum(u8)) {
                 const length = try codec.readInteger(reader);
                 const data = try alloc.alloc(u8, length);
                 try reader.readNoEof(data);
+                std.debug.print("data: {}", .{std.fmt.fmtSliceHexLower(data)});
                 break :blk WorkExecResult{ .ok = data };
             },
             1 => WorkExecResult{ .out_of_gas = {} },
@@ -245,12 +246,52 @@ pub const WorkExecResult = union(enum(u8)) {
     }
 };
 
+pub const RefineLoad = struct {
+    gas_used: U64,
+    imports: U16,
+    extrinsic_count: U16,
+    extrinsic_size: U32,
+    exports: U16,
+
+    pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
+        const codec = @import("codec.zig");
+
+        // Encode each field using variable-length integer encoding
+        try codec.writeInteger(self.gas_used, writer);
+        try codec.writeInteger(self.imports, writer);
+        try codec.writeInteger(self.extrinsic_count, writer);
+        try codec.writeInteger(self.extrinsic_size, writer);
+        try codec.writeInteger(self.exports, writer);
+    }
+
+    pub fn decode(_: anytype, reader: anytype, _: std.mem.Allocator) !@This() {
+        const codec = @import("codec.zig");
+
+        // Read each field using variable-length integer decoding
+        // and truncate to the appropriate size
+        const gas_used = try codec.readInteger(reader);
+        const imports = @as(U16, @truncate(try codec.readInteger(reader)));
+        const extrinsic_count = @as(U16, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
+        const exports = @as(U16, @truncate(try codec.readInteger(reader)));
+
+        return @This(){
+            .gas_used = gas_used,
+            .imports = imports,
+            .extrinsic_count = extrinsic_count,
+            .extrinsic_size = extrinsic_size,
+            .exports = exports,
+        };
+    }
+};
+
 pub const WorkResult = struct {
     service_id: ServiceId,
     code_hash: OpaqueHash,
     payload_hash: OpaqueHash,
     accumulate_gas: Gas,
     result: WorkExecResult,
+    refine_load: RefineLoad,
 
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
@@ -322,6 +363,26 @@ pub const SegmentRootLookupItem = struct {
 
 pub const SegmentRootLookup = []SegmentRootLookupItem;
 
+pub const WorkReportStats = struct {
+    auth_gas_used: Gas,
+
+    pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
+        const codec = @import("codec.zig");
+
+        try codec.writeInteger(self.auth_gas_used, writer);
+    }
+
+    pub fn decode(_: anytype, reader: anytype, _: std.mem.Allocator) !@This() {
+        const codec = @import("codec.zig");
+
+        const auth_gas_used = try codec.readInteger(reader);
+
+        return .{
+            .auth_gas_used = auth_gas_used,
+        };
+    }
+};
+
 pub const WorkReport = struct {
     package_spec: WorkPackageSpec,
     context: RefineContext,
@@ -330,6 +391,7 @@ pub const WorkReport = struct {
     auth_output: []u8,
     segment_root_lookup: SegmentRootLookup,
     results: []WorkResult, // SIZE(1..4)
+    stats: WorkReportStats,
 
     pub fn totalAccumulateGas(self: *const @This()) types.Gas {
         var total: types.Gas = 0;
@@ -414,10 +476,15 @@ pub const BlockInfo = struct {
 
 pub const BlocksHistory = []BlockInfo; // SIZE(0..max_blocks_history)
 
+pub const EpochMarkValidatorsKeys = struct {
+    bandersnatch: BandersnatchPublic,
+    ed25519: Ed25519Public,
+};
+
 pub const EpochMark = struct {
     entropy: Entropy,
     tickets_entropy: Entropy,
-    validators: []BandersnatchPublic, // SIZE(validators_count)
+    validators: []EpochMarkValidatorsKeys, // SIZE(validators_count)
 
     pub fn validators_size(params: jam_params.Params) usize {
         return params.validators_count;
