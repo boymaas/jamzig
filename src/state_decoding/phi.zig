@@ -5,9 +5,7 @@ const Phi = authorization_queue.Phi;
 
 const H = 32; // Hash size (32)
 
-const tracing = @import("../tracing.zig");
-
-const trace = tracing.scoped(.phi_decoder);
+const trace = @import("../tracing.zig").scoped(.state_decoding);
 
 pub fn decode(
     comptime core_count: u16,
