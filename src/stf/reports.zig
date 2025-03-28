@@ -50,4 +50,11 @@ pub fn transition(
         var stats = try pi.getValidatorStats(validator_index);
         stats.updateReportsGuaranteed(1);
     }
+
+    // Since we have validated guarantees here lets run through them
+    // and update appropiate core statistics. TODO: put this in it own statistics stf
+    for (validated.guarantees) |guarantee| {
+        const core_stats = try pi.getCoreStats(guarantee.report.core_index);
+        core_stats.bundle_size += guarantee.report.package_spec.length + (params.segmentSizeInOctets() * try std.math.divCeil(u32, guarantee.report.package_spec.exports_count * 65, 64));
+    }
 }

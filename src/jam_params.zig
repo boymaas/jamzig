@@ -68,11 +68,11 @@ pub const Params = struct {
     // WM: The maximum number of entries in a work-package manifest
     max_manifest_entries: u16 = 2 ^ 11, // WM
     // WP: The maximum size of an encoded work-package together with its extrinsic data and import implications, in octets
-    max_work_package_size: u32 = 12 * 2 ^ 20, // WP
+    max_work_package_size: u32 = 12 * 2 ^ 20, // W...
     // WR: The maximum size of an encoded work-report in octets
     max_work_report_size: u32 = 96 * 2 ^ 10, // WR
     // WS: The size of an exported segment in erasure-coded pieces in octets
-    exported_segment_size: u8 = 6, // WS
+    exported_segment_size: u8 = 6, // WP
     // WT: The size of a transfer memo in octets
     transfer_memo_size: u8 = 128, // WT
     // Y: The number of slots into an epoch at which ticket-submission ends
@@ -90,6 +90,10 @@ pub const Params = struct {
     // NOTE: this has to be here for the codec,
     // -- (cores-count + 7) / 8
     avail_bitfield_bytes: usize = (341 + 7) / 8,
+
+    pub fn segmentSizeInOctets(comptime self: *const Params) u16 {
+        return self.exported_segment_size * self.erasure_coded_piece_size;
+    }
 
     // Helpers for tast init based on params
     pub fn Time(comptime self: *const Params) type {
