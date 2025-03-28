@@ -92,17 +92,12 @@ pub const ServiceActivityRecord = struct {
     }
 };
 
-pub const ServiceStatsEntry = struct {
-    id: ServiceId,
-    record: ServiceActivityRecord,
-};
-
 /// PiComponent holds the comprehensive statistics for the system
 pub const Pi = struct {
     current_epoch_stats: std.ArrayList(ValidatorStats),
     previous_epoch_stats: std.ArrayList(ValidatorStats),
     core_stats: std.ArrayList(CoreActivityRecord),
-    service_stats: std.ArrayList(ServiceStatsEntry),
+    service_stats: std.AutoHashMap(ServiceId, ServiceActivityRecord),
     allocator: std.mem.Allocator,
     validator_count: usize,
     core_count: usize,
@@ -131,7 +126,7 @@ pub const Pi = struct {
             .current_epoch_stats = try Pi.initValidatorStats(allocator, validator_count),
             .previous_epoch_stats = try Pi.initValidatorStats(allocator, validator_count),
             .core_stats = try Pi.initCoreStats(allocator, core_count),
-            .service_stats = std.ArrayList(ServiceStatsEntry).init(allocator),
+            .service_stats = std.AutoHashMap(ServiceId, ServiceActivityRecord).init(allocator),
             .allocator = allocator,
             .validator_count = validator_count,
             .core_count = core_count,
@@ -156,18 +151,14 @@ pub const Pi = struct {
 
     /// Get or create ServiceActivityRecord for a given service ID
     pub fn getOrCreateServiceStats(self: *Pi, service_id: ServiceId) !*ServiceActivityRecord {
-        for (self.service_stats.items) |*entry| {
-            if (entry.id == service_id) {
-                return &entry.record;
-            }
+        // Try to get the entry first
+        if (self.service_stats.getPtr(service_id)) |record| {
+            return record;
         }
 
         // Service not found, create a new entry
-        try self.service_stats.append(ServiceStatsEntry{
-            .id = service_id,
-            .record = ServiceActivityRecord.init(),
-        });
-        return &self.service_stats.items[self.service_stats.items.len - 1].record;
+        try self.service_stats.put(service_id, ServiceActivityRecord.init());
+        return self.service_stats.getPtr(service_id).?;
     }
 
     /// Move current epoch stats to previous epoch and reset current stats
@@ -182,8 +173,9 @@ pub const Pi = struct {
         }
 
         // Clear service stats for the new epoch
-        for (self.service_stats.items) |*service_entry| {
-            service_entry.record = ServiceActivityRecord.init();
+        var service_iter = self.service_stats.iterator();
+        while (service_iter.next()) |entry| {
+            try self.service_stats.put(entry.key_ptr.*, ServiceActivityRecord.init());
         }
     }
 
@@ -192,7 +184,7 @@ pub const Pi = struct {
         var current_stats = try std.ArrayList(ValidatorStats).initCapacity(allocator, self.validator_count);
         var previous_stats = try std.ArrayList(ValidatorStats).initCapacity(allocator, self.validator_count);
         var cores = try std.ArrayList(CoreActivityRecord).initCapacity(allocator, self.core_count);
-        var services = try std.ArrayList(ServiceStatsEntry).initCapacity(allocator, self.service_stats.items.len);
+        var services = std.AutoHashMap(ServiceId, ServiceActivityRecord).init(allocator);
 
         // Deep clone each ValidatorStats instance from current epoch
         for (self.current_epoch_stats.items) |stats| {
@@ -209,9 +201,10 @@ pub const Pi = struct {
             try cores.append(try stats.deepClone(allocator));
         }
 
-        // Deep clone each ServiceStatsEntry
-        for (self.service_stats.items) |entry| {
-            try services.append(try entry.deepClone(allocator));
+        // Deep clone each ServiceActivityRecord
+        var service_iter = self.service_stats.iterator();
+        while (service_iter.next()) |entry| {
+            try services.put(entry.key_ptr.*, try entry.value_ptr.*.deepClone(allocator));
         }
 
         // Return new Pi instance with cloned data
