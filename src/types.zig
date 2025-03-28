@@ -364,6 +364,8 @@ pub const SegmentRootLookupItem = struct {
 
 pub const SegmentRootLookup = []SegmentRootLookupItem;
 
+// TODO: since these are varint encoded, I wrapped them, maybe adapt codec
+// to create a special type indicating they are varint
 pub const WorkReportStats = struct {
     auth_gas_used: Gas,
 
