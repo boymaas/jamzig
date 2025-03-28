@@ -81,34 +81,37 @@ fn encodeCoreStats(stats: []CoreActivityRecord, writer: anytype) !void {
     defer span.deinit();
     span.debug("Encoding core stats for {} cores", .{stats.len});
 
+    // First encode the number of cores
+    try codec.writeInteger(stats.len, writer);
+
     for (stats, 0..) |entry, i| {
         const entry_span = span.child(.core_entry);
         defer entry_span.deinit();
         entry_span.debug("Encoding stats for core {}", .{i});
 
         entry_span.trace("Gas used: {}", .{entry.gas_used});
-        try writer.writeInt(u64, entry.gas_used, .little);
+        try codec.writeInteger(entry.gas_used, writer);
 
         entry_span.trace("Imports: {}", .{entry.imports});
-        try writer.writeInt(u16, entry.imports, .little);
+        try codec.writeInteger(entry.imports, writer);
 
         entry_span.trace("Extrinsic count: {}", .{entry.extrinsic_count});
-        try writer.writeInt(u16, entry.extrinsic_count, .little);
+        try codec.writeInteger(entry.extrinsic_count, writer);
 
         entry_span.trace("Extrinsic size: {}", .{entry.extrinsic_size});
-        try writer.writeInt(u32, entry.extrinsic_size, .little);
+        try codec.writeInteger(entry.extrinsic_size, writer);
 
         entry_span.trace("Exports: {}", .{entry.exports});
-        try writer.writeInt(u16, entry.exports, .little);
+        try codec.writeInteger(entry.exports, writer);
 
         entry_span.trace("Bundle size: {}", .{entry.bundle_size});
-        try writer.writeInt(u32, entry.bundle_size, .little);
+        try codec.writeInteger(entry.bundle_size, writer);
 
         entry_span.trace("DA load: {}", .{entry.da_load});
-        try writer.writeInt(u32, entry.da_load, .little);
+        try codec.writeInteger(entry.da_load, writer);
 
         entry_span.trace("Popularity: {}", .{entry.popularity});
-        try writer.writeInt(u16, entry.popularity, .little);
+        try codec.writeInteger(entry.popularity, writer);
     }
 
     span.debug("Successfully encoded all core stats", .{});
@@ -120,8 +123,7 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
     span.debug("Encoding service stats for {} services", .{stats.count()});
 
     // First encode the number of services
-    const count = @as(u32, @truncate(stats.count()));
-    try writer.writeInt(u32, count, .little);
+    try codec.writeInteger(stats.count(), writer);
 
     // Capture all service ids, and reserve capacity to avoid reallocations
     var service_ids = try std.ArrayList(types.ServiceId).initCapacity(stats.allocator, stats.count());
@@ -141,41 +143,41 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
 
         // Encode service ID
         entry_span.trace("Service ID: {}", .{service_id});
-        try writer.writeInt(u32, service_id, .little);
+        try codec.writeInteger(service_id, writer);
 
         // Encode preimage stats
         entry_span.trace("Provided count: {}", .{record.provided_count});
-        try writer.writeInt(u16, record.provided_count, .little);
+        try codec.writeInteger(record.provided_count, writer);
         entry_span.trace("Provided size: {}", .{record.provided_size});
-        try writer.writeInt(u32, record.provided_size, .little);
+        try codec.writeInteger(record.provided_size, writer);
 
         // Encode refinement stats
         entry_span.trace("Refinement count: {}", .{record.refinement_count});
-        try writer.writeInt(u32, record.refinement_count, .little);
+        try codec.writeInteger(record.refinement_count, writer);
         entry_span.trace("Refinement gas used: {}", .{record.refinement_gas_used});
-        try writer.writeInt(u64, record.refinement_gas_used, .little);
+        try codec.writeInteger(record.refinement_gas_used, writer);
 
         // Encode I/O stats
         entry_span.trace("Imports: {}", .{record.imports});
-        try writer.writeInt(u32, record.imports, .little);
+        try codec.writeInteger(record.imports, writer);
         entry_span.trace("Extrinsic count: {}", .{record.extrinsic_count});
-        try writer.writeInt(u32, record.extrinsic_count, .little);
+        try codec.writeInteger(record.extrinsic_count, writer);
         entry_span.trace("Extrinsic size: {}", .{record.extrinsic_size});
-        try writer.writeInt(u32, record.extrinsic_size, .little);
+        try codec.writeInteger(record.extrinsic_size, writer);
         entry_span.trace("Exports: {}", .{record.exports});
-        try writer.writeInt(u32, record.exports, .little);
+        try codec.writeInteger(record.exports, writer);
 
         // Encode accumulation stats
         entry_span.trace("Accumulate count: {}", .{record.accumulate_count});
-        try writer.writeInt(u32, record.accumulate_count, .little);
+        try codec.writeInteger(record.accumulate_count, writer);
         entry_span.trace("Accumulate gas used: {}", .{record.accumulate_gas_used});
-        try writer.writeInt(u64, record.accumulate_gas_used, .little);
+        try codec.writeInteger(record.accumulate_gas_used, writer);
 
         // Encode transfer stats
         entry_span.trace("On transfers count: {}", .{record.on_transfers_count});
-        try writer.writeInt(u32, record.on_transfers_count, .little);
+        try codec.writeInteger(record.on_transfers_count, writer);
         entry_span.trace("On transfers gas used: {}", .{record.on_transfers_gas_used});
-        try writer.writeInt(u64, record.on_transfers_gas_used, .little);
+        try codec.writeInteger(record.on_transfers_gas_used, writer);
     }
 
     span.debug("Successfully encoded all service stats in sorted order", .{});

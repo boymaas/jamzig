@@ -11,6 +11,8 @@ const ServiceActivityRecord = validator_statistics.ServiceActivityRecord;
 const ValidatorIndex = @import("../types.zig").ValidatorIndex;
 const ServiceId = @import("../types.zig").ServiceId;
 
+const trace = @import("../tracing.zig").scoped(.codec);
+
 pub fn decode(validators_count: u32, core_count: u32, reader: anytype, allocator: std.mem.Allocator) !Pi {
     var pi = try Pi.init(allocator, validators_count, core_count);
     errdefer pi.deinit();
@@ -45,14 +47,14 @@ fn decodeEpochStats(validators_count: u32, reader: anytype, stats: *std.ArrayLis
 
 fn decodeCoreStats(core_count: u32, reader: anytype, stats: *std.ArrayList(CoreActivityRecord)) !void {
     for (0..core_count) |_| {
-        const gas_used = try reader.readInt(u64, .little);
-        const imports = try reader.readInt(u16, .little);
-        const extrinsic_count = try reader.readInt(u16, .little);
-        const extrinsic_size = try reader.readInt(u32, .little);
-        const exports = try reader.readInt(u16, .little);
-        const bundle_size = try reader.readInt(u32, .little);
-        const da_load = try reader.readInt(u32, .little);
-        const popularity = try reader.readInt(u16, .little);
+        const gas_used = try codec.readInteger(reader);
+        const imports = @as(u16, @truncate(try codec.readInteger(reader)));
+        const extrinsic_count = @as(u16, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(u32, @truncate(try codec.readInteger(reader)));
+        const exports = @as(u16, @truncate(try codec.readInteger(reader)));
+        const bundle_size = @as(u32, @truncate(try codec.readInteger(reader)));
+        const da_load = @as(u32, @truncate(try codec.readInteger(reader)));
+        const popularity = @as(u16, @truncate(try codec.readInteger(reader)));
 
         try stats.append(CoreActivityRecord{
             .gas_used = gas_used,
@@ -68,27 +70,27 @@ fn decodeCoreStats(core_count: u32, reader: anytype, stats: *std.ArrayList(CoreA
 }
 
 fn decodeServiceStats(reader: anytype, stats: *std.AutoHashMap(ServiceId, ServiceActivityRecord)) !void {
-    const service_count = try reader.readInt(u32, .little);
+    const service_count = @as(u32, @truncate(try codec.readInteger(reader)));
 
     for (0..service_count) |_| {
-        const service_id = try reader.readInt(u32, .little);
+        const service_id = @as(u32, @truncate(try codec.readInteger(reader)));
 
-        const provided_count = try reader.readInt(u16, .little);
-        const provided_size = try reader.readInt(u32, .little);
+        const provided_count = @as(u16, @truncate(try codec.readInteger(reader)));
+        const provided_size = @as(u32, @truncate(try codec.readInteger(reader)));
 
-        const refinement_count = try reader.readInt(u32, .little);
-        const refinement_gas_used = try reader.readInt(u64, .little);
+        const refinement_count = @as(u32, @truncate(try codec.readInteger(reader)));
+        const refinement_gas_used = try codec.readInteger(reader);
 
-        const imports = try reader.readInt(u32, .little);
-        const extrinsic_count = try reader.readInt(u32, .little);
-        const extrinsic_size = try reader.readInt(u32, .little);
-        const exports = try reader.readInt(u32, .little);
+        const imports = @as(u32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_count = @as(u32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(u32, @truncate(try codec.readInteger(reader)));
+        const exports = @as(u32, @truncate(try codec.readInteger(reader)));
 
-        const accumulate_count = try reader.readInt(u32, .little);
-        const accumulate_gas_used = try reader.readInt(u64, .little);
+        const accumulate_count = @as(u32, @truncate(try codec.readInteger(reader)));
+        const accumulate_gas_used = try codec.readInteger(reader);
 
-        const on_transfers_count = try reader.readInt(u32, .little);
-        const on_transfers_gas_used = try reader.readInt(u64, .little);
+        const on_transfers_count = @as(u32, @truncate(try codec.readInteger(reader)));
+        const on_transfers_gas_used = try codec.readInteger(reader);
 
         const record = ServiceActivityRecord{
             .provided_count = provided_count,
