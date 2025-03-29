@@ -1,7 +1,5 @@
-use ark_ec_vrfs::prelude::ark_serialize;
-use ark_ec_vrfs::suites::bandersnatch::edwards as bandersnatch;
 use ark_serialize::CanonicalSerialize;
-use bandersnatch::{Public, Secret};
+use ark_vrf::suites::bandersnatch::*;
 use thiserror::Error;
 
 use crate::ring_vrf::{
@@ -64,7 +62,7 @@ impl Prover {
     vrf_input_data: &[u8],
     aux_data: &[u8],
   ) -> Result<Vec<u8>, ProverError> {
-    use ark_ec_vrfs::ietf::Prover as _;
+    use ark_vrf::ietf::Prover as _;
 
     let input =
       vrf_input_point(vrf_input_data).ok_or(ProverError::VrfInputPointError)?;
@@ -98,7 +96,7 @@ impl Prover {
     vrf_input_data: &[u8],
     aux_data: &[u8],
   ) -> Result<Vec<u8>, ProverError> {
-    use ark_ec_vrfs::ring::Prover as _;
+    use ark_vrf::ring::Prover as _;
 
     let input =
       vrf_input_point(vrf_input_data).ok_or(ProverError::VrfInputPointError)?;

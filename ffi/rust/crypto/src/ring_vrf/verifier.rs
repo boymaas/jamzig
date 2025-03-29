@@ -1,7 +1,5 @@
-use ark_ec_vrfs::prelude::ark_serialize;
-use ark_ec_vrfs::suites::bandersnatch::edwards as bandersnatch;
-use ark_serialize::CanonicalDeserialize;
-use bandersnatch::Public;
+use ark_vrf::reexports::ark_serialize::CanonicalDeserialize;
+use ark_vrf::suites::bandersnatch::*;
 use thiserror::Error;
 
 use super::{
@@ -58,7 +56,7 @@ impl Verifier {
     signature: &[u8],
     signer_key_index: usize,
   ) -> Result<[u8; 32], VerifierError> {
-    use ark_ec_vrfs::ietf::Verifier as _;
+    use ark_vrf::ietf::Verifier as _;
 
     let signature = IetfVrfSignature::deserialize_compressed(signature)
       .map_err(|_| VerifierError::DeserializationError)?;
@@ -97,7 +95,7 @@ impl Verifier {
     aux_data: &[u8],
     signature: &[u8],
   ) -> Result<[u8; 32], VerifierError> {
-    use ark_ec_vrfs::ring::Verifier as _;
+    use ark_vrf::ring::Verifier as _;
 
     let signature = RingVrfSignature::deserialize_compressed(signature)
       .map_err(|_| VerifierError::DeserializationError)?;

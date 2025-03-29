@@ -1,7 +1,6 @@
-use ark_ec_vrfs::prelude::ark_serialize;
-use ark_ec_vrfs::suites::bandersnatch::edwards as bandersnatch;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use bandersnatch::{IetfProof, Input, Output, Public, Secret};
+use ark_vrf::reexports::ark_serialize::CanonicalDeserialize;
+use ark_vrf::reexports::ark_serialize::CanonicalSerialize;
+use ark_vrf::suites::bandersnatch::*;
 use libc::{c_int, size_t};
 use std::ptr;
 use std::slice;
@@ -35,7 +34,7 @@ fn bandersnatch_sign_impl(
   vrf_input_data: &[u8],
   context_data: &[u8],
 ) -> BandersnatchSignature {
-  use ark_ec_vrfs::ietf::Prover as _;
+  use ark_vrf::ietf::Prover as _;
 
   let input = create_vrf_input(vrf_input_data);
   let output = secret.output(input);
@@ -54,7 +53,7 @@ fn bandersnatch_verify_impl(
   context_data: &[u8],
   signature: BandersnatchSignature,
 ) -> Result<[u8; 32], ()> {
-  use ark_ec_vrfs::ietf::Verifier as _;
+  use ark_vrf::ietf::Verifier as _;
 
   let input = create_vrf_input(vrf_input_data);
   let output = signature.output;

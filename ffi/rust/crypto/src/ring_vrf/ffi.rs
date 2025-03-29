@@ -3,8 +3,13 @@ use super::context::ring_context;
 use super::prover::Prover;
 use super::types::*;
 use super::verifier::Verifier;
+use ark_serialize::CanonicalDeserialize;
+use ark_serialize::CanonicalSerialize;
 use libc::size_t;
 use std::ptr;
+
+use ark_vrf::suites::bandersnatch::Public;
+use ark_vrf::suites::bandersnatch::Secret;
 
 /// Create a new Ring VRF Verifier.
 ///
@@ -33,7 +38,9 @@ pub unsafe extern "C" fn new_ring_vrf_verifier(
   let num_keys = public_keys_len / PUBLIC_KEY_SIZE;
 
   let padding_point = match ring_context(num_keys) {
-    Ok(ctx) => ctx.padding_point(),
+    Ok(_) => ark_vrf::ring::RingProofParams::<
+      ark_vrf::suites::bandersnatch::BandersnatchSha512Ell2,
+    >::padding_point(),
     Err(_) => return std::ptr::null_mut(),
   };
   let ring: Vec<Public> = public_keys_slice
@@ -96,7 +103,9 @@ pub unsafe extern "C" fn new_ring_vrf_prover(
   };
 
   let padding_point = match ring_context(public_keys_len / PUBLIC_KEY_SIZE) {
-    Ok(ctx) => ctx.padding_point(),
+    Ok(_) => ark_vrf::ring::RingProofParams::<
+      ark_vrf::suites::bandersnatch::BandersnatchSha512Ell2,
+    >::padding_point(),
     Err(_) => return std::ptr::null_mut(),
   };
   let ring: Vec<Public> = public_keys_slice
@@ -444,7 +453,9 @@ pub unsafe extern "C" fn get_padding_point(
   output: *mut u8,
 ) -> bool {
   let padding_point = match ring_context(ring_size) {
-    Ok(ctx) => Public::from(ctx.padding_point()),
+    Ok(_) => Public::from(ark_vrf::ring::RingProofParams::<
+      ark_vrf::suites::bandersnatch::BandersnatchSha512Ell2,
+    >::padding_point()),
     Err(_) => return false,
   };
   let mut serialized = Vec::new();

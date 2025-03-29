@@ -1,8 +1,5 @@
-use ark_ec_vrfs::{
-  prelude::ark_serialize::CanonicalDeserialize,
-  suites::bandersnatch::edwards as bandersnatch,
-};
-use bandersnatch::Public;
+use ark_serialize::CanonicalDeserialize;
+use ark_vrf::suites::bandersnatch::*;
 use thiserror::Error;
 
 use crate::ring_vrf::{
@@ -69,7 +66,7 @@ impl Commitment {
     aux_data: &[u8],
     signature: &[u8],
   ) -> Result<[u8; 32], Error> {
-    use ark_ec_vrfs::ring::Verifier as _;
+    use ark_vrf::ring::Verifier as _;
 
     let signature = RingVrfSignature::deserialize_compressed(signature)
       .map_err(|_| Error::DeserializationError)?;
