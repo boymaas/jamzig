@@ -93,18 +93,14 @@ pub fn stateTransition(
     );
 
     // accumulate
-    const work_reports = try available_assignments.getWorkReports(allocator);
-    defer {
-        for (work_reports) |*report| {
-            report.deinit(allocator);
-        }
-        allocator.free(work_reports);
-    }
+    const ready_reports = try available_assignments.getWorkReports(allocator);
+    defer @import("meta.zig").deinit.deinitEntriesAndFreeSlice(allocator, ready_reports);
+
     const accumulate_root = try accumulate.transition(
         params,
         allocator,
         state_transition,
-        work_reports,
+        ready_reports,
     );
 
     try preimages.transition(
@@ -139,6 +135,7 @@ pub fn stateTransition(
         params,
         state_transition,
         new_block,
+        ready_reports,
     );
 
     return state_transition;

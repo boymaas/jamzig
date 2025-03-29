@@ -8,6 +8,13 @@ pub fn deinitEntriesAndAggregate(allocator: std.mem.Allocator, aggregate: anytyp
     calls.callDeinit(aggregate, allocator);
 }
 
+pub fn deinitEntriesAndFreeSlice(allocator: std.mem.Allocator, slice: anytype) void {
+    for (slice) |*item| {
+        calls.callDeinit(item, allocator);
+    }
+    allocator.free(slice);
+}
+
 pub fn allocFreeEntriesAndAggregate(allocator: std.mem.Allocator, aggregate: anytype) void {
     for (aggregate.items) |item| {
         allocator.free(item);

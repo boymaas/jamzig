@@ -14,6 +14,7 @@ pub fn transition(
     comptime params: Params,
     stx: *StateTransition(params),
     new_block: *const types.Block,
+    ready_reports: []types.WorkReport,
 ) !void {
     const span = trace.span(.transition_validator_stats);
     defer span.deinit();
@@ -41,9 +42,11 @@ pub fn transition(
         }
 
         core_stats.bundle_size += report.package_spec.length;
+    }
 
-        // FIXME: These should be based on the ready reports, as this
-        // signals they are assured and thus loaded
+    // Process any ready reports to calculate their data availability load
+    for (ready_reports) |report| {
+        const core_stats = try pi.getCoreStats(report.core_index);
         core_stats.da_load += report.package_spec.exports_count +
             (params.segmentSizeInOctets() *
                 try std.math.divCeil(u32, report.package_spec.exports_count * 65, 64));
