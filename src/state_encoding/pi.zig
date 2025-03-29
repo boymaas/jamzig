@@ -143,7 +143,9 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
 
         // Encode service ID
         entry_span.trace("Service ID: {}", .{service_id});
-        try codec.writeInteger(service_id, writer);
+        // TODO: check this against the graypaper
+        // try codec.writeInteger(service_id, writer);
+        try writer.writeInt(u32, service_id, .little);
 
         // Encode preimage stats
         entry_span.trace("Provided count: {}", .{record.provided_count});

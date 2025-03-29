@@ -20,7 +20,7 @@ pub fn transition(
     defer span.deinit();
     span.debug("Starting validator_stats transition", .{});
 
-    var pi = try stx.ensureT(state.Pi, .pi_prime);
+    var pi: *state.Pi = try stx.ensureT(state.Pi, .pi_prime);
 
     // Since we have validated guarantees here lets run through them
     // and update appropiate core statistics.
@@ -55,6 +55,34 @@ pub fn transition(
     var stats = try pi.getValidatorStats(new_block.header.author_index);
     stats.blocks_produced += 1;
     stats.tickets_introduced += @intCast(new_block.extrinsic.tickets.data.len);
+
+    // Eq 13.11: Preimages Introduced (provided_count, provided_size)
+    // Depends on E_P (PreimagesExtrinsic)
+    for (new_block.extrinsic.preimages.data) |preimage| {
+        const service_stats = try pi.getOrCreateServiceStats(preimage.requester);
+        service_stats.provided_count += 1;
+        service_stats.provided_size += @intCast(preimage.blob.len);
+    }
+
+    // Eq 13.12, 13.13, 13.15 (partially): Refinement Stats
+    // Depends on E_G (GuaranteesExtrinsic -> WorkReports -> WorkResults)
+    for (new_block.extrinsic.guarantees.data) |guarantee| {
+        for (guarantee.report.results) |result| {
+            const service_stats = try pi.getOrCreateServiceStats(result.service_id);
+            // Eq 13.12 part 1: refinement_count
+            service_stats.refinement_count += 1;
+            // Eq 13.12 part 2: refinement_gas_used
+            service_stats.refinement_gas_used += result.refine_load.gas_used;
+            // Eq 13.13: imports, extrinsic_count, extrinsic_size, exports
+            service_stats.imports += result.refine_load.imports;
+            service_stats.extrinsic_count += result.refine_load.extrinsic_count;
+            service_stats.extrinsic_size += result.refine_load.extrinsic_size;
+            service_stats.exports += result.refine_load.exports;
+        }
+    }
+
+    // TODO: add accumulation stats and transfer stats
+
 }
 
 pub fn transition_epoch(

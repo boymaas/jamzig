@@ -141,7 +141,9 @@ fn decodeServiceStats(reader: anytype, stats: *std.AutoHashMap(ServiceId, Servic
         const service_span = span.child(.service);
         defer service_span.deinit();
 
-        const service_id = @as(u32, @truncate(try codec.readInteger(reader)));
+        // TODO: check this against the graypaper
+        // const service_id = @as(u32, @truncate(try codec.readInteger(reader)));
+        const service_id = try reader.readInt(u32, .little);
         service_span.debug("Decoding service {d}/{d} (ID: {d})", .{ i + 1, service_count, service_id });
 
         const provided_count = @as(u16, @truncate(try codec.readInteger(reader)));
