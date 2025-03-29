@@ -190,6 +190,14 @@ pub const Pi = struct {
         }
     }
 
+    /// Clear the per block stats
+    pub fn clearPerBlockStats(self: *Pi) void {
+        for (self.core_stats.items) |*stat| {
+            stat.* = CoreActivityRecord.init();
+        }
+        self.service_stats.clearRetainingCapacity();
+    }
+
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         // Create new ArrayLists
         var current_stats = try std.ArrayList(ValidatorStats).initCapacity(allocator, self.validator_count);

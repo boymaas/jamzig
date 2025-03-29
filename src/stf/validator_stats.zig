@@ -39,18 +39,26 @@ pub fn transition(
             core_stats.extrinsic_count += r.refine_load.extrinsic_count;
             core_stats.extrinsic_size += r.refine_load.extrinsic_size;
             core_stats.exports += r.refine_load.exports;
-
-            // This is set when we have an availability assurance
-            // core_stats.popularity += 0;
         }
 
         core_stats.bundle_size += report.package_spec.length;
     }
 
+    // Set the polpularity
+    for (0..params.core_count) |core| {
+        const core_stats = try pi.getCoreStats(@intCast(core));
+        for (new_block.extrinsic.assurances.data) |assurance| {
+            if (assurance.coreSetInBitfield(@intCast(core))) {
+                // This is set when we have an availability assurance
+                core_stats.popularity += 1;
+            }
+        }
+    }
+
     // Process any ready reports to calculate their data availability load
     for (ready_reports) |report| {
         const core_stats = try pi.getCoreStats(report.core_index);
-        core_stats.da_load += report.package_spec.exports_count +
+        core_stats.da_load += report.package_spec.length +
             (params.segmentSizeInOctets() *
                 try std.math.divCeil(u32, report.package_spec.exports_count * 65, 64));
     }
@@ -116,9 +124,12 @@ pub fn transition_epoch(
     const span = trace.span(.transition_validator_stats_epoch);
     defer span.deinit();
     span.debug("Starting validator_stats transition", .{});
-    var pi = try stx.ensureT(state.Pi, .pi_prime);
+    var pi: *state.Pi = try stx.ensureT(state.Pi, .pi_prime);
 
     if (stx.time.isNewEpoch()) {
         try pi.transitionToNextEpoch();
     }
+
+    // now clear the per block stats
+    pi.clearPerBlockStats();
 }

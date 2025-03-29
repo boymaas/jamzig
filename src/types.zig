@@ -982,6 +982,13 @@ pub const AvailAssurance = struct {
     validator_index: ValidatorIndex,
     signature: Ed25519Signature,
 
+    pub fn coreSetInBitfield(self: *const @This(), core: types.CoreIndex) bool {
+        const byte = core / 8;
+        const bit = core % 8;
+
+        return self.bitfield[byte] & (@as(u8, 1) << @intCast(bit)) != 0;
+    }
+
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return @This(){
             .anchor = self.anchor,
