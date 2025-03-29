@@ -15,6 +15,18 @@ const DeferredTransfer = pvm_accumulate.DeferredTransfer;
 
 const ServiceAccumulationOperandsMap = @import("service_operands_map.zig").ServiceAccumulationOperandsMap;
 
+/// Statistics for a single service's accumulation within a block (Part of 'I' stats).
+pub const AccumulationServiceStats = struct {
+    gas_used: u64,
+    accumulated_count: u32,
+};
+
+/// Statistics for transfers targeting a single service within a block (Part of 'X' stats).
+pub const TransferServiceStats = struct {
+    transfer_count: u32,
+    gas_used: u64,
+};
+
 /// Helper struct to hold service accumulation results
 pub const ServiceAccumulationResult = struct {
     gas_used: types.Gas,
@@ -32,6 +44,7 @@ pub const OuterAccumulationResult = struct {
     accumulated_count: usize,
     transfers: []DeferredTransfer,
     accumulation_outputs: std.AutoHashMap(types.ServiceId, types.AccumulateOutput),
+    service_gas_used: std.AutoHashMap(types.ServiceId, types.Gas), // Gas used per service ID
 
     pub fn takeTransfers(self: *@This()) []DeferredTransfer {
         const result = self.transfers;
@@ -42,6 +55,21 @@ pub const OuterAccumulationResult = struct {
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.transfers);
         self.accumulation_outputs.deinit();
+        self.service_gas_used.deinit(); // Deinit the new map
+        self.* = undefined;
+    }
+};
+
+/// Aggregated result after processing reports, including the AccumulateRoot and statistics.
+pub const ProcessAccumulationResult = struct {
+    accumulate_root: types.AccumulateRoot,
+    accumulation_stats: std.AutoHashMap(types.ServiceId, AccumulationServiceStats),
+    transfer_stats: std.AutoHashMap(types.ServiceId, TransferServiceStats),
+
+    pub fn deinit(self: *@This(), _: std.mem.Allocator) void {
+        // Deinit maps
+        self.accumulation_stats.deinit();
+        self.transfer_stats.deinit();
         self.* = undefined;
     }
 };
@@ -76,6 +104,10 @@ pub fn outerAccumulation(
     var accumulation_outputs = std.AutoHashMap(types.ServiceId, types.AccumulateRoot).init(allocator);
     errdefer accumulation_outputs.deinit();
 
+    // Map to store gas used per service ID across all batches
+    var total_service_gas_used = std.AutoHashMap(types.ServiceId, types.Gas).init(allocator);
+    errdefer total_service_gas_used.deinit();
+
     // If no work reports, return early
     if (work_reports.len == 0) {
         span.debug("No work reports to process", .{});
@@ -83,6 +115,7 @@ pub fn outerAccumulation(
             .accumulated_count = 0,
             .transfers = &[_]DeferredTransfer{},
             .accumulation_outputs = accumulation_outputs,
+            .service_gas_used = total_service_gas_used,
         };
     }
 
@@ -137,27 +170,32 @@ pub fn outerAccumulation(
             entropy,
         );
         defer parallelized_result.deinit(allocator);
-
         // Gather all transfers
         try transfers.appendSlice(parallelized_result.transfers);
-
-        // Add all accumulation outputs to the map
+        // Add all accumulation outputs and aggregate per-service gas usage
         {
             var it = parallelized_result.service_results.iterator();
             while (it.next()) |entry| {
                 const service_id = entry.key_ptr.*;
-                const result = entry.value_ptr.*;
+                const service_result = entry.value_ptr.*;
 
-                if (result.accumulation_output) |output| {
+                // Add accumulation output if present
+                if (service_result.accumulation_output) |output| {
                     try accumulation_outputs.put(service_id, output);
                 }
+
+                // Aggregate gas used for this service
+                const current_gas = total_service_gas_used.get(service_id) orelse 0;
+                try total_service_gas_used.put(service_id, current_gas + service_result.gas_used);
+                span.trace("Aggregated gas for service {d}: {d} (batch) + {d} (prev) = {d} (total)", .{ service_id, service_result.gas_used, current_gas, current_gas + service_result.gas_used });
             }
         }
 
         // Update loop variables for next iteration
         total_accumulated_count += reports_to_process;
-        // Deduct actual gas used, smash into zero
+        // Deduct actual total gas used in this batch, avoid underflow
         current_gas_limit = current_gas_limit -| parallelized_result.gas_used;
+        span.debug("Batch finished. Accumulated: {d}, Batch Gas Used: {d}, Remaining Gas Limit: {d}", .{ reports_to_process, parallelized_result.gas_used, current_gas_limit });
         // We only execute our privileged_services once
         current_privileged_services = &empty_privileged_services;
 
@@ -178,6 +216,7 @@ pub fn outerAccumulation(
         .accumulated_count = total_accumulated_count,
         .transfers = try transfers.toOwnedSlice(),
         .accumulation_outputs = accumulation_outputs,
+        .service_gas_used = total_service_gas_used,
     };
 }
 

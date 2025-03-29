@@ -4,9 +4,12 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const state_delta = @import("state_delta.zig");
 
+pub const execution = @import("accumulate/execution.zig");
+
 const WorkReportAndDeps = state.reports_ready.WorkReportAndDeps;
 const Params = @import("jam_params.zig").Params;
 const meta = @import("meta.zig");
+pub const ProcessAccumulationResult = @import("accumulate/execution.zig").ProcessAccumulationResult;
 
 // Add tracing import
 const trace = @import("tracing.zig").scoped(.accumulate);
@@ -135,7 +138,7 @@ pub fn processAccumulateReports(
     comptime params: Params,
     stx: *state_delta.StateTransition(params),
     reports: []types.WorkReport,
-) !types.AccumulateRoot {
+) !@import("accumulate/execution.zig").ProcessAccumulationResult {
     const span = trace.span(.process_accumulate_reports);
     defer span.deinit();
 
@@ -525,8 +528,62 @@ pub fn processAccumulateReports(
     const accumulate_root = @import("merkle_binary.zig").M_b(blobs.items, std.crypto.hash.sha3.Keccak256);
     root_span.debug("AccumulateRoot calculated: {s}", .{std.fmt.fmtSliceHexLower(&accumulate_root)});
 
+    // --- Calculate I and X statistics ---
+    const stats_span = span.child(.calculate_stats);
+    defer stats_span.deinit();
+
+    // Initialize stats maps BEFORE deferring their deinit
+    var accumulation_stats = std.AutoHashMap(types.ServiceId, @import("accumulate/execution.zig").AccumulationServiceStats).init(allocator);
+    errdefer accumulation_stats.deinit();
+    var transfer_stats = std.AutoHashMap(types.ServiceId, @import("accumulate/execution.zig").TransferServiceStats).init(allocator);
+    errdefer transfer_stats.deinit();
+
+    // Calculate I stats (Accumulation) - Eq 12.25
+    stats_span.debug("Calculating I (Accumulation) statistics for {d} accumulated reports", .{accumulated.len});
+    // Use the per-service gas usage returned by outerAccumulation
+    var service_gas_iter = result.service_gas_used.iterator();
+    while (service_gas_iter.next()) |entry| {
+        const service_id = entry.key_ptr.*;
+        const gas_used = entry.value_ptr.*;
+        // Count how many reports were processed for *this* service
+        var count: u32 = 0;
+        for (accumulated) |report| {
+            for (report.results) |work_result| {
+                if (work_result.service_id == service_id) {
+                    count += 1;
+                }
+            }
+        }
+        try accumulation_stats.put(service_id, .{
+            .gas_used = gas_used,
+            .accumulated_count = count,
+        });
+        stats_span.trace("Added I stats for service {d}: count={d}, gas={d}", .{ service_id, count, gas_used });
+    }
+
+    // Calculate X stats (Transfers) - Eq 12.30
+    stats_span.debug("Calculating X (Transfer) statistics for {d} transfers", .{result.transfers.len});
+    for (result.transfers) |transfer| {
+        const dest_id = transfer.destination;
+        var entry = try transfer_stats.getOrPut(dest_id);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = .{ .transfer_count = 0, .gas_used = 0 };
+            stats_span.trace("Initializing transfer stats for service {d}", .{dest_id});
+        }
+        entry.value_ptr.transfer_count += 1;
+        // Summing the gas *limit* provided in the deferred transfer, as actual used gas isn't known here.
+        entry.value_ptr.gas_used += transfer.gas_limit;
+        stats_span.trace("Updated transfer stats for service {d}: count={d}, gas_allocated={d}", .{ dest_id, entry.value_ptr.transfer_count, entry.value_ptr.gas_used });
+    }
+
     span.debug("Process accumulate reports completed successfully", .{});
-    return accumulate_root;
+    // Return the final result structure including the computed statistics
+    // Note: Ownership of the HashMaps passes to the caller.
+    return @import("accumulate/execution.zig").ProcessAccumulationResult{
+        .accumulate_root = accumulate_root,
+        .accumulation_stats = accumulation_stats,
+        .transfer_stats = transfer_stats,
+    };
 }
 
 fn mapWorkPackageHash(buffer: anytype, items: anytype) ![]types.WorkReportHash {

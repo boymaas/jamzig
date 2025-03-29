@@ -17,16 +17,16 @@ pub fn transition(
     _: std.mem.Allocator,
     stx: *StateTransition(params),
     reports: []types.WorkReport,
-) !types.AccumulateRoot {
+) !accumulate.ProcessAccumulationResult {
     const span = trace.span(.accumulate);
     defer span.deinit();
 
     // Process the newly available reports
-    const accumulate_root = try accumulate.processAccumulateReports(
+    const result = try accumulate.processAccumulateReports(
         params,
         stx,
         reports,
     );
 
-    return accumulate_root;
+    return result;
 }

@@ -96,12 +96,13 @@ pub fn stateTransition(
     const ready_reports = try available_assignments.getWorkReports(allocator);
     defer @import("meta.zig").deinit.deinitEntriesAndFreeSlice(allocator, ready_reports);
 
-    const accumulate_root = try accumulate.transition(
+    var accumulate_result = try accumulate.transition(
         params,
         allocator,
         state_transition,
         ready_reports,
     );
+    defer accumulate_result.deinit(allocator);
 
     try preimages.transition(
         params,
@@ -114,7 +115,7 @@ pub fn stateTransition(
         params,
         state_transition,
         new_block,
-        accumulate_root,
+        accumulate_result.accumulate_root,
     );
 
     // Process authorizations using guarantees extrinsic data
@@ -136,6 +137,8 @@ pub fn stateTransition(
         state_transition,
         new_block,
         ready_reports,
+        &accumulate_result.accumulation_stats,
+        &accumulate_result.transfer_stats,
     );
 
     return state_transition;

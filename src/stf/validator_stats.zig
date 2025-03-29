@@ -3,6 +3,8 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 
+const accumulate = @import("../accumulate.zig");
+
 const Params = @import("../jam_params.zig").Params;
 const StateTransition = @import("../state_delta.zig").StateTransition;
 
@@ -15,6 +17,8 @@ pub fn transition(
     stx: *StateTransition(params),
     new_block: *const types.Block,
     ready_reports: []types.WorkReport,
+    accumulation_stats: *const std.AutoHashMap(types.ServiceId, accumulate.execution.AccumulationServiceStats),
+    transfer_stats: *const std.AutoHashMap(types.ServiceId, accumulate.execution.TransferServiceStats),
 ) !void {
     const span = trace.span(.transition_validator_stats);
     defer span.deinit();
@@ -24,7 +28,6 @@ pub fn transition(
 
     // Since we have validated guarantees here lets run through them
     // and update appropiate core statistics.
-    // TODO: put this in it own statistics stf
     for (new_block.extrinsic.guarantees.data) |guarantee| {
         const core_stats = try pi.getCoreStats(guarantee.report.core_index);
 
@@ -81,8 +84,29 @@ pub fn transition(
         }
     }
 
-    // TODO: add accumulation stats and transfer stats
+    // Eq 13.14: Accumulation Stats (accumulate_count, accumulate_gas_used)
+    // Depends on I (Accumulation Statistics - map ServiceId -> (Gas, Count)) - Eq 12.25
+    var accum_iter = accumulation_stats.iterator();
+    while (accum_iter.next()) |entry| {
+        const service_id = entry.key_ptr.*;
+        const stats_I = entry.value_ptr.*; // {gas_used, accumulated_count}
+        const service_stats = try pi.getOrCreateServiceStats(service_id);
+        service_stats.accumulate_count += stats_I.accumulated_count;
+        service_stats.accumulate_gas_used += stats_I.gas_used;
+    }
 
+    // Eq 13.15: Transfer Stats (on_transfers_count, on_transfers_gas_used)
+    // Depends on X (Transfer Statistics - map ServiceId -> (Count, Gas)) - Eq 12.30
+    var transfer_iter = transfer_stats.iterator();
+    while (transfer_iter.next()) |entry| {
+        const service_id = entry.key_ptr.*;
+        const stats_X = entry.value_ptr.*; // {transfer_count, gas_used}
+        const service_stats = try pi.getOrCreateServiceStats(service_id);
+        service_stats.on_transfers_count += stats_X.transfer_count;
+        // FIXME: The stats_X contains the *allocated* gas limit from the transfer,
+        // not necessarily the gas *used*.
+        service_stats.on_transfers_gas_used += stats_X.gas_used;
+    }
 }
 
 pub fn transition_epoch(
