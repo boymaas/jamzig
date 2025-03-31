@@ -41,6 +41,8 @@ comptime {
 
     _ = @import("pvm_invocations/accumulate.zig");
     _ = @import("pvm_invocations/accumulate_test.zig");
+    _ = @import("pvm_invocations/ontransfer.zig");
+    _ = @import("pvm_invocations/ontransfer_test.zig");
 
     _ = @import("merkle.zig");
     _ = @import("merkle_test.zig");
