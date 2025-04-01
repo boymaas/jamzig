@@ -111,8 +111,6 @@ pub fn transition(
         const stats_X = entry.value_ptr.*; // {transfer_count, gas_used}
         const service_stats = try pi.getOrCreateServiceStats(service_id);
         service_stats.on_transfers_count += stats_X.transfer_count;
-        // FIXME: The stats_X contains the *allocated* gas limit from the transfer,
-        // not necessarily the gas *used*.
         service_stats.on_transfers_gas_used += stats_X.gas_used;
     }
 }

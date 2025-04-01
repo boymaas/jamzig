@@ -152,10 +152,12 @@ fn decodeServiceStats(reader: anytype, stats: *std.AutoHashMap(ServiceId, Servic
         const refinement_count = @as(u32, @truncate(try codec.readInteger(reader)));
         const refinement_gas_used = try codec.readInteger(reader);
 
+        // FIXME: fix ordering back to @davxy ordering after merge
+        // of: https://github.com/jam-duna/jamtestnet/issues/181
         const imports = @as(u32, @truncate(try codec.readInteger(reader)));
-        const extrinsic_count = @as(u32, @truncate(try codec.readInteger(reader)));
-        const extrinsic_size = @as(u32, @truncate(try codec.readInteger(reader)));
         const exports = @as(u32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(u32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_count = @as(u32, @truncate(try codec.readInteger(reader)));
 
         const accumulate_count = @as(u32, @truncate(try codec.readInteger(reader)));
         const accumulate_gas_used = try codec.readInteger(reader);

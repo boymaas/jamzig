@@ -160,14 +160,16 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
         try codec.writeInteger(record.refinement_gas_used, writer);
 
         // Encode I/O stats
+        // FIXME: fix ordering back to @davxy ordering after merge
+        // of: https://github.com/jam-duna/jamtestnet/issues/181
         entry_span.trace("Imports: {}", .{record.imports});
         try codec.writeInteger(record.imports, writer);
-        entry_span.trace("Extrinsic count: {}", .{record.extrinsic_count});
-        try codec.writeInteger(record.extrinsic_count, writer);
-        entry_span.trace("Extrinsic size: {}", .{record.extrinsic_size});
-        try codec.writeInteger(record.extrinsic_size, writer);
         entry_span.trace("Exports: {}", .{record.exports});
         try codec.writeInteger(record.exports, writer);
+        entry_span.trace("Extrinsic size: {}", .{record.extrinsic_size});
+        try codec.writeInteger(record.extrinsic_size, writer);
+        entry_span.trace("Extrinsic count: {}", .{record.extrinsic_count});
+        try codec.writeInteger(record.extrinsic_count, writer);
 
         // Encode accumulation stats
         entry_span.trace("Accumulate count: {}", .{record.accumulate_count});
