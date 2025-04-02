@@ -15,10 +15,19 @@ pub const GeneralContext = struct {
     /// The current service ID
     service_id: types.ServiceId,
     /// Reference to service accounts delta snapshot
-    service_accounts: DeltaSnapshot, // d ∈ D⟨N_S → A⟩
+    service_accounts: *DeltaSnapshot, // d ∈ D⟨N_S → A⟩
     /// Allocator for memory allocation
     allocator: std.mem.Allocator,
 };
+
+pub fn debugLog(
+    exec_ctx: *PVM.ExecutionContext,
+) PVM.HostCallResult {
+    _ = exec_ctx;
+    // https://hackmd.io/@polkadot/jip1
+    std.debug.print("ecalli 100 log function called\n", .{});
+    return .play;
+}
 
 /// Host call implementation for gas remaining (Ω_G)
 pub fn gasRemaining(
@@ -219,7 +228,7 @@ pub fn readStorage(
 /// Host call implementation for write storage (Ω_W)
 pub fn writeStorage(
     exec_ctx: *PVM.ExecutionContext,
-    host_ctx: *GeneralContext,
+    host_ctx: GeneralContext,
 ) PVM.HostCallResult {
     const span = trace.span(.host_call_write);
     defer span.deinit();

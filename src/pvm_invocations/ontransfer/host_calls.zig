@@ -58,10 +58,10 @@ pub const HostCalls =
         ) PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
 
-            var general_context = host_ctx.toGeneralContext();
+            const general_context = host_ctx.toGeneralContext();
             return general.writeStorage(
                 exec_ctx,
-                &general_context,
+                general_context,
             );
         }
 
@@ -75,6 +75,15 @@ pub const HostCalls =
             return general.infoService(
                 exec_ctx,
                 host_ctx.toGeneralContext(),
+            );
+        }
+
+        pub fn debugLog(
+            exec_ctx: *PVM.ExecutionContext,
+            _: ?*anyopaque,
+        ) PVM.HostCallResult {
+            return general.debugLog(
+                exec_ctx,
             );
         }
     };

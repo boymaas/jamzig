@@ -17,6 +17,7 @@ pub const Id = enum(u32) {
     solicit = 14, // Host call for soliciting a preimage
     forget = 15, // Host call for forgetting/removing a preimage
     yield = 16, // Host call for yielding accumulation trie result
+    log = 100, // Host call for logging
 };
 
 /// Return codes for host call operations

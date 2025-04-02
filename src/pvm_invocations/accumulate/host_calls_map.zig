@@ -37,5 +37,7 @@ pub fn buildOrGetCached(comptime params: Params, allocator: std.mem.Allocator) !
     try host_call_map.put(allocator, @intFromEnum(HostCallId.forget), HostCall.forgetPreimage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.yield), HostCall.yieldAccumulationResult);
 
+    try host_call_map.put(allocator, @intFromEnum(HostCallId.log), HostCall.debugLog);
+
     return host_call_map;
 }

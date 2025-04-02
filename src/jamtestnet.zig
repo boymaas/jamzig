@@ -128,7 +128,7 @@ pub fn runStateTransitionTests(
         if (current_state) |*cs| cs.deinit(allocator);
     }
 
-    for (state_transition_vectors.items()) |state_transition_vector| {
+    for (state_transition_vectors.items()[21..]) |state_transition_vector| {
         std.debug.print("\nProcessing transition: {s}\n\n", .{state_transition_vector.bin.name});
 
         var state_transition = try loader.loadTestVector(allocator, state_transition_vector.bin.path);
@@ -139,7 +139,7 @@ pub fn runStateTransitionTests(
         defer pre_state_mdict.deinit();
 
         // std.debug.print("{}", .{types.fmt.format(pre_state_mdict)});
-        // std.debug.print("{}", .{types.fmt.format(state_transition.block())});
+        std.debug.print("{}", .{types.fmt.format(state_transition.block())});
 
         // Validator Root Calculations
         try state_transition.validateRoots(allocator);

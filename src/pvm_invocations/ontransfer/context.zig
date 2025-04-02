@@ -28,10 +28,10 @@ pub const OnTransferContext = struct {
         };
     }
 
-    pub fn toGeneralContext(self: *const @This()) general.GeneralContext {
+    pub fn toGeneralContext(self: *@This()) general.GeneralContext {
         return .{
             .service_id = self.service_id,
-            .service_accounts = self.service_accounts,
+            .service_accounts = &self.service_accounts,
             .allocator = self.allocator,
         };
     }

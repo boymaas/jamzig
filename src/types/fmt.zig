@@ -95,12 +95,19 @@ pub fn formatHex(value: anytype, writer: anytype) !void {
     const charset = "0123456789" ++ "abcdef";
     var buf: [2]u8 = undefined;
 
-    for (value) |c| {
+    for (value[0..@min(64, value.len)]) |c| {
         buf[0] = charset[c >> 4];
         buf[1] = charset[c & 15];
         try writer.writeAll(&buf);
     }
-    try writer.print(" (len: {d})", .{value.len});
+
+    if (value.len > 64) {
+        var hash: [32]u8 = undefined;
+        std.crypto.hash.blake2.Blake2b256.hash(value, &hash, .{});
+        try writer.print(" (truncated) (hash: {s}) (len: {d})", .{ std.fmt.fmtSliceHexLower(&hash), value.len });
+    } else {
+        try writer.print(" (len: {d})", .{value.len});
+    }
 }
 
 const ContainerType = enum {

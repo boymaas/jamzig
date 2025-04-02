@@ -25,5 +25,7 @@ pub fn buildOrGetCached(comptime _: Params, allocator: std.mem.Allocator) !std.A
     try host_call_map.put(allocator, @intFromEnum(HostCallId.write), HostCalls.writeStorage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.info), HostCalls.infoService);
 
+    try host_call_map.put(allocator, @intFromEnum(HostCallId.log), HostCalls.debugLog);
+
     return host_call_map;
 }

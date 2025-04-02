@@ -63,10 +63,10 @@ pub fn HostCalls(params: Params) type {
                 return new_context;
             }
 
-            pub fn toGeneralContext(self: *const @This()) general.GeneralContext {
+            pub fn toGeneralContext(self: *@This()) general.GeneralContext {
                 return .{
                     .service_id = self.service_id,
-                    .service_accounts = self.context.service_accounts,
+                    .service_accounts = &self.context.service_accounts,
                     .allocator = self.allocator,
                 };
             }
@@ -92,7 +92,7 @@ pub fn HostCalls(params: Params) type {
             call_ctx: ?*anyopaque,
         ) PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
-            const ctx_regular = host_ctx.regular;
+            var ctx_regular = &host_ctx.regular;
 
             return general.lookupPreimage(
                 exec_ctx,
@@ -106,7 +106,7 @@ pub fn HostCalls(params: Params) type {
             call_ctx: ?*anyopaque,
         ) PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
-            const ctx_regular = host_ctx.regular;
+            var ctx_regular = &host_ctx.regular;
 
             return general.readStorage(
                 exec_ctx,
@@ -120,12 +120,11 @@ pub fn HostCalls(params: Params) type {
             call_ctx: ?*anyopaque,
         ) PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
-            const ctx_regular = host_ctx.regular;
-            var general_ctx = ctx_regular.toGeneralContext();
+            var ctx_regular = &host_ctx.regular;
 
             return general.writeStorage(
                 exec_ctx,
-                &general_ctx,
+                ctx_regular.toGeneralContext(),
             );
         }
 
@@ -135,7 +134,7 @@ pub fn HostCalls(params: Params) type {
             call_ctx: ?*anyopaque,
         ) PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
-            const ctx_regular = host_ctx.regular;
+            var ctx_regular = &host_ctx.regular;
 
             return general.infoService(
                 exec_ctx,
@@ -1008,6 +1007,15 @@ pub fn HostCalls(params: Params) type {
             span.debug("Yield successful", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
+        }
+
+        pub fn debugLog(
+            exec_ctx: *PVM.ExecutionContext,
+            _: ?*anyopaque,
+        ) PVM.HostCallResult {
+            return general.debugLog(
+                exec_ctx,
+            );
         }
     };
 }
