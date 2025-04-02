@@ -82,6 +82,46 @@ pub const CoreActivityRecord = struct {
             .popularity = 0,
         };
     }
+
+    pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
+        const codec = @import("codec.zig");
+
+        // Encode each field using variable-length integer encoding
+        try codec.writeInteger(self.gas_used, writer);
+        try codec.writeInteger(self.imports, writer);
+        try codec.writeInteger(self.extrinsic_count, writer);
+        try codec.writeInteger(self.extrinsic_size, writer);
+        try codec.writeInteger(self.exports, writer);
+        try codec.writeInteger(self.bundle_size, writer);
+        try codec.writeInteger(self.da_load, writer);
+        try codec.writeInteger(self.popularity, writer);
+    }
+
+    pub fn decode(_: anytype, reader: anytype, _: std.mem.Allocator) !@This() {
+        const codec = @import("codec.zig");
+
+        // Read each field using variable-length integer decoding
+        // and truncate to the appropriate size
+        const gas_used = try codec.readInteger(reader);
+        const imports = @as(U16, @truncate(try codec.readInteger(reader)));
+        const extrinsic_count = @as(U16, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
+        const exports = @as(U16, @truncate(try codec.readInteger(reader)));
+        const bundle_size = @as(U32, @truncate(try codec.readInteger(reader)));
+        const da_load = @as(U32, @truncate(try codec.readInteger(reader)));
+        const popularity = @as(U16, @truncate(try codec.readInteger(reader)));
+
+        return @This(){
+            .gas_used = gas_used,
+            .imports = imports,
+            .extrinsic_count = extrinsic_count,
+            .extrinsic_size = extrinsic_size,
+            .exports = exports,
+            .bundle_size = bundle_size,
+            .da_load = da_load,
+            .popularity = popularity,
+        };
+    }
 };
 
 pub const ServiceActivityRecord = struct {
@@ -100,6 +140,58 @@ pub const ServiceActivityRecord = struct {
 
     pub fn init() ServiceActivityRecord {
         return ServiceActivityRecord{};
+    }
+
+    pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
+        const codec = @import("codec.zig");
+
+        // Encode each field using variable-length integer encoding
+        try codec.writeInteger(self.provided_count, writer);
+        try codec.writeInteger(self.provided_size, writer);
+        try codec.writeInteger(self.refinement_count, writer);
+        try codec.writeInteger(self.refinement_gas_used, writer);
+        try codec.writeInteger(self.imports, writer);
+        try codec.writeInteger(self.extrinsic_count, writer);
+        try codec.writeInteger(self.extrinsic_size, writer);
+        try codec.writeInteger(self.exports, writer);
+        try codec.writeInteger(self.accumulate_count, writer);
+        try codec.writeInteger(self.accumulate_gas_used, writer);
+        try codec.writeInteger(self.on_transfers_count, writer);
+        try codec.writeInteger(self.on_transfers_gas_used, writer);
+    }
+
+    pub fn decode(_: anytype, reader: anytype, _: std.mem.Allocator) !@This() {
+        const codec = @import("codec.zig");
+
+        // Read each field using variable-length integer decoding
+        // and truncate to the appropriate size
+        const provided_count = @as(U16, @truncate(try codec.readInteger(reader)));
+        const provided_size = @as(U32, @truncate(try codec.readInteger(reader)));
+        const refinement_count = @as(U32, @truncate(try codec.readInteger(reader)));
+        const refinement_gas_used = try codec.readInteger(reader);
+        const imports = @as(U32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_count = @as(U32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
+        const exports = @as(U32, @truncate(try codec.readInteger(reader)));
+        const accumulate_count = @as(U32, @truncate(try codec.readInteger(reader)));
+        const accumulate_gas_used = try codec.readInteger(reader);
+        const on_transfers_count = @as(U32, @truncate(try codec.readInteger(reader)));
+        const on_transfers_gas_used = try codec.readInteger(reader);
+
+        return @This(){
+            .provided_count = provided_count,
+            .provided_size = provided_size,
+            .refinement_count = refinement_count,
+            .refinement_gas_used = refinement_gas_used,
+            .imports = imports,
+            .extrinsic_count = extrinsic_count,
+            .extrinsic_size = extrinsic_size,
+            .exports = exports,
+            .accumulate_count = accumulate_count,
+            .accumulate_gas_used = accumulate_gas_used,
+            .on_transfers_count = on_transfers_count,
+            .on_transfers_gas_used = on_transfers_gas_used,
+        };
     }
 };
 

@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("../types.zig");
+const state = @import("../state.zig");
 const jam_params = @import("../jam_params.zig");
 
 pub const BASE_PATH = "src/jamtestvectors/data/reports/";
@@ -16,6 +17,28 @@ pub const AuthPools = struct {
             allocator.free(pool);
         }
         allocator.free(self.pools);
+        self.* = undefined;
+    }
+};
+
+pub const Account = struct {
+    service: types.ServiceInfo,
+};
+
+pub const AccountsMapEntry = struct {
+    id: types.ServiceId,
+    data: Account,
+};
+
+pub const CoresStatistics = struct {
+    stats: []state.validator_stats.CoreActivityRecord,
+
+    pub fn stats_size(params: jam_params.Params) usize {
+        return params.core_count;
+    }
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.stats);
         self.* = undefined;
     }
 };
@@ -44,26 +67,30 @@ pub const State = struct {
     /// [α] Authorization pools per core
     auth_pools: AuthPools,
 
-    /// [δ] Services dictionary
-    services: []ServiceItem,
+    /// [δ] Relevant services account data. Refer to T(σ) in GP Appendix D.
+    accounts: []AccountsMapEntry,
+
+    /// [δ] Relevant services account data. Refer to T(σ) in GP Appendix D.
+    /// Cores-statistics
+    cores_statistics: CoresStatistics,
+
+    /// Services-statistics
+    services_statistics: []state.validator_stats.ServiceActivityRecord,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.avail_assignments.deinit(allocator);
         self.curr_validators.deinit(allocator);
         self.prev_validators.deinit(allocator);
-        for (self.offenders) |*offender| {
-            _ = offender;
-        }
+        self.cores_statistics.deinit(allocator);
         allocator.free(self.offenders);
+
         for (self.recent_blocks) |*block| {
             block.deinit(allocator);
         }
         allocator.free(self.recent_blocks);
+        allocator.free(self.accounts);
+        allocator.free(self.services_statistics);
         self.auth_pools.deinit(allocator);
-        for (self.services) |*service| {
-            _ = service; // TODO what here
-        }
-        allocator.free(self.services);
         self.* = undefined;
     }
 };

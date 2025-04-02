@@ -57,28 +57,60 @@ pub fn convertAuthPools(
     return alpha;
 }
 
-pub fn convertServices(
+pub fn convertAccounts(
     allocator: std.mem.Allocator,
-    services: []tvector.ServiceItem,
+    accounts: []tvector.AccountsMapEntry,
 ) !state.Delta {
     var delta = state.Delta.init(allocator);
     errdefer delta.deinit();
 
-    for (services) |service| {
-        var account = @import("../services.zig").ServiceAccount.init(allocator);
-        account.code_hash = service.info.code_hash;
-        account.balance = service.info.balance;
-        account.min_gas_accumulate = service.info.min_item_gas;
-        account.min_gas_on_transfer = service.info.min_memo_gas;
-        try delta.putAccount(service.id, account);
+    for (accounts) |account_entry| {
+        var service_account = @import("../services.zig").ServiceAccount.init(allocator);
+        service_account.code_hash = account_entry.data.service.code_hash;
+        service_account.balance = account_entry.data.service.balance;
+        service_account.min_gas_accumulate = account_entry.data.service.min_item_gas;
+        service_account.min_gas_on_transfer = account_entry.data.service.min_memo_gas;
+        try delta.putAccount(account_entry.id, service_account);
     }
 
     return delta;
 }
 
+pub fn convertCoreStatistics(
+    allocator: std.mem.Allocator,
+    cores_statistics: tvector.CoresStatistics,
+    validators_count: u32,
+    core_count: u16,
+) !state.Pi {
+    var pi = try state.Pi.init(allocator, validators_count, core_count);
+    errdefer pi.deinit();
+
+    // Copy core statistics
+    for (cores_statistics.stats, 0..) |core_stat, i| {
+        if (i < pi.core_stats.items.len) {
+            pi.core_stats.items[i] = core_stat;
+        }
+    }
+
+    return pi;
+}
+
+pub fn convertServiceStatistics(
+    pi: *state.Pi,
+    services_statistics: []state.validator_stats.ServiceActivityRecord,
+    services_map: []tvector.AccountsMapEntry,
+) !void {
+    // Copy service statistics
+    for (services_map, 0..) |service_entry, i| {
+        if (i < services_statistics.len) {
+            try pi.service_stats.put(service_entry.id, services_statistics[i]);
+        }
+    }
+}
+
 const StateInitError = error{
     InvalidAuthPoolsCount,
-    InvalidServicesCount,
+    InvalidAccountsCount,
     InvalidValidatorCount,
     InvalidOffenderCount,
 };
@@ -132,8 +164,14 @@ pub fn convertState(
     }
     jam_state.alpha = convertAuthPools(test_state.auth_pools, params.core_count, params.max_authorizations_pool_items);
 
-    // Convert service state
-    jam_state.delta = try convertServices(allocator, test_state.services);
+    // Convert service accounts from the new accounts field
+    jam_state.delta = try convertAccounts(allocator, test_state.accounts);
+
+    // Convert core statistics and initialize Pi component
+    jam_state.pi = try convertCoreStatistics(allocator, test_state.cores_statistics, params.validators_count, params.core_count);
+
+    // Add service statistics to the Pi component
+    try convertServiceStatistics(&jam_state.pi.?, test_state.services_statistics, test_state.accounts);
 
     // Convert offenders list
     // const converted_offenders = try convertOffenders(allocator, test_state.offenders, params.validators_count);
