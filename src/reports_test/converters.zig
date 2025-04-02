@@ -97,14 +97,11 @@ pub fn convertCoreStatistics(
 
 pub fn convertServiceStatistics(
     pi: *state.Pi,
-    services_statistics: []state.validator_stats.ServiceActivityRecord,
-    services_map: []tvector.AccountsMapEntry,
+    services_statistics: tvector.ServiceStatistics,
 ) !void {
     // Copy service statistics
-    for (services_map, 0..) |service_entry, i| {
-        if (i < services_statistics.len) {
-            try pi.service_stats.put(service_entry.id, services_statistics[i]);
-        }
+    for (services_statistics.stats) |entry| {
+        try pi.service_stats.put(entry.id, entry.record);
     }
 }
 
@@ -171,7 +168,7 @@ pub fn convertState(
     jam_state.pi = try convertCoreStatistics(allocator, test_state.cores_statistics, params.validators_count, params.core_count);
 
     // Add service statistics to the Pi component
-    try convertServiceStatistics(&jam_state.pi.?, test_state.services_statistics, test_state.accounts);
+    try convertServiceStatistics(&jam_state.pi.?, test_state.services_statistics);
 
     // Convert offenders list
     // const converted_offenders = try convertOffenders(allocator, test_state.offenders, params.validators_count);

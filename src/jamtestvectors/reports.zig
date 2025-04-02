@@ -43,6 +43,57 @@ pub const CoresStatistics = struct {
     }
 };
 
+pub const ServicesStatisticsMapEntry = struct {
+    id: types.ServiceId,
+    record: state.validator_stats.ServiceActivityRecord,
+
+    pub fn decode(_: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
+        const codec = @import("../codec.zig");
+
+        // Read the service ID as a variable integer
+        const id = try codec.readInteger(reader);
+
+        // Decode the service activity record
+        const record = try codec.deserializeAlloc(state.validator_stats.ServiceActivityRecord, .{}, allocator, reader);
+
+        return @This(){
+            .id = @intCast(id),
+            .record = record,
+        };
+    }
+};
+
+pub const ServiceStatistics = struct {
+    stats: []ServicesStatisticsMapEntry,
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.stats);
+        self.* = undefined;
+    }
+
+    // encode would need to sort inplace
+
+    pub fn decode(_: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
+        const codec = @import("../codec.zig");
+
+        // Read the length as a variable integer
+        const length = try codec.readInteger(reader);
+
+        // Allocate memory for the service activity records
+        var stats = try allocator.alloc(ServicesStatisticsMapEntry, length);
+        errdefer allocator.free(stats);
+
+        // Decode each service activity record
+        for (0..length) |i| {
+            stats[i] = try codec.deserializeAlloc(ServicesStatisticsMapEntry, .{}, allocator, reader);
+        }
+
+        return @This(){
+            .stats = stats,
+        };
+    }
+};
+
 /// State for reports processing according to the GP
 pub const State = struct {
     /// [ρ‡] Intermediate pending reports after removal of uncertain/invalid reports
@@ -75,13 +126,14 @@ pub const State = struct {
     cores_statistics: CoresStatistics,
 
     /// Services-statistics
-    services_statistics: []state.validator_stats.ServiceActivityRecord,
+    services_statistics: ServiceStatistics,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.avail_assignments.deinit(allocator);
         self.curr_validators.deinit(allocator);
         self.prev_validators.deinit(allocator);
         self.cores_statistics.deinit(allocator);
+        self.services_statistics.deinit(allocator);
         allocator.free(self.offenders);
 
         for (self.recent_blocks) |*block| {
@@ -89,7 +141,6 @@ pub const State = struct {
         }
         allocator.free(self.recent_blocks);
         allocator.free(self.accounts);
-        allocator.free(self.services_statistics);
         self.auth_pools.deinit(allocator);
         self.* = undefined;
     }
