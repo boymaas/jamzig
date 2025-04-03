@@ -167,7 +167,7 @@ pub fn readStorage(
     const limit = exec_ctx.registers[12]; // Length limit (l)
 
     span.debug("Host call: read storage for service {d}", .{service_id});
-    span.debug("Key ptr: 0x{x}, Key size: {d}, Output ptr: 0x{x}", .{
+    span.trace("Key ptr: 0x{x}, Key size: {d}, Output ptr: 0x{x}", .{
         k_o, k_z, output_ptr,
     });
     span.debug("Offset: {d}, Limit: {d}", .{ offset, limit });
@@ -195,7 +195,7 @@ pub fn readStorage(
         return .{ .terminal = .panic };
     };
     defer key_data.deinit();
-    span.trace("Key data: {s}", .{std.fmt.fmtSliceHexLower(key_data.buffer)});
+    span.trace("Key = {s}", .{std.fmt.fmtSliceHexLower(key_data.buffer)});
 
     // Construct storage key: H(E_4(service_id) ⌢ key_data)
     span.debug("Constructing storage key", .{});
@@ -218,6 +218,7 @@ pub fn readStorage(
 
     // Hash to get final storage key
     var storage_key: [32]u8 = undefined;
+    // FIXME: we can hash without allocation
     std.crypto.hash.blake2.Blake2b256.hash(key_input.items, &storage_key, .{});
     span.trace("Generated storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
 
@@ -233,8 +234,12 @@ pub fn readStorage(
     // Determine what to read from the value
     const f = @min(offset, value.len);
     const l = @min(limit, value.len - f);
-    span.debug("Value found, length: {d}, returning range {d}..{d} ({d} bytes)", .{
-        value.len, f, f + l, l,
+    span.debug("Value found, length: {d}, returning range {d}..{d} ({d} bytes) => {s}", .{
+        value.len,
+        f,
+        f + l,
+        l,
+        std.fmt.fmtSliceHexLower(value[f..][0..l]),
     });
 
     // Write the value to memory
@@ -324,7 +329,10 @@ pub fn writeStorage(
         if (service_account.storage.fetchRemove(storage_key)) |*entry| {
             // Return the previous length
             span.debug("Key found and removed, previous value length: {d}", .{entry.value.len});
-            exec_ctx.registers[7] = entry.value.len;
+            // FIXME: JAMDUNA returned here NONE, but the length would also make sense,
+            //       check this again
+            // exec_ctx.registers[7] = entry.value.len;
+            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
             host_ctx.allocator.free(entry.value);
             return .play;
         }
@@ -334,21 +342,18 @@ pub fn writeStorage(
     }
 
     // Read value from memory
-    span.debug("Reading value data from memory at 0x{x} len={d}", .{ v_o, v_z });
+    span.trace("Reading value data from memory at 0x{x} len={d}", .{ v_o, v_z });
     var value = exec_ctx.memory.readSlice(@truncate(v_o), @truncate(v_z)) catch {
         span.err("Memory access failed while reading value data", .{});
         return .{ .terminal = .panic };
     };
     defer value.deinit();
 
-    span.trace("Value data len={d} (first 32 bytes max): {s}", .{
+    span.debug("Write Key={s} => Data len={d} (first 32 bytes max): {s}", .{
+        std.fmt.fmtSliceHexLower(&storage_key),
         value.buffer.len,
         std.fmt.fmtSliceHexLower(value.buffer[0..@min(32, value.buffer.len)]),
     });
-
-    // Write to storage
-    span.debug("Writing to storage, value size: {d}", .{value.buffer.len});
-    // Get current value length if key exists
 
     // Write and get the prior value owned
     var maybe_prior_value: ?[]const u8 = pv: {
@@ -357,21 +362,21 @@ pub fn writeStorage(
         };
         break :pv service_account.writeStorage(storage_key, value_owned) catch {
             host_ctx.allocator.free(value_owned);
-            span.err("Failed to write to storage, returning FULL", .{});
+            span.err("Failed to write to storage", .{});
             return .{ .terminal = .panic };
         };
     };
     defer if (maybe_prior_value) |pv| host_ctx.allocator.free(pv);
 
     if (maybe_prior_value) |prior_value| {
-        span.debug("Prior value found, length: {}", .{std.fmt.fmtSliceEscapeLower(prior_value)});
+        span.debug("Prior value found: {}", .{std.fmt.fmtSliceHexLower(prior_value)});
     } else {
         span.debug("No prior value found", .{});
     }
 
     // Check if service has enough balance to store this data
-    span.debug("Checking storage footprint against balance", .{});
     const footprint = service_account.storageFootprint();
+    span.debug("Checking storage footprint a_t {d} against balance {d}", .{ footprint.a_t, service_account.balance });
     if (footprint.a_t > service_account.balance) {
         span.warn("Insufficient balance for storage, returning FULL", .{});
         // Restore old value, if we had a prior value, otherwise
@@ -386,6 +391,8 @@ pub fn writeStorage(
         }
         exec_ctx.registers[7] = @intFromEnum(ReturnCode.FULL);
         return .play;
+    } else {
+        span.debug("Enough balance for storage", .{});
     }
 
     // Return the previous length per graypaper
