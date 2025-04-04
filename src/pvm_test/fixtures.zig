@@ -197,16 +197,16 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
 
     // Check if memory matches
     for (test_vector.expected_memory) |expected_chunk| {
-        const actual_chunk = try exec_ctx.memory.readSlice(expected_chunk.address, expected_chunk.contents.len);
+        var actual_chunk = try exec_ctx.memory.readSlice(expected_chunk.address, expected_chunk.contents.len);
         defer actual_chunk.deinit();
-        if (!std.mem.eql(u8, actual_chunk, expected_chunk.contents)) {
+        if (!std.mem.eql(u8, actual_chunk.buffer, expected_chunk.contents)) {
             std.debug.print("Memory mismatch at address 0x{X:0>8}:\n", .{expected_chunk.address});
             std.debug.print("Expected: ", .{});
             for (expected_chunk.contents) |byte| {
                 std.debug.print("{X:0>2} ", .{byte});
             }
             std.debug.print("\nActual:   ", .{});
-            for (actual_chunk) |byte| {
+            for (actual_chunk.buffer) |byte| {
                 std.debug.print("{X:0>2} ", .{byte});
             }
             std.debug.print("\n", .{});

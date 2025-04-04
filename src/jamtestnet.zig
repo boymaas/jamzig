@@ -131,6 +131,11 @@ pub fn runStateTransitionTests(
     }
 
     for (state_transition_vectors.items()) |state_transition_vector| {
+        // This is sometimes placed in the dir
+        if (std.mem.eql(u8, state_transition_vector.bin.name, "genesis.bin")) {
+            continue;
+        }
+
         std.debug.print("\nProcessing transition: {s}\n\n", .{state_transition_vector.bin.name});
 
         var state_transition = try loader.loadTestVector(allocator, state_transition_vector.bin.path);
@@ -224,6 +229,7 @@ pub fn runStateTransitionTests(
             state_diff.printToStdErr();
 
             // std.debug.print("{}", .{current_state.?});
+            // std.debug.print("{}", .{types.fmt.format(current_state.?.delta.?.getAccount(1065941251).?.storageFootprint())});
 
             return error.UnexpectedStateDiff;
         }

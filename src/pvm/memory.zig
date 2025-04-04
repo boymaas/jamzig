@@ -751,7 +751,7 @@ pub const Memory = struct {
         allocator: ?std.mem.Allocator = null,
 
         pub fn deinit(self: *@This()) void {
-            // if we have an allocator we owns the slice and should free it
+            // if we have an allocator we own the slice and should free it
             if (self.allocator) |alloc| {
                 alloc.free(self.buffer);
             }
