@@ -328,11 +328,8 @@ pub fn writeStorage(
         // Remove the key from storage
         if (service_account.storage.fetchRemove(storage_key)) |*entry| {
             // Return the previous length
-            span.debug("Key found and removed, previous value length: {d}", .{entry.value.len});
-            // FIXME: JAMDUNA returned here NONE, but the length would also make sense,
-            //       check this again
-            // exec_ctx.registers[7] = entry.value.len;
-            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+            span.debug("Key found and removed, previous value: {} length: {d}", .{ std.fmt.fmtSliceHexLower(entry.value), entry.value.len });
+            exec_ctx.registers[7] = entry.value.len;
             host_ctx.allocator.free(entry.value);
             return .play;
         }
