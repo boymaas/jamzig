@@ -399,6 +399,8 @@ pub fn processAccumulateReports(
                 .service_accounts = @import("services_snapshot.zig").DeltaSnapshot.init(delta_prime),
                 .allocator = allocator,
             };
+            defer context.deinit();
+
             const res = try @import("pvm_invocations/ontransfer.zig").invoke(
                 params,
                 allocator,

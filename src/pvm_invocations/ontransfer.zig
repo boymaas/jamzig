@@ -100,7 +100,7 @@ pub fn invoke(
     span.debug("Applying transfer balance to service", .{});
 
     // Get the service account to which the transfers should be applied
-    const destination_account = try context.service_accounts.getMutable(service_id) orelse {
+    var destination_account = try context.service_accounts.getMutable(service_id) orelse {
         span.err("Service {d} not found", .{service_id});
         return error.ServiceNotFound;
     };
@@ -108,11 +108,16 @@ pub fn invoke(
     // Update the balance, and commit to the balance to services
     span.debug("Found service account for ID {d}", .{service_id});
     destination_account.balance += total_transfer_amount;
+    // NOTE: this commits the modification to the service accounts, which entails
+    // removing and deinit the previous version and overwriting it with destination_accounts
     try context.service_accounts.commit();
 
+    // this will always succeed
+    const destination_account_prime = context.service_accounts.getReadOnly(service_id).?;
+
     // Execute the PVM invocation
-    const code_preimage = destination_account.getPreimage(destination_account.code_hash) orelse {
-        span.err("Service code not available for hash: {s}", .{std.fmt.fmtSliceHexLower(&destination_account.code_hash)});
+    const code_preimage = destination_account_prime.getPreimage(destination_account_prime.code_hash) orelse {
+        span.err("Service code not available for hash: {s}", .{std.fmt.fmtSliceHexLower(&destination_account_prime.code_hash)});
         return OnTransferResult{
             .service_id = service_id,
             .gas_used = 0,
