@@ -21,10 +21,13 @@ pub fn build(b: *std.Build) !void {
     const clap_module = b.dependency("clap", dep_opts).module("clap");
     const tmpfile_module = b.dependency("tmpfile", .{}).module("tmpfile");
 
-    //
+    // Event loop
+    const xev_dep = b.dependency("libxev", dep_opts);
+    const xev_mod = xev_dep.module("xev");
+
+    // Quic & Ssl
     const lsquic_dep = b.dependency("lsquic", dep_opts);
     const lsquic_mod = lsquic_dep.module("lsquic");
-
     const ssl_dep = lsquic_dep.builder.dependency("boringssl", dep_opts);
     const ssl_mod = ssl_dep.module("ssl");
 
@@ -42,6 +45,7 @@ pub fn build(b: *std.Build) !void {
     // jamzig_exe.linkLibC();
     jamzig_exe.root_module.addOptions("build-options", build_options);
     rust_deps.staticallyLinkTo(jamzig_exe);
+    jamzig_exe.root_module.addImport("xev", xev_mod);
     jamzig_exe.root_module.addImport("lsquic", lsquic_mod);
     jamzig_exe.root_module.addImport("ssl", ssl_mod);
 

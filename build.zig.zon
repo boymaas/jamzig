@@ -3,10 +3,6 @@
     .version = "0.1.0",
     .fingerprint = 0x4b3c352fa1870e81,
     .dependencies = .{
-        .lsquic = .{
-            .url = "git+https://github.com/jamzig/lsquic#ed6ced0cbc6447f7135a32db491e398debdf8af7",
-            .hash = "12207247a06ac1e7f4ddd6f0fbca4bcdcdf78655432a07928a96c8ec456bdfca71e3",
-        },
         .pretty = .{
             .url = "https://github.com/timfayz/pretty/archive/v0.10.4.tar.gz",
             .hash = "1220db3fa6510f1686587aab46ac92a882d4f5a287a20d7b687f654a7b8ce3a0e8d6",
@@ -22,6 +18,14 @@
         .clap = .{
             .url = "git+https://github.com/Hejsil/zig-clap#068c38f89814079635692c7d0be9f58508c86173",
             .hash = "1220ff14a53e9a54311c9b0e665afeda2c82cfd6f57e7e1b90768bf13b85f9f29cd0",
+        },
+        .lsquic = .{
+            .url = "git+https://github.com/jamzig/lsquic#ed6ced0cbc6447f7135a32db491e398debdf8af7",
+            .hash = "12207247a06ac1e7f4ddd6f0fbca4bcdcdf78655432a07928a96c8ec456bdfca71e3",
+        },
+        .libxev = .{
+            .url = "git+https://github.com/mitchellh/libxev#94ed6af7b2aaaeab987fbf87fcee410063df715b",
+            .hash = "libxev-0.0.0-86vtc-zkEgB7uv1i0Sa6ytJETZQi_lHJrImu9mLb9moi",
         },
     },
     .paths = .{
