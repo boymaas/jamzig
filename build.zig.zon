@@ -28,8 +28,8 @@
             .hash = "base32-0.2.0-AAAAAJU9AACju02m0t7OKIoucx4XtPXQJ9V9kY7g_79b",
         },
         .lsquic = .{
-            .url = "git+https://github.com/Syndica/lsquic#bc3bc885a1c85fe81f1654ac0a5e491ae8457b7e",
-            .hash = "lsquic-0.1.0-oZGGDUqdHQGWIrCMKkb4yLGIe4x7PToPb6RXHU8R1ULY",
+            .url = "git+https://github.com/jamzig/lsquic#ee141c51f1257718c639edf78e300724b38dcb46",
+            .hash = "lsquic-0.1.0-oZGGDUWdHQGciJasbWqM3iHTBg_53P3GOnZox9_it9Vt",
         },
     },
     .paths = .{
