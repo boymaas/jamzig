@@ -11,14 +11,12 @@ pub const UdpSocket = struct {
         source: std.net.Address,
     };
 
-    /// Initialize a new UDP socket
     pub fn init() !UdpSocket {
         const socket = try posix.socket(posix.AF.INET6, posix.SOCK.DGRAM, 0);
 
         return UdpSocket{ .socket = socket };
     }
 
-    /// Close the socket
     pub fn deinit(self: *UdpSocket) void {
         posix.close(self.socket);
     }
@@ -33,7 +31,6 @@ pub const UdpSocket = struct {
             address.getOsSockLen(),
         );
 
-        // Get the assigned port
         var saddr: posix.sockaddr align(4) = undefined;
         var saddrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
         try posix.getsockname(
@@ -58,7 +55,7 @@ pub const UdpSocket = struct {
         );
 
         // Convert from POSIX sockaddr.in6 to Zig's Address type
-        // Check if this is actually an IPv4-mapped IPv6 address
+        // TODO: Check if this is actually an IPv4-mapped IPv6 address
 
         return .{
             .bytes_read = buffer[0..bytes_read],
@@ -72,7 +69,6 @@ pub const UdpSocket = struct {
         var sockaddr = addr.any;
         const addrlen = addr.getOsSockLen();
 
-        // Call the POSIX sendto() function with the converted address
         return posix.sendto(
             self.socket,
             data,
@@ -80,6 +76,27 @@ pub const UdpSocket = struct {
             @ptrCast(&sockaddr),
             addrlen,
         );
+    }
+
+    /// Send data to a specific address
+    pub fn sendToSockAddr(self: *UdpSocket, data: []const u8, sockaddr: *align(4) const posix.sockaddr) !usize {
+        return posix.sendto(
+            self.socket,
+            data,
+            0,
+            @ptrCast(&sockaddr),
+            @sizeOf(@TypeOf(sockaddr)),
+        );
+    }
+
+    /// Retrieves the end point to which the socket is bound.
+    pub fn getLocalAddress(self: *@This()) !std.net.Address {
+        var addr: std.posix.sockaddr align(4) = undefined;
+        var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr);
+
+        try std.posix.getsockname(self.socket, &addr, &size);
+
+        return std.net.Address.initPosix(&addr);
     }
 };
 

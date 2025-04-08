@@ -30,6 +30,8 @@ pub fn build(b: *std.Build) !void {
     const lsquic_mod = lsquic_dep.module("lsquic");
     const ssl_dep = lsquic_dep.builder.dependency("boringssl", dep_opts);
     const ssl_mod = ssl_dep.module("ssl");
+    const base32_dep = b.dependency("base32", dep_opts);
+    const base32_mod = base32_dep.module("base32");
 
     // Rest of the existing build.zig implementation...
     var rust_deps = try buildRustDependencies(b, target, optimize);
@@ -48,6 +50,7 @@ pub fn build(b: *std.Build) !void {
     jamzig_exe.root_module.addImport("xev", xev_mod);
     jamzig_exe.root_module.addImport("lsquic", lsquic_mod);
     jamzig_exe.root_module.addImport("ssl", ssl_mod);
+    jamzig_exe.root_module.addImport("base32", base32_mod);
 
     b.installArtifact(jamzig_exe);
 
@@ -121,6 +124,11 @@ pub fn build(b: *std.Build) !void {
     unit_tests.root_module.addImport("pretty", pretty_module);
     unit_tests.root_module.addImport("diffz", diffz_module);
     unit_tests.root_module.addImport("tmpfile", tmpfile_module);
+
+    unit_tests.root_module.addImport("xev", xev_mod);
+    unit_tests.root_module.addImport("lsquic", lsquic_mod);
+    unit_tests.root_module.addImport("ssl", ssl_mod);
+    unit_tests.root_module.addImport("base32", base32_mod);
 
     unit_tests.linkLibCpp();
 

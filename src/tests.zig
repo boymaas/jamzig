@@ -122,5 +122,6 @@ comptime {
     _ = @import("crypto/bls12_381.zig");
 
     // Networking
+    _ = @import("net/jamsnp_test.zig");
     _ = @import("net/udp_socket.zig");
 }

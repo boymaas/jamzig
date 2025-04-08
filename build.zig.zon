@@ -27,6 +27,10 @@
             .url = "git+https://github.com/mitchellh/libxev#94ed6af7b2aaaeab987fbf87fcee410063df715b",
             .hash = "libxev-0.0.0-86vtc-zkEgB7uv1i0Sa6ytJETZQi_lHJrImu9mLb9moi",
         },
+        .base32 = .{
+            .url = "git+https://github.com/gernest/base32#0212357ac45af840e78745820adc1a9fc4b112ef",
+            .hash = "base32-0.2.0-AAAAAJU9AACju02m0t7OKIoucx4XtPXQJ9V9kY7g_79b",
+        },
     },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally
