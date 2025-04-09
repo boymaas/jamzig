@@ -5,6 +5,8 @@ const common = @import("common.zig");
 const certificate_verifier = @import("certificate_verifier.zig");
 const constants = @import("constants.zig");
 const UdpSocket = @import("../udp_socket.zig").UdpSocket;
+// Add xev import
+const xev = @import("xev");
 
 // Add tracing module import
 const trace = @import("../../tracing.zig").scoped(.network);
@@ -13,6 +15,10 @@ pub const JamSnpServer = struct {
     allocator: std.mem.Allocator,
     keypair: std.crypto.sign.Ed25519.KeyPair,
     socket: UdpSocket,
+
+    // Add xev event handlers
+    packets_in_event: xev.UDP,
+    tick_event: xev.Timer,
 
     lsquic_engine: *lsquic.lsquic_engine_t,
     lsquic_engine_api: lsquic.lsquic_engine_api,
@@ -106,6 +112,9 @@ pub const JamSnpServer = struct {
             .ssl_ctx = ssl_ctx,
             .chain_genesis_hash = try allocator.dupe(u8, chain_genesis_hash),
             .allow_builders = allow_builders,
+            // Initialize xev event handlers
+            .packets_in_event = xev.UDP.initFd(socket.socket),
+            .tick_event = try xev.Timer.init(),
         };
         span.trace("Chain genesis hash length: {d} bytes", .{chain_genesis_hash.len});
         span.trace("Chain genesis hash: {s}", .{std.fmt.fmtSliceHexLower(chain_genesis_hash)});
@@ -151,6 +160,9 @@ pub const JamSnpServer = struct {
         span.debug("Deinitializing socket", .{});
         self.socket.deinit();
 
+        span.debug("Deinitializing timer", .{});
+        self.tick_event.deinit();
+
         span.debug("Freeing chain genesis hash", .{});
         self.allocator.free(self.chain_genesis_hash);
 
@@ -167,9 +179,151 @@ pub const JamSnpServer = struct {
 
         try self.socket.bind(addr, port);
         span.debug("Successfully bound to {s}:{d}", .{ addr, port });
+    }
 
-        // TODO: process incoming packets via processPacket
-        span.debug("Server listening successfully", .{});
+    // Implement run method similar to client
+    pub fn run(self: *@This()) !void {
+        const span = trace.span(.run);
+        defer span.deinit();
+        span.debug("Starting JamSnpServer event loop", .{});
+
+        var loop = try xev.Loop.init(.{});
+        defer {
+            span.debug("Cleaning up event loop", .{});
+            loop.deinit();
+        }
+
+        // Trigger first timer at 500ms setting the ticker in motion
+        span.debug("Setting up tick timer (500ms)", .{});
+        var tick_complete: xev.Completion = undefined;
+        self.tick_event.run(&loop, &tick_complete, 500, @This(), self, onTick);
+
+        var packets_in_complete: xev.Completion = undefined;
+
+        // 1500 is the interface's MTU, so we'll never receive more bytes than that from UDP
+        span.debug("Allocating UDP receive buffer (MTU: 1500)", .{});
+        const read_buffer = try self.allocator.alloc(u8, 1500);
+        defer {
+            span.debug("Freeing UDP receive buffer", .{});
+            self.allocator.free(read_buffer);
+        }
+
+        span.debug("Setting up packets_in event handler", .{});
+        var state: xev.UDP.State = undefined;
+        self.packets_in_event.read(
+            &loop,
+            &packets_in_complete,
+            &state,
+            .{ .slice = read_buffer },
+            @This(),
+            self,
+            onPacketsIn,
+        );
+
+        span.debug("Starting event loop", .{});
+        try loop.run(.until_done);
+        span.debug("Event loop completed", .{});
+    }
+
+    fn onTick(
+        maybe_self: ?*@This(),
+        xev_loop: *xev.Loop,
+        xev_completion: *xev.Completion,
+        xev_timer_error: xev.Timer.RunError!void,
+    ) xev.CallbackAction {
+        const span = trace.span(.on_tick);
+        defer span.deinit();
+
+        errdefer |err| {
+            span.err("onTick failed with error: {s}", .{@errorName(err)});
+            std.debug.panic("onTick failed with: {s}", .{@errorName(err)});
+        }
+        try xev_timer_error;
+
+        const self = maybe_self.?;
+        span.debug("Processing connections", .{});
+        lsquic.lsquic_engine_process_conns(self.lsquic_engine);
+
+        // Delta is in 1/1_000_000 so we divide by 1000 to get ms
+        var delta: c_int = undefined;
+        var timeout_in_ms: u64 = 100; // Default timeout
+
+        span.trace("Checking for earliest connection activity", .{});
+        if (lsquic.lsquic_engine_earliest_adv_tick(self.lsquic_engine, &delta) != 0) {
+            if (delta > 0) {
+                timeout_in_ms = @intCast(@divTrunc(delta, 1000));
+                span.trace("Next tick scheduled in {d}ms", .{timeout_in_ms});
+            }
+        }
+
+        span.debug("Scheduling next tick in {d}ms", .{timeout_in_ms});
+        self.tick_event.run(xev_loop, xev_completion, timeout_in_ms, @This(), self, onTick);
+
+        return .disarm;
+    }
+
+    fn onPacketsIn(
+        maybe_self: ?*@This(),
+        xev_loop: *xev.Loop,
+        xev_completion: *xev.Completion,
+        xev_state: *xev.UDP.State,
+        peer_address: std.net.Address,
+        _: xev.UDP,
+        xev_read_buffer: xev.ReadBuffer,
+        xev_read_error: xev.ReadError!usize,
+    ) xev.CallbackAction {
+        const span = trace.span(.on_packets_in);
+        defer span.deinit();
+
+        errdefer |err| {
+            span.err("onPacketsIn failed with error: {s}", .{@errorName(err)});
+            std.debug.panic("onPacketsIn failed with: {s}", .{@errorName(err)});
+        }
+
+        const bytes = try xev_read_error;
+        span.debug("Received {d} bytes from {}", .{ bytes, peer_address });
+        span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
+
+        const self = maybe_self.?;
+
+        span.debug("Getting local address", .{});
+        const local_address = self.socket.getLocalAddress() catch |err| {
+            span.err("Failed to get local address: {s}", .{@errorName(err)});
+            @panic("Failed to get local address");
+        };
+        span.trace("Local address: {}", .{local_address});
+
+        span.debug("Passing packet to lsquic engine", .{});
+        if (0 > lsquic.lsquic_engine_packet_in(
+            self.lsquic_engine,
+            xev_read_buffer.slice.ptr,
+            bytes,
+            @ptrCast(&local_address.any),
+            @ptrCast(&peer_address.any),
+            self, // peer_ctx
+            0, // ecn
+        )) {
+            span.err("lsquic_engine_packet_in failed", .{});
+            @panic("lsquic_engine_packet_in failed");
+        }
+
+        span.debug("Processing engine connections", .{});
+        lsquic.lsquic_engine_process_conns(self.lsquic_engine);
+
+        span.debug("Successfully processed incoming packet", .{});
+
+        // Rearm to listen for more packets
+        self.packets_in_event.read(
+            xev_loop,
+            xev_completion,
+            xev_state,
+            .{ .slice = xev_read_buffer.slice },
+            @This(),
+            self,
+            onPacketsIn,
+        );
+
+        return .disarm;
     }
 
     pub fn processPacket(self: *JamSnpServer, packet: []const u8, peer_addr: std.posix.sockaddr, local_addr: std.posix.sockaddr) !void {
@@ -446,9 +600,35 @@ pub const JamSnpServer = struct {
         defer span.deinit();
         span.debug("Sending {d} packet(s)", .{n_specs});
 
-        _ = specs;
-        _ = ctx;
+        const server = @as(*JamSnpServer, @ptrCast(@alignCast(ctx)));
+        const specs_slice = specs.?[0..n_specs];
 
-        return @intCast(n_specs);
+        var packets_sent: c_int = 0;
+        for (specs_slice, 0..) |spec, i| {
+            span.debug("Processing packet spec {d}", .{i});
+
+            // For each iovec in the spec
+            const iov_slice = spec.iov[0..spec.iovlen];
+            for (iov_slice) |iov| {
+                const packet_buf: [*]const u8 = @ptrCast(iov.iov_base);
+                const packet_len: usize = @intCast(iov.iov_len);
+                const packet = packet_buf[0..packet_len];
+
+                const dest_addr = std.net.Address.initPosix(@ptrCast(@alignCast(spec.dest_sa)));
+
+                span.trace("Sending packet of {d} bytes to {}", .{ packet_len, dest_addr });
+
+                // Send the packet
+                _ = server.socket.sendTo(packet, dest_addr) catch |err| {
+                    span.err("Failed to send packet: {s}", .{@errorName(err)});
+                    continue;
+                };
+            }
+
+            packets_sent += 1;
+        }
+
+        span.debug("Successfully sent {d}/{d} packets", .{ packets_sent, n_specs });
+        return packets_sent;
     }
 };
