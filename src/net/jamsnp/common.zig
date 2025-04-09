@@ -3,9 +3,9 @@ const ssl = @import("ssl");
 const constants = @import("constants.zig");
 
 /// Builds the ALPN identifier string for JAMSNP
-pub fn buildAlpnIdentifier(alpn_buffer: *[64:0]u8, chain_genesis_hash: []const u8, is_builder: bool) ![:0]u8 {
-    var fbs = std.io.fixedBufferStream(alpn_buffer);
-    const writer = fbs.writer();
+pub fn buildAlpnIdentifier(allocator: std.mem.Allocator, chain_genesis_hash: []const u8, is_builder: bool) ![:0]u8 {
+    var buffer = try std.ArrayList(u8).initCapacity(allocator, 64);
+    const writer = buffer.writer();
 
     // Format: jamnp-s/0/abcdef12 or jamnp-s/0/abcdef12/builder
     try writer.print("{s}/{s}/{s}", .{
@@ -18,9 +18,7 @@ pub fn buildAlpnIdentifier(alpn_buffer: *[64:0]u8, chain_genesis_hash: []const u
         try writer.writeAll("/builder");
     }
 
-    try writer.writeByte(0);
-
-    return alpn_buffer[0 .. fbs.getWritten().len - 1 :0];
+    return try buffer.toOwnedSliceSentinel(0);
 }
 
 pub const X509Certificate = struct {
@@ -90,6 +88,7 @@ pub const X509Certificate = struct {
 
 /// Configure SSL context for JAMSNP
 pub fn configureSSLContext(
+    allocator: std.mem.Allocator,
     keypair: std.crypto.sign.Ed25519.KeyPair,
     chain_genesis_hash: []const u8,
     is_client: bool,
@@ -139,8 +138,9 @@ pub fn configureSSLContext(
 
     // Set ALPN
     // FIXME: check lifetimes
-    var alpn_buffer: [64:0]u8 = undefined;
-    const alpn_id = try buildAlpnIdentifier(&alpn_buffer, chain_genesis_hash, is_builder);
+    const alpn_id = try buildAlpnIdentifier(allocator, chain_genesis_hash, is_builder);
+    defer allocator.free(alpn_id);
+
     var alpn_protos = [1][]const u8{alpn_id};
 
     if (is_client) {
