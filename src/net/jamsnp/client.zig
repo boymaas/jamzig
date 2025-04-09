@@ -529,7 +529,7 @@ pub const JamSnpClient = struct {
         const specs = specs_ptr.?[0..specs_len];
 
         var send_packets: c_int = 0;
-        for (specs, 0..) |spec, i| {
+        send_loop: for (specs, 0..) |spec, i| {
             const iov = spec.iov[0..spec.iovlen];
             span.debug("Processing packet spec {d} with {d} iovecs", .{ i, spec.iovlen });
 
@@ -539,11 +539,13 @@ pub const JamSnpClient = struct {
                 const buf_len: usize = @intCast(iovec.iov_len);
                 const buffer = buf_ptr[0..buf_len];
 
-                span.trace("Sending iovec {d} with {d} bytes: {any}", .{ j, buf_len, std.fmt.fmtSliceHexLower(buffer[0..@min(buf_len, 16)]) });
+                const dest_address = std.net.Address.initPosix(@ptrCast(@alignCast(spec.dest_sa)));
 
-                _ = socket.sendToSockAddr(buffer, @ptrCast(@alignCast(spec.dest_sa))) catch {
-                    span.err("Failed to send packet", .{});
-                    break;
+                span.trace("Sending {} to {}", .{ std.fmt.fmtSliceHexLower(buffer), dest_address });
+
+                _ = socket.sendTo(buffer, dest_address) catch |err| {
+                    span.err("Failed to send packet: {}", .{err});
+                    break :send_loop;
                 };
                 span.debug("Successfully sent iovec {d}", .{j});
             }

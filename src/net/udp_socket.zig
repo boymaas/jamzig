@@ -66,15 +66,13 @@ pub const UdpSocket = struct {
     /// Send data to a specific address
     pub fn sendTo(self: *UdpSocket, data: []const u8, addr: std.net.Address) !usize {
         // Convert the Zig Address to the OS-specific sockaddr representation
-        var sockaddr = addr.any;
-        const addrlen = addr.getOsSockLen();
 
         return posix.sendto(
             self.socket,
             data,
             0,
-            @ptrCast(&sockaddr),
-            addrlen,
+            &addr.any,
+            addr.getOsSockLen(),
         );
     }
 
