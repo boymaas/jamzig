@@ -72,10 +72,14 @@ test "JAMSNP Client-Server Connection" {
 
     // Client
     std.debug.print("Client running..\n", .{});
-    try client.run();
 
-    // Short sleep to avoid busy-waiting
-    std.time.sleep(2 * std.time.ns_per_s);
+    // Now tick both server and client
+    while (true) {
+        try client.runTick();
+        try server.runTick();
+        // Short sleep to avoid busy-waiting
+        std.time.sleep(100 * std.time.ns_per_ms);
+    }
 
     std.debug.print("Test passed: QUIC connection established between client and server\n", .{});
 }

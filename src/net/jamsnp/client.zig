@@ -16,6 +16,13 @@ pub const JamSnpClient = struct {
     socket: UdpSocket,
     alpn: []const u8,
 
+    // XEVState: Store the event loop and read buffer
+    loop: xev.Loop = undefined,
+    read_buffer: []u8 = undefined,
+    tick_complete: xev.Completion = undefined,
+    packets_in_complete: xev.Completion = undefined,
+    udp_state: xev.UDP.State = undefined,
+
     packets_in_event: xev.UDP,
     tick_event: xev.Timer,
 
@@ -109,6 +116,7 @@ pub const JamSnpClient = struct {
             .keypair = keypair,
             .socket = socket,
             .alpn = alpn_id,
+
             .lsquic_engine = undefined,
             .lsquic_engine_settings = engine_settings,
             .lsquic_engine_api = .{
@@ -120,7 +128,7 @@ pub const JamSnpClient = struct {
                 .ea_get_ssl_ctx = &getSslContext,
                 .ea_lookup_cert = null,
                 .ea_cert_lu_ctx = null,
-                .ea_alpn = @ptrCast(alpn_id.ptr), // FIXME: we should own this memory
+                .ea_alpn = @ptrCast(alpn_id.ptr),
             },
             .ssl_ctx = ssl_ctx,
             .chain_genesis_hash = try allocator.dupe(u8, chain_genesis_hash),
@@ -139,51 +147,66 @@ pub const JamSnpClient = struct {
             return error.LsquicEngineCreationFailed;
         };
 
+        // Build the loop
+        try client.buildLoop();
+
         span.debug("JamSnpClient initialization successful", .{});
         return client;
     }
 
-    pub fn run(self: *@This()) !void {
-        const span = trace.span(.run);
+    pub fn buildLoop(self: *@This()) !void {
+        const span = trace.span(.build_loop);
         defer span.deinit();
-        span.debug("Starting JamSnpClient event loop", .{});
+        span.debug("Building event loop for JamSnpClient", .{});
 
-        var loop = try xev.Loop.init(.{});
-        defer {
-            span.debug("Cleaning up event loop", .{});
-            loop.deinit();
-        }
+        span.debug("Initializing event loop", .{});
+        self.loop = try xev.Loop.init(.{});
 
-        // Trigger first timer at 500ms setting the ticker in motion
-        span.debug("Setting up tick timer (500ms)", .{});
-        var tick_complete: xev.Completion = undefined;
-        self.tick_event.run(&loop, &tick_complete, 500, @This(), self, onTick);
+        // Allocate the read buffer
+        self.read_buffer = try self.allocator.alloc(u8, 1500);
 
-        var packets_in_complete: xev.Completion = undefined;
+        // Set up tick timer if not already running
+        self.tick_event.run(
+            &self.loop,
+            &self.tick_complete,
+            500,
+            @This(),
+            self,
+            onTick,
+        );
 
-        // 1500 is the interface's MTU, so we'll never receive more bytes than that
-        // from UDP.
-        span.debug("Allocating UDP receive buffer (MTU: 1500)", .{});
-        const read_buffer = try self.allocator.alloc(u8, 1500);
-        defer {
-            span.debug("Freeing UDP receive buffer", .{});
-            self.allocator.free(read_buffer);
-        }
-
-        span.debug("Setting up packets_in event handler", .{});
-        var state: xev.UDP.State = undefined;
+        // Set up packet receiving if not already running
         self.packets_in_event.read(
-            &loop,
-            &packets_in_complete,
-            &state,
-            .{ .slice = read_buffer },
+            &self.loop,
+            &self.packets_in_complete,
+            &self.udp_state,
+            .{ .slice = self.read_buffer },
             @This(),
             self,
             onPacketsIn,
         );
 
+        span.debug("Event loop built successfully", .{});
+    }
+
+    pub fn runTick(self: *@This()) !void {
+        const span = trace.span(.run_tick);
+        defer span.deinit();
+        span.debug("Running a single tick on JamSnpClient", .{});
+
+        // Run a single tick
+        span.debug("Running event loop for a single tick", .{});
+        try self.loop.run(.once);
+        span.debug("Event loop tick completed", .{});
+    }
+
+    pub fn runUntilDone(self: *@This()) !void {
+        const span = trace.span(.run);
+        defer span.deinit();
+        span.debug("Starting JamSnpClient event loop", .{});
+
         span.debug("Starting event loop", .{});
-        try loop.run(.until_done);
+        try self.loop.run(.until_done);
         span.debug("Event loop completed", .{});
     }
 
@@ -219,7 +242,14 @@ pub const JamSnpClient = struct {
         }
 
         span.debug("Scheduling next tick in {d}ms", .{timeout_in_ms});
-        self.tick_event.run(xev_loop, xev_completion, timeout_in_ms, @This(), self, onTick);
+        self.tick_event.run(
+            xev_loop,
+            xev_completion,
+            timeout_in_ms,
+            @This(),
+            self,
+            onTick,
+        );
 
         return .disarm;
     }
@@ -281,6 +311,10 @@ pub const JamSnpClient = struct {
         ssl.SSL_CTX_free(self.ssl_ctx);
 
         self.socket.deinit();
+
+        self.loop.deinit();
+        self.allocator.free(self.read_buffer);
+
         self.allocator.free(self.chain_genesis_hash);
         self.allocator.free(self.alpn);
         self.allocator.destroy(self);
