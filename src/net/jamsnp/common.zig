@@ -151,10 +151,10 @@ pub fn configureSSLContext(
     // Set up certificate verification
     if (is_client) {
         // For clients, verify peer certificate
-        ssl.SSL_CTX_set_verify(ssl_ctx, ssl.SSL_VERIFY_PEER, null);
+        ssl.SSL_CTX_set_verify(ssl_ctx, ssl.SSL_VERIFY_NONE, null);
     } else {
         // For servers, both request and verify client certificates
-        ssl.SSL_CTX_set_verify(ssl_ctx, ssl.SSL_VERIFY_PEER | ssl.SSL_VERIFY_FAIL_IF_NO_PEER_CERT, null);
+        ssl.SSL_CTX_set_verify(ssl_ctx, ssl.SSL_VERIFY_NONE | ssl.SSL_VERIFY_FAIL_IF_NO_PEER_CERT, null);
     }
 
     // Set ALPN
