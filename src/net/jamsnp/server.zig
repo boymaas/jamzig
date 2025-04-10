@@ -592,15 +592,16 @@ pub const JamSnpServer = struct {
         }
     };
 
-    fn getSslContext(peer_ctx: ?*anyopaque, _: ?*const lsquic.struct_sockaddr) callconv(.C) ?*lsquic.struct_ssl_ctx_st {
+    fn getSslContext(ctx: ?*anyopaque, _: ?*const lsquic.struct_sockaddr) callconv(.C) ?*lsquic.struct_ssl_ctx_st {
         const span = trace.span(.get_ssl_context);
         defer span.deinit();
         span.debug("SSL context request", .{});
-        return @ptrCast(peer_ctx.?);
+        const server: ?*JamSnpServer = @ptrCast(@alignCast(ctx));
+        return @ptrCast(server.?.ssl_ctx);
     }
 
     fn lookupCertificate(
-        cert_lu_ctx: ?*anyopaque,
+        ctx: ?*anyopaque,
         _: ?*const lsquic.struct_sockaddr,
         sni: ?[*:0]const u8,
     ) callconv(.C) ?*lsquic.struct_ssl_ctx_st {
@@ -613,7 +614,8 @@ pub const JamSnpServer = struct {
             span.debug("Certificate lookup without SNI", .{});
         }
 
-        return @ptrCast(cert_lu_ctx.?);
+        const server: ?*JamSnpServer = @ptrCast(@alignCast(ctx));
+        return @ptrCast(server.?.ssl_ctx);
     }
 
     fn sendPacketsOut(
