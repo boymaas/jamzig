@@ -107,6 +107,12 @@ pub const JamSnpServer = struct {
         engine_settings.es_versions = 1 << lsquic.LSQVER_ID29; // IETF QUIC v1
         span.trace("Engine settings: es_versions={d}", .{engine_settings.es_versions});
 
+        // Check settings
+        var error_buffer: [128]u8 = undefined;
+        if (lsquic.lsquic_engine_check_settings(&engine_settings, 0, @ptrCast(&error_buffer), @sizeOf(@TypeOf(error_buffer))) != 0) {
+            std.debug.panic("Server engine settings problem: {s}", .{error_buffer});
+        }
+
         // Initialize server structure first
         span.debug("Setting up server structure", .{});
         server.* = JamSnpServer{
@@ -308,6 +314,9 @@ pub const JamSnpServer = struct {
         const bytes = try xev_read_error;
         span.debug("Received {d} bytes from {}", .{ bytes, peer_address });
         span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
+
+        // Now change some bytes
+        // xev_read_buffer.slice[6] = 0x66;
 
         const self = maybe_self.?;
 

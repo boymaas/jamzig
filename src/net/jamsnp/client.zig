@@ -101,6 +101,12 @@ pub const JamSnpClient = struct {
         lsquic.lsquic_engine_init_settings(&engine_settings, 0);
         engine_settings.es_versions = 1 << lsquic.LSQVER_ID29; // IETF QUIC v1
 
+        // Check settings
+        var error_buffer: [128]u8 = undefined;
+        if (lsquic.lsquic_engine_check_settings(&engine_settings, 0, @ptrCast(&error_buffer), @sizeOf(@TypeOf(error_buffer))) != 0) {
+            std.debug.panic("Client engine settings problem: {s}", .{error_buffer});
+        }
+
         // Create ALPN identifier
         span.debug("Building ALPN identifier", .{});
         const alpn_id = try common.buildAlpnIdentifier(allocator, chain_genesis_hash, is_builder);
@@ -358,7 +364,7 @@ pub const JamSnpClient = struct {
             @ptrCast(&peer_endpoint.any),
             self.ssl_ctx, // peer_ctx
             @ptrCast(connection), // conn_ctx
-            null, // hostname for SNI
+            "e123456", // hostname for SNI
             0, // base_plpmtu - use default
             null,
             0, // session resumption
