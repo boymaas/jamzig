@@ -102,14 +102,38 @@ pub fn verifyCertificate(certs: ?*ssl.X509_STORE_CTX, _: ?*anyopaque) callconv(.
     base32_check_span.debug("Checking base32 encoding for DNS name", .{});
 
     var decode_buffer: [32]u8 = undefined;
-    if (Base32.decode(&decode_buffer, dnsNameStr[1..53])) |pubkey| {
-        // TODO: check if this pubkey matches the signature of this certificate
-        _ = pubkey;
-    } else |_| {
-        name_check_span.err("DNS name not properly encoded", .{});
-    }
+    if (Base32.decode(&decode_buffer, dnsNameStr[1..53])) |_| {
+        base32_check_span.debug("DNS name is properly base32 encoded", .{});
 
-    base32_check_span.debug("DNS name is properly base32 encoded", .{});
+        // Check if the decoded pubkey matches the certificate's key
+        const pubkey_check_span = span.child(.check_pubkey_match);
+        defer pubkey_check_span.deinit();
+        pubkey_check_span.debug("Checking if decoded pubkey matches certificate pubkey", .{});
+
+        // Get raw Ed25519 key data from EVP_PKEY
+        var key_data: [32]u8 = undefined;
+        var key_len: usize = key_data.len;
+        if (ssl.EVP_PKEY_get_raw_public_key(pkey, &key_data, &key_len) != 1) {
+            pubkey_check_span.err("Failed to extract raw public key from certificate", .{});
+            return 0;
+        }
+
+        if (key_len != 32) {
+            pubkey_check_span.err("Unexpected Ed25519 public key length: {d} (expected 32)", .{key_len});
+            return 0;
+        }
+
+        // Compare the decoded DNS name pubkey with the certificate's pubkey
+        if (!std.mem.eql(u8, decode_buffer[0..32], key_data[0..32])) {
+            pubkey_check_span.err("Public key in DNS name doesn't match certificate's key", .{});
+            return 0;
+        }
+
+        pubkey_check_span.debug("Public key in DNS name matches certificate's key", .{});
+    } else |err| {
+        name_check_span.err("DNS name not properly encoded: {any}", .{err});
+        return 0;
+    }
 
     // TODO: Decode the base32 public key and compare with the certificate's key
     span.debug("Certificate verification successful", .{});
