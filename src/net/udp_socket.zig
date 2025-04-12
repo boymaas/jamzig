@@ -15,6 +15,16 @@ pub const UdpSocket = struct {
         // Create an IPv6 socket
         const socket = try posix.socket(posix.AF.INET6, posix.SOCK.DGRAM, 0);
 
+        // Allow address reuse - helpful for quickly restarting tests
+        _ = posix.setsockopt(
+            socket,
+            posix.SOL.SOCKET,
+            posix.SO.REUSEADDR,
+            &std.mem.toBytes(@as(c_int, 1)),
+        ) catch |err| {
+            std.debug.print("Warning: Failed to set SO_REUSEADDR option: {}\n", .{err});
+        };
+
         // Explicitly ensure IPv4 compatibility by disabling IPV6_V6ONLY
         _ = posix.setsockopt(
             socket,
@@ -40,40 +50,59 @@ pub const UdpSocket = struct {
 
         // If this is an IPv4 address, convert it to an IPv4-mapped IPv6 address
         if (address.any.family == posix.AF.INET) {
-            // Extract IPv4 address and port
-            const ipv4_addr = address.in.sa.addr;
-            const ipv4_port = address.in.sa.port;
+            // Debug: Print the original IPv4 address
+            std.debug.print("IPv4 address: {}\n", .{address.in.sa.addr});
 
-            // Create IPv6 mapped address (::ffff:a.b.c.d format)
-            const ipv6_addr = std.net.Address.initIp6(
-                [_]u8{0} ** 10 ++ [_]u8{ 0xff, 0xff } ++ @as(*const [4]u8, @ptrCast(&ipv4_addr)).*,
-                ipv4_port,
-                0,
-                0,
-            );
-            address = ipv6_addr;
+            // DEBUG: Print bytes directly
+            const bytes = std.mem.asBytes(&address.in.sa.addr);
+            std.debug.print("IPv4 raw bytes: {any}\n", .{bytes});
+
+            // Let's try directly copying the bytes without using writeInt
+            address.in6.sa.addr[0..10].* = [_]u8{0} ** 10;
+            address.in6.sa.addr[10] = 0xff;
+            address.in6.sa.addr[11] = 0xff;
+            address.in6.sa.addr[12] = bytes[0];
+            address.in6.sa.addr[13] = bytes[1];
+            address.in6.sa.addr[14] = bytes[2];
+            address.in6.sa.addr[15] = bytes[3];
+
+            // Debug: Print the resulting IPv6 address bytes
+            std.debug.print("Mapped IPv6 bytes: {any}\n", .{address.in6.sa.addr});
+
+            // Update the family, flowinfo, and scope_id
+            address.any.family = posix.AF.INET6;
+            address.in6.sa.flowinfo = 0;
+            address.in6.sa.scope_id = 0;
         }
+
+        std.debug.print("Freshly mapped Address: {}\n", .{address});
 
         // Bind the socket to the address
         try posix.bind(
             self.socket,
             &address.any,
-            address.getOsSockLen(),
+            @sizeOf(@TypeOf(address)),
         );
 
-        var saddr: posix.sockaddr align(4) = undefined;
-        var saddrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
-        try posix.getsockname(
-            self.socket,
-            @ptrCast(&saddr),
-            &saddrlen,
-        );
-        self.bound_address = std.net.Address.initPosix(&saddr);
+        std.debug.print("Bound mapped Address: {}\n", .{address});
+
+        // var saddr: posix.sockaddr align(4) = undefined;
+        // var saddrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
+
+        var saddr: std.posix.sockaddr.in6 align(4) = undefined;
+        var saddrlen: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
+
+        const addr_ptr: *std.posix.sockaddr = @ptrCast(&saddr);
+        try std.posix.getsockname(self.socket, addr_ptr, &saddrlen);
+
+        self.bound_address = std.net.Address{ .in6 = std.net.Ip6Address{ .sa = saddr } };
+
+        std.debug.print("After get sockname Address: {?}\n", .{self.bound_address});
     }
 
     pub fn recvFrom(self: *UdpSocket, buffer: []u8) !Datagram {
-        var src_addr: posix.sockaddr align(4) = undefined;
-        var addrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
+        var src_addr: posix.sockaddr.in6 align(4) = undefined;
+        var addrlen: posix.socklen_t = @sizeOf(posix.sockaddr.in6);
         const bytes_read = try posix.recvfrom(
             self.socket,
             buffer,
@@ -83,7 +112,7 @@ pub const UdpSocket = struct {
         );
 
         // Convert from POSIX sockaddr to Zig's Address type
-        const source_addr = std.net.Address.initPosix(&src_addr);
+        const source_addr = std.net.Address{ .in6 = std.net.Ip6Address{ .sa = src_addr } };
 
         return .{
             .bytes_read = buffer[0..bytes_read],
@@ -115,25 +144,25 @@ pub const UdpSocket = struct {
 
     /// Retrieves the end point to which the socket is bound.
     pub fn getLocalAddress(self: *@This()) !std.net.Address {
-        var addr: std.posix.sockaddr align(4) = undefined;
-        var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr);
-        try std.posix.getsockname(self.socket, &addr, &size);
-        return std.net.Address.initPosix(&addr);
+        var addr: std.posix.sockaddr.in6 align(4) = undefined;
+        var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
+        try std.posix.getsockname(self.socket, @ptrCast(&addr), &size);
+        return std.net.Address{ .in6 = .{ .sa = addr } };
     }
 
     /// Check if an address is an IPv4-mapped IPv6 address
     pub fn isIPv4Mapped(addr: std.net.Address) bool {
         if (addr.any.family != posix.AF.INET6) return false;
 
-        const in6_addr = addr.in6.sa.sin6_addr;
+        const addr_bytes = std.mem.asBytes(&addr);
 
         // Check first 10 bytes are 0
-        for (in6_addr.s6_addr[0..10]) |byte| {
+        for (addr_bytes[0..10]) |byte| {
             if (byte != 0) return false;
         }
 
         // Check next 2 bytes are 0xFF
-        if (in6_addr.s6_addr[10] != 0xFF or in6_addr.s6_addr[11] != 0xFF) {
+        if (addr_bytes[10] != 0xFF or addr_bytes[11] != 0xFF) {
             return false;
         }
 
@@ -143,45 +172,87 @@ pub const UdpSocket = struct {
 
 const testing = std.testing;
 
-// Simple test that sends "JamZig" over UDP
-test UdpSocket {
-    // Create receiver socket on a system
-    // assigned port
+// Helper function to test UDP socket communication with different address configurations
+fn testUdpSocketCommunication(receiver_bind_addr: []const u8, sender_bind_addr: []const u8) !void {
+    std.debug.print("\n--- Testing UDP: Receiver({s}) -> Sender({s}) ---\n", .{ receiver_bind_addr, sender_bind_addr });
+
+    // Create receiver socket
     var receiver = try UdpSocket.init();
     defer receiver.deinit();
-    try receiver.bind("::", 0);
-    std.debug.print("Receiver bound on: {}\n", .{receiver.bound_address.?});
+    std.debug.print("Receiver socket fd: {}\n", .{receiver.socket});
+
+    // Bind receiver to specified address with port 0 (system assigns port)
+    try receiver.bind(receiver_bind_addr, 0);
+    const receiver_addr = try receiver.getLocalAddress();
+    std.debug.print("Receiver bound on: {}\n", .{receiver_addr});
 
     // Create sender socket
     var sender = try UdpSocket.init();
     defer sender.deinit();
+    std.debug.print("Sender socket fd: {}\n", .{sender.socket});
 
-    // The message to send
-    const message = "JamZig";
+    // Bind sender to specified address
+    try sender.bind(sender_bind_addr, 0);
+    const sender_addr = try sender.getLocalAddress();
+    std.debug.print("Sender bound on: {}\n", .{sender_addr});
 
-    // Send the message
-    const dest_addr = receiver.bound_address;
-    const bytes_sent = try sender.sendTo(message, dest_addr.?);
+    // Test message
+    const message = "JamZig:Test";
+
+    std.debug.print("Sending '{s}' to {}\n", .{ message, receiver_addr });
+
+    const bytes_sent = try sender.sendTo(message, receiver_addr);
     std.debug.print("Sent {d} bytes\n", .{bytes_sent});
 
     // Receive buffer
     var buffer: [128]u8 = undefined;
 
+    // Add a timeout to prevent hanging
+    try posix.setsockopt(
+        receiver.socket,
+        posix.SOL.SOCKET,
+        posix.SO.RCVTIMEO,
+        &std.mem.toBytes(posix.timeval{
+            .sec = 5,
+            .usec = 0,
+        }),
+    );
+
     // Receive the message
-    const datagram = try receiver.recvFrom(&buffer);
+    std.debug.print("Waiting to receive...\n", .{});
+    const datagram = receiver.recvFrom(&buffer) catch |err| {
+        std.debug.print("Error receiving data: {}\n", .{err});
+        std.debug.print("Is the network interface accessible from within your environment?\n", .{});
+        std.debug.print("Your environment assigns addresses like: {}\n", .{receiver_addr});
+        return err;
+    };
+
     std.debug.print("Received: '{s}'\n", .{datagram.bytes_read});
-    std.debug.print("Received from: '{}'\n", .{datagram.source});
+    std.debug.print("Received from: {}\n", .{datagram.source});
 
     // Verify the data
     try std.testing.expectEqualStrings(message, datagram.bytes_read);
 
-    // Test IPv4 functionality
-    std.debug.print("Testing IPv4 address...\n", .{});
-    try receiver.bind("127.0.0.1", 0);
-    std.debug.print("IPv4 receiver bound on: {}\n", .{receiver.bound_address.?});
+    std.debug.print("--- Test passed ---\n", .{});
+}
 
-    // Check if it's an IPv4-mapped address when we bound to 127.0.0.1
-    if (UdpSocket.isIPv4Mapped(receiver.bound_address.?)) {
-        std.debug.print("Detected IPv4-mapped address\n", .{});
-    }
+// Main test that runs multiple address combinations
+test UdpSocket {
+    // Test IPv4 to IPv4
+    try testUdpSocketCommunication("127.0.0.1", "127.0.0.1");
+
+    // Test IPv6 to IPv6 (loopback)
+    try testUdpSocketCommunication("::1", "::1");
+
+    // Test IPv4 to IPv6 (sender on IPv4, receiver on IPv6)
+    try testUdpSocketCommunication("::1", "127.0.0.1");
+
+    // Test IPv6 to IPv4 (sender on IPv6, receiver on IPv4)
+    try testUdpSocketCommunication("127.0.0.1", "::1");
+
+    // Test IPv4 Wildcard to IPv4
+    try testUdpSocketCommunication("127.0.0.1", "0.0.0.0");
+
+    // Test IPv6 Wildcard to IPv6
+    try testUdpSocketCommunication("::1", "::");
 }
