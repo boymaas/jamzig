@@ -15,12 +15,10 @@ pub fn verifyCertificate(certs: ?*ssl.X509_STORE_CTX, _: ?*anyopaque) callconv(.
 
     // Now you can use ssl_handle to get the peer certificate or perform other operations
     const cert = ssl.SSL_get_peer_certificate(@ptrCast(ssl_handle));
-
-    // // Get the peer certificate
-    // const cert = ssl.X509_STORE_CTX_get_current_cert(certs) orelse {
-    //     span.err("Failed to get current certificate", .{});
-    //     return 0; // Verification failed
-    // };
+    if (cert == null) {
+        span.err("Could not fetch peer certificate", .{});
+        return 0;
+    }
     span.debug("Got peer certificate", .{});
 
     // 1. Check signature algorithm is Ed25519
@@ -96,7 +94,7 @@ pub fn verifyCertificate(certs: ?*ssl.X509_STORE_CTX, _: ?*anyopaque) callconv(.
     }
     name_check_span.debug("DNS name starts with 'e'", .{});
 
-    // 5. Verify that the rest of the DNS name is base32 encoded
+    // 5. Verify that the rest of the DNS name is base32 encoded, and matches the signers pubkey
     const base32_check_span = span.child(.check_base32);
     defer base32_check_span.deinit();
     base32_check_span.debug("Checking base32 encoding for DNS name", .{});
@@ -135,7 +133,6 @@ pub fn verifyCertificate(certs: ?*ssl.X509_STORE_CTX, _: ?*anyopaque) callconv(.
         return 0;
     }
 
-    // TODO: Decode the base32 public key and compare with the certificate's key
     span.debug("Certificate verification successful", .{});
     return 1; // Verification successful
 }

@@ -367,7 +367,7 @@ pub const JamSnpClient = struct {
             @ptrCast(&peer_endpoint.any),
             self.ssl_ctx, // peer_ctx
             @ptrCast(connection), // conn_ctx
-            "e123456", // hostname for SNI FIXME: generate correct one
+            null,
             0, // base_plpmtu - use default
             null,
             0, // session resumption

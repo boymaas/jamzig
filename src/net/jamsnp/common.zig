@@ -34,6 +34,20 @@ pub fn buildAlpnIdentifier(allocator: std.mem.Allocator, chain_genesis_hash: []c
     return result;
 }
 
+/// Generate an alternative name by encoding the public key in base32 with 'e' prefix
+/// Returns a newly allocated string that must be freed by the caller
+pub fn generateAltName(result: *[Base32.encodeLen(32) + 1]u8, pubkey: []const u8) void {
+    const span = trace.span(.alt_name_generation);
+    defer span.deinit();
+
+    // Prefix with an e
+    result[0] = 'e';
+    // Base32 encode the public key
+    _ = Base32.encode(result[1 .. Base32.encodeLen(32) + 1], pubkey);
+
+    span.debug("Generated Alt Name: {s}", .{result});
+}
+
 pub const X509Certificate = struct {
     /// Create a certificate that conforms to the JAMSNP specification:
     /// - Use Ed25519 as the signature algorithm
@@ -141,17 +155,16 @@ pub const X509Certificate = struct {
         span.trace("Adding SAN with encoded pubkey: {s}", .{std.fmt.fmtSliceHexLower(pubkey)});
 
         // Generate the base32 encoded public key
-        const size = comptime Base32.encodeLen(32);
-        var pubkey_encoding_buf: [size]u8 = undefined;
+        const size = comptime Base32.encodeLen(32) + 1;
+        var alt_name: [size]u8 = undefined;
 
         // Base32 encode the public key (32 bytes) - results in 52 chars
-        const encoded = Base32.encode(&pubkey_encoding_buf, pubkey);
-        span.trace("Encoded pubkey {s} len: {d}", .{ encoded, encoded.len });
+        generateAltName(&alt_name, pubkey);
 
         // Create a string for the extension value in OpenSSL format
         // The format is DNS:name
         var ext_value_buf: [128]u8 = undefined;
-        const ext_value = std.fmt.bufPrintZ(&ext_value_buf, "DNS:e{s}", .{encoded}) catch {
+        const ext_value = std.fmt.bufPrintZ(&ext_value_buf, "DNS:{s}", .{alt_name}) catch {
             span.err("Failed to format DNS name", .{});
             @panic("bufPrint failed");
         };

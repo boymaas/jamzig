@@ -12,11 +12,10 @@ const xev = @import("xev");
 const trace = @import("../../tracing.zig").scoped(.network);
 
 pub const JamSnpServer = struct {
-        allocator: std.mem.Allocator,
+    allocator: std.mem.Allocator,
     keypair: std.crypto.sign.Ed25519.KeyPair,
     socket: UdpSocket,
     alpn_id: []const u8,
-
 
     // XEVState: Store the event loop
     loop: xev.Loop = undefined,
@@ -76,12 +75,9 @@ pub const JamSnpServer = struct {
             socket.deinit();
         }
 
-                // Create ALPN identifier for server
+        // Create ALPN identifier for server
         span.debug("Building ALPN identifier", .{});
-        const alpn_id = try common.buildAlpnIdentifier(
-            allocator,
-            chain_genesis_hash,
-            false // is_builder (not applicable for server)
+        const alpn_id = try common.buildAlpnIdentifier(allocator, chain_genesis_hash, false // is_builder (not applicable for server)
         );
         span.debug("ALPN id: {s}", .{alpn_id});
 
@@ -128,7 +124,7 @@ pub const JamSnpServer = struct {
 
         // Initialize server structure first
         span.debug("Setting up server structure", .{});
-                server.* = JamSnpServer{
+        server.* = JamSnpServer{
             .allocator = allocator,
             .keypair = keypair,
             .socket = socket,
@@ -178,7 +174,7 @@ pub const JamSnpServer = struct {
         return server;
     }
 
-        pub fn deinit(self: *JamSnpServer) void {
+    pub fn deinit(self: *JamSnpServer) void {
         const span = trace.span(.deinit);
         defer span.deinit();
         span.debug("Deinitializing JamSnpServer", .{});
@@ -200,7 +196,6 @@ pub const JamSnpServer = struct {
 
         span.debug("JamSnpServer deinitialized successfully", .{});
     }
-
 
     pub fn listen(self: *JamSnpServer, addr: []const u8, port: u16) !void {
         const span = trace.span(.listen);
