@@ -16,15 +16,15 @@ pub const JamSnpClient = struct {
     socket: UdpSocket,
     alpn: []const u8,
 
-    // XEVState: Store the event loop and read buffer
     loop: xev.Loop = undefined,
-    read_buffer: []u8 = undefined,
-    tick_complete: xev.Completion = undefined,
-    packets_in_complete: xev.Completion = undefined,
-    udp_state: xev.UDP.State = undefined,
 
-    packets_in_event: xev.UDP,
-    tick_event: xev.Timer,
+    packets_in: xev.UDP,
+    packets_in_c: xev.Completion = undefined,
+    packets_in_state: xev.UDP.State = undefined,
+    packet_in_buffer: []u8 = undefined,
+
+    tick: xev.Timer,
+    tick_c: xev.Completion = undefined,
 
     lsquic_engine: *lsquic.lsquic_engine,
     lsquic_engine_api: lsquic.lsquic_engine_api,
@@ -72,15 +72,11 @@ pub const JamSnpClient = struct {
         // Create UDP socket
         span.debug("Creating UDP socket", .{});
         var socket = try UdpSocket.init();
-        errdefer {
-            span.debug("Cleaning up socket after error", .{});
-            socket.deinit();
-        }
+        errdefer socket.deinit();
 
         // Create ALPN identifier
-        span.debug("Building ALPN identifier", .{});
         const alpn_id = try common.buildAlpnIdentifier(allocator, chain_genesis_hash, is_builder);
-        span.debug("ALPN id: {s}", .{alpn_id});
+        span.debug("ALPN identifier: {s}", .{alpn_id});
 
         // Configure SSL context
         span.debug("Configuring SSL context", .{});
@@ -92,10 +88,7 @@ pub const JamSnpClient = struct {
             is_builder,
             alpn_id,
         );
-        errdefer {
-            span.debug("Cleaning up SSL context after error", .{});
-            ssl.SSL_CTX_free(ssl_ctx);
-        }
+        errdefer ssl.SSL_CTX_free(ssl_ctx);
 
         // Set up certificate verification
         span.debug("Setting up certificate verification", .{});
@@ -113,38 +106,39 @@ pub const JamSnpClient = struct {
             std.debug.panic("Client engine settings problem: {s}", .{error_buffer});
         }
 
-        // We already have alpn_id from earlier
-
-        // Since lsquic references these settings
-        // we need this to be on the heap with a lifetime which outlasts the
-        // engine
         span.debug("Allocating client struct", .{});
         const client = try allocator.create(JamSnpClient);
+        errdefer client.deinit();
+
         client.* = JamSnpClient{
             .allocator = allocator,
             .keypair = keypair,
+            .chain_genesis_hash = try allocator.dupe(u8, chain_genesis_hash),
+            .is_builder = is_builder,
+
             .socket = socket,
             .alpn = alpn_id,
+
+            .packets_in = xev.UDP.initFd(socket.socket),
+            .packet_in_buffer = try allocator.alloc(u8, 1500),
+
+            .tick = try xev.Timer.init(),
 
             .lsquic_engine = undefined,
             .lsquic_engine_settings = engine_settings,
             .lsquic_engine_api = .{
                 .ea_settings = &engine_settings,
                 .ea_stream_if = &client.lsquic_stream_iterface,
-                .ea_stream_if_ctx = null, // Will be set later
+                .ea_stream_if_ctx = null,
                 .ea_packets_out = &sendPacketsOut,
-                .ea_packets_out_ctx = null, // Will be set later
+                .ea_packets_out_ctx = null,
                 .ea_get_ssl_ctx = &getSslContext,
                 .ea_lookup_cert = null,
                 .ea_cert_lu_ctx = null,
                 .ea_alpn = @ptrCast(alpn_id.ptr),
             },
+
             .ssl_ctx = ssl_ctx,
-            .chain_genesis_hash = try allocator.dupe(u8, chain_genesis_hash),
-            .is_builder = is_builder,
-            // TODO:
-            .packets_in_event = xev.UDP.initFd(socket.socket),
-            .tick_event = try xev.Timer.init(),
         };
 
         client.lsquic_engine_api.ea_packets_out_ctx = &client.socket;
@@ -156,7 +150,7 @@ pub const JamSnpClient = struct {
             return error.LsquicEngineCreationFailed;
         };
 
-        // Build the loop
+        // Build the client loop
         try client.buildLoop();
 
         span.debug("JamSnpClient initialization successful", .{});
@@ -166,30 +160,24 @@ pub const JamSnpClient = struct {
     pub fn buildLoop(self: *@This()) !void {
         const span = trace.span(.build_loop);
         defer span.deinit();
-        span.debug("Building event loop for JamSnpClient", .{});
 
         span.debug("Initializing event loop", .{});
         self.loop = try xev.Loop.init(.{});
 
-        // Allocate the read buffer
-        self.read_buffer = try self.allocator.alloc(u8, 1500);
-
-        // Set up tick timer if not already running
-        self.tick_event.run(
+        self.tick.run(
             &self.loop,
-            &self.tick_complete,
+            &self.tick_c,
             500,
             @This(),
             self,
             onTick,
         );
 
-        // Set up packet receiving if not already running
-        self.packets_in_event.read(
+        self.packets_in.read(
             &self.loop,
-            &self.packets_in_complete,
-            &self.udp_state,
-            .{ .slice = self.read_buffer },
+            &self.packets_in_c,
+            &self.packets_in_state,
+            .{ .slice = self.packet_in_buffer },
             @This(),
             self,
             onPacketsIn,
@@ -201,20 +189,14 @@ pub const JamSnpClient = struct {
     pub fn runTick(self: *@This()) !void {
         const span = trace.span(.run_tick);
         defer span.deinit();
-        span.debug("Running a single tick on JamSnpClient", .{});
-
-        // Run a single tick
-        span.debug("Running event loop for a single tick", .{});
+        span.trace("Running a single tick on JamSnpClient", .{});
         try self.loop.run(.no_wait);
-        span.debug("Event loop tick completed", .{});
     }
 
     pub fn runUntilDone(self: *@This()) !void {
         const span = trace.span(.run);
         defer span.deinit();
         span.debug("Starting JamSnpClient event loop", .{});
-
-        span.debug("Starting event loop", .{});
         try self.loop.run(.until_done);
         span.debug("Event loop completed", .{});
     }
@@ -223,7 +205,7 @@ pub const JamSnpClient = struct {
         maybe_self: ?*@This(),
         xev_loop: *xev.Loop,
         xev_completion: *xev.Completion,
-        xev_timer_error: xev.Timer.RunError!void,
+        xev_timer_result: xev.Timer.RunError!void,
     ) xev.CallbackAction {
         const span = trace.span(.on_tick);
         defer span.deinit();
@@ -232,7 +214,7 @@ pub const JamSnpClient = struct {
             span.err("onTick failed with error: {s}", .{@errorName(err)});
             std.debug.panic("onTick failed with: {s}", .{@errorName(err)});
         }
-        try xev_timer_error;
+        try xev_timer_result;
 
         const self = maybe_self.?;
         span.debug("Processing connections", .{});
@@ -250,8 +232,8 @@ pub const JamSnpClient = struct {
             }
         }
 
-        span.debug("Scheduling next tick in {d}ms", .{timeout_in_ms});
-        self.tick_event.run(
+        span.trace("Scheduling next tick in {d}ms", .{timeout_in_ms});
+        self.tick.run(
             xev_loop,
             xev_completion,
             timeout_in_ms,
@@ -271,7 +253,7 @@ pub const JamSnpClient = struct {
         peer_address: std.net.Address,
         _: xev.UDP,
         xev_read_buffer: xev.ReadBuffer,
-        xev_read_error: xev.ReadError!usize,
+        xev_read_result: xev.ReadError!usize,
     ) xev.CallbackAction {
         const span = trace.span(.on_packets_in);
         defer span.deinit();
@@ -281,21 +263,21 @@ pub const JamSnpClient = struct {
             std.debug.panic("onPacketsIn failed with: {s}", .{@errorName(err)});
         }
 
-        const bytes = try xev_read_error;
+        const bytes = try xev_read_result;
         span.debug("Received {d} bytes from {}", .{ bytes, peer_address });
         span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
 
         const self = maybe_self.?;
 
-        span.debug("Getting local address", .{});
+        span.trace("Getting local address", .{});
         const local_address = self.socket.getLocalAddress() catch |err| {
             span.err("Failed to get local address: {s}", .{@errorName(err)});
             @panic("Failed to get local address");
         };
         span.trace("Local address: {}", .{local_address});
 
-        span.debug("Passing packet to lsquic engine", .{});
-        if (0 > lsquic.lsquic_engine_packet_in(
+        span.trace("Passing packet to lsquic engine", .{});
+        if (lsquic.lsquic_engine_packet_in(
             self.lsquic_engine,
             xev_read_buffer.slice.ptr,
             bytes,
@@ -303,12 +285,12 @@ pub const JamSnpClient = struct {
             @ptrCast(&peer_address.any),
             self,
             0,
-        )) {
+        ) != 0) {
             span.err("lsquic_engine_packet_in failed", .{});
             @panic("lsquic_engine_packet_in failed");
         }
 
-        span.debug("Successfully processed incoming packet", .{});
+        span.trace("Successfully processed incoming packet", .{});
         return .rearm;
     }
 
@@ -321,10 +303,10 @@ pub const JamSnpClient = struct {
 
         self.socket.deinit();
 
-        self.tick_event.deinit();
+        self.tick.deinit();
         self.loop.deinit();
 
-        self.allocator.free(self.read_buffer);
+        self.allocator.free(self.packet_in_buffer);
         self.allocator.free(self.chain_genesis_hash);
         self.allocator.free(self.alpn);
 
@@ -339,21 +321,19 @@ pub const JamSnpClient = struct {
         span.debug("Connecting to {s}:{d}", .{ peer_addr, peer_port });
 
         // Bind to a local address (use any address)
-        span.debug("Binding to local address ::1:0", .{});
         try self.socket.bind("::1", 0);
 
         // Get the local socket address after binding
-        span.debug("Getting local address after binding", .{});
         const local_endpoint = try self.socket.getLocalAddress();
-        span.trace("Local endpoint: {}", .{local_endpoint});
+        span.debug("Bound to local endpoint: {}", .{local_endpoint});
 
         // Parse peer address
         span.debug("Parsing peer address", .{});
         const peer_endpoint = try std.net.Address.parseIp(peer_addr, peer_port);
-        span.trace("Peer endpoint: {}", .{peer_endpoint});
+        span.debug("Peer endpoint: {}", .{peer_endpoint});
 
         // Create a connection
-        span.debug("Creating connection context", .{});
+        span.trace("Creating connection context", .{});
         const connection = try self.allocator.create(Connection);
         connection.* = .{
             .lsquic_connection = undefined,

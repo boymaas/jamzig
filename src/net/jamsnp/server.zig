@@ -192,7 +192,7 @@ pub const JamSnpServer = struct {
 
         self.allocator.destroy(self);
 
-        span.debug("JamSnpServer deinitialized successfully", .{});
+        span.debug("JamSnpServer deinitialization complete", .{});
     }
 
     pub fn listen(self: *JamSnpServer, addr: []const u8, port: u16) !void {
@@ -251,8 +251,6 @@ pub const JamSnpServer = struct {
         const span = trace.span(.run);
         defer span.deinit();
         span.debug("Starting JamSnpServer event loop", .{});
-
-        span.debug("Starting event loop", .{});
         try self.loop.run(.until_done);
         span.debug("Event loop completed", .{});
     }
@@ -372,7 +370,7 @@ pub const JamSnpServer = struct {
     pub fn processPacket(self: *JamSnpServer, packet: []const u8, peer_addr: std.posix.sockaddr, local_addr: std.posix.sockaddr) !void {
         const span = trace.span(.process_packet);
         defer span.deinit();
-        span.trace("Processing incoming packet of {d} bytes", .{packet.len});
+        span.debug("Processing incoming packet of {d} bytes", .{packet.len});
         span.trace("Packet data: {s}", .{std.fmt.fmtSliceHexLower(packet)});
 
         const result = lsquic.lsquic_engine_packet_in(
