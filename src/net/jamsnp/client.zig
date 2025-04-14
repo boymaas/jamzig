@@ -58,7 +58,7 @@ pub const JamSnpClient = struct {
         chain_genesis_hash: []const u8,
         is_builder: bool,
     ) !*JamSnpClient {
-        const span = trace.span(.init);
+        const span = trace.span(.init_client);
         defer span.deinit();
         span.debug("Initializing JamSnpClient", .{});
 
@@ -76,7 +76,7 @@ pub const JamSnpClient = struct {
 
         // Create ALPN identifier
         const alpn_id = try common.buildAlpnIdentifier(allocator, chain_genesis_hash, is_builder);
-        span.debug("ALPN identifier: {s}", .{alpn_id});
+        errdefer allocator.free(alpn_id);
 
         // Configure SSL context
         span.debug("Configuring SSL context", .{});
@@ -207,7 +207,7 @@ pub const JamSnpClient = struct {
         xev_completion: *xev.Completion,
         xev_timer_result: xev.Timer.RunError!void,
     ) xev.CallbackAction {
-        const span = trace.span(.on_tick);
+        const span = trace.span(.on_client_tick);
         defer span.deinit();
 
         errdefer |err| {
@@ -217,7 +217,7 @@ pub const JamSnpClient = struct {
         try xev_timer_result;
 
         const self = maybe_self.?;
-        span.debug("Processing connections", .{});
+        span.trace("Processing connections", .{});
         lsquic.lsquic_engine_process_conns(self.lsquic_engine);
 
         // Delta is in 1/1_000_000 so we divide by 100 to get ms
@@ -264,7 +264,7 @@ pub const JamSnpClient = struct {
         }
 
         const bytes = try xev_read_result;
-        span.debug("Received {d} bytes from {}", .{ bytes, peer_address });
+        span.trace("Received {d} bytes from {}", .{ bytes, peer_address });
         span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
 
         const self = maybe_self.?;
@@ -547,9 +547,9 @@ pub const JamSnpClient = struct {
         specs_ptr: ?[*]const lsquic.lsquic_out_spec,
         specs_len: c_uint,
     ) callconv(.C) c_int {
-        const span = trace.span(.send_packets_out);
+        const span = trace.span(.client_send_packets_out);
         defer span.deinit();
-        span.debug("Sending {d} packet specs", .{specs_len});
+        span.trace("Sending {d} packet specs", .{specs_len});
 
         const socket = @as(*UdpSocket, @ptrCast(@alignCast(ctx)));
         const specs = specs_ptr.?[0..specs_len];
@@ -557,7 +557,7 @@ pub const JamSnpClient = struct {
         var send_packets: c_int = 0;
         send_loop: for (specs, 0..) |spec, i| {
             const iov = spec.iov[0..spec.iovlen];
-            span.debug("Processing packet spec {d} with {d} iovecs", .{ i, spec.iovlen });
+            span.trace("Processing packet spec {d} with {d} iovecs", .{ i, spec.iovlen });
 
             // Send the packet
             for (iov, 0..) |iovec, j| {
@@ -573,12 +573,12 @@ pub const JamSnpClient = struct {
                     span.err("Failed to send packet: {}", .{err});
                     break :send_loop;
                 };
-                span.debug("Successfully sent iovec {d}", .{j});
+                span.trace("Successfully sent iovec {d}", .{j});
             }
             send_packets += 1;
         }
 
-        span.debug("Successfully sent {d}/{d} packet specs", .{ send_packets, specs_len });
+        span.trace("Successfully sent {d}/{d} packet specs", .{ send_packets, specs_len });
         return send_packets;
     }
 };

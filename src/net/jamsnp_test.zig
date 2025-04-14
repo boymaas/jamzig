@@ -16,15 +16,22 @@ fn lsquic_log_callback(ctx: ?*anyopaque, buf: [*c]const u8, len: usize) callconv
 }
 
 test "JAMSNP Client-Server Connection" {
-    const logger_if = lsquic.lsquic_logger_if{
-        .log_buf = lsquic_log_callback,
-    };
-    lsquic.lsquic_logger_init(&logger_if, null, lsquic.LLTS_HHMMSSMS);
-
-    const res = lsquic.lsquic_set_log_level("debug");
-    if (res != 0) {
-        @panic("could not set lsquic log level");
-    }
+    // NOTE:  uncomment for detailed logging
+    //
+    // const logger_if = lsquic.lsquic_logger_if{
+    //     .log_buf = lsquic_log_callback,
+    // };
+    // lsquic.lsquic_logger_init(&logger_if, null, lsquic.LLTS_HHMMSSMS);
+    //
+    // const res = lsquic.lsquic_set_log_level("info");
+    // if (res != 0) {
+    //     @panic("could not set lsquic log level");
+    // }
+    //
+    // NOTE: in common you can uncomment this callback for detailed SSL loggin
+    // if necessary
+    //
+    // ssl.SSL_CTX_set_info_callback(ssl_ctx, ssl_info_callback); // Register the callback
 
     // Initialize LSQUIC globally
     if (lsquic.lsquic_global_init(lsquic.LSQUIC_GLOBAL_SERVER | lsquic.LSQUIC_GLOBAL_CLIENT) != 0) {

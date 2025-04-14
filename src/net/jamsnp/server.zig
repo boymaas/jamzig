@@ -62,7 +62,7 @@ pub const JamSnpServer = struct {
         genesis_hash: []const u8,
         allow_builders: bool,
     ) !*JamSnpServer {
-        const span = trace.span(.init);
+        const span = trace.span(.init_server);
         defer span.deinit();
         span.debug("Initializing JamSnpServer", .{});
 
@@ -79,11 +79,9 @@ pub const JamSnpServer = struct {
         errdefer socket.deinit();
 
         // Create ALPN identifier for server
-        span.debug("Building ALPN identifier", .{});
         const alpn_id = try common.buildAlpnIdentifier(allocator, genesis_hash, false // is_builder (not applicable for server)
         );
         errdefer allocator.free(alpn_id);
-        span.debug("ALPN id: {s}", .{alpn_id});
 
         // Configure SSL context
         span.debug("Configuring SSL context", .{});
@@ -198,17 +196,14 @@ pub const JamSnpServer = struct {
     pub fn listen(self: *JamSnpServer, addr: []const u8, port: u16) !void {
         const span = trace.span(.listen);
         defer span.deinit();
-        span.debug("Starting server listen on {s}:{d}", .{ addr, port });
+        span.debug("Started listening on {s}:{d}", .{ addr, port });
 
         try self.socket.bind(addr, port);
-        span.debug("Successfully bound to {s}:{d}", .{ addr, port });
     }
 
-    // Implement run method similar to client
     pub fn buildLoop(self: *@This()) !void {
         const span = trace.span(.build_loop);
         defer span.deinit();
-        span.debug("Building event loop for JamSnpServer", .{});
 
         span.debug("Initializing event loop", .{});
         self.loop = try xev.Loop.init(.{});
@@ -255,13 +250,15 @@ pub const JamSnpServer = struct {
         span.debug("Event loop completed", .{});
     }
 
+    // Callbacks
+
     fn onTick(
         maybe_self: ?*@This(),
         xev_loop: *xev.Loop,
         xev_completion: *xev.Completion,
         xev_timer_error: xev.Timer.RunError!void,
     ) xev.CallbackAction {
-        const span = trace.span(.on_tick);
+        const span = trace.span(.on_server_tick);
         defer span.deinit();
 
         errdefer |err| {
@@ -609,7 +606,7 @@ pub const JamSnpServer = struct {
     fn getSslContext(ctx: ?*anyopaque, _: ?*const lsquic.struct_sockaddr) callconv(.C) ?*lsquic.struct_ssl_ctx_st {
         const span = trace.span(.get_ssl_context);
         defer span.deinit();
-        span.debug("SSL context request", .{});
+        span.trace("SSL context request", .{});
         const server: ?*JamSnpServer = @ptrCast(@alignCast(ctx));
         return @ptrCast(server.?.ssl_ctx);
     }
@@ -637,16 +634,16 @@ pub const JamSnpServer = struct {
         specs: ?[*]const lsquic.lsquic_out_spec,
         n_specs: c_uint,
     ) callconv(.C) c_int {
-        const span = trace.span(.send_packets);
+        const span = trace.span(.server_send_packets_out);
         defer span.deinit();
-        span.debug("Sending {d} packet(s)", .{n_specs});
+        span.trace("Sending {d} packet specs", .{n_specs});
 
         const server = @as(*JamSnpServer, @ptrCast(@alignCast(ctx)));
         const specs_slice = specs.?[0..n_specs];
 
         var packets_sent: c_int = 0;
         for (specs_slice, 0..) |spec, i| {
-            span.debug("Processing packet spec {d}", .{i});
+            span.trace("Processing packet spec {d} with {d} iovecs", .{ i, spec.iovlen });
 
             // For each iovec in the spec
             const iov_slice = spec.iov[0..spec.iovlen];
@@ -669,7 +666,7 @@ pub const JamSnpServer = struct {
             packets_sent += 1;
         }
 
-        span.debug("Successfully sent {d}/{d} packets", .{ packets_sent, n_specs });
+        span.trace("Successfully sent {d}/{d} packets", .{ packets_sent, n_specs });
         return packets_sent;
     }
 };
