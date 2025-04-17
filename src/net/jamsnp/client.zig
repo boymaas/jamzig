@@ -533,6 +533,31 @@ pub const JamSnpClient = struct {
         endpoint: network.EndPoint,
         client: *JamSnpClient,
 
+        pub fn createStream(self: *Connection, alloc: std.mem.Allocator) !*Stream {
+            const span = trace.span(.create_stream);
+            defer span.deinit();
+            span.debug("Creating new stream on connection", .{});
+            // Call lsquic_conn_make_stream to create the stream
+            const lsquic_stream = lsquic.lsquic_conn_make_stream(self.lsquic_connection) orelse {
+                span.err("Failed to create LSQUIC stream", .{});
+                return error.StreamCreationFailed;
+            };
+
+            // The stream will be initialized in the onNewStream callback
+            span.debug("Stream creation request successful", .{});
+
+            // Return a placeholder that will be filled by onNewStream callback
+            const stream = try alloc.create(Stream);
+            errdefer alloc.destroy(stream);
+
+            stream.* = .{
+                .lsquic_stream = lsquic_stream,
+                .connection = self,
+            };
+
+            return stream;
+        }
+
         fn onNewConn(
             _: ?*anyopaque,
             maybe_lsquic_connection: ?*lsquic.lsquic_conn_t,
@@ -632,6 +657,82 @@ pub const JamSnpClient = struct {
     const Stream = struct {
         lsquic_stream: *lsquic.lsquic_stream_t,
         connection: *Connection,
+
+        pub fn wantRead(self: *Stream, want: bool) void {
+            const span = trace.span(.stream_want_read);
+            defer span.deinit();
+
+            const want_val: c_int = if (want) 1 else 0;
+            span.debug("Setting stream want-read to {}", .{want});
+
+            _ = lsquic.lsquic_stream_wantread(self.lsquic_stream, want_val);
+        }
+
+        pub fn wantWrite(self: *Stream, want: bool) void {
+            const span = trace.span(.stream_want_write);
+            defer span.deinit();
+
+            const want_val: c_int = if (want) 1 else 0;
+            span.debug("Setting stream want-write to {}", .{want});
+
+            _ = lsquic.lsquic_stream_wantwrite(self.lsquic_stream, want_val);
+        }
+
+        pub fn write(self: *Stream, data: []const u8) !usize {
+            const span = trace.span(.stream_write);
+            defer span.deinit();
+            span.debug("Writing {d} bytes to stream", .{data.len});
+
+            const written = lsquic.lsquic_stream_write(self.lsquic_stream, data.ptr, data.len);
+            if (written < 0) {
+                const err = std.posix.errno(-@as(i32, @intCast(written)));
+                span.err("Failed to write to stream: {s}", .{@errorName(err)});
+                return error.StreamWriteFailed;
+            }
+
+            span.debug("Successfully wrote {d} bytes", .{written});
+            return @intCast(written);
+        }
+
+        pub fn flush(self: *Stream) !void {
+            const span = trace.span(.stream_flush);
+            defer span.deinit();
+            span.debug("Flushing stream", .{});
+
+            if (lsquic.lsquic_stream_flush(self.lsquic_stream) != 0) {
+                span.err("Failed to flush stream", .{});
+                return error.StreamFlushFailed;
+            }
+        }
+
+        pub fn shutdown(self: *Stream, how: c_int) !void {
+            const span = trace.span(.stream_shutdown);
+            defer span.deinit();
+
+            const direction = switch (how) {
+                0 => "read",
+                1 => "write",
+                2 => "read and write",
+                else => "unknown",
+            };
+            span.debug("Shutting down stream {s} side", .{direction});
+
+            if (lsquic.lsquic_stream_shutdown(self.lsquic_stream, how) != 0) {
+                span.err("Failed to shutdown stream", .{});
+                return error.StreamShutdownFailed;
+            }
+        }
+
+        pub fn close(self: *Stream) !void {
+            const span = trace.span(.stream_close);
+            defer span.deinit();
+            span.debug("Closing stream", .{});
+
+            if (lsquic.lsquic_stream_close(self.lsquic_stream) != 0) {
+                span.err("Failed to close stream", .{});
+                return error.StreamCloseFailed;
+            }
+        }
 
         fn onNewStream(
             _: ?*anyopaque,
