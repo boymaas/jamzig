@@ -1,0 +1,34 @@
+# Zig Reactor Pattern Study
+
+Contains an implementation of the reactor pattern in Zig, designed as a study
+for threading models in JamZig.
+
+
+```mermaid
+sequenceDiagram
+    box Main Thread
+        participant WorkerHandle
+        participant Response Mailbox
+    end
+    
+    box Worker Thread
+        participant Request Mailbox
+        participant Worker Thread
+    end
+    
+    WorkerHandle->>Request Mailbox: Push Request{.add{5,3}, metadata}
+    Note right of WorkerHandle: Cross-thread operation
+    
+    Worker Thread->>Request Mailbox: Pop Request
+    Request Mailbox-->>Worker Thread: Returns Request
+    
+    Note over Worker Thread: Processes add command<br/>result = 8
+    
+    Worker Thread->>Response Mailbox: Push Response{callback, result=8}
+    Note left of Worker Thread: Cross-thread operation
+    
+    WorkerHandle->>Response Mailbox: Pop Response
+    Response Mailbox-->>WorkerHandle: Returns Response
+    
+    Note over WorkerHandle: Executes callback with result
+```
