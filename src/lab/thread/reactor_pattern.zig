@@ -19,25 +19,12 @@ pub const RequestMetadata = struct {
 pub const Request = struct {
     command: Command,
     metadata: RequestMetadata,
-
-    pub fn getMetadata(self: Request) RequestMetadata {
-        return self.metadata;
-    }
 };
 
 pub const Response = struct {
     callback: CommandCallback,
     context: ?*anyopaque,
     result: CommandResult,
-    allocator: ?Allocator = null,
-
-    // Free the response and result
-    pub fn release(self: *Response) void {
-        if (self.allocator) |alloc| {
-            alloc.destroy(self.result);
-            alloc.destroy(self);
-        }
-    }
 };
 
 pub const Command = union(enum) {
@@ -98,10 +85,6 @@ pub const Worker = struct {
     }
 
     pub fn start(self: *Worker) !std.Thread {
-        // Register callbacks for async events
-        self.wakeup.wait(&self.loop, &self.wakeup_c, Worker, self, wakeupCallback);
-        self.stop.wait(&self.loop, &self.stop_c, Worker, self, stopCallback);
-
         // Start the thread
         return try std.Thread.spawn(.{}, threadMain, .{self});
     }
@@ -110,7 +93,7 @@ pub const Worker = struct {
         try self.stop.notify();
     }
 
-    pub fn sendRequest(self: *Worker, cmd: Request) !void {
+    pub fn enqueueRequest(self: *Worker, cmd: Request) !void {
         _ = self.mailbox.push(cmd, .{ .instant = {} });
         try self.wakeup.notify();
     }
@@ -175,7 +158,6 @@ pub const Worker = struct {
                 .callback = cmd.metadata.callback,
                 .context = cmd.metadata.context,
                 .result = result,
-                .allocator = self.alloc,
             };
 
             // Push the response to the worker's mailbox
@@ -291,7 +273,7 @@ pub const WorkerHandle = struct {
     }
 
     pub fn add(self: *WorkerHandle, a: f64, b: f64, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendRequest(Request{
+        try self.thread.enqueueRequest(Request{
             .command = .{ .add = .{ .a = a, .b = b } },
             .metadata = .{
                 .callback = callback,
@@ -303,7 +285,7 @@ pub const WorkerHandle = struct {
     }
 
     pub fn subtract(self: *WorkerHandle, a: f64, b: f64, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendRequest(Request{
+        try self.thread.enqueueRequest(Request{
             .command = .{ .subtract = .{ .a = a, .b = b } },
             .metadata = .{
                 .callback = callback,
@@ -315,7 +297,7 @@ pub const WorkerHandle = struct {
     }
 
     pub fn multiply(self: *WorkerHandle, a: f64, b: f64, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendRequest(Request{
+        try self.thread.enqueueRequest(Request{
             .command = .{ .multiply = .{ .a = a, .b = b } },
             .metadata = .{
                 .callback = callback,
@@ -327,7 +309,7 @@ pub const WorkerHandle = struct {
     }
 
     pub fn divide(self: *WorkerHandle, a: f64, b: f64, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendRequest(Request{
+        try self.thread.enqueueRequest(Request{
             .command = .{ .divide = .{ .a = a, .b = b } },
             .metadata = .{
                 .callback = callback,
@@ -339,7 +321,7 @@ pub const WorkerHandle = struct {
     }
 
     pub fn shutdown(self: *WorkerHandle, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendRequest(Request{
+        try self.thread.enqueueRequest(Request{
             .command = .{ .shutdown = {} },
             .metadata = .{
                 .callback = callback,
