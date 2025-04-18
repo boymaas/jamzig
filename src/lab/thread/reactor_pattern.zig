@@ -6,26 +6,18 @@ const Mailbox = @import("../../datastruct/blocking_queue.zig").BlockingQueue;
 
 pub const CommandCallback = *const fn (result: ?*anyopaque, context: ?*anyopaque) void;
 
-pub const CommandMetadata = struct {
+pub const RequestMetadata = struct {
     callback: CommandCallback,
     context: ?*anyopaque = null,
     mailbox: *Mailbox(Response, 64), // Mailbox to push results back to
     mailbox_wakeup: *xev.Async, // Async handle for waking up the worker
 };
 
-pub const CommandOperation = union(enum) {
-    add: struct { a: f64, b: f64 },
-    subtract: struct { a: f64, b: f64 },
-    multiply: struct { a: f64, b: f64 },
-    divide: struct { a: f64, b: f64 },
-    shutdown: void,
-};
+pub const Request = struct {
+    command: Command,
+    metadata: RequestMetadata,
 
-pub const Command = struct {
-    operation: CommandOperation,
-    metadata: CommandMetadata,
-
-    pub fn getMetadata(self: Command) CommandMetadata {
+    pub fn getMetadata(self: Request) RequestMetadata {
         return self.metadata;
     }
 };
@@ -33,82 +25,27 @@ pub const Command = struct {
 pub const Response = struct {
     callback: CommandCallback,
     context: ?*anyopaque,
-    result: *CommandResult,
-    pool: ?*ResponsePool = null,
+    result: CommandResult,
+    allocator: ?Allocator = null,
 
-    // Return to pool if available
+    // Free the response and result
     pub fn release(self: *Response) void {
-        if (self.pool) |pool| {
-            pool.release(self);
+        if (self.allocator) |alloc| {
+            alloc.destroy(self.result);
+            alloc.destroy(self);
         }
     }
 };
 
-pub const CommandResult = struct {
-    success: bool,
-    value: ?f64 = null,
-    error_message: ?[]const u8 = null,
+pub const Command = union(enum) {
+    add: struct { a: f64, b: f64 },
+    subtract: struct { a: f64, b: f64 },
+    multiply: struct { a: f64, b: f64 },
+    divide: struct { a: f64, b: f64 },
+    shutdown: void,
 };
 
-/// Pre-allocated response pool
-pub const ResponsePool = struct {
-    responses: []Response,
-    results: []CommandResult,
-    next_available: usize,
-    in_use: usize,
-    mutex: std.Thread.Mutex,
-
-    // Init pool
-    pub fn init(alloc: Allocator, size: usize) !ResponsePool {
-        const responses = try alloc.alloc(Response, size);
-        errdefer alloc.free(responses);
-
-        const results = try alloc.alloc(CommandResult, size);
-        errdefer alloc.free(results);
-
-        return ResponsePool{
-            .responses = responses,
-            .results = results,
-            .next_available = 0,
-            .in_use = 0,
-            .mutex = .{},
-        };
-    }
-
-    // Free pool
-    pub fn deinit(self: *ResponsePool, alloc: Allocator) void {
-        alloc.free(self.responses);
-        alloc.free(self.results);
-        self.* = undefined;
-    }
-
-    // Get response-result pair
-    pub fn acquire(self: *ResponsePool) ?struct { response: *Response, result: *CommandResult } {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        if (self.in_use >= self.responses.len) {
-            return null; // Pool is full
-        }
-
-        const idx = self.next_available;
-        self.next_available = (self.next_available + 1) % self.responses.len;
-        self.in_use += 1;
-
-        return .{
-            .response = &self.responses[idx],
-            .result = &self.results[idx],
-        };
-    }
-
-    // Return to pool
-    pub fn release(self: *ResponsePool, _: *Response) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        self.in_use -= 1;
-    }
-};
+pub const CommandResult = anyerror!f64;
 
 pub const Worker = struct {
     alloc: Allocator,
@@ -117,8 +54,7 @@ pub const Worker = struct {
     wakeup_c: xev.Completion = .{},
     stop: xev.Async,
     stop_c: xev.Completion = .{},
-    mailbox: *Mailbox(Command, 64),
-    response_pool: ResponsePool,
+    mailbox: *Mailbox(Request, 64),
     id: []const u8,
 
     pub fn create(alloc: Allocator, id: []const u8) !*Worker {
@@ -137,12 +73,8 @@ pub const Worker = struct {
         errdefer thread.stop.deinit();
 
         // Initialize mailbox
-        thread.mailbox = try Mailbox(Command, 64).create(alloc);
+        thread.mailbox = try Mailbox(Request, 64).create(alloc);
         errdefer thread.mailbox.destroy(alloc);
-
-        // Initialize response pool (size 128 should be sufficient for most uses)
-        thread.response_pool = try ResponsePool.init(alloc, 128);
-        errdefer thread.response_pool.deinit(alloc);
 
         thread.alloc = alloc;
         thread.id = id;
@@ -156,7 +88,6 @@ pub const Worker = struct {
 
     pub fn destroy(self: *Worker) void {
         self.mailbox.destroy(self.alloc);
-        self.response_pool.deinit(self.alloc);
         self.stop.deinit();
         self.wakeup.deinit();
         self.loop.deinit();
@@ -176,7 +107,7 @@ pub const Worker = struct {
         try self.stop.notify();
     }
 
-    pub fn sendCommand(self: *Worker, cmd: Command) !void {
+    pub fn sendRequest(self: *Worker, cmd: Request) !void {
         _ = self.mailbox.push(cmd, .{ .instant = {} });
         try self.wakeup.notify();
     }
@@ -216,65 +147,36 @@ pub const Worker = struct {
 
     fn processCommands(self: *Worker) !void {
         while (self.mailbox.pop()) |cmd| {
-            std.debug.print("[{s}] Processing command: {any}\n", .{ self.id, @tagName(@as(std.meta.Tag(CommandOperation), cmd.operation)) });
-
-            // Get a response and result from the pool
-            const pair = self.response_pool.acquire() orelse {
-                std.debug.print("[{s}] Response pool exhausted\n", .{self.id});
-                continue;
-            };
+            std.debug.print("[{s}] Processing command: {s}\n", .{ self.id, @tagName(@as(std.meta.Tag(Command), cmd.command)) });
 
             // Process the command and fill in the result
-            pair.result.* = switch (cmd.operation) {
-                .add => |params| CommandResult{
-                    .success = true,
-                    .value = params.a + params.b,
-                },
-
-                .subtract => |params| CommandResult{
-                    .success = true,
-                    .value = params.a - params.b,
-                },
-
-                .multiply => |params| CommandResult{
-                    .success = true,
-                    .value = params.a * params.b,
-                },
-
+            const result = switch (cmd.command) {
+                .add => |params| params.a + params.b,
+                .subtract => |params| params.a - params.b,
+                .multiply => |params| params.a * params.b,
                 .divide => |params| blk: {
                     if (params.b == 0) {
-                        break :blk CommandResult{
-                            .success = false,
-                            .error_message = "Division by zero",
-                        };
+                        break :blk error.DivideByZero;
                     }
-
-                    break :blk CommandResult{
-                        .success = true,
-                        .value = params.a / params.b,
-                    };
+                    break :blk params.a / params.b;
                 },
-
                 .shutdown => blk: {
                     // Handle shutdown command
                     try self.stop.notify();
-
-                    break :blk CommandResult{
-                        .success = true,
-                    };
+                    break :blk 0; // Return a default value for shutdown
                 },
             };
 
-            // Set up the response
-            pair.response.* = Response{
+            // Allocate a new response
+            const response = Response{
                 .callback = cmd.metadata.callback,
                 .context = cmd.metadata.context,
-                .result = pair.result,
-                .pool = &self.response_pool,
+                .result = result,
+                .allocator = self.alloc,
             };
 
             // Push the response to the worker's mailbox
-            _ = cmd.metadata.mailbox.push(pair.response.*, .{ .instant = {} });
+            _ = cmd.metadata.mailbox.push(response, .{ .instant = {} });
             cmd.metadata.mailbox_wakeup.notify() catch {};
         }
     }
@@ -300,17 +202,16 @@ pub const Worker = struct {
 fn exampleCallback(result: ?*anyopaque, context: ?*anyopaque) void {
     _ = context;
 
+    std.debug.print("Callback invoked\n", .{});
+
     if (result) |result_ptr| {
         const cmd_result: *const CommandResult = @ptrCast(@alignCast(result_ptr));
 
-        if (cmd_result.success) {
-            if (cmd_result.value) |value| {
-                std.debug.print("Callback result: {d}\n", .{value});
-            } else {
-                std.debug.print("Callback successful (no value)\n", .{});
-            }
-        } else {
-            std.debug.print("Callback failed: {s}\n", .{cmd_result.error_message orelse "Unknown error"});
+        if (cmd_result.*) |value| {
+            std.debug.print("Callback received result: {d:.3}\n", .{value});
+        } else |err| {
+            std.debug.print("Callback received err: {}\n", .{err});
+            return;
         }
     } else {
         std.debug.print("Callback received null result\n", .{});
@@ -324,7 +225,6 @@ pub const WorkerHandle = struct {
     wakeup: xev.Async,
     wakeup_c: xev.Completion = .{},
     mailbox: *Mailbox(Response, 64),
-    response_pool: ?*ResponsePool = null,
     alloc: Allocator,
 
     pub fn init(alloc: Allocator, id: []const u8, loop: *xev.Loop, thread: *Worker) !*WorkerHandle {
@@ -380,21 +280,16 @@ pub const WorkerHandle = struct {
     }
 
     pub fn processResults(self: *WorkerHandle) void {
-        while (self.mailbox.pop()) |*response| {
+        while (self.mailbox.pop()) |response| {
             std.debug.print("[{s}] Processing result\n", .{self.id});
 
-            // Call the callback with the result
-            response.callback(@ptrCast(response.result), response.context);
-
-            // Release the response back to its pool if it came from one
-            var mutable_response = @constCast(response);
-            mutable_response.release();
+            response.callback(@ptrCast(@constCast(&response.result)), response.context);
         }
     }
 
     pub fn add(self: *WorkerHandle, a: f64, b: f64, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendCommand(Command{
-            .operation = .{ .add = .{ .a = a, .b = b } },
+        try self.thread.sendRequest(Request{
+            .command = .{ .add = .{ .a = a, .b = b } },
             .metadata = .{
                 .callback = callback,
                 .context = context,
@@ -405,8 +300,8 @@ pub const WorkerHandle = struct {
     }
 
     pub fn subtract(self: *WorkerHandle, a: f64, b: f64, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendCommand(Command{
-            .operation = .{ .subtract = .{ .a = a, .b = b } },
+        try self.thread.sendRequest(Request{
+            .command = .{ .subtract = .{ .a = a, .b = b } },
             .metadata = .{
                 .callback = callback,
                 .context = context,
@@ -417,8 +312,8 @@ pub const WorkerHandle = struct {
     }
 
     pub fn multiply(self: *WorkerHandle, a: f64, b: f64, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendCommand(Command{
-            .operation = .{ .multiply = .{ .a = a, .b = b } },
+        try self.thread.sendRequest(Request{
+            .command = .{ .multiply = .{ .a = a, .b = b } },
             .metadata = .{
                 .callback = callback,
                 .context = context,
@@ -429,8 +324,8 @@ pub const WorkerHandle = struct {
     }
 
     pub fn divide(self: *WorkerHandle, a: f64, b: f64, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendCommand(Command{
-            .operation = .{ .divide = .{ .a = a, .b = b } },
+        try self.thread.sendRequest(Request{
+            .command = .{ .divide = .{ .a = a, .b = b } },
             .metadata = .{
                 .callback = callback,
                 .context = context,
@@ -441,8 +336,8 @@ pub const WorkerHandle = struct {
     }
 
     pub fn shutdown(self: *WorkerHandle, callback: CommandCallback, context: ?*anyopaque) !void {
-        try self.thread.sendCommand(Command{
-            .operation = .{ .shutdown = {} },
+        try self.thread.sendRequest(Request{
+            .command = .{ .shutdown = {} },
             .metadata = .{
                 .callback = callback,
                 .context = context,
@@ -460,12 +355,12 @@ test "reactor.pattern" {
     var main_loop = try xev.Loop.init(.{});
     errdefer main_loop.deinit();
 
-    // Woker thread
+    // Worker thread
     const worker = try Worker.create(alloc, "worker_thread");
     defer worker.destroy();
     const worker_thread = try std.Thread.spawn(.{}, Worker.threadMain, .{worker});
 
-    // Create a worker
+    // Create a worker handle
     var handle = try WorkerHandle.init(alloc, "worker", &main_loop, worker);
     defer handle.deinit();
 
@@ -477,14 +372,14 @@ test "reactor.pattern" {
     try handle.divide(10, 0, exampleCallback, null);
 
     // Wait a bit and process results
-    std.time.sleep(1 * std.time.ns_per_s);
+    std.time.sleep(500 * std.time.ns_per_ms);
     handle.processResults();
 
     // Send shutdown command
     try handle.shutdown(exampleCallback, null);
     //
     // Wait a bit more and process final results
-    std.time.sleep(1 * std.time.ns_per_s);
+    std.time.sleep(500 * std.time.ns_per_ms);
     handle.processResults();
 
     worker_thread.join();
