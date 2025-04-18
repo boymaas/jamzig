@@ -14,16 +14,20 @@ pub const CommandType = enum {
 
 pub const CommandCallback = *const fn (result: ?*anyopaque, context: ?*anyopaque) void;
 
+pub const CommandMetadata = struct {
+    callback: CommandCallback,
+    context: ?*anyopaque = null,
+    mailbox: *Mailbox(Response, 64), // Mailbox to push results back to
+    mailbox_wakeup: *xev.Async, // Async handle for waking up the worker
+};
+
 pub const Command = struct {
     cmd_type: CommandType,
     params: struct {
         a: f64 = 0,
         b: f64 = 0,
     },
-    callback: CommandCallback,
-    context: ?*anyopaque = null,
-    mailbox: *Mailbox(Response, 64), // Mailbox to push results back to
-    mailbox_wakeup: *xev.Async, // Async handle for waking up the worker
+    metadata: CommandMetadata,
 };
 
 pub const Response = struct {
@@ -263,15 +267,15 @@ pub const Worker = struct {
 
             // Set up the response
             pair.response.* = Response{
-                .callback = cmd.callback,
-                .context = cmd.context,
+                .callback = cmd.metadata.callback,
+                .context = cmd.metadata.context,
                 .result = pair.result,
                 .pool = &self.response_pool,
             };
 
             // Push the response to the worker's mailbox
-            _ = cmd.mailbox.push(pair.response.*, .{ .instant = {} });
-            cmd.mailbox_wakeup.notify() catch {};
+            _ = cmd.metadata.mailbox.push(pair.response.*, .{ .instant = {} });
+            cmd.metadata.mailbox_wakeup.notify() catch {};
         }
     }
 
@@ -392,10 +396,12 @@ pub const WorkerHandle = struct {
         try self.thread.sendCommand(Command{
             .cmd_type = .add,
             .params = .{ .a = a, .b = b },
-            .callback = callback,
-            .context = context,
-            .mailbox = self.mailbox,
-            .mailbox_wakeup = &self.wakeup,
+            .metadata = .{
+                .callback = callback,
+                .context = context,
+                .mailbox = self.mailbox,
+                .mailbox_wakeup = &self.wakeup,
+            },
         });
     }
 
@@ -403,10 +409,12 @@ pub const WorkerHandle = struct {
         try self.thread.sendCommand(Command{
             .cmd_type = .subtract,
             .params = .{ .a = a, .b = b },
-            .callback = callback,
-            .context = context,
-            .mailbox = self.mailbox,
-            .mailbox_wakeup = &self.wakeup,
+            .metadata = .{
+                .callback = callback,
+                .context = context,
+                .mailbox = self.mailbox,
+                .mailbox_wakeup = &self.wakeup,
+            },
         });
     }
 
@@ -414,10 +422,12 @@ pub const WorkerHandle = struct {
         try self.thread.sendCommand(Command{
             .cmd_type = .multiply,
             .params = .{ .a = a, .b = b },
-            .callback = callback,
-            .context = context,
-            .mailbox = self.mailbox,
-            .mailbox_wakeup = &self.wakeup,
+            .metadata = .{
+                .callback = callback,
+                .context = context,
+                .mailbox = self.mailbox,
+                .mailbox_wakeup = &self.wakeup,
+            },
         });
     }
 
@@ -425,10 +435,12 @@ pub const WorkerHandle = struct {
         try self.thread.sendCommand(Command{
             .cmd_type = .divide,
             .params = .{ .a = a, .b = b },
-            .callback = callback,
-            .context = context,
-            .mailbox = self.mailbox,
-            .mailbox_wakeup = &self.wakeup,
+            .metadata = .{
+                .callback = callback,
+                .context = context,
+                .mailbox = self.mailbox,
+                .mailbox_wakeup = &self.wakeup,
+            },
         });
     }
 
@@ -436,10 +448,12 @@ pub const WorkerHandle = struct {
         try self.thread.sendCommand(Command{
             .cmd_type = .shutdown,
             .params = .{ .a = 0, .b = 0 },
-            .callback = callback,
-            .context = context,
-            .mailbox = self.mailbox,
-            .mailbox_wakeup = &self.wakeup,
+            .metadata = .{
+                .callback = callback,
+                .context = context,
+                .mailbox = self.mailbox,
+                .mailbox_wakeup = &self.wakeup,
+            },
         });
     }
 };
