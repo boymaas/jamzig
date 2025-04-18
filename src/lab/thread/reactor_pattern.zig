@@ -1,3 +1,6 @@
+//! Exploring the reactor pattern with Zig since I want
+//! to use this as a pattern to handle threads in JamZig
+
 const std = @import("std");
 const xev = @import("xev");
 const Allocator = std.mem.Allocator;
@@ -267,7 +270,7 @@ pub const WorkerHandle = struct {
         _ = r catch unreachable;
 
         // Process any pending results
-        self_.?.processResults();
+        self_.?.processResponses();
 
         return .rearm;
     }
@@ -279,7 +282,7 @@ pub const WorkerHandle = struct {
         self.alloc.destroy(self);
     }
 
-    pub fn processResults(self: *WorkerHandle) void {
+    pub fn processResponses(self: *WorkerHandle) void {
         while (self.mailbox.pop()) |response| {
             std.debug.print("[{s}] Processing result\n", .{self.id});
 
@@ -373,14 +376,14 @@ test "reactor.pattern" {
 
     // Wait a bit and process results
     std.time.sleep(500 * std.time.ns_per_ms);
-    handle.processResults();
+    handle.processResponses();
 
     // Send shutdown command
     try handle.shutdown(exampleCallback, null);
     //
     // Wait a bit more and process final results
     std.time.sleep(500 * std.time.ns_per_ms);
-    handle.processResults();
+    handle.processResponses();
 
     worker_thread.join();
 }
