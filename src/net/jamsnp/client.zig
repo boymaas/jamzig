@@ -189,7 +189,7 @@ pub const JamSnpClient = struct {
         client.* = JamSnpClient{
             .allocator = allocator,
             .keypair = keypair,
-            .chain_genesis_hash = chain_genesis_hash,
+            .chain_genesis_hash = try allocator.dupe(u8, chain_genesis_hash),
             .is_builder = is_builder,
 
             .connections = std.AutoHashMap(ConnectionId, *Connection).init(allocator),
@@ -221,7 +221,7 @@ pub const JamSnpClient = struct {
             .ssl_ctx = ssl_ctx,
         };
 
-        client.lsquic_engine_api.ea_packets_out_ctx = &client.socket;
+        client.lsquic_engine_api.ea_packets_out_ctx = client;
 
         // Create lsquic engine
         span.debug("Creating lsquic engine", .{});
@@ -590,10 +590,11 @@ pub const JamSnpClient = struct {
         self.allocator.free(self.chain_genesis_hash);
         self.allocator.free(self.alpn);
 
-        self.allocator.destroy(self);
-
         self.connections.deinit();
         self.streams.deinit();
+
+        // Destroy the object itself
+        self.allocator.destroy(self);
 
         span.debug("JamSnpClient deinitialization complete", .{});
     }
@@ -641,10 +642,9 @@ pub const JamSnpClient = struct {
         span.debug("Creating QUIC connection", .{});
         _ = lsquic.lsquic_engine_connect(
             self.lsquic_engine,
-            lsquic.N_LSQVER, // Use default version
-            @ptrCast(&self.socket.internal),
-            @ptrCast(&toSocketAddress(peer_endpoint)),
-
+            lsquic.LSQVER_VERNEG, // Negotiate version or lsquic.LSQVER_ID29
+            @ptrCast(&toSocketAddress(try self.socket.getLocalEndPoint())), // local_addr
+            @ptrCast(&toSocketAddress(peer_endpoint)), // remote_addr
             self.ssl_ctx, // peer_ctx
             @ptrCast(conn), // conn_ctx
             null,
@@ -691,29 +691,19 @@ pub const JamSnpClient = struct {
             alloc.destroy(self);
         }
 
-        pub fn createStream(self: *Connection, alloc: std.mem.Allocator) !*Stream {
+        // request a new stream on the connection
+        pub fn createStream(self: *Connection) !void {
             const span = trace.span(.create_stream);
             defer span.deinit();
             span.debug("Creating new stream on connection", .{});
             // Call lsquic_conn_make_stream to create the stream
-            const lsquic_stream = lsquic.lsquic_conn_make_stream(self.lsquic_connection) orelse {
+            lsquic.lsquic_conn_make_stream(self.lsquic_connection) orelse {
                 span.err("Failed to create LSQUIC stream", .{});
                 return error.StreamCreationFailed;
             };
 
             // The stream will be initialized in the onNewStream callback
             span.debug("Stream creation request successful", .{});
-
-            // Return a placeholder that will be filled by onNewStream callback
-            const stream = try alloc.create(Stream);
-            errdefer alloc.destroy(stream);
-
-            stream.* = .{
-                .lsquic_stream = lsquic_stream,
-                .connection = self,
-            };
-
-            return stream;
         }
 
         fn onNewConn(
@@ -745,6 +735,11 @@ pub const JamSnpClient = struct {
 
             // Invoke the connection closed callback
             conn.client.invokeConnectionClosedCallback(conn.id);
+
+            // Remove the connection from the map
+            if (!conn.client.connections.remove(conn.id)) {
+                span.warn("Closing a connection that was not in the map", .{});
+            }
 
             lsquic.lsquic_conn_set_ctx(maybe_lsquic_connection, null);
             conn.client.allocator.destroy(conn);
@@ -801,6 +796,7 @@ pub const JamSnpClient = struct {
             self.wantRead(true);
         }
 
+        // Data is owned by the caller
         pub fn write(self: *Stream, data: []const u8) !void {
             const span = trace.span(.stream_write);
             defer span.deinit();
@@ -1009,6 +1005,11 @@ pub const JamSnpClient = struct {
             // Invoke the stream closed callback
             stream.connection.client.invokeStreamClosedCallback(stream.connection.id, stream.id);
 
+            // Remove the stream from the map
+            if (!stream.connection.client.streams.remove(stream.id)) {
+                span.warn("Closing a stream that was not in the map", .{});
+            }
+
             span.debug("Destroying stream", .{});
             stream.connection.client.allocator.destroy(stream);
             span.debug("Stream cleanup complete", .{});
@@ -1096,7 +1097,7 @@ pub const JamSnpClient = struct {
             self.lsquic_engine,
             xev_read_buffer.slice.ptr,
             bytes,
-            @ptrCast(&self.socket.internal),
+            @ptrCast(&toSocketAddress(try self.socket.getLocalEndPoint())),
             @ptrCast(&peer_address.any),
 
             self,
@@ -1123,7 +1124,7 @@ pub const JamSnpClient = struct {
         defer span.deinit();
         span.trace("Sending {d} packet specs", .{specs_len});
 
-        const socket = @as(*network.Socket, @ptrCast(@alignCast(ctx)));
+        const client = @as(*JamSnpClient, @ptrCast(@alignCast(ctx)));
         const specs = specs_ptr.?[0..specs_len];
 
         var send_packets: c_int = 0;
@@ -1142,7 +1143,7 @@ pub const JamSnpClient = struct {
                 span.trace("Sending packet of {d} bytes to {}", .{ packet_len, dest_addr });
 
                 // Send the packet
-                _ = socket.sendTo(network.EndPoint.fromSocketAddress(@ptrCast(@alignCast(&dest_addr.any)), dest_addr.getOsSockLen()) catch |err| {
+                _ = client.socket.sendTo(network.EndPoint.fromSocketAddress(@ptrCast(@alignCast(&dest_addr.any)), dest_addr.getOsSockLen()) catch |err| {
                     span.err("Failed to convert socket address: {s}", .{@errorName(err)});
                     break :send_loop;
                 }, packet) catch |err| {

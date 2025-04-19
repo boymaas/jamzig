@@ -45,7 +45,7 @@ test "connect" {
     std.debug.print("Generated Ed25519 keypairs\n", .{});
 
     // Dummy genesis hash
-    const genesis_hash = try std.testing.allocator.dupe(u8, "0123456789abcdef"); // 16 bytes, we'll use first 8 in ALPN
+    const genesis_hash = "0123456789abcdef"; // 16 bytes, we'll use first 8 in ALPN
 
     // Create the server
     var server = try JamSnpServer.init(
@@ -97,7 +97,7 @@ test "client.events" {
     std.debug.print("Generated Ed25519 keypairs\n", .{});
 
     // Dummy genesis hash
-    const genesis_hash = try std.testing.allocator.dupe(u8, "0123456789abcdef");
+    const genesis_hash = "0123456789abcdef";
 
     // Create the server
     var server = try JamSnpServer.init(
