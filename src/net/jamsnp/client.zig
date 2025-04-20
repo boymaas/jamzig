@@ -425,25 +425,25 @@ pub const JamSnpClient = struct {
         defer span.deinit();
         span.debug("Deinitializing JamSnpClient", .{});
 
-        span.debug("Destroying lsquic engine", .{});
+        span.trace("Destroying lsquic engine", .{});
         lsquic.lsquic_engine_destroy(self.lsquic_engine);
 
-        span.debug("Freeing SSL context", .{});
+        span.trace("Freeing SSL context", .{});
         ssl.SSL_CTX_free(self.ssl_ctx);
 
-        span.debug("Closing socket", .{});
+        span.trace("Closing socket", .{});
         self.socket.close(); // Assuming close() handles already closed state
 
-        span.debug("Deinitializing timer", .{});
+        span.trace("Deinitializing timer", .{});
         self.tick.deinit();
 
         if (self.loop) |loop| if (self.loop_owned) {
-            span.debug("Deinitializing owned event loop", .{});
+            span.trace("Deinitializing owned event loop", .{});
             loop.deinit();
             self.allocator.destroy(loop);
         };
 
-        span.debug("Freeing buffers", .{});
+        span.trace("Freeing buffers", .{});
         self.allocator.free(self.packet_in_buffer);
         self.allocator.free(self.chain_genesis_hash);
         self.allocator.free(self.alpn);
@@ -458,7 +458,7 @@ pub const JamSnpClient = struct {
                 stream.destroy(self.allocator);
             }
         }
-        span.debug("Deinitializing streams map", .{});
+        span.trace("Deinitializing streams map", .{});
         self.streams.deinit();
 
         // Cleanup remaining connections (Safety net)
@@ -471,7 +471,7 @@ pub const JamSnpClient = struct {
                 conn.destroy(self.allocator);
             }
         }
-        span.debug("Deinitializing connections map", .{});
+        span.trace("Deinitializing connections map", .{});
         self.connections.deinit();
 
         // Cleanup callback handlers
@@ -481,10 +481,10 @@ pub const JamSnpClient = struct {
         }
 
         // Destroy the client object itself LAST
-        span.debug("Destroying JamSnpClient object", .{});
+        span.trace("Destroying JamSnpClient object", .{});
         self.allocator.destroy(self);
 
-        span.debug("JamSnpClient deinitialization complete", .{});
+        span.trace("JamSnpClient deinitialization complete", .{});
     }
 
     pub fn connect(self: *JamSnpClient, peer_addr_str: []const u8, peer_port: u16) !ConnectionId {
