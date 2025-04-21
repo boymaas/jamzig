@@ -14,14 +14,14 @@ test "initialize and shut down client thread" {
     var mock_client = try createMockJamSnpClient(allocator);
     errdefer mock_client.deinit();
 
-    var thread = try ClientThread.initThread(allocator, jamsnp_client);
-    defer thread.deinitThread();
+    var thread = try ClientThread.init(allocator, mock_client);
+    defer thread.deinit();
 
     var handle = try thread.startThread();
 
     std.time.sleep(std.time.ns_per_ms * 100); // 100ms
 
-    const client_api = Client.init(thread);
+    var client_api = Client.init(thread);
     try client_api.shutdown();
 
     handle.join();
@@ -30,12 +30,10 @@ test "initialize and shut down client thread" {
 fn createMockJamSnpClient(allocator: std.mem.Allocator) !*JamSnpClient {
     const keypair = try generateDummyKeypair();
 
-    const genesis_hash = try allocator.dupe(u8, &[_]u8{0} ** 32);
-
     return JamSnpClient.initWithoutLoop(
         allocator,
         keypair,
-        genesis_hash,
+        "genesis_hash",
         false, // is_builder
     );
 }

@@ -44,12 +44,11 @@ test "initialize and shut down server thread" {
 fn createMockJamSnpServer(allocator: std.mem.Allocator) !*JamSnpServer {
     const keypair = try generateDummyKeypair();
 
-    // ASSUMPTION: JamSnpServer needs an initWithoutLoop variant
     return JamSnpServer.initWithoutLoop(
         allocator,
         keypair,
-        "dummy_genesis_hash", // Placeholder for actual genesis hash
-        false, // allow_builders placeholder
+        "genesis_hash",
+        false,
     );
 }
 

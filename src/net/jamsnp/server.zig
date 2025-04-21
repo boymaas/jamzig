@@ -354,14 +354,14 @@ pub const JamSnpServer = struct {
         const span = trace.span(.run_server_tick);
         defer span.deinit();
         span.trace("Running a single tick on JamSnpServer", .{});
-        try self.loop.run(.no_wait);
+        try self.loop.?.run(.no_wait);
     }
 
     pub fn runUntilDone(self: *@This()) !void {
         const span = trace.span(.run);
         defer span.deinit();
         span.debug("Starting JamSnpServer event loop", .{});
-        try self.loop.run(.until_done);
+        try self.loop.?.run(.until_done);
         span.debug("Event loop completed", .{});
     }
 

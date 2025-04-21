@@ -42,17 +42,7 @@ pub const Connection = struct {
         defer span.deinit();
         span.debug("Requesting new stream on connection ID: {}", .{self.id});
 
-        // Check if lsquic_connection is valid (has been set by onConnectionCreated)
-        if (self.lsquic_connection == undefined) {
-            span.err("Cannot create stream, lsquic connection not yet established for ID: {}", .{self.id});
-            return error.ConnectionNotReady;
-        }
-
-        if (lsquic.lsquic_conn_make_stream(self.lsquic_connection) == null) { // Check for NULL return
-            span.err("lsquic_conn_make_stream failed (e.g., stream limit reached?) for connection ID: {}", .{self.id});
-            // This usually means stream limit reached or connection closing
-            return error.StreamCreationFailed;
-        }
+        lsquic.lsquic_conn_make_stream(self.lsquic_connection);
 
         span.debug("Stream creation request successful for connection ID: {}", .{self.id});
         // Stream object itself is created in the onStreamCreated callback

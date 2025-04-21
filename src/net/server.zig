@@ -132,7 +132,7 @@ pub const ServerThread = struct {
         };
         pub const SendData = struct {
             const Data = struct {
-                connection_id: ConnectionId, // Needed?
+                connection_id: ConnectionId,
                 stream_id: StreamId,
                 data: []const u8,
             };
@@ -141,7 +141,7 @@ pub const ServerThread = struct {
         };
         pub const StreamWantRead = struct {
             const Data = struct {
-                connection_id: ConnectionId, // Needed?
+                connection_id: ConnectionId,
                 stream_id: StreamId,
                 want: bool,
             };
@@ -150,7 +150,7 @@ pub const ServerThread = struct {
         };
         pub const StreamWantWrite = struct {
             const Data = struct {
-                connection_id: ConnectionId, // Needed?
+                connection_id: ConnectionId,
                 stream_id: StreamId,
                 want: bool,
             };
@@ -159,7 +159,7 @@ pub const ServerThread = struct {
         };
         pub const StreamFlush = struct {
             const Data = struct {
-                connection_id: ConnectionId, // Needed?
+                connection_id: ConnectionId,
                 stream_id: StreamId,
             };
             data: Data,
@@ -167,7 +167,7 @@ pub const ServerThread = struct {
         };
         pub const StreamShutdown = struct {
             const Data = struct {
-                connection_id: ConnectionId, // Needed?
+                connection_id: ConnectionId,
                 stream_id: StreamId,
                 how: c_int, // 0=read, 1=write, 2=both
             };

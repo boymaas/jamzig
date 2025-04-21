@@ -37,6 +37,7 @@ pub const DataReceivedCallbackFn = shared.DataReceivedCallbackFn;
 
 // Argument Union for invokeCallback (using shared types)
 const EventArgs = union(EventType) {
+    ClientConnected: struct { connection: ConnectionId, endpoint: network.EndPoint },
     ConnectionEstablished: struct { connection: ConnectionId, endpoint: network.EndPoint },
     ConnectionFailed: struct { endpoint: network.EndPoint, err: anyerror },
     ConnectionClosed: struct { connection: ConnectionId },
@@ -352,6 +353,10 @@ pub const JamSnpClient = struct {
 
             // Switch on the event type to cast to the correct function signature and call it
             switch (args) {
+                .ClientConnected => |ev_args| {
+                    const callback: ClientConnectedCallbackFn = @ptrCast(@alignCast(callback_ptr));
+                    callback(ev_args.connection, ev_args.endpoint, handler.context);
+                },
                 .ConnectionEstablished => |ev_args| {
                     const callback: ConnectionEstablishedCallbackFn = @ptrCast(@alignCast(callback_ptr));
                     callback(ev_args.connection, ev_args.endpoint, handler.context);
@@ -473,10 +478,29 @@ pub const JamSnpClient = struct {
         span.trace("JamSnpClient deinitialization complete", .{});
     }
 
-    pub fn connect(self: *JamSnpClient, peer_addr_str: []const u8, peer_port: u16) !ConnectionId {
+    pub fn connectUsingAddressAndPort(
+        self: *JamSnpClient,
+        address: []const u8,
+        port: u16,
+    ) !ConnectionId {
+        const span = trace.span(.connect_address_and_port);
+        defer span.deinit();
+        span.debug("Connecting to {s}:{d}", .{ address, port });
+
+        // Create the endpoint
+        const parsable = try std.fmt.allocPrint(self.allocator, "{s}:{d}", .{ address, port });
+        defer self.allocator.free(parsable);
+
+        const peer_endpoint = try network.EndPoint.parse(parsable);
+
+        // Call the main connect function
+        return self.connect(peer_endpoint);
+    }
+
+    pub fn connect(self: *JamSnpClient, peer_endpoint: network.EndPoint) !ConnectionId {
         const span = trace.span(.connect);
         defer span.deinit();
-        span.debug("Connecting to {s}:{d}", .{ peer_addr_str, peer_port });
+        span.debug("Connecting to {s}", .{peer_endpoint});
 
         // Bind to a local address (use any address)
         self.socket.bindToPort(0) catch |err| {
@@ -490,18 +514,6 @@ pub const JamSnpClient = struct {
             return err;
         };
         span.debug("Bound to local endpoint: {}", .{local_endpoint});
-
-        // Parse peer address and create endpoint
-        span.debug("Parsing peer address", .{});
-        const peer_address = network.Address.parse(peer_addr_str) catch |err| {
-            span.err("Failed to parse peer address: {s}", .{@errorName(err)});
-            return err;
-        };
-        const peer_endpoint = network.EndPoint{
-            .address = peer_address,
-            .port = peer_port,
-        };
-        span.debug("Peer endpoint: {}", .{peer_endpoint});
 
         // TODO: double check if network.EndPoint.SockAddr maps to
         // a std.posix sockaddr struct

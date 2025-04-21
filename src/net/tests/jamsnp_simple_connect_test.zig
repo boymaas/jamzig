@@ -52,7 +52,7 @@ test "connect" {
     const genesis_hash = "0123456789abcdef"; // 16 bytes, we'll use first 8 in ALPN
 
     // Create the server
-    var server = try JamSnpServer.init(
+    var server = try JamSnpServer.initWithLoop(
         std.testing.allocator,
         server_keypair,
         genesis_hash,
@@ -78,7 +78,7 @@ test "connect" {
     std.debug.print("JAMSNP client initialized\n", .{});
 
     // Connect client to server
-    _ = try client.connect("::1", test_port);
+    _ = try client.connectUsingAddressAndPort("::1", test_port);
     std.debug.print("Client initiated connection to server\n", .{});
 
     // Client
@@ -104,7 +104,7 @@ test "client.events" {
     const genesis_hash = "0123456789abcdef";
 
     // Create the server
-    var server = try JamSnpServer.init(
+    var server = try JamSnpServer.initWithLoop(
         std.testing.allocator,
         server_keypair,
         genesis_hash,
@@ -126,7 +126,7 @@ test "client.events" {
     );
     defer client.deinit();
 
-    _ = try client.connect("::1", test_port);
+    _ = try client.connectUsingAddressAndPort("::1", test_port);
     std.debug.print("Client initiated connection to server\n", .{});
 
     std.debug.print("Running client-server communication...\n", .{});
