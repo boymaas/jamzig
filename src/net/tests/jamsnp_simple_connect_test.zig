@@ -63,8 +63,8 @@ test "connect" {
 
     // Bind the server to localhost on a specific test port
     const test_port: u16 = 12345;
-    try server.listen("::1", test_port);
-    const local_endpoint = try server.socket.getLocalEndPoint();
+
+    const local_endpoint = try server.listen("::1", test_port);
     std.debug.print("Server is listening on: {}\n", .{local_endpoint});
 
     // Create the client
@@ -114,8 +114,8 @@ test "client.events" {
     std.debug.print("JAMSNP server initialized\n", .{});
 
     const test_port: u16 = 12346; // Using a different port than the other test
-    try server.listen("::1", test_port);
-    const local_endpoint = try server.socket.getLocalEndPoint();
+    const local_endpoint = try server.listen("::1", test_port);
+
     std.debug.print("Server is listening on: {}\n", .{local_endpoint});
 
     var client = try JamSnpClient.initWithLoop(

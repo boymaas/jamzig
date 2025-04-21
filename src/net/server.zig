@@ -337,61 +337,59 @@ pub const ServerThread = struct {
             // Process command results immediately and invoke callbacks if needed
             // This mirrors the client's immediate command execution.
             // Asynchronous results (like stream creation) come via events.
-            const command_result = self.processCommand(command);
-            command_result.invokeCallback();
+            try self.processCommand(command);
         }
     }
 
     // Processes a command and returns a CommandResult
-    fn processCommand(self: *ServerThread, command: Command) CommandResult {
+    fn processCommand(self: *ServerThread, command: Command) !void {
         switch (command) {
             .listen => |cmd| {
-                const result = self.server.listen(cmd.data.address, cmd.data.port);
+                const maybe_local_endpoint = self.server.listen(cmd.data.address, cmd.data.port);
                 // Push 'Listening' event on success? JamSnpServer might do this.
-                if (result) |_| {
+                if (maybe_local_endpoint) |local_end_point| {
                     // Assuming listen returns the bound endpoint on success eventually via event/callback
                     // For now, just signal command success.
                     // A dedicated 'Listening' event pushed by internalListenCallback would be better.
-                } else |_| {
+                    try self.pushEvent(
+                        .{ .listening = .{ .local_endpoint = local_end_point } },
+                    );
+                } else |err| {
                     // Handle error (log, notify, etc.)
-                    std.log.err("Error listening: {any}", .{result});
+                    std.log.err("Error listening: {any}", .{err});
                 }
-                return .{ .listen = .{ .result = result, .metadata = cmd.metadata } };
             },
             .disconnect_client => |cmd| {
-                const result = self.disconnectClientImpl(cmd.data.connection_id);
-                return .{ .disconnect_client = .{ .result = result, .metadata = cmd.metadata } };
+                _ = try self.disconnectClientImpl(cmd.data.connection_id);
             },
             .create_stream => |cmd| {
-                const result = self.createStreamImpl(cmd.data.connection_id);
-                return .{ .create_stream = .{ .result = result, .metadata = cmd.metadata } };
+                _ = try self.createStreamImpl(cmd.data.connection_id);
             },
             .destroy_stream => |cmd| {
-                const result = self.destroyStreamImpl(cmd.data.stream_id);
-                return .{ .destroy_stream = .{ .result = result, .metadata = cmd.metadata } };
+                _ = try self.destroyStreamImpl(cmd.data.stream_id);
             },
             .send_data => |cmd| {
-                const result = self.sendDataImpl(cmd.data.stream_id, cmd.data.data);
+                _ = try self.sendDataImpl(cmd.data.stream_id, cmd.data.data);
                 // Success here just means queued/attempted. Actual completion via event?
-                return .{ .send_data = .{ .result = result, .metadata = cmd.metadata } };
             },
             .stream_want_read => |cmd| {
-                const result = self.streamWantReadImpl(cmd.data.stream_id, cmd.data.want);
-                return .{ .stream_want_read = .{ .result = result, .metadata = cmd.metadata } };
+                _ = try self.streamWantReadImpl(cmd.data.stream_id, cmd.data.want);
             },
             .stream_want_write => |cmd| {
-                const result = self.streamWantWriteImpl(cmd.data.stream_id, cmd.data.want);
-                return .{ .stream_want_write = .{ .result = result, .metadata = cmd.metadata } };
+                _ = try self.streamWantWriteImpl(cmd.data.stream_id, cmd.data.want);
             },
             .stream_flush => |cmd| {
-                const result = self.streamFlushImpl(cmd.data.stream_id);
-                return .{ .stream_flush = .{ .result = result, .metadata = cmd.metadata } };
+                _ = try self.streamFlushImpl(cmd.data.stream_id);
             },
             .stream_shutdown => |cmd| {
-                const result = self.streamShutdownImpl(cmd.data.stream_id, cmd.data.how);
-                return .{ .stream_shutdown = .{ .result = result, .metadata = cmd.metadata } };
+                _ = try self.streamShutdownImpl(cmd.data.stream_id, cmd.data.how);
             },
         }
+    }
+
+    // Pushes an event to the event queue.
+    fn pushEvent(self: *ServerThread, event: Server.Event) anyerror!void {
+        _ = try self.event_queue.pushInstantNotFull(event);
     }
 
     // --- Command Implementation Helpers ---
@@ -461,7 +459,7 @@ pub const ServerThread = struct {
     // These run in the ServerThread's context and push events
     fn internalListenerCreatedCallback(endpoint: network.EndPoint, context: ?*anyopaque) void {
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
-        const event = Server.Event{ .listening = .{ .local_address = endpoint } };
+        const event = Server.Event{ .listening = .{ .local_endpoint = endpoint } };
         std.debug.print("Listener created at {}", .{endpoint});
         _ = self.event_queue.push(event, .instant); // Ignore push error (queue full?)
     }
@@ -667,7 +665,7 @@ pub const Server = struct {
 
     pub const Event = union(enum) {
         // -- Server events
-        listening: struct { local_address: network.EndPoint },
+        listening: struct { local_endpoint: network.EndPoint },
 
         // -- Connection events
         client_connected: struct { connection_id: ConnectionId, peer_addr: std.net.Address },

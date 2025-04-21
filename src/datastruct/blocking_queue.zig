@@ -118,6 +118,12 @@ pub fn BlockingQueue(
             return self.len;
         }
 
+        pub fn pushInstantNotFull(self: *Self, value: T) !void {
+            if (self.push(value, .instant) == 0) {
+                return error.QueueFull;
+            }
+        }
+
         /// Pop a value from the queue without blocking.
         pub fn pop(self: *Self) ?T {
             self.mutex.lock();

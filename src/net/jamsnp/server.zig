@@ -298,7 +298,7 @@ pub const JamSnpServer = struct {
         span.trace("JamSnpServer deinitialization complete", .{});
     }
 
-    pub fn listen(self: *JamSnpServer, addr: []const u8, port: u16) !void {
+    pub fn listen(self: *JamSnpServer, addr: []const u8, port: u16) !network.EndPoint {
         const span = trace.span(.listen);
         defer span.deinit();
         span.debug("Starting listen on {s}:{d}", .{ addr, port });
@@ -308,7 +308,11 @@ pub const JamSnpServer = struct {
             .port = port,
         };
         try self.socket.bind(endpoint);
-        span.debug("Socket bound successfully to {}", .{endpoint});
+
+        const local_endpoint = try self.socket.getLocalEndPoint();
+
+        span.debug("Socket bound successfully to {}", .{local_endpoint});
+        return local_endpoint;
     }
 
     pub fn initLoop(self: *@This()) !void {
