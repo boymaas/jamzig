@@ -29,17 +29,19 @@ pub const StreamHandle = struct {
         callback: ?CommandCallback(void),
         context: ?*anyopaque,
     ) !void {
-        const command = ClientThread.Command{ .send_data = .{
-            .data = .{
-                .connection_id = self.connection_id,
-                .stream_id = self.stream_id,
-                .data = data,
+        const command = ClientThread.Command{
+            .send_data = .{
+                .data = .{
+                    .connection_id = self.connection_id,
+                    .stream_id = self.stream_id,
+                    .data = data,
+                },
+                .metadata = .{
+                    .callback = callback, // Use provided or null
+                    .context = context,
+                },
             },
-            .metadata = .{
-                .callback = callback, // Use provided or null
-                .context = context,
-            },
-        } };
+        };
 
         _ = self.thread.mailbox.push(command, .{ .instant = {} });
         try self.thread.wakeup.notify();

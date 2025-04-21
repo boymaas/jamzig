@@ -9,8 +9,7 @@ const network = @import("network");
 const xev = @import("xev");
 
 const shared = @import("shared_types.zig");
-const ClientConnection = @import("../client/connection.zig"); // Import the new connection module
-const ClientStream = @import("../client/stream.zig"); // Import the new stream module (if needed here)
+const ClientConnection = @import("../client/connection.zig");
 
 const toSocketAddress = @import("../ext.zig").toSocketAddress;
 const trace = @import("../../tracing.zig").scoped(.network);
@@ -18,21 +17,23 @@ const trace = @import("../../tracing.zig").scoped(.network);
 // Use shared types
 pub const ConnectionId = shared.ConnectionId;
 pub const StreamId = shared.StreamId;
-pub const EventType = shared.ClientEventType; // Use renamed type
+pub const EventType = shared.EventType; // Use renamed type
 pub const CallbackHandler = shared.CallbackHandler;
 
 // Use specific callback types from shared
-pub const ConnectionEstablishedCallbackFn = shared.ClientConnectionEstablishedCallbackFn;
-pub const ConnectionFailedCallbackFn = shared.ClientConnectionFailedCallbackFn;
-pub const ConnectionClosedCallbackFn = shared.ClientConnectionClosedCallbackFn;
-pub const StreamCreatedCallbackFn = shared.ClientStreamCreatedCallbackFn;
-pub const StreamClosedCallbackFn = shared.ClientStreamClosedCallbackFn;
-pub const DataReceivedCallbackFn = shared.ClientDataReceivedCallbackFn;
-pub const DataEndOfStreamCallbackFn = shared.ClientDataEndOfStreamCallbackFn;
-pub const DataErrorCallbackFn = shared.ClientDataErrorCallbackFn;
-pub const DataWouldBlockCallbackFn = shared.ClientDataWouldBlockCallbackFn;
-pub const DataWriteProgressCallbackFn = shared.ClientDataWriteProgressCallbackFn;
-pub const DataWriteCompletedCallbackFn = shared.ClientDataWriteCompletedCallbackFn;
+pub const ConnectionEstablishedCallbackFn = shared.ConnectionEstablishedCallbackFn;
+pub const ConnectionFailedCallbackFn = shared.ConnectionFailedCallbackFn;
+pub const ConnectionClosedCallbackFn = shared.ConnectionClosedCallbackFn;
+pub const ClientConnectedCallbackFn = shared.ClientConnectedCallbackFn;
+pub const ClientDisconnectedCallbackFn = shared.ConnectionClosedCallbackFn;
+pub const StreamCreatedCallbackFn = shared.StreamCreatedCallbackFn;
+pub const StreamClosedCallbackFn = shared.StreamClosedCallbackFn;
+pub const DataWriteCompletedCallbackFn = shared.DataWriteCompletedCallbackFn;
+pub const DataErrorCallbackFn = shared.DataErrorCallbackFn;
+pub const DataWouldBlockCallbackFn = shared.DataWouldBlockCallbackFn;
+pub const DataEndOfStreamCallbackFn = shared.DataEndOfStreamCallbackFn;
+pub const DataWriteProgressCallbackFn = shared.DataWriteProgressCallbackFn;
+pub const DataReceivedCallbackFn = shared.DataReceivedCallbackFn;
 
 // Argument Union for invokeCallback (using shared types)
 const EventArgs = union(EventType) {
@@ -100,9 +101,9 @@ pub const JamSnpClient = struct {
     lsquic_engine_api: lsquic.lsquic_engine_api,
     lsquic_engine_settings: lsquic.lsquic_engine_settings,
     lsquic_stream_iterface: lsquic.lsquic_stream_if = .{
-        .on_new_conn = ClientConnection.Connection.onConnectionCreated, // Use refactored path
-        .on_conn_closed = ClientConnection.Connection.onConnectionClosed, // Use refactored path
-        .on_new_stream = Stream.onStreamCreated, // Keep internal Stream callbacks for now
+        .on_new_conn = ClientConnection.Connection.onConnectionCreated,
+        .on_conn_closed = ClientConnection.Connection.onConnectionClosed,
+        .on_new_stream = Stream.onStreamCreated,
         .on_read = Stream.onStreamRead,
         .on_write = Stream.onStreamWrite,
         .on_close = Stream.onStreamClosed,
@@ -314,7 +315,6 @@ pub const JamSnpClient = struct {
             span.debug("Event loop completed", .{});
         } else {
             span.err("runUntilDone called but loop is null", .{});
-            // Or maybe return an error?
             return error.LoopNotInitialized;
         }
     }

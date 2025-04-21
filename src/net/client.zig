@@ -160,7 +160,7 @@ pub const ClientThread = struct {
         shutdown: Shutdown,
     };
 
-    pub const CommandResult = struct {
+    pub const CommandResult = union(enum) {
         pub fn Result(T: type) type {
             return struct {
                 result: T,
@@ -194,7 +194,7 @@ pub const ClientThread = struct {
         }
     };
 
-    pub fn initThread(alloc: std.mem.Allocator, client: *JamSnpClient) !*ClientThread {
+    pub fn init(alloc: std.mem.Allocator, client: *JamSnpClient) !*ClientThread {
         var thread = try alloc.create(ClientThread);
         errdefer alloc.destroy(thread);
 
@@ -225,7 +225,7 @@ pub const ClientThread = struct {
         return thread;
     }
 
-    pub fn deinitThread(self: *ClientThread) void {
+    pub fn deinit(self: *ClientThread) void {
         self.event_queue.destroy(self.alloc);
         self.mailbox.destroy(self.alloc);
         self.stop.deinit();

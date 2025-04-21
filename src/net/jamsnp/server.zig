@@ -8,8 +8,8 @@ const network = @import("network");
 const xev = @import("xev");
 
 const shared = @import("shared_types.zig");
-const ServerConnection = @import("../server/connection.zig");
-const ServerStream = @import("../server/stream.zig");
+const ServerConnection = @import("server_connection.zig");
+const ServerStream = @import("server_stream.zig");
 
 const toSocketAddress = @import("../ext.zig").toSocketAddress;
 const trace = @import("../../tracing.zig").scoped(.network);
@@ -17,31 +17,36 @@ const trace = @import("../../tracing.zig").scoped(.network);
 // Use shared types
 pub const ConnectionId = shared.ConnectionId;
 pub const StreamId = shared.StreamId;
-pub const EventType = shared.ServerEventType; // Use renamed type
+pub const EventType = shared.EventType;
 pub const CallbackHandler = shared.CallbackHandler;
 
 // Use specific callback types from shared
-pub const ClientConnectedCallbackFn = shared.ServerClientConnectedCallbackFn;
-pub const ClientDisconnectedCallbackFn = shared.ServerClientDisconnectedCallbackFn;
-pub const StreamCreatedCallbackFn = shared.ServerStreamCreatedCallbackFn;
-pub const StreamClosedCallbackFn = shared.ServerStreamClosedCallbackFn;
-pub const DataReceivedCallbackFn = shared.ServerDataReceivedCallbackFn;
-pub const DataWriteCompletedCallbackFn = shared.ServerDataWriteCompletedCallbackFn;
-pub const DataErrorCallbackFn = shared.ServerDataErrorCallbackFn;
-pub const DataWouldBlockCallbackFn = shared.ServerDataWouldBlockCallbackFn;
+pub const ClientConnectedCallbackFn = shared.ClientConnectedCallbackFn;
+pub const ClientDisconnectedCallbackFn = shared.ConnectionClosedCallbackFn;
+pub const StreamCreatedCallbackFn = shared.StreamCreatedCallbackFn;
+pub const StreamClosedCallbackFn = shared.StreamClosedCallbackFn;
+pub const DataReceivedCallbackFn = shared.DataReceivedCallbackFn;
+pub const DataWriteCompletedCallbackFn = shared.DataWriteCompletedCallbackFn;
+pub const DataErrorCallbackFn = shared.DataErrorCallbackFn;
+pub const DataWouldBlockCallbackFn = shared.DataWouldBlockCallbackFn;
+pub const DataEndOfStreamCallbackFn = shared.DataEndOfStreamCallbackFn;
+pub const DataWriteProgressCallbackFn = shared.DataWriteProgressCallbackFn;
 
 // Argument Union for invokeCallback (using shared types)
 const EventArgs = union(EventType) {
-    ClientConnected: struct { connection_id: ConnectionId, peer_addr: std.net.Address },
-    ClientDisconnected: struct { connection_id: ConnectionId },
-    StreamCreatedByClient: struct { connection_id: ConnectionId, stream_id: StreamId },
-    StreamClosedByClient: struct { connection_id: ConnectionId, stream_id: StreamId },
-    DataReceived: struct { connection_id: ConnectionId, stream_id: StreamId, data: []const u8 },
-    DataWriteCompleted: struct { connection_id: ConnectionId, stream_id: StreamId, total_bytes_written: usize },
-    DataReadError: struct { connection_id: ConnectionId, stream_id: StreamId, error_code: i32 },
-    DataWriteError: struct { connection_id: ConnectionId, stream_id: StreamId, error_code: i32 },
-    DataReadWouldBlock: struct { connection_id: ConnectionId, stream_id: StreamId },
-    DataWriteWouldBlock: struct { connection_id: ConnectionId, stream_id: StreamId },
+    ClientConnected: struct { connection: ConnectionId, endpoint: network.EndPoint },
+    ConnectionEstablished: struct { connection: ConnectionId, endpoint: network.EndPoint },
+    ConnectionFailed: struct { endpoint: network.EndPoint, err: anyerror },
+    ConnectionClosed: struct { connection: ConnectionId },
+    StreamCreated: struct { connection: ConnectionId, stream: StreamId },
+    StreamClosed: struct { connection: ConnectionId, stream: StreamId },
+    DataReceived: struct { connection: ConnectionId, stream: StreamId, data: []const u8 },
+    DataEndOfStream: struct { connection: ConnectionId, stream: StreamId, data_read: []const u8 },
+    DataReadError: struct { connection: ConnectionId, stream: StreamId, error_code: i32 },
+    DataWouldBlock: struct { connection: ConnectionId, stream: StreamId },
+    DataWriteProgress: struct { connection: ConnectionId, stream: StreamId, bytes_written: usize, total_size: usize },
+    DataWriteCompleted: struct { connection: ConnectionId, stream: StreamId, total_bytes_written: usize },
+    DataWriteError: struct { connection: ConnectionId, stream: StreamId, error_code: i32 },
 };
 
 // -- JamSnpServer Struct
@@ -53,7 +58,9 @@ pub const JamSnpServer = struct {
     alpn_id: []const u8,
 
     // xev state
-    loop: xev.Loop = undefined,
+    loop: ?*xev.Loop = undefined,
+    loop_owned: bool = false,
+
     packets_in: xev.UDP,
     packets_in_c: xev.Completion = undefined,
     packets_in_s: xev.UDP.State = undefined,
@@ -69,10 +76,10 @@ pub const JamSnpServer = struct {
         // Mandatory callbacks - point to functions in new modules
         .on_new_conn = ServerConnection.Connection.onConnectionCreated,
         .on_conn_closed = ServerConnection.Connection.onConnClosed,
-        .on_new_stream = ServerStream.Stream.onNewStream,
-        .on_read = ServerStream.Stream.onRead,
-        .on_write = ServerStream.Stream.onWrite,
-        .on_close = ServerStream.Stream.onClose,
+        .on_new_stream = ServerStream.Stream.onStreamCreated,
+        .on_read = ServerStream.Stream.onStreamRead,
+        .on_write = ServerStream.Stream.onStreamWrite,
+        .on_close = ServerStream.Stream.onStreamClosed,
         // Optional callbacks
         .on_hsk_done = ServerConnection.Connection.onHandshakeDone,
         .on_goaway_received = null,
@@ -92,7 +99,32 @@ pub const JamSnpServer = struct {
     // Callback handlers map (Server-side)
     callback_handlers: [@typeInfo(EventType).@"enum".fields.len]CallbackHandler = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len,
 
-    pub fn init(
+    pub fn initWithLoop(
+        allocator: std.mem.Allocator,
+        keypair: std.crypto.sign.Ed25519.KeyPair,
+        chain_genesis_hash: []const u8,
+        is_builder: bool,
+    ) !*JamSnpServer {
+        const server = try initWithoutLoop(allocator, keypair, chain_genesis_hash, is_builder);
+        errdefer server.deinit();
+        try server.initLoop();
+        return server;
+    }
+
+    pub fn initAttachLoop(
+        allocator: std.mem.Allocator,
+        keypair: std.crypto.sign.Ed25519.KeyPair,
+        chain_genesis_hash: []const u8,
+        is_builder: bool,
+        loop: *xev.Loop,
+    ) !*JamSnpServer {
+        const server = try initWithoutLoop(allocator, keypair, chain_genesis_hash, is_builder);
+        errdefer server.deinit();
+        try server.attachToLoop(loop);
+        return server;
+    }
+
+    pub fn initWithoutLoop(
         allocator: std.mem.Allocator,
         keypair: std.crypto.sign.Ed25519.KeyPair,
         genesis_hash: []const u8,
@@ -164,6 +196,10 @@ pub const JamSnpServer = struct {
             .callback_handlers = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len,
         };
 
+        // Reserve buffers for incoming packets
+        server.packets_in_buffer = try allocator.alloc(u8, 1500);
+        errdefer allocator.free(server.packets_in_buffer);
+
         errdefer server.connections.deinit();
         errdefer server.streams.deinit();
         errdefer allocator.free(server.chain_genesis_hash);
@@ -190,9 +226,6 @@ pub const JamSnpServer = struct {
             return error.LsquicEngineCreationFailed;
         };
 
-        // Build the xev loop
-        try server.buildLoop();
-
         span.debug("Successfully initialized JamSnpServer", .{});
         return server;
     }
@@ -215,7 +248,11 @@ pub const JamSnpServer = struct {
         self.tick.deinit();
 
         span.trace("Deinitializing event loop", .{});
-        self.loop.deinit();
+        if (self.loop) |loop| if (self.loop_owned) {
+            span.trace("Deinitializing owned event loop", .{});
+            loop.deinit();
+            self.allocator.destroy(loop);
+        };
 
         span.trace("Freeing buffers", .{});
         self.allocator.free(self.packets_in_buffer);
@@ -272,18 +309,28 @@ pub const JamSnpServer = struct {
         span.debug("Socket bound successfully to {}", .{endpoint});
     }
 
-    pub fn buildLoop(self: *@This()) !void {
+    pub fn initLoop(self: *@This()) !void {
+        const loop = try self.allocator.create(xev.Loop);
+        errdefer self.allocator.destroy(loop);
+        loop.* = try xev.Loop.init(.{});
+        self.loop = loop;
+        self.loop_owned = true;
+        self.buildLoop();
+    }
+
+    pub fn attachToLoop(self: *@This(), loop: *xev.Loop) void {
+        self.loop = loop;
+        self.loop_owned = false;
+        self.buildLoop();
+    }
+
+    pub fn buildLoop(self: *@This()) void {
         const span = trace.span(.build_loop);
         defer span.deinit();
         span.debug("Initializing event loop", .{});
-        self.loop = try xev.Loop.init(.{});
-        errdefer self.loop.deinit();
-
-        self.packets_in_buffer = try self.allocator.alloc(u8, 1500);
-        errdefer self.allocator.free(self.packets_in_buffer);
 
         self.tick.run(
-            &self.loop,
+            self.loop.?,
             &self.tick_c,
             500, // Initial timeout, will be adjusted
             @This(),
@@ -292,7 +339,7 @@ pub const JamSnpServer = struct {
         );
 
         self.packets_in.read(
-            &self.loop,
+            self.loop.?,
             &self.packets_in_c,
             &self.packets_in_s,
             .{ .slice = self.packets_in_buffer },
@@ -343,43 +390,55 @@ pub const JamSnpServer = struct {
             switch (args) {
                 .ClientConnected => |ev_args| {
                     const callback: ClientConnectedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.peer_addr, handler.context);
+                    callback(ev_args.connection, ev_args.endpoint, handler.context);
                 },
-                .ClientDisconnected => |ev_args| {
+                .ConnectionEstablished => |ev_args| {
+                    const callback: ClientConnectedCallbackFn = @ptrCast(@alignCast(callback_ptr));
+                    callback(ev_args.connection, ev_args.endpoint, handler.context);
+                },
+                .ConnectionClosed => |ev_args| {
                     const callback: ClientDisconnectedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, handler.context);
+                    callback(ev_args.connection, handler.context);
                 },
-                .StreamCreatedByClient => |ev_args| {
+                .StreamCreated => |ev_args| {
                     const callback: StreamCreatedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.stream_id, handler.context);
+                    callback(ev_args.connection, ev_args.stream, handler.context);
                 },
-                .StreamClosedByClient => |ev_args| {
+                .StreamClosed => |ev_args| {
                     const callback: StreamClosedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.stream_id, handler.context);
+                    callback(ev_args.connection, ev_args.stream, handler.context);
                 },
                 .DataReceived => |ev_args| {
                     const callback: DataReceivedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.stream_id, ev_args.data, handler.context);
+                    callback(ev_args.connection, ev_args.stream, ev_args.data, handler.context);
                 },
                 .DataWriteCompleted => |ev_args| {
                     const callback: DataWriteCompletedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.stream_id, ev_args.total_bytes_written, handler.context);
+                    callback(ev_args.connection, ev_args.stream, ev_args.total_bytes_written, handler.context);
                 },
                 .DataReadError => |ev_args| {
                     const callback: DataErrorCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.stream_id, ev_args.error_code, handler.context);
+                    callback(ev_args.connection, ev_args.stream, ev_args.error_code, handler.context);
                 },
                 .DataWriteError => |ev_args| {
                     const callback: DataErrorCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.stream_id, ev_args.error_code, handler.context);
+                    callback(ev_args.connection, ev_args.stream, ev_args.error_code, handler.context);
                 },
-                .DataReadWouldBlock => |ev_args| {
+                .DataWouldBlock => |ev_args| {
                     const callback: DataWouldBlockCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.stream_id, handler.context);
+                    callback(ev_args.connection, ev_args.stream, handler.context);
                 },
-                .DataWriteWouldBlock => |ev_args| {
-                    const callback: DataWouldBlockCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                    callback(ev_args.connection_id, ev_args.stream_id, handler.context);
+                .DataWriteProgress => |ev_args| {
+                    const callback: DataWriteProgressCallbackFn = @ptrCast(@alignCast(callback_ptr));
+                    callback(ev_args.connection, ev_args.stream, ev_args.bytes_written, ev_args.total_size, handler.context);
+                },
+                .DataEndOfStream => |ev_args| {
+                    const callback: DataEndOfStreamCallbackFn = @ptrCast(@alignCast(callback_ptr));
+                    callback(ev_args.connection, ev_args.stream, ev_args.data_read, handler.context);
+                },
+                .ConnectionFailed => |ev_args| {
+                    // This seems to be server-specific, not used in client callbacks
+                    span.warn("Unhandled ConnectionFailed event for endpoint: {}", .{ev_args.endpoint});
                 },
             }
         } else {
@@ -462,9 +521,6 @@ pub const JamSnpServer = struct {
         const bytes = try xev_read_result;
         span.trace("Received {d} bytes from {}", .{ bytes, peer_address });
         span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
-
-        // Now change some bytes, to test valid comms TODO: remove
-        // xev_read_buffer.slice[6] = 0x66;
 
         const self = maybe_self.?;
 

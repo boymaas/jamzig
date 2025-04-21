@@ -124,6 +124,7 @@ comptime {
     // Networking
     _ = @import("net/jamsnp_test.zig");
     _ = @import("net/client_test.zig");
+    _ = @import("net/server_test.zig");
 
     // Proof of Concepts
     _ = @import("lab/thread/reactor_pattern.zig");

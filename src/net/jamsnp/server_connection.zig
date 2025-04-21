@@ -111,8 +111,8 @@ pub const Connection = struct {
         span.debug("Connection closed callback triggered for ID: {}", .{conn_id});
 
         // Invoke user callback *before* removing/destroying
-        server.invokeCallback(.ClientDisconnected, .{
-            .ClientDisconnected = .{ .connection_id = conn_id },
+        server.invokeCallback(.ConnectionClosed, .{
+            .ConnectionClosed = .{ .connection = conn_id },
         });
 
         // Remove from bookkeeping map using UUID
@@ -156,11 +156,15 @@ pub const Connection = struct {
 
         // Handshake successful, invoke callback
         span.debug("Handshake successful for connection ID: {}", .{conn_id});
-        server.invokeCallback(.ClientConnected, .{
-            .ClientConnected = .{
-                .connection_id = conn_id,
-                .peer_addr = connection.peer_addr,
-            },
-        });
+        _ = server;
+
+        // FIXME: handle this
+
+        // server.invokeCallback(.ClientConnected, .{
+        //     .ClientConnected = .{
+        //         .connection = conn_id,
+        //         .peer_addr = connection.peer_addr,
+        //     },
+        // });
     }
 };

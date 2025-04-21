@@ -6,7 +6,8 @@ pub const ConnectionId = uuid.Uuid;
 pub const StreamId = uuid.Uuid;
 
 // -- Client Callback Types
-pub const ClientEventType = enum {
+pub const EventType = enum {
+    ClientConnected,
     ConnectionEstablished,
     ConnectionFailed,
     ConnectionClosed,
@@ -21,40 +22,18 @@ pub const ClientEventType = enum {
     DataWriteError,
 };
 
-pub const ClientConnectionEstablishedCallbackFn = *const fn (connection: ConnectionId, endpoint: network.EndPoint, context: ?*anyopaque) void;
-pub const ClientConnectionFailedCallbackFn = *const fn (endpoint: network.EndPoint, err: anyerror, context: ?*anyopaque) void;
-pub const ClientConnectionClosedCallbackFn = *const fn (connection: ConnectionId, context: ?*anyopaque) void;
-pub const ClientStreamCreatedCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, context: ?*anyopaque) void;
-pub const ClientStreamClosedCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, context: ?*anyopaque) void;
-pub const ClientDataReceivedCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, data: []const u8, context: ?*anyopaque) void;
-pub const ClientDataEndOfStreamCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, data_read: []const u8, context: ?*anyopaque) void;
-pub const ClientDataErrorCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, error_code: i32, context: ?*anyopaque) void;
-pub const ClientDataWouldBlockCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, context: ?*anyopaque) void;
-pub const ClientDataWriteProgressCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, bytes_written: usize, total_size: usize, context: ?*anyopaque) void;
-pub const ClientDataWriteCompletedCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, total_bytes_written: usize, context: ?*anyopaque) void;
-
-// -- Server Callback Types
-pub const ServerEventType = enum {
-    ClientConnected,
-    ClientDisconnected,
-    StreamCreatedByClient,
-    StreamClosedByClient,
-    DataReceived,
-    DataWriteCompleted,
-    DataReadError,
-    DataWriteError,
-    DataReadWouldBlock,
-    DataWriteWouldBlock,
-};
-
-pub const ServerClientConnectedCallbackFn = *const fn (connection_id: ConnectionId, peer_addr: std.net.Address, context: ?*anyopaque) void;
-pub const ServerClientDisconnectedCallbackFn = *const fn (connection_id: ConnectionId, context: ?*anyopaque) void;
-pub const ServerStreamCreatedCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void;
-pub const ServerStreamClosedCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void;
-pub const ServerDataReceivedCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, data: []const u8, context: ?*anyopaque) void;
-pub const ServerDataWriteCompletedCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, total_bytes_written: usize, context: ?*anyopaque) void;
-pub const ServerDataErrorCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, error_code: i32, context: ?*anyopaque) void;
-pub const ServerDataWouldBlockCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void;
+pub const ClientConnectedCallbackFn = *const fn (connection: ConnectionId, endpoint: network.EndPoint, context: ?*anyopaque) void;
+pub const ConnectionEstablishedCallbackFn = *const fn (connection: ConnectionId, endpoint: network.EndPoint, context: ?*anyopaque) void;
+pub const ConnectionFailedCallbackFn = *const fn (endpoint: network.EndPoint, err: anyerror, context: ?*anyopaque) void;
+pub const ConnectionClosedCallbackFn = *const fn (connection: ConnectionId, context: ?*anyopaque) void;
+pub const StreamCreatedCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, context: ?*anyopaque) void;
+pub const StreamClosedCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, context: ?*anyopaque) void;
+pub const DataReceivedCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, data: []const u8, context: ?*anyopaque) void;
+pub const DataEndOfStreamCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, data_read: []const u8, context: ?*anyopaque) void;
+pub const DataErrorCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, error_code: i32, context: ?*anyopaque) void;
+pub const DataWouldBlockCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, context: ?*anyopaque) void;
+pub const DataWriteProgressCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, bytes_written: usize, total_size: usize, context: ?*anyopaque) void;
+pub const DataWriteCompletedCallbackFn = *const fn (connection: ConnectionId, stream: StreamId, total_bytes_written: usize, context: ?*anyopaque) void;
 
 // -- Common Callback Handler
 pub const CallbackHandler = struct {
