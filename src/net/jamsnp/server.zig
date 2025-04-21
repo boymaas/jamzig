@@ -1,5 +1,5 @@
 const std = @import("std");
-const uuid = @import("uuid"); // Added for UUIDs
+const uuid = @import("uuid");
 const lsquic = @import("lsquic");
 const ssl = @import("ssl");
 const common = @import("common.zig");
@@ -7,36 +7,30 @@ const certificate_verifier = @import("certificate_verifier.zig");
 const network = @import("network");
 const xev = @import("xev");
 
+const shared = @import("shared_types.zig");
+const ServerConnection = @import("../server/connection.zig");
+const ServerStream = @import("../server/stream.zig");
+
 const toSocketAddress = @import("../ext.zig").toSocketAddress;
 const trace = @import("../../tracing.zig").scoped(.network);
 
-// -- UUID Definitions
-pub const ConnectionId = uuid.Uuid;
-pub const StreamId = uuid.Uuid;
+// Use shared types
+pub const ConnectionId = shared.ConnectionId;
+pub const StreamId = shared.StreamId;
+pub const EventType = shared.ServerEventType; // Use renamed type
+pub const CallbackHandler = shared.CallbackHandler;
 
-// -- Callback Definitions (Server-Side)
-pub const EventType = enum {
-    ClientConnected,
-    ClientDisconnected,
-    StreamCreatedByClient,
-    StreamClosedByClient,
-    DataReceived,
-    DataWriteCompleted,
-    DataReadError,
-    DataWriteError,
-    DataReadWouldBlock,
-    DataWriteWouldBlock,
-};
+// Use specific callback types from shared
+pub const ClientConnectedCallbackFn = shared.ServerClientConnectedCallbackFn;
+pub const ClientDisconnectedCallbackFn = shared.ServerClientDisconnectedCallbackFn;
+pub const StreamCreatedCallbackFn = shared.ServerStreamCreatedCallbackFn;
+pub const StreamClosedCallbackFn = shared.ServerStreamClosedCallbackFn;
+pub const DataReceivedCallbackFn = shared.ServerDataReceivedCallbackFn;
+pub const DataWriteCompletedCallbackFn = shared.ServerDataWriteCompletedCallbackFn;
+pub const DataErrorCallbackFn = shared.ServerDataErrorCallbackFn;
+pub const DataWouldBlockCallbackFn = shared.ServerDataWouldBlockCallbackFn;
 
-pub const ClientConnectedCallbackFn = *const fn (connection_id: ConnectionId, peer_addr: std.net.Address, context: ?*anyopaque) void;
-pub const ClientDisconnectedCallbackFn = *const fn (connection_id: ConnectionId, context: ?*anyopaque) void;
-pub const StreamCreatedCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void;
-pub const StreamClosedCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void;
-pub const DataReceivedCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, data: []const u8, context: ?*anyopaque) void;
-pub const DataWriteCompletedCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, total_bytes_written: usize, context: ?*anyopaque) void;
-pub const DataErrorCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, error_code: i32, context: ?*anyopaque) void;
-pub const DataWouldBlockCallbackFn = *const fn (connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void;
-
+// Argument Union for invokeCallback (using shared types)
 const EventArgs = union(EventType) {
     ClientConnected: struct { connection_id: ConnectionId, peer_addr: std.net.Address },
     ClientDisconnected: struct { connection_id: ConnectionId },
@@ -50,13 +44,7 @@ const EventArgs = union(EventType) {
     DataWriteWouldBlock: struct { connection_id: ConnectionId, stream_id: StreamId },
 };
 
-// Shared Handler structure
-pub const CallbackHandler = struct {
-    callback: ?*const anyopaque,
-    context: ?*anyopaque,
-};
-
-// --- JamSnpServer Struct ---
+// -- JamSnpServer Struct
 
 pub const JamSnpServer = struct {
     allocator: std.mem.Allocator,
@@ -78,27 +66,28 @@ pub const JamSnpServer = struct {
     lsquic_engine_api: lsquic.lsquic_engine_api,
     lsquic_engine_settings: lsquic.lsquic_engine_settings,
     lsquic_stream_interface: lsquic.lsquic_stream_if = .{
-        // Mandatory callbacks
-        .on_new_conn = Connection.onConnectionCreated,
-        .on_conn_closed = Connection.onConnClosed,
-        .on_new_stream = Stream.onNewStream,
-        .on_read = Stream.onRead,
-        .on_write = Stream.onWrite,
-        .on_close = Stream.onClose,
+        // Mandatory callbacks - point to functions in new modules
+        .on_new_conn = ServerConnection.Connection.onConnectionCreated,
+        .on_conn_closed = ServerConnection.Connection.onConnClosed,
+        .on_new_stream = ServerStream.Stream.onNewStream,
+        .on_read = ServerStream.Stream.onRead,
+        .on_write = ServerStream.Stream.onWrite,
+        .on_close = ServerStream.Stream.onClose,
         // Optional callbacks
-        .on_hsk_done = Connection.onHandshakeDone,
+        .on_hsk_done = ServerConnection.Connection.onHandshakeDone,
         .on_goaway_received = null,
         .on_new_token = null,
         .on_sess_resume_info = null,
     },
 
     ssl_ctx: *ssl.SSL_CTX,
+
     chain_genesis_hash: []const u8,
     allow_builders: bool,
 
-    // Bookkeeping using UUIDs
-    connections: std.AutoHashMap(ConnectionId, *Connection),
-    streams: std.AutoHashMap(StreamId, *Stream),
+    // Bookkeeping using UUIDs - use refactored types
+    connections: std.AutoHashMap(ConnectionId, *ServerConnection.Connection),
+    streams: std.AutoHashMap(StreamId, *ServerStream.Stream),
 
     // Callback handlers map (Server-side)
     callback_handlers: [@typeInfo(EventType).@"enum".fields.len]CallbackHandler = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len,
@@ -169,11 +158,12 @@ pub const JamSnpServer = struct {
             .packets_in = xev.UDP.initFd(socket.internal),
             .tick = try xev.Timer.init(),
             // Initialize bookkeeping maps with UUIDs
-            .connections = std.AutoHashMap(ConnectionId, *Connection).init(allocator),
-            .streams = std.AutoHashMap(StreamId, *Stream).init(allocator),
+            .connections = std.AutoHashMap(ConnectionId, *ServerConnection.Connection).init(allocator),
+            .streams = std.AutoHashMap(StreamId, *ServerStream.Stream).init(allocator),
             // Initialize callback handlers
             .callback_handlers = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len,
         };
+
         errdefer server.connections.deinit();
         errdefer server.streams.deinit();
         errdefer allocator.free(server.chain_genesis_hash);
@@ -342,7 +332,7 @@ pub const JamSnpServer = struct {
 
     // -- Callback Invocation
 
-    fn invokeCallback(self: *@This(), event_tag: EventType, args: EventArgs) void {
+    pub fn invokeCallback(self: *@This(), event_tag: EventType, args: EventArgs) void {
         const span = trace.span(.invoke_server_callback);
         defer span.deinit();
         std.debug.assert(event_tag == @as(EventType, @enumFromInt(@intFromEnum(args))));
@@ -520,464 +510,6 @@ pub const JamSnpServer = struct {
 
         return .disarm;
     }
-
-    // --- Nested Connection Struct ---
-    pub const Connection = struct {
-        id: ConnectionId, // Added UUID
-        lsquic_connection: *lsquic.lsquic_conn_t,
-        server: *JamSnpServer,
-        peer_addr: std.net.Address,
-
-        // Create function is not typically called directly by user for server
-        // It's created internally in onNewConn
-        fn create(alloc: std.mem.Allocator, server: *JamSnpServer, lsquic_conn: *lsquic.lsquic_conn_t, peer_addr: std.net.Address) !*Connection {
-            const span = trace.span(.connection_create);
-            defer span.deinit();
-            const connection = try alloc.create(Connection);
-            const new_id = uuid.v4.new();
-            span.debug("Creating server connection context with ID: {} for peer: {}", .{ new_id, peer_addr });
-            connection.* = .{
-                .id = new_id,
-                .lsquic_connection = lsquic_conn,
-                .server = server,
-                .peer_addr = peer_addr,
-            };
-            return connection;
-        }
-
-        // Destroy method for cleanup
-        fn destroy(self: *Connection, alloc: std.mem.Allocator) void {
-            const span = trace.span(.connection_destroy);
-            defer span.deinit();
-            span.debug("Destroying server connection context for ID: {}", .{self.id});
-            // Add any connection-specific resource cleanup here if needed
-            alloc.destroy(self);
-        }
-
-        // --- LSQUIC Connection Callbacks ---
-        fn onConnectionCreated(
-            ctx: ?*anyopaque, // *JamSnpServer
-            maybe_lsquic_connection: ?*lsquic.lsquic_conn_t,
-        ) callconv(.C) ?*lsquic.lsquic_conn_ctx_t {
-            const span = trace.span(.on_new_conn);
-            defer span.deinit();
-
-            const server = @as(*JamSnpServer, @ptrCast(@alignCast(ctx.?)));
-            const lsquic_conn_ptr = maybe_lsquic_connection orelse {
-                span.err("onNewConn called with null lsquic connection!", .{});
-                return null;
-            };
-
-            var local_sa_ptr: ?*const lsquic.struct_sockaddr = null;
-            var peer_sa_ptr: ?*const lsquic.struct_sockaddr = null;
-            _ = lsquic.lsquic_conn_get_sockaddr(lsquic_conn_ptr, &local_sa_ptr, &peer_sa_ptr);
-            const peer_sa = peer_sa_ptr orelse {
-                span.err("Failed to get peer sockaddr for new connection", .{});
-                return null;
-            };
-            const peer_addr = std.net.Address.initPosix(@ptrCast(@alignCast(peer_sa)));
-            span.debug("New connection callback triggered for peer {}", .{peer_addr});
-
-            // Create connection context using the new create method
-            const connection = Connection.create(
-                server.allocator,
-                server,
-                lsquic_conn_ptr,
-                peer_addr,
-            ) catch |err| {
-                span.err("Failed to create connection context: {s}", .{@errorName(err)});
-                return null; // Signal error to lsquic
-            };
-            errdefer connection.destroy(server.allocator); // Use destroy method
-
-            // Add to bookkeeping map using UUID
-            server.connections.put(connection.id, connection) catch |err| {
-                span.err("Failed to add connection {} to map: {s}", .{ connection.id, @errorName(err) });
-                return null; // Let errdefer clean up, signal error
-            };
-
-            span.debug("Connection context created successfully for ID: {}", .{connection.id});
-            // Return our context struct pointer
-            return @ptrCast(connection);
-        }
-
-        fn onConnClosed(maybe_lsquic_connection: ?*lsquic.lsquic_conn_t) callconv(.C) void {
-            const span = trace.span(.on_conn_closed);
-            defer span.deinit();
-
-            const lsquic_conn_ptr = maybe_lsquic_connection orelse {
-                span.warn("onConnClosed called with null connection pointer", .{});
-                return;
-            };
-
-            // Retrieve our connection context
-            const conn_ctx = lsquic.lsquic_conn_get_ctx(lsquic_conn_ptr);
-            if (conn_ctx == null) {
-                span.warn("onConnClosed called for lsquic conn 0x{*} but context was already null (double close?)", .{lsquic_conn_ptr});
-                return;
-            }
-            const connection: *Connection = @ptrCast(@alignCast(conn_ctx.?));
-            const conn_id = connection.id; // Get ID before potential destruction
-            const server = connection.server;
-            span.debug("Connection closed callback triggered for ID: {}", .{conn_id});
-
-            // Invoke user callback *before* removing/destroying
-            server.invokeCallback(.ClientDisconnected, .{
-                .ClientDisconnected = .{ .connection_id = conn_id },
-            });
-
-            // Remove from bookkeeping map using UUID
-            if (server.connections.fetchRemove(conn_id)) |removed_entry| {
-                std.debug.assert(removed_entry.value == connection); // Sanity check
-                span.debug("Removed connection ID {} from map.", .{conn_id});
-            } else {
-                span.warn("Closing connection (ID: {}) was not found in the map, but context existed.", .{conn_id});
-            }
-
-            // Clear the context in lsquic
-            lsquic.lsquic_conn_set_ctx(lsquic_conn_ptr, null);
-
-            // Destroy our connection context struct using its method
-            connection.destroy(server.allocator);
-
-            span.debug("Connection resources cleaned up for formerly ID: {}", .{conn_id});
-        }
-
-        fn onHandshakeDone(conn: ?*lsquic.lsquic_conn_t, status: lsquic.lsquic_hsk_status) callconv(.C) void {
-            const span = trace.span(.on_handshake_done);
-            defer span.deinit();
-            const lsquic_conn_ptr = conn orelse return;
-
-            const conn_ctx = lsquic.lsquic_conn_get_ctx(lsquic_conn_ptr);
-            if (conn_ctx == null) {
-                span.warn("onHandshakeDone called for lsquic conn 0x{*} but context is null", .{lsquic_conn_ptr});
-                return;
-            }
-            const connection: *Connection = @ptrCast(@alignCast(conn_ctx.?));
-            const conn_id = connection.id;
-            const server = connection.server;
-
-            span.debug("Handshake completed for connection ID: {} with status: {}", .{ conn_id, status });
-
-            if (status != lsquic.LSQ_HSK_OK and status != lsquic.LSQ_HSK_RESUMED_OK) {
-                span.err("Handshake failed with status: {}, closing connection ID: {}", .{ status, conn_id });
-                lsquic.lsquic_conn_close(lsquic_conn_ptr); // onConnClosed will handle cleanup
-                return;
-            }
-
-            // Handshake successful, invoke callback
-            span.debug("Handshake successful for connection ID: {}", .{conn_id});
-            server.invokeCallback(.ClientConnected, .{
-                .ClientConnected = .{
-                    .connection_id = conn_id,
-                    .peer_addr = connection.peer_addr,
-                },
-            });
-        }
-    };
-
-    // --- Nested Stream Struct ---
-    pub const Stream = struct {
-        id: StreamId, // Added UUID
-        lsquic_stream: *lsquic.lsquic_stream_t,
-        connection: *Connection,
-        read_buffer: []u8, // Buffer for incoming data (allocated in onNewStream)
-
-        // State for echoing "pong" back
-        data_to_write: ?[]const u8 = null,
-        write_pos: usize = 0,
-
-        // Create function is not typically called directly by user for server
-        // It's created internally in onNewStream
-        fn create(alloc: std.mem.Allocator, connection: *Connection, lsquic_stream: *lsquic.lsquic_stream_t) !*Stream {
-            const span = trace.span(.stream_create);
-            defer span.deinit();
-            const stream = try alloc.create(Stream);
-            errdefer alloc.destroy(stream);
-
-            const read_buffer = try alloc.alloc(u8, 1024); // Allocate read buffer here
-            errdefer alloc.free(read_buffer);
-
-            const new_id = uuid.v4.new();
-            span.debug("Creating server stream context with ID: {} on connection ID: {}", .{ new_id, connection.id });
-
-            stream.* = .{
-                .id = new_id,
-                .lsquic_stream = lsquic_stream,
-                .connection = connection,
-                .read_buffer = read_buffer,
-                .data_to_write = null,
-                .write_pos = 0,
-            };
-            return stream;
-        }
-
-        // Destroy method for cleanup
-        fn destroy(self: *Stream, alloc: std.mem.Allocator) void {
-            const span = trace.span(.stream_destroy);
-            defer span.deinit();
-            span.debug("Destroying server stream context for ID: {}", .{self.id});
-            // Free associated resources
-            alloc.free(self.read_buffer);
-            // Note: data_to_write points to literal, no free needed.
-            alloc.destroy(self);
-        }
-
-        // --- LSQUIC Stream Callbacks ---
-        fn onNewStream(
-            _: ?*anyopaque, // *JamSnpServer (ea_stream_if_ctx)
-            maybe_lsquic_stream: ?*lsquic.lsquic_stream_t,
-        ) callconv(.C) ?*lsquic.lsquic_stream_ctx_t {
-            const span = trace.span(.on_new_stream);
-            defer span.deinit();
-
-            const lsquic_stream_ptr = maybe_lsquic_stream orelse {
-                span.err("onNewStream called with null stream pointer!", .{});
-                return null;
-            };
-
-            const lsquic_connection = lsquic.lsquic_stream_conn(lsquic_stream_ptr);
-            const conn_ctx = lsquic.lsquic_conn_get_ctx(lsquic_connection);
-            if (conn_ctx == null) {
-                span.warn("No connection context found for new stream, maybe connection closing?", .{});
-                return null;
-            }
-            const connection: *Connection = @ptrCast(@alignCast(conn_ctx.?));
-            const server = connection.server;
-            span.debug("New stream callback triggered on connection ID: {}", .{connection.id});
-
-            // Create stream context using new method
-            const stream = Stream.create(server.allocator, connection, lsquic_stream_ptr) catch |err| {
-                span.err("Failed to create stream context: {s}", .{@errorName(err)});
-                return null; // Signal error to lsquic
-            };
-            errdefer stream.destroy(server.allocator); // Use destroy method
-
-            // Add to bookkeeping map using UUID
-            server.streams.put(stream.id, stream) catch |err| {
-                span.err("Failed to add stream {} to map: {s}", .{ stream.id, @errorName(err) });
-                return null; // Let errdefer clean up, signal error
-            };
-
-            // Invoke user callback
-            server.invokeCallback(.StreamCreatedByClient, .{
-                .StreamCreatedByClient = .{
-                    .connection_id = connection.id,
-                    .stream_id = stream.id,
-                },
-            });
-
-            span.debug("Requesting read for new stream ID: {}", .{stream.id});
-            _ = lsquic.lsquic_stream_wantread(lsquic_stream_ptr, 1);
-
-            span.debug("Stream context created successfully for ID: {}", .{stream.id});
-            return @ptrCast(stream);
-        }
-
-        fn onRead(
-            _: ?*lsquic.lsquic_stream_t,
-            maybe_stream_ctx: ?*lsquic.lsquic_stream_ctx_t,
-        ) callconv(.C) void {
-            const span = trace.span(.on_stream_read);
-            defer span.deinit();
-
-            const stream_ctx = maybe_stream_ctx orelse {
-                span.warn("No stream context in read callback for lsquic stream (already closed?)", .{});
-                return;
-            };
-            const stream: *Stream = @ptrCast(@alignCast(stream_ctx));
-            const stream_id = stream.id;
-            const conn_id = stream.connection.id;
-            const server = stream.connection.server;
-            // span.trace("Stream read triggered for ID: {}", .{stream_id}); // Noisy
-
-            const read_size = lsquic.lsquic_stream_read(stream.lsquic_stream, stream.read_buffer.ptr, stream.read_buffer.len);
-
-            if (read_size == 0) {
-                span.debug("End of stream (FIN) received for stream ID: {}", .{stream_id});
-                _ = lsquic.lsquic_stream_wantread(stream.lsquic_stream, 0);
-                if (stream.data_to_write == null) {
-                    span.debug("Closing stream ID {} after FIN (no pending write)", .{stream_id});
-                    _ = lsquic.lsquic_stream_close(stream.lsquic_stream); // onClose will trigger callback
-                } else {
-                    span.debug("Shutting down read side of stream ID {} after FIN (pending write)", .{stream_id});
-                    _ = lsquic.lsquic_stream_shutdown(stream.lsquic_stream, 0); // 0 for read
-                }
-            } else if (read_size < 0) {
-                const errno = std.posix.errno(read_size);
-                if (errno == std.posix.E.AGAIN) {
-                    span.trace("Read would block (EAGAIN) for stream ID: {}", .{stream_id});
-                    server.invokeCallback(.DataReadWouldBlock, .{
-                        .DataReadWouldBlock = .{ .connection_id = conn_id, .stream_id = stream_id },
-                    });
-                    _ = lsquic.lsquic_stream_wantread(stream.lsquic_stream, 1); // Keep wanting read
-                } else {
-                    span.err("Error reading from stream ID {}: {s}", .{ stream_id, @tagName(errno) });
-                    server.invokeCallback(.DataReadError, .{
-                        .DataReadError = .{ .connection_id = conn_id, .stream_id = stream_id, .error_code = @intFromEnum(errno) },
-                    });
-                    _ = lsquic.lsquic_stream_wantread(stream.lsquic_stream, 0);
-                    _ = lsquic.lsquic_stream_close(stream.lsquic_stream); // onClose will trigger callback
-                }
-            } else { // read_size > 0
-                const bytes_read: usize = @intCast(read_size);
-                const received_data = stream.read_buffer[0..bytes_read];
-                span.debug("Read {d} bytes from stream ID: {}", .{ bytes_read, stream_id });
-
-                // Invoke DataReceived callback
-                server.invokeCallback(.DataReceived, .{
-                    .DataReceived = .{
-                        .connection_id = conn_id,
-                        .stream_id = stream_id,
-                        .data = received_data,
-                    },
-                });
-
-                // Simple Echo Logic: Prepare to write "pong" if not already writing
-                if (stream.data_to_write == null) {
-                    span.debug("Preparing to write 'pong' to stream ID {}", .{stream_id});
-                    stream.data_to_write = "pong";
-                    stream.write_pos = 0;
-                    _ = lsquic.lsquic_stream_wantwrite(stream.lsquic_stream, 1); // Trigger onWrite
-                } else {
-                    span.trace("Already writing to stream ID {}, ignoring new read data for echo trigger.", .{stream_id});
-                }
-
-                // Continue wanting to read
-                _ = lsquic.lsquic_stream_wantread(stream.lsquic_stream, 1);
-            }
-        }
-
-        fn onWrite(
-            _: ?*lsquic.lsquic_stream_t,
-            maybe_stream_ctx: ?*lsquic.lsquic_stream_ctx_t,
-        ) callconv(.C) void {
-            const span = trace.span(.on_stream_write);
-            defer span.deinit();
-
-            const stream_ctx = maybe_stream_ctx orelse {
-                span.warn("No stream context in write callback for lsquic stream (already closed?)", .{});
-                return;
-            };
-            const stream: *Stream = @ptrCast(@alignCast(stream_ctx));
-            const stream_id = stream.id;
-            const conn_id = stream.connection.id;
-            const server = stream.connection.server;
-            // span.trace("Stream write triggered for ID: {}", .{stream_id}); // Noisy
-
-            if (stream.data_to_write) |data_to_write| {
-                const remaining_data = data_to_write[stream.write_pos..];
-                if (remaining_data.len == 0) {
-                    span.warn("onWrite called for stream ID {} but remaining data is zero.", .{stream_id});
-                    // Should not happen if logic is correct, reset state and shutdown write
-                    stream.data_to_write = null;
-                    stream.write_pos = 0;
-                    _ = lsquic.lsquic_stream_wantwrite(stream.lsquic_stream, 0);
-                    span.debug("Shutting down write side of stream ID {} after write completion (defensive)", .{stream_id});
-                    _ = lsquic.lsquic_stream_shutdown(stream.lsquic_stream, 1); // 1 for write
-                    return;
-                }
-
-                const written = lsquic.lsquic_stream_write(stream.lsquic_stream, remaining_data.ptr, remaining_data.len);
-
-                if (written == 0) {
-                    span.trace("Write blocked for stream ID {}, keeping wantWrite.", .{stream_id});
-                    server.invokeCallback(.DataWriteWouldBlock, .{ // Added WouldBlock callback
-                        .DataWriteWouldBlock = .{ .connection_id = conn_id, .stream_id = stream_id },
-                    });
-                    _ = lsquic.lsquic_stream_wantwrite(stream.lsquic_stream, 1); // Keep wanting write
-                } else if (written < 0) {
-                    const errno = std.posix.errno(written);
-                    // EAGAIN check (unlikely based on lsquic docs, but safe)
-                    if (errno == std.posix.E.AGAIN) {
-                        span.trace("Write would block (EAGAIN) for stream ID {}", .{stream_id});
-                        server.invokeCallback(.DataWriteWouldBlock, .{
-                            .DataWriteWouldBlock = .{ .connection_id = conn_id, .stream_id = stream_id },
-                        });
-                        _ = lsquic.lsquic_stream_wantwrite(stream.lsquic_stream, 1);
-                        return;
-                    }
-                    // Actual error
-                    span.err("Error writing to stream ID {}: {s}", .{ stream_id, @tagName(errno) });
-                    server.invokeCallback(.DataWriteError, .{
-                        .DataWriteError = .{ .connection_id = conn_id, .stream_id = stream_id, .error_code = @intFromEnum(errno) },
-                    });
-                    stream.data_to_write = null; // Stop trying to write
-                    stream.write_pos = 0;
-                    _ = lsquic.lsquic_stream_wantwrite(stream.lsquic_stream, 0);
-                    _ = lsquic.lsquic_stream_close(stream.lsquic_stream); // Close on error
-                } else { // written > 0
-                    const bytes_written: usize = @intCast(written);
-                    stream.write_pos += bytes_written;
-                    span.debug("Wrote {d} bytes to stream ID {}. Total written: {d}/{d}", .{ bytes_written, stream_id, stream.write_pos, data_to_write.len });
-
-                    if (stream.write_pos >= data_to_write.len) {
-                        const total_written = stream.write_pos; // Capture before reset
-                        span.debug("Write of 'pong' complete for stream ID: {}", .{stream_id});
-                        stream.data_to_write = null;
-                        stream.write_pos = 0;
-                        _ = lsquic.lsquic_stream_wantwrite(stream.lsquic_stream, 0); // Stop wanting write
-
-                        // Invoke write completed callback
-                        server.invokeCallback(.DataWriteCompleted, .{
-                            .DataWriteCompleted = .{
-                                .connection_id = conn_id,
-                                .stream_id = stream_id,
-                                .total_bytes_written = total_written,
-                            },
-                        });
-
-                        span.debug("Shutting down write side of stream ID {} after write completed", .{stream_id});
-                        _ = lsquic.lsquic_stream_shutdown(stream.lsquic_stream, 1); // 1 for write
-                    } else {
-                        _ = lsquic.lsquic_stream_wantwrite(stream.lsquic_stream, 1); // Keep wanting write
-                    }
-                }
-            } else {
-                span.trace("onWrite called for stream ID {} with nothing to write. Disabling wantWrite.", .{stream_id});
-                _ = lsquic.lsquic_stream_wantwrite(stream.lsquic_stream, 0);
-            }
-        }
-
-        fn onClose(
-            _: ?*lsquic.lsquic_stream_t,
-            maybe_stream_ctx: ?*lsquic.lsquic_stream_ctx_t,
-        ) callconv(.C) void {
-            const span = trace.span(.on_stream_close);
-            defer span.deinit();
-
-            const stream_ctx = maybe_stream_ctx orelse {
-                span.warn("No stream context in close callback for lsquic stream (double close?)", .{});
-                return;
-            };
-            const stream: *Stream = @ptrCast(@alignCast(stream_ctx));
-            const stream_id = stream.id; // Get ID before potential destruction
-            const conn_id = stream.connection.id;
-            const server = stream.connection.server;
-            span.debug("Stream close callback triggered for ID: {}", .{stream_id});
-
-            // Invoke user callback *before* removing/destroying
-            server.invokeCallback(.StreamClosedByClient, .{
-                .StreamClosedByClient = .{
-                    .connection_id = conn_id,
-                    .stream_id = stream_id,
-                },
-            });
-
-            // Remove from bookkeeping map using UUID
-            if (server.streams.fetchRemove(stream_id)) |removed_entry| {
-                std.debug.assert(removed_entry.value == stream); // Sanity check
-                span.debug("Removed stream ID {} from map.", .{stream_id});
-            } else {
-                span.warn("Closing stream (ID: {}) was not found in the map, but context existed.", .{stream_id});
-            }
-
-            // Destroy our stream context struct using its method
-            stream.destroy(server.allocator);
-
-            span.debug("Stream resources cleaned up for formerly ID: {}", .{stream_id});
-        }
-    }; // End Stream Struct
 
     // --- lsquic Engine API Callbacks ---
 

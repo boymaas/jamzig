@@ -1,12 +1,16 @@
 const std = @import("std");
 const ssl = @import("ssl");
 const lsquic = @import("lsquic");
-const JamSnpServer = @import("jamsnp/server.zig").JamSnpServer;
-const JamSnpClient = @import("jamsnp/client.zig").JamSnpClient;
+const jamsnp_server = @import("jamsnp/server.zig");
+const jamsnp_client = @import("jamsnp/client.zig");
 const common = @import("jamsnp/common.zig");
 const network = @import("network");
 
+const JamSnpServer = jamsnp_server.JamSnpServer;
+const JamSnpClient = jamsnp_client.JamSnpClient;
+
 // Add a logging callback function
+
 fn lsquic_log_callback(ctx: ?*anyopaque, buf: [*c]const u8, len: usize) callconv(.C) c_int {
     _ = ctx; // unused
     const stderr = std.io.getStdErr().writer();

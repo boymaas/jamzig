@@ -3,16 +3,16 @@ const testing = std.testing;
 const xev = @import("xev");
 
 const client = @import("client.zig");
-const jamsnp = @import("jamsnp/client.zig");
+const jamsnp_client = @import("jamsnp/client.zig"); // Renamed import
 const ClientThread = client.ClientThread;
 const Client = client.Client;
-const JamSnpClient = jamsnp.JamSnpClient;
+const JamSnpClient = jamsnp_client.JamSnpClient;
 
 test "initialize and shut down client thread" {
     const allocator = testing.allocator;
 
-    const jamsnp_client = try createMockJamSnpClient(allocator);
-    errdefer jamsnp_client.deinit();
+    var mock_client = try createMockJamSnpClient(allocator);
+    errdefer mock_client.deinit();
 
     var thread = try ClientThread.initThread(allocator, jamsnp_client);
     defer thread.deinitThread();
