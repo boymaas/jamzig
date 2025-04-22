@@ -1,8 +1,8 @@
 const std = @import("std");
 const lsquic = @import("lsquic");
 
-const client = @import("../client.zig"); // Need ClientThread, Client
-const shared = @import("../jamsnp/shared_types.zig");
+const client = @import("client.zig"); // Need ClientThread, Client
+const shared = @import("jamsnp/shared_types.zig");
 
 const ClientThread = client.ClientThread;
 const Client = client.Client;

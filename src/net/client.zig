@@ -13,11 +13,10 @@ const jamsnp_client = @import("jamsnp/client.zig");
 const network = @import("network"); // Added for EndPoint
 
 const shared = @import("jamsnp/shared_types.zig");
-const client_stream = @import("client/stream.zig");
 const ConnectionId = shared.ConnectionId;
 const StreamId = shared.StreamId;
 const JamSnpClient = jamsnp_client.JamSnpClient;
-const StreamHandle = client_stream.StreamHandle;
+const StreamHandle = @import("stream_handle.zig").StreamHandle;
 
 const Mailbox = @import("../datastruct/blocking_queue.zig").BlockingQueue;
 
@@ -181,9 +180,6 @@ pub const ClientThread = struct {
             };
             data: Data,
             metadata: CommandMetadata(anyerror!void),
-        };
-        pub const Shutdown = struct {
-            metadata: CommandMetadata(void),
         };
 
         connect: Connect,
@@ -749,108 +745,6 @@ pub const Client = struct {
             return error.MailboxFull;
         }
         try self.thread.wakeup.notify();
-    }
-
-    // --- StreamHandle Methods ---
-    // These are methods on the application-facing StreamHandle,
-    // which queue commands for the ClientThread.
-
-    pub fn sendData(stream: StreamHandle, data: []const u8) !void {
-        return stream.sendDataWithCallback(data, null, null);
-    }
-    pub fn sendDataWithCallback(
-        stream: StreamHandle,
-        data: []const u8, // Caller must keep alive
-        callback: ?CommandCallback(anyerror!void),
-        context: ?*anyopaque,
-    ) !void {
-        const command = ClientThread.Command{ .send_data = .{
-            .data = .{
-                .connection_id = stream.connection_id,
-                .stream_id = stream.stream_id,
-                .data = data,
-            },
-            .metadata = .{ .callback = callback, .context = context },
-        } };
-        if (!stream.thread.mailbox.push(command, .{ .instant = {} })) {
-            return error.MailboxFull;
-        }
-        try stream.thread.wakeup.notify();
-    }
-
-    pub fn wantRead(stream: StreamHandle, want: bool) !void {
-        return stream.wantReadWithCallback(want, null, null);
-    }
-    pub fn wantReadWithCallback(
-        stream: StreamHandle,
-        want: bool,
-        callback: ?CommandCallback(anyerror!void),
-        context: ?*anyopaque,
-    ) !void {
-        const command = ClientThread.Command{ .stream_want_read = .{
-            .data = .{ .connection_id = stream.connection_id, .stream_id = stream.stream_id, .want = want },
-            .metadata = .{ .callback = callback, .context = context },
-        } };
-        if (!stream.thread.mailbox.push(command, .{ .instant = {} })) {
-            return error.MailboxFull;
-        }
-        try stream.thread.wakeup.notify();
-    }
-
-    pub fn wantWrite(stream: StreamHandle, want: bool) !void {
-        return stream.wantWriteWithCallback(want, null, null);
-    }
-    pub fn wantWriteWithCallback(
-        stream: StreamHandle,
-        want: bool,
-        callback: ?CommandCallback(anyerror!void),
-        context: ?*anyopaque,
-    ) !void {
-        const command = ClientThread.Command{ .stream_want_write = .{
-            .data = .{ .connection_id = stream.connection_id, .stream_id = stream.stream_id, .want = want },
-            .metadata = .{ .callback = callback, .context = context },
-        } };
-        if (!stream.thread.mailbox.push(command, .{ .instant = {} })) {
-            return error.MailboxFull;
-        }
-        try stream.thread.wakeup.notify();
-    }
-
-    pub fn flush(stream: StreamHandle) !void {
-        return stream.flushWithCallback(null, null);
-    }
-    pub fn flushWithCallback(
-        stream: StreamHandle,
-        callback: ?CommandCallback(anyerror!void),
-        context: ?*anyopaque,
-    ) !void {
-        const command = ClientThread.Command{ .stream_flush = .{
-            .data = .{ .connection_id = stream.connection_id, .stream_id = stream.stream_id },
-            .metadata = .{ .callback = callback, .context = context },
-        } };
-        if (!stream.thread.mailbox.push(command, .{ .instant = {} })) {
-            return error.MailboxFull;
-        }
-        try stream.thread.wakeup.notify();
-    }
-
-    pub fn shutdownStream(stream: StreamHandle, how: c_int) !void {
-        return stream.shutdownStreamWithCallback(how, null, null);
-    }
-    pub fn shutdownStreamWithCallback(
-        stream: StreamHandle,
-        how: c_int,
-        callback: ?CommandCallback(anyerror!void),
-        context: ?*anyopaque,
-    ) !void {
-        const command = ClientThread.Command{ .stream_shutdown = .{
-            .data = .{ .connection_id = stream.connection_id, .stream_id = stream.stream_id, .how = how },
-            .metadata = .{ .callback = callback, .context = context },
-        } };
-        if (!stream.thread.mailbox.push(command, .{ .instant = {} })) {
-            return error.MailboxFull;
-        }
-        try stream.thread.wakeup.notify();
     }
 
     // --- Client API Methods ---
