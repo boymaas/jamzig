@@ -53,7 +53,7 @@ pub const JamSnpServer = struct {
         .on_write = Stream(JamSnpServer).onStreamWrite,
         .on_close = Stream(JamSnpServer).onStreamClosed,
         // Optional callbacks
-        .on_hsk_done = null,
+        .on_hsk_done = Connection(JamSnpServer).onHandshakeDone,
         .on_goaway_received = null,
         .on_new_token = null,
         .on_sess_resume_info = null,
@@ -375,6 +375,7 @@ pub const JamSnpServer = struct {
             return .disarm; // Cannot proceed
         };
 
+        span.trace("Calling lsquic_engine_process_conns", .{});
         lsquic.lsquic_engine_process_conns(self.lsquic_engine);
 
         var delta: c_int = undefined;
@@ -417,7 +418,7 @@ pub const JamSnpServer = struct {
         xev_read_buffer: xev.ReadBuffer,
         xev_read_result: xev.ReadError!usize,
     ) xev.CallbackAction {
-        const span = trace.span(.on_packets_in);
+        const span = trace.span(.on_packets_in_server);
         defer span.deinit();
 
         errdefer |err| {

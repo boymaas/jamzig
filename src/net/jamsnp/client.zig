@@ -558,7 +558,7 @@ pub const JamSnpClient = struct {
         xev_read_buffer: xev.ReadBuffer, // Buffer containing the data
         xev_read_result: xev.ReadError!usize, // Result of the read operation
     ) xev.CallbackAction {
-        const span = trace.span(.on_packets_in);
+        const span = trace.span(.on_packets_in_client);
         defer span.deinit();
 
         errdefer |read_err| {

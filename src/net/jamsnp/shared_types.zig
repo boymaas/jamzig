@@ -66,13 +66,13 @@ const EventArgs = union(EventType) {
 };
 
 pub fn invokeCallback(callback_handlers: *const CallbackHandlers, event_tag: EventType, args: EventArgs) void {
-    const span = trace.span(.invoke_server_callback);
+    const span = trace.span(.invoke_callback);
     defer span.deinit();
     std.debug.assert(event_tag == @as(EventType, @enumFromInt(@intFromEnum(args))));
 
     const handler = &callback_handlers[@intFromEnum(event_tag)];
     if (handler.callback) |callback_ptr| {
-        span.debug("Invoking server callback for event {s}", .{@tagName(event_tag)});
+        span.debug("Invoking callback for event {s}", .{@tagName(event_tag)});
         switch (args) {
             .ClientConnected => |ev_args| {
                 const callback: ClientConnectedCallbackFn = @ptrCast(@alignCast(callback_ptr));

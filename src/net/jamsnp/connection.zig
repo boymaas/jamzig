@@ -38,7 +38,7 @@ pub fn Connection(T: type) type {
         pub fn destroy(self: *Connection(T), alloc: std.mem.Allocator) void {
             const span = trace.span(.connection_destroy);
             defer span.deinit();
-            span.debug("Destroying server connection context for ID: {}", .{self.id});
+            span.debug("Destroying connection context for ID: {}", .{self.id});
             // Add any connection-specific resource cleanup here if needed
             alloc.destroy(self);
         }
@@ -197,9 +197,9 @@ pub fn Connection(T: type) type {
                 span.warn("onHandshakeDone called for lsquic conn 0x{*} but context is null", .{lsquic_conn_ptr});
                 return;
             }
-            const connection: *Connection = @ptrCast(@alignCast(conn_ctx.?));
+            const connection: *Connection(T) = @ptrCast(@alignCast(conn_ctx.?));
             const conn_id = connection.id;
-            const server = connection.server;
+            const server = connection.owner;
 
             span.debug("Handshake completed for connection ID: {} with status: {}", .{ conn_id, status });
 
