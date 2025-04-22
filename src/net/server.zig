@@ -8,16 +8,13 @@ const network = @import("network");
 
 const posix = std.posix;
 
-const jamsnp_server = @import("jamsnp/server.zig");
-const server_conn = @import("jamsnp/server_connection.zig");
-const server_stream = @import("jamsnp/server_stream.zig");
 const shared = @import("jamsnp/shared_types.zig");
 
 const ConnectionId = shared.ConnectionId;
 const StreamId = shared.StreamId;
-const JamSnpServer = jamsnp_server.JamSnpServer;
-const ServerConnection = server_conn.Connection;
-const ServerStream = server_stream.Stream;
+const JamSnpServer = @import("jamsnp/server.zig").JamSnpServer;
+const ServerConnection = @import("jamsnp/connection.zig").Connection(JamSnpServer);
+const ServerStream = @import("jamsnp/stream.zig").Stream(JamSnpServer);
 
 const Mailbox = @import("../datastruct/blocking_queue.zig").BlockingQueue;
 
@@ -393,17 +390,17 @@ pub const ServerThread = struct {
     fn sendDataImpl(self: *ServerThread, stream_id: StreamId, data: []const u8) anyerror!void {
         const stream = try self.findStream(stream_id);
         try stream.setWriteBuffer(data);
-        try stream.wantWrite(true);
+        stream.wantWrite(true);
     }
 
     fn streamWantReadImpl(self: *ServerThread, stream_id: StreamId, want: bool) anyerror!void {
         const stream = try self.findStream(stream_id);
-        try stream.wantRead(want);
+        stream.wantRead(want);
     }
 
     fn streamWantWriteImpl(self: *ServerThread, stream_id: StreamId, want: bool) anyerror!void {
         const stream = try self.findStream(stream_id);
-        try stream.wantWrite(want);
+        stream.wantWrite(want);
     }
 
     fn streamFlushImpl(self: *ServerThread, stream_id: StreamId) anyerror!void {

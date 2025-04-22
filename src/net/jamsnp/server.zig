@@ -8,8 +8,9 @@ const network = @import("network");
 const xev = @import("xev");
 
 const shared = @import("shared_types.zig");
-const ServerConnection = @import("server_connection.zig");
-const ServerStream = @import("server_stream.zig");
+
+const Connection = @import("connection.zig").Connection;
+const Stream = @import("stream.zig").Stream;
 
 const toSocketAddress = @import("../ext.zig").toSocketAddress;
 const trace = @import("../../tracing.zig").scoped(.network);
@@ -74,14 +75,14 @@ pub const JamSnpServer = struct {
     lsquic_engine_settings: lsquic.lsquic_engine_settings,
     lsquic_stream_interface: lsquic.lsquic_stream_if = .{
         // Mandatory callbacks - point to functions in new modules
-        .on_new_conn = ServerConnection.Connection.onConnectionCreated,
-        .on_conn_closed = ServerConnection.Connection.onConnClosed,
-        .on_new_stream = ServerStream.Stream.onStreamCreated,
-        .on_read = ServerStream.Stream.onStreamRead,
-        .on_write = ServerStream.Stream.onStreamWrite,
-        .on_close = ServerStream.Stream.onStreamClosed,
+        .on_new_conn = Connection(JamSnpServer).onServerConnectionCreated,
+        .on_conn_closed = Connection(JamSnpServer).onConnectionClosed,
+        .on_new_stream = Stream(JamSnpServer).onStreamCreated,
+        .on_read = Stream(JamSnpServer).onStreamRead,
+        .on_write = Stream(JamSnpServer).onStreamWrite,
+        .on_close = Stream(JamSnpServer).onStreamClosed,
         // Optional callbacks
-        .on_hsk_done = ServerConnection.Connection.onHandshakeDone,
+        .on_hsk_done = null,
         .on_goaway_received = null,
         .on_new_token = null,
         .on_sess_resume_info = null,
@@ -93,8 +94,8 @@ pub const JamSnpServer = struct {
     allow_builders: bool,
 
     // Bookkeeping using UUIDs - use refactored types
-    connections: std.AutoHashMap(ConnectionId, *ServerConnection.Connection),
-    streams: std.AutoHashMap(StreamId, *ServerStream.Stream),
+    connections: std.AutoHashMap(ConnectionId, *Connection(JamSnpServer)),
+    streams: std.AutoHashMap(StreamId, *Stream(JamSnpServer)),
 
     // Callback handlers map (Server-side)
     callback_handlers: [@typeInfo(EventType).@"enum".fields.len]CallbackHandler = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len,
@@ -190,8 +191,8 @@ pub const JamSnpServer = struct {
             .packets_in = xev.UDP.initFd(socket.internal),
             .tick = try xev.Timer.init(),
             // Initialize bookkeeping maps with UUIDs
-            .connections = std.AutoHashMap(ConnectionId, *ServerConnection.Connection).init(allocator),
-            .streams = std.AutoHashMap(StreamId, *ServerStream.Stream).init(allocator),
+            .connections = std.AutoHashMap(ConnectionId, *Connection(JamSnpServer)).init(allocator),
+            .streams = std.AutoHashMap(StreamId, *Stream(JamSnpServer)).init(allocator),
             // Initialize callback handlers
             .callback_handlers = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len,
         };
