@@ -28,6 +28,10 @@ pub const TestServer = struct {
         }
     }
 
+    pub fn enableDetailedLogging(self: *TestServer) void {
+        self.thread.server.enableSslCtxLogging();
+    }
+
     pub fn join(self: *TestServer) void {
         // Ensure shutdown is called before joining the thread
         self.server.shutdown() catch |err| {
@@ -102,6 +106,10 @@ pub const TestClient = struct {
         } else {
             return error.Timeout;
         }
+    }
+
+    pub fn enableDetailedLogging(self: *TestClient) void {
+        self.thread.client.enableSslCtxLogging();
     }
 
     pub fn join(self: *TestClient) void {

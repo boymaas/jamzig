@@ -353,6 +353,13 @@ pub const JamSnpServer = struct {
         };
     }
 
+    // -- logging
+    pub fn enableSslCtxLogging(self: *@This()) void {
+        const span = trace.span(.enable_ssl_ctx_logging);
+        defer span.deinit();
+        @import("../tests/logging.zig").enableDetailedSslCtxLogging(self.ssl_ctx);
+    }
+
     // --- xev Callbacks ---
 
     fn onTick(
@@ -376,7 +383,9 @@ pub const JamSnpServer = struct {
         };
 
         span.trace("Calling lsquic_engine_process_conns", .{});
+        std.log.debug(">>> SERVER: onTick calling lsquic_engine_process_conns", .{}); // <<< ADDED LOG
         lsquic.lsquic_engine_process_conns(self.lsquic_engine);
+        std.log.debug(">>> SERVER: onTick finished lsquic_engine_process_conns", .{}); // <<< ADDED LOG
 
         var delta: c_int = undefined;
         var timeout_in_ms: u64 = 100; // Default timeout
@@ -428,6 +437,7 @@ pub const JamSnpServer = struct {
 
         const bytes = try xev_read_result;
         span.trace("Received {d} bytes from {}", .{ bytes, peer_address });
+        std.log.debug(">>> SERVER: onPacketsIn received {d} bytes from {}", .{ bytes, peer_address }); // <<< ADDED LOG
         span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
 
         const self = maybe_self.?;
@@ -441,6 +451,7 @@ pub const JamSnpServer = struct {
         span.trace("Local address: {}", .{local_address});
 
         span.trace("Passing packet to lsquic engine", .{});
+        std.log.debug(">>> SERVER: Calling lsquic_engine_packet_in for peer {}", .{peer_address}); // <<< ADDED LOG
         if (0 > lsquic.lsquic_engine_packet_in(
             self.lsquic_engine,
             xev_read_buffer.slice.ptr,

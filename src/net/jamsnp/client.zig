@@ -22,7 +22,6 @@ pub const EventType = shared.EventType; // Use renamed type
 pub const CallbackHandler = shared.CallbackHandler;
 
 // Use specific callback types from shared
-pub const ListenerCreatedCallbackFn = shared.ListenerCreatedCallbackFn;
 pub const ConnectionEstablishedCallbackFn = shared.ConnectionEstablishedCallbackFn;
 pub const ConnectionFailedCallbackFn = shared.ConnectionFailedCallbackFn;
 pub const ConnectionClosedCallbackFn = shared.ConnectionClosedCallbackFn;
@@ -197,7 +196,12 @@ pub const JamSnpClient = struct {
 
         // Check settings
         var error_buffer: [128]u8 = undefined;
-        if (lsquic.lsquic_engine_check_settings(&engine_settings, 0, @ptrCast(&error_buffer), @sizeOf(@TypeOf(error_buffer))) != 0) {
+        if (lsquic.lsquic_engine_check_settings(
+            &engine_settings,
+            0,
+            @ptrCast(&error_buffer),
+            @sizeOf(@TypeOf(error_buffer)),
+        ) != 0) {
             span.err("Client engine settings problem: {s}", .{error_buffer});
             // Consider returning an error instead of panicking
             return error.LsquicEngineSettingsInvalid;
@@ -482,6 +486,13 @@ pub const JamSnpClient = struct {
 
         span.debug("Connection request initiated successfully for ID: {}", .{conn.id});
         return conn.id;
+    }
+
+    // -- Logging
+    pub fn enableSslCtxLogging(self: *@This()) void {
+        const span = trace.span(.enable_ssl_ctx_logging);
+        defer span.deinit();
+        @import("../tests/logging.zig").enableDetailedSslCtxLogging(self.ssl_ctx);
     }
 
     // --- Event Loop and C Interop Helpers
