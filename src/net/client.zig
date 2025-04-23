@@ -233,6 +233,13 @@ pub const ClientThread = struct {
 
     /// Deinitializes the ClientThread and the JamSnpClient it owns.
     pub fn deinit(self: *ClientThread) void {
+        std.debug.print("Deinit ClientThread\n", .{});
+        // The sequence of operations is critical in this context. Initially,
+        // terminate the client, which will consequently dismantle the engine,
+        // thereby closing all active connections and streams. Subsequently,
+        // deallocate the remaining resources.
+        self.client.deinit();
+
         self.pending_connects.deinit(); // Deinit pending command maps
         // Deinit other pending command maps here
         self.event_queue.destroy(self.alloc);
@@ -240,7 +247,6 @@ pub const ClientThread = struct {
         self.stop.deinit();
         self.wakeup.deinit();
         self.loop.deinit();
-        self.client.deinit();
         self.alloc.destroy(self);
     }
 
@@ -260,6 +266,8 @@ pub const ClientThread = struct {
         // Initial notify might not be needed if setup doesn't queue commands
         // try self.wakeup.notify();
         _ = try self.loop.run(.until_done);
+
+        std.debug.print("ClientThread main loop exited\n", .{});
     }
 
     fn threadSetup(_: *ClientThread) !void {
@@ -293,13 +301,17 @@ pub const ClientThread = struct {
     }
 
     fn stopCallback(
-        self_: ?*ClientThread,
+        self: ?*ClientThread,
         _: *xev.Loop,
         _: *xev.Completion,
         r: xev.Async.WaitError!void,
     ) xev.CallbackAction {
-        _ = r catch unreachable;
-        self_.?.loop.stop();
+        std.debug.print("ClientThread stopping...\n", .{});
+        if (r) {} else |err| {
+            std.log.err("error in stop err={}", .{err});
+        }
+
+        self.?.loop.stop();
         return .disarm;
     }
 

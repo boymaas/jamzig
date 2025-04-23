@@ -232,8 +232,16 @@ pub const ServerThread = struct {
         self.server.setCallback(.DataWouldBlock, internalDataReadWouldBlockCallback, self);
     }
 
+    pub fn shutdown(self: *ServerThread) !void {
+        std.debug.print("ServerThread shutdown requested.\n", .{});
+        try self.stop.notify();
+    }
+
     pub fn deinit(self: *ServerThread) void {
-        // Ensure server is deinitialized before destroying the thread object
+        // The sequence of operations is critical in this context. Initially,
+        // terminate the client, which will consequently dismantle the engine,
+        // thereby closing all active connections and streams. Subsequently,
+        // deallocate the remaining resources.
         self.server.deinit();
 
         self.event_queue.destroy(self.alloc);
@@ -290,7 +298,7 @@ pub const ServerThread = struct {
         r: xev.Async.WaitError!void,
     ) xev.CallbackAction {
         _ = r catch unreachable; // Should not fail
-        std.log.info("Server stop requested.", .{});
+        std.debug.print("Server stop requested.\n", .{});
         self_.?.loop.stop();
         return .disarm;
     }
@@ -427,10 +435,10 @@ pub const ServerThread = struct {
         _ = self.event_queue.push(event, .instant); // Ignore push error (queue full?)
     }
 
-    fn internalClientConnectedCallback(connection_id: ConnectionId, peer_addr: std.net.Address, context: ?*anyopaque) void {
+    fn internalClientConnectedCallback(connection_id: ConnectionId, peer_endpoint: network.EndPoint, context: ?*anyopaque) void {
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
-        const event = Server.Event{ .client_connected = .{ .connection_id = connection_id, .peer_addr = peer_addr } };
-        std.debug.print("Server client connected: {} at {}", .{ connection_id, peer_addr });
+        const event = Server.Event{ .client_connected = .{ .connection_id = connection_id, .peer_endpoint = peer_endpoint } };
+        std.debug.print("Server client connected: {} at {}", .{ connection_id, peer_endpoint });
         _ = self.event_queue.push(event, .instant); // Ignore push error (queue full?)
     }
 
@@ -648,7 +656,7 @@ pub const Server = struct {
         // -- Connection events
         client_connected: struct {
             connection_id: ConnectionId,
-            peer_addr: std.net.Address,
+            peer_endpoint: network.EndPoint,
         },
         client_disconnected: struct {
             connection_id: ConnectionId,
@@ -774,7 +782,7 @@ pub const Server = struct {
     }
 
     pub fn shutdown(self: *Server) !void {
-        try self.thread.stop.notify();
+        try self.thread.shutdown();
     }
 
     /// Tries to pop an event from the event queue without blocking.

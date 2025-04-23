@@ -179,7 +179,7 @@ pub fn BlockingQueue(
 
                 // Determine remaining time and sleep interval
                 const remaining_ns = timeout_ns - elapsed_ns;
-                const actual_sleep_ns = @min(sleep_interval_ns, remaining_ns);
+                const actual_sleep_ns = @max(1, @min(sleep_interval_ns, remaining_ns));
 
                 // Queue is empty, wait and retry
                 std.time.sleep(@intCast(actual_sleep_ns));

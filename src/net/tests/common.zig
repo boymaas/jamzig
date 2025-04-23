@@ -33,6 +33,7 @@ pub const TestServer = struct {
     }
 
     pub fn join(self: *TestServer) void {
+        std.debug.print("Joining server thread...\n", .{});
         // Ensure shutdown is called before joining the thread
         self.server.shutdown() catch |err| {
             std.log.err("Error shutting down server: {s}", .{@errorName(err)});
@@ -125,8 +126,11 @@ pub const TestClient = struct {
     }
 
     pub fn joinAndDeinit(self: *TestClient) void {
+        std.debug.print("DONE\n", .{});
         self.join();
+        std.debug.print("DONE\n", .{});
         self.deinit();
+        std.debug.print("DONE\n", .{});
     }
 };
 
