@@ -591,9 +591,7 @@ pub const JamSnpClient = struct {
 
         // Get local address packet was received on (needed by lsquic)
         const local_endpoint = self.socket.getLocalEndPoint() catch |err| {
-            span.err("Failed to get local endpoint in onPacketsIn: {s}", .{@errorName(err)});
-            std.debug.panic("Failed to get local address: {s}", .{@errorName(err)}); // Probably fatal
-            // return .disarm;
+            std.debug.panic("Failed to get local endpoint in onPacketsIn: {s}", .{@errorName(err)});
         };
         span.trace("Packet received on local endpoint: {}", .{local_endpoint});
 

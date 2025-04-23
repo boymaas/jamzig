@@ -432,7 +432,7 @@ pub const JamSnpServer = struct {
 
         const bytes = try xev_read_result;
         span.trace("Received {d} bytes from {}", .{ bytes, peer_address });
-        span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
+        span.trace("Packet data (first 32 bytes): {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..@min(bytes, 32)])});
 
         const self = maybe_self.?;
 
@@ -542,6 +542,7 @@ pub const JamSnpServer = struct {
                 const dest_addr = std.net.Address.initPosix(@ptrCast(@alignCast(spec.dest_sa)));
 
                 span.trace("Sending packet of {d} bytes to {}", .{ packet_len, dest_addr });
+                span.trace("Packet data (first 32 bytes): {any}", .{std.fmt.fmtSliceHexLower(packet[0..@min(packet.len, 32)])});
 
                 // Send the packet
                 _ = server.socket.sendTo(network.EndPoint.fromSocketAddress(&dest_addr.any, dest_addr.getOsSockLen()) catch |err| {
