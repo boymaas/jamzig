@@ -383,9 +383,7 @@ pub const JamSnpServer = struct {
         };
 
         span.trace("Calling lsquic_engine_process_conns", .{});
-        std.log.debug(">>> SERVER: onTick calling lsquic_engine_process_conns", .{}); // <<< ADDED LOG
         lsquic.lsquic_engine_process_conns(self.lsquic_engine);
-        std.log.debug(">>> SERVER: onTick finished lsquic_engine_process_conns", .{}); // <<< ADDED LOG
 
         var delta: c_int = undefined;
         var timeout_in_ms: u64 = 100; // Default timeout
@@ -437,7 +435,6 @@ pub const JamSnpServer = struct {
 
         const bytes = try xev_read_result;
         span.trace("Received {d} bytes from {}", .{ bytes, peer_address });
-        std.log.debug(">>> SERVER: onPacketsIn received {d} bytes from {}", .{ bytes, peer_address }); // <<< ADDED LOG
         span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
 
         const self = maybe_self.?;
@@ -451,14 +448,22 @@ pub const JamSnpServer = struct {
         span.trace("Local address: {}", .{local_address});
 
         span.trace("Passing packet to lsquic engine", .{});
-        std.log.debug(">>> SERVER: Calling lsquic_engine_packet_in for peer {}", .{peer_address}); // <<< ADDED LOG
+        // When passing pointers across FFI, always pass &instance.field rather than
+        // copying the field and passing &field_copy. C functions expect pointers
+        // with the proper structural context (alignment, layout, size) defined by
+        // the C ABI. A pointer to an isolated field lacks this context, breaking C's
+        // assumptions about memory layout and type punning, causing subtle failures.
+        // So do not do:
+        //   const local_sa = peer_address.any; <== create local copy of the field
+        // and then pass &local_sa to lsquic_engine_packet_in. This will lead
+        // to a violation of Violation of Type Punning / Structural
+        // Assumptions.
         if (0 > lsquic.lsquic_engine_packet_in(
             self.lsquic_engine,
             xev_read_buffer.slice.ptr,
             bytes,
             @ptrCast(&toSocketAddress(local_address)),
             @ptrCast(&peer_address.any),
-
             self, // peer_ctx
             0, // ecn
         )) {

@@ -561,52 +561,73 @@ pub const JamSnpClient = struct {
 
     fn onPacketsIn(
         maybe_self: ?*@This(),
-        _: *xev.Loop,
-        _: *xev.Completion,
-        _: *xev.UDP.State,
-        peer_address: std.net.Address,
-        _: xev.UDP,
-        xev_read_buffer: xev.ReadBuffer,
-        xev_read_result: xev.ReadError!usize,
+        _: *xev.Loop, // Unused loop ptr
+        _: *xev.Completion, // Unused completion ptr
+        _: *xev.UDP.State, // Unused state ptr
+        peer_address: std.net.Address, // Peer address provided by xev
+        _: xev.UDP, // Unused UDP handle
+        xev_read_buffer: xev.ReadBuffer, // Buffer containing the data
+        xev_read_result: xev.ReadError!usize, // Result of the read operation
     ) xev.CallbackAction {
-        const span = trace.span(.on_packets_in);
+        const span = trace.span(.on_packets_in_client);
         defer span.deinit();
 
-        errdefer |err| {
-            span.err("onPacketsIn failed with error: {s}", .{@errorName(err)});
-            std.debug.panic("onPacketsIn failed with: {s}", .{@errorName(err)});
+        errdefer |read_err| {
+            // Log specific read errors from xev
+            span.err("xev UDP read failed: {s}", .{@errorName(read_err)});
+            // TODO: Decide if this is fatal. Maybe just log and re-arm?
+            // FIXME: remove this
+            std.debug.panic("onPacketsIn failed with: {s}", .{@errorName(read_err)});
         }
 
-        const bytes = try xev_read_result;
-        span.trace("Received {d} bytes from {}", .{ bytes, peer_address });
-        span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes])});
+        const bytes_read = try xev_read_result;
+        if (bytes_read == 0) {
+            // Should not happen with UDP? But handle defensively.
+            span.warn("Received 0 bytes from UDP read, rearming.", .{});
+            return .rearm;
+        }
+        span.trace("Received {d} bytes from {}", .{ bytes_read, peer_address });
+        // span.trace("Packet data: {any}", .{std.fmt.fmtSliceHexLower(xev_read_buffer.slice[0..bytes_read])});
 
-        const self = maybe_self.?;
-
-        span.trace("Getting local address", .{});
-        const local_address = self.socket.getLocalEndPoint() catch |err| {
-            span.err("Failed to get local address: {s}", .{@errorName(err)});
-            @panic("Failed to get local address");
+        const self = maybe_self orelse {
+            std.debug.panic("onPacketsIn called with null self context!", .{});
         };
 
-        span.trace("Local address: {}", .{local_address});
+        // Get local address packet was received on (needed by lsquic)
+        const local_endpoint = self.socket.getLocalEndPoint() catch |err| {
+            span.err("Failed to get local endpoint in onPacketsIn: {s}", .{@errorName(err)});
+            std.debug.panic("Failed to get local address: {s}", .{@errorName(err)}); // Probably fatal
+            // return .disarm;
+        };
+        span.trace("Packet received on local endpoint: {}", .{local_endpoint});
+
+        // Convert addresses to sockaddr format for lsquic
+        // TODO: Check if network.EndPoint.SockAddr maps to sockaddr correctly
+        const local_sa = &toSocketAddress(local_endpoint);
+        // NOTE: this needs to be a stable pointer
+        const peer_sa = &peer_address.any; // xev provides std.net.Address which has .any
+        // const peer_sa = peer_address.any;
 
         span.trace("Passing packet to lsquic engine", .{});
         if (lsquic.lsquic_engine_packet_in(
             self.lsquic_engine,
-            xev_read_buffer.slice.ptr,
-            bytes,
-            @ptrCast(&toSocketAddress(try self.socket.getLocalEndPoint())),
-            @ptrCast(&peer_address.any),
-
-            self,
-            0,
+            xev_read_buffer.slice.ptr, // Pointer to received data
+            bytes_read, // Length of received data
+            @ptrCast(local_sa), // Pointer to local sockaddr
+            @ptrCast(peer_sa), // Pointer to peer sockaddr
+            @ptrCast(self), // Pass client as connection context hint (lsquic might ignore for existing conn)
+            0, // ECN value (0 = Not-ECT)
         ) != 0) {
-            span.err("lsquic_engine_packet_in failed", .{});
-            @panic("lsquic_engine_packet_in failed");
+            // This indicates an error processing the packet *within lsquic*
+            span.err("lsquic_engine_packet_in failed (return value != 0)", .{});
+            // What does non-zero return mean? Connection error? Engine error? Check docs.
+            // TODO: Maybe log error and continue? Panicking might be too harsh.
+            std.debug.panic("lsquic_engine_packet_in failed", .{});
+        } else {
+            span.trace("lsquic_engine_packet_in processed successfully", .{});
         }
 
-        span.trace("Successfully processed incoming packet", .{});
+        // Always re-arm the UDP read to receive the next packet
         return .rearm;
     }
 
