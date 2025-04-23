@@ -156,8 +156,7 @@ pub const JamSnpClient = struct {
         defer span.deinit();
         span.debug("Initializing JamSnpClient", .{});
 
-        // Initialize lsquic globally
-        span.debug("Initializing lsquic globally", .{});
+        // Initialize lsquic globally (idempotent check might be needed if used elsewhere)
         if (lsquic.lsquic_global_init(lsquic.LSQUIC_GLOBAL_CLIENT) != 0) {
             span.err("lsquic global initialization failed", .{});
             return error.LsquicInitFailed;
@@ -173,7 +172,6 @@ pub const JamSnpClient = struct {
         errdefer allocator.free(alpn_id);
 
         // Configure SSL context
-        span.debug("Configuring SSL context", .{});
         const ssl_ctx = try common.configureSSLContext(
             allocator,
             keypair,
@@ -189,7 +187,6 @@ pub const JamSnpClient = struct {
         ssl.SSL_CTX_set_cert_verify_callback(ssl_ctx, certificate_verifier.verifyCertificate, null);
 
         // Initialize lsquic engine settings
-        span.debug("Initializing engine settings", .{});
         var engine_settings: lsquic.lsquic_engine_settings = .{};
         lsquic.lsquic_engine_init_settings(&engine_settings, 0);
         engine_settings.es_versions = 1 << lsquic.LSQVER_ID29; // IETF QUIC v1
@@ -208,7 +205,6 @@ pub const JamSnpClient = struct {
             // std.debug.panic("Client engine settings problem: {s}", .{error_buffer});
         }
 
-        span.debug("Allocating client struct", .{});
         const client = try allocator.create(JamSnpClient);
         errdefer client.deinit(); // Can now use errdefer safely
 
@@ -245,7 +241,7 @@ pub const JamSnpClient = struct {
         };
 
         // Create lsquic engine
-        span.debug("Creating lsquic engine", .{});
+        span.debug("Creating LSQUIC engine", .{});
         client.lsquic_engine = lsquic.lsquic_engine_new(0, &client.lsquic_engine_api) orelse {
             span.err("lsquic engine creation failed", .{});
             return error.LsquicEngineCreationFailed;
@@ -338,7 +334,7 @@ pub const JamSnpClient = struct {
     pub fn setCallback(self: *@This(), event_type: EventType, callback_fn_ptr: ?*const anyopaque, context: ?*anyopaque) void {
         const span = trace.span(.set_callback);
         defer span.deinit();
-        span.debug("Setting callback for event {s}", .{@tagName(event_type)});
+        span.trace("Setting callback for event {s}", .{@tagName(event_type)});
         self.callback_handlers[@intFromEnum(event_type)] = .{
             .callback = callback_fn_ptr,
             .context = context,

@@ -111,7 +111,6 @@ pub const JamSnpServer = struct {
             span.err("Failed to initialize lsquic globally", .{});
             return error.LsquicInitFailed;
         }
-        span.debug("lsquic global init successful", .{});
 
         var socket = try network.Socket.create(.ipv6, .udp);
         errdefer socket.close();
@@ -132,7 +131,6 @@ pub const JamSnpServer = struct {
         span.debug("Setting up certificate verification", .{});
         ssl.SSL_CTX_set_cert_verify_callback(ssl_ctx, certificate_verifier.verifyCertificate, null);
 
-        span.debug("Allocating server object", .{});
         const server = try allocator.create(JamSnpServer);
         errdefer allocator.destroy(server);
 
@@ -147,7 +145,6 @@ pub const JamSnpServer = struct {
             // std.debug.panic("Server engine settings problem: {s}", .{error_buffer});
         }
 
-        span.debug("Setting up server structure", .{});
         server.* = JamSnpServer{
             .allocator = allocator,
             .keypair = keypair,
@@ -189,7 +186,7 @@ pub const JamSnpServer = struct {
             .ea_alpn = null, // Server uses ALPN select callback
         };
 
-        span.debug("Creating lsquic engine", .{});
+        span.debug("Creating LSQUIC engine", .{});
         server.lsquic_engine = lsquic.lsquic_engine_new(
             lsquic.LSENG_SERVER,
             &server.lsquic_engine_api,
@@ -198,7 +195,7 @@ pub const JamSnpServer = struct {
             return error.LsquicEngineCreationFailed;
         };
 
-        span.debug("Successfully initialized JamSnpServer", .{});
+        span.debug("JamSnpServer initialization successful", .{});
         return server;
     }
 
@@ -346,7 +343,7 @@ pub const JamSnpServer = struct {
     pub fn setCallback(self: *@This(), event_type: EventType, callback_fn_ptr: ?*const anyopaque, context: ?*anyopaque) void {
         const span = trace.span(.set_callback);
         defer span.deinit();
-        span.debug("Setting server callback for event {s}", .{@tagName(event_type)});
+        span.trace("Setting server callback for event {s}", .{@tagName(event_type)});
         self.callback_handlers[@intFromEnum(event_type)] = .{
             .callback = callback_fn_ptr,
             .context = context,

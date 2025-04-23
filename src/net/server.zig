@@ -18,6 +18,8 @@ const ServerStream = @import("jamsnp/stream.zig").Stream(JamSnpServer);
 
 const Mailbox = @import("../datastruct/blocking_queue.zig").BlockingQueue;
 
+const trace = @import("../tracing.zig").scoped(.network);
+
 /// Builder for creating a ServerThread instance.
 /// Ensures that the underlying JamSnpServer is also initialized.
 pub const ServerThreadBuilder = struct {
@@ -76,7 +78,11 @@ pub fn CommandMetadata(T: type) type {
         pub fn callWithResult(self: *const CommandMetadata(T), result: T) void {
             std.debug.print("Command callback invoked with result: {}\n", .{@TypeOf(result)});
             if (self.callback) |callback| {
+                const span = trace.span(.callback_invocation);
+                defer span.deinit();
+                span.debug("Invoking command callback", .{});
                 callback(result, self.context);
+                span.debug("Command callback completed", .{});
             }
         }
     };
@@ -233,7 +239,9 @@ pub const ServerThread = struct {
     }
 
     pub fn shutdown(self: *ServerThread) !void {
-        std.debug.print("ServerThread shutdown requested.\n", .{});
+        const span = trace.span(.thread_shutdown);
+        defer span.deinit();
+        span.debug("ServerThread shutdown requested", .{});
         try self.stop.notify();
     }
 
@@ -253,8 +261,12 @@ pub const ServerThread = struct {
     }
 
     pub fn threadMain(self: *ServerThread) void {
+        const span = trace.span(.thread_main);
+        defer span.deinit();
+        span.debug("Server thread starting", .{});
+
         self.threadMain_() catch |err| {
-            std.log.err("server thread error: {any}", .{err});
+            span.err("Server thread error: {any}", .{err});
             const event = Server.Event{ .@"error" = .{ .message = "server thread failed", .details = err } };
             // Try pushing error event, ignore if queue is full/closed
             _ = self.event_queue.push(event, .instant);
@@ -262,13 +274,18 @@ pub const ServerThread = struct {
     }
 
     fn threadMain_(self: *ServerThread) !void {
+        const span = trace.span(.thread_main_impl);
+        defer span.deinit();
+
+        span.debug("Registering wakeup and stop handlers", .{});
         self.wakeup.wait(&self.loop, &self.wakeup_c, ServerThread, self, wakeupCallback);
         self.stop.wait(&self.loop, &self.stop_c, ServerThread, self, stopCallback);
 
         // Initial notify might not be needed unless startup commands are expected
         // try self.wakeup.notify();
+        span.debug("Starting event loop", .{});
         _ = try self.loop.run(.until_done);
-        std.log.info("Server thread loop finished.", .{});
+        span.debug("Server thread loop finished", .{});
     }
 
     fn wakeupCallback(
@@ -277,14 +294,19 @@ pub const ServerThread = struct {
         _: *xev.Completion,
         r: xev.Async.WaitError!void,
     ) xev.CallbackAction {
+        const span = trace.span(.wakeup_callback);
+        defer span.deinit();
+
         _ = r catch |err| {
-            std.log.err("error in server wakeup err={}", .{err});
+            span.err("Error in server wakeup: {}", .{err});
             // Potentially fatal? Or try to rearm?
             return .rearm;
         };
+
+        span.debug("Processing mailbox", .{});
         const thread = self_.?;
         thread.drainMailbox() catch |err| {
-            std.log.err("error processing server mailbox err={}", .{err});
+            span.err("Error processing server mailbox: {}", .{err});
             const event = Server.Event{ .@"error" = .{ .message = "mailbox processing error", .details = err } };
             _ = thread.event_queue.push(event, .instant);
         };
@@ -297,37 +319,55 @@ pub const ServerThread = struct {
         _: *xev.Completion,
         r: xev.Async.WaitError!void,
     ) xev.CallbackAction {
+        const span = trace.span(.stop_callback);
+        defer span.deinit();
+
         _ = r catch unreachable; // Should not fail
-        std.debug.print("Server stop requested.\n", .{});
+        span.debug("Server stop requested", .{});
         self_.?.loop.stop();
         return .disarm;
     }
 
     fn drainMailbox(self: *ServerThread) !void {
+        const span = trace.span(.drain_mailbox);
+        defer span.deinit();
+
+        var command_count: usize = 0;
         while (self.mailbox.pop()) |command| {
+            command_count += 1;
             // Process command results immediately and invoke callbacks if needed
             // This mirrors the client's immediate command execution.
             // Asynchronous results (like stream creation) come via events.
             try self.processCommand(command);
         }
+        span.debug("Processed {d} commands from mailbox", .{command_count});
     }
 
     // Processes a command and returns a CommandResult
     fn processCommand(self: *ServerThread, command: Command) !void {
+        const span = trace.span(.process_command);
+        defer span.deinit();
+
+        span.debug("Processing command: {s}", .{@tagName(command)});
         switch (command) {
             .listen => |cmd| {
+                const cmd_span = span.child(.listen_command);
+                defer cmd_span.deinit();
+                cmd_span.debug("Processing listen command for {s}:{d}", .{ cmd.data.address, cmd.data.port });
+
                 const maybe_local_endpoint = self.server.listen(cmd.data.address, cmd.data.port);
                 // Push 'Listening' event on success? JamSnpServer might do this.
                 if (maybe_local_endpoint) |local_end_point| {
                     // Assuming listen returns the bound endpoint on success eventually via event/callback
                     // For now, just signal command success.
                     // A dedicated 'Listening' event pushed by internalListenCallback would be better.
+                    cmd_span.debug("Server listening on endpoint: {}", .{local_end_point});
                     try self.pushEvent(.{
                         .listening = .{ .local_endpoint = local_end_point, .result = .{ .metadata = cmd.metadata, .result = local_end_point } },
                     });
                 } else |err| {
                     // Handle error (log, notify, etc.)
-                    std.log.err("Error listening: {any}", .{err});
+                    cmd_span.err("Error listening: {any}", .{err});
                 }
             },
             .disconnect_client => |cmd| {
@@ -360,6 +400,10 @@ pub const ServerThread = struct {
 
     // Pushes an event to the event queue.
     fn pushEvent(self: *ServerThread, event: Server.Event) anyerror!void {
+        const span = trace.span(.push_event);
+        defer span.deinit();
+
+        span.debug("Pushing event: {s}", .{@tagName(event)});
         _ = try self.event_queue.pushInstantNotFull(event);
     }
 
@@ -367,59 +411,119 @@ pub const ServerThread = struct {
     // These interact with JamSnpServer and its components
 
     fn findConnection(self: *ServerThread, id: ConnectionId) !*ServerConnection {
-        return self.server.connections.get(id) orelse error.ConnectionNotFound;
+        const span = trace.span(.find_connection);
+        defer span.deinit();
+
+        span.debug("Looking for connection: {}", .{id});
+        const conn = self.server.connections.get(id) orelse {
+            span.err("Connection not found: {}", .{id});
+            return error.ConnectionNotFound;
+        };
+        return conn;
     }
 
     fn findStream(self: *ServerThread, id: StreamId) !*ServerStream {
-        return self.server.streams.get(id) orelse error.StreamNotFound;
+        const span = trace.span(.find_stream);
+        defer span.deinit();
+
+        span.debug("Looking for stream: {}", .{id});
+        const stream = self.server.streams.get(id) orelse {
+            span.err("Stream not found: {}", .{id});
+            return error.StreamNotFound;
+        };
+        return stream;
     }
 
     fn disconnectClientImpl(self: *ServerThread, conn_id: ConnectionId) anyerror!void {
+        const span = trace.span(.disconnect_client);
+        defer span.deinit();
+
+        span.debug("Disconnecting client: {}", .{conn_id});
         const conn = try self.findConnection(conn_id);
         // Use lsquic function directly, assuming connection holds the lsquic ptr
         @import("lsquic").lsquic_conn_close(conn.lsquic_connection);
+        span.debug("Client disconnection initiated", .{});
     }
 
     fn createStreamImpl(self: *ServerThread, conn_id: ConnectionId) anyerror!void {
+        const span = trace.span(.create_stream);
+        defer span.deinit();
+
+        span.debug("Creating stream for connection: {}", .{conn_id});
         const conn = try self.findConnection(conn_id);
         // Server initiating a stream
         @import("lsquic").lsquic_conn_make_stream(conn.lsquic_connection);
+        span.debug("Stream creation initiated", .{});
     }
 
     fn destroyStreamImpl(self: *ServerThread, stream_id: StreamId) anyerror!void {
+        const span = trace.span(.destroy_stream);
+        defer span.deinit();
+
+        span.debug("Destroying stream: {}", .{stream_id});
         const stream = try self.findStream(stream_id);
         // Assuming ServerStream has a close method or similar
         // For now, call lsquic directly. Needs ServerStream wrapper method ideally.
         if (@import("lsquic").lsquic_stream_close(stream.lsquic_stream) != 0) {
+            span.err("Failed to close stream: {}", .{stream_id});
             return error.StreamCloseFailed;
         }
+        span.debug("Stream destroyed successfully", .{});
     }
 
     fn sendDataImpl(self: *ServerThread, stream_id: StreamId, data: []const u8) anyerror!void {
+        const span = trace.span(.send_data);
+        defer span.deinit();
+
+        span.debug("Sending data on stream: {}", .{stream_id});
+        span.trace("Data length: {d} bytes", .{data.len});
+        span.trace("Data: {any}", .{std.fmt.fmtSliceHexLower(data)});
+
         const stream = try self.findStream(stream_id);
         try stream.setWriteBuffer(data);
         stream.wantWrite(true);
+        span.debug("Data queued for writing", .{});
     }
 
     fn streamWantReadImpl(self: *ServerThread, stream_id: StreamId, want: bool) anyerror!void {
+        const span = trace.span(.stream_want_read);
+        defer span.deinit();
+
+        span.debug("Setting stream {d} wantRead={}", .{ stream_id, want });
         const stream = try self.findStream(stream_id);
         stream.wantRead(want);
+        span.debug("Stream wantRead set successfully", .{});
     }
 
     fn streamWantWriteImpl(self: *ServerThread, stream_id: StreamId, want: bool) anyerror!void {
+        const span = trace.span(.stream_want_write);
+        defer span.deinit();
+
+        span.debug("Setting stream {d} wantWrite={}", .{ stream_id, want });
         const stream = try self.findStream(stream_id);
         stream.wantWrite(want);
+        span.debug("Stream wantWrite set successfully", .{});
     }
 
     fn streamFlushImpl(self: *ServerThread, stream_id: StreamId) anyerror!void {
+        const span = trace.span(.stream_flush);
+        defer span.deinit();
+
+        span.debug("Flushing stream: {}", .{stream_id});
         const stream = try self.findStream(stream_id);
         // ASSUMPTION: ServerStream needs a flush method.
         try stream.flush();
+        span.debug("Stream flushed successfully", .{});
     }
 
     fn streamShutdownImpl(self: *ServerThread, stream_id: StreamId, how: c_int) anyerror!void {
+        const span = trace.span(.stream_shutdown);
+        defer span.deinit();
+
+        span.debug("Shutting down stream: {d} (how={d})", .{ stream_id, how });
         const stream = try self.findStream(stream_id);
         try stream.shutdown(how);
+        span.debug("Stream shutdown successful", .{});
     }
 
     pub fn startThread(thread: *ServerThread) !std.Thread {
@@ -429,26 +533,40 @@ pub const ServerThread = struct {
     // -- Internal Callback Handlers
     // These run in the ServerThread's context and push events
     fn internalListenerCreatedCallback(endpoint: network.EndPoint, context: ?*anyopaque) void {
+        const span = trace.span(.listener_created_callback);
+        defer span.deinit();
+
+        span.debug("Listener created at {}", .{endpoint});
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .listening = .{ .local_endpoint = endpoint } };
-        std.debug.print("Listener created at {}", .{endpoint});
         _ = self.event_queue.push(event, .instant); // Ignore push error (queue full?)
     }
 
     fn internalClientConnectedCallback(connection_id: ConnectionId, peer_endpoint: network.EndPoint, context: ?*anyopaque) void {
+        const span = trace.span(.client_connected_callback);
+        defer span.deinit();
+
+        span.debug("Client connected: {d} at {}", .{ connection_id, peer_endpoint });
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .client_connected = .{ .connection_id = connection_id, .peer_endpoint = peer_endpoint } };
-        std.debug.print("Server client connected: {} at {}", .{ connection_id, peer_endpoint });
         _ = self.event_queue.push(event, .instant); // Ignore push error (queue full?)
     }
 
     fn internalClientDisconnectedCallback(connection_id: ConnectionId, context: ?*anyopaque) void {
+        const span = trace.span(.client_disconnected_callback);
+        defer span.deinit();
+
+        span.debug("Client disconnected: {}", .{connection_id});
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .client_disconnected = .{ .connection_id = connection_id } };
         _ = self.event_queue.push(event, .instant);
     }
 
     fn internalStreamCreatedByClientCallback(connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void {
+        const span = trace.span(.stream_created_callback);
+        defer span.deinit();
+
+        span.debug("Stream created by client: {d} on connection {d}", .{ stream_id, connection_id });
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .stream_created_by_client = .{ .connection_id = connection_id, .stream_id = stream_id } };
         _ = self.event_queue.push(event, .instant);
@@ -458,12 +576,22 @@ pub const ServerThread = struct {
     // fn internalStreamCreatedByServerCallback(...)
 
     fn internalStreamClosedByClientCallback(connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void {
+        const span = trace.span(.stream_closed_callback);
+        defer span.deinit();
+
+        span.debug("Stream closed by client: {d} on connection {d}", .{ stream_id, connection_id });
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .stream_closed = .{ .connection_id = connection_id, .stream_id = stream_id } };
         _ = self.event_queue.push(event, .instant);
     }
 
     fn internalDataReceivedCallback(connection_id: ConnectionId, stream_id: StreamId, data: []const u8, context: ?*anyopaque) void {
+        const span = trace.span(.data_received_callback);
+        defer span.deinit();
+
+        span.debug("Data received on stream {d} (connection {d}), length: {d} bytes", .{ stream_id, connection_id, data.len });
+        span.trace("Received data: {any}", .{std.fmt.fmtSliceHexLower(data)});
+
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         // Data is owned by the caller so no need to copy. Since caller will be
         // the event consumer. The responsibility of freeing the data is on the
@@ -473,30 +601,50 @@ pub const ServerThread = struct {
     }
 
     fn internalDataWriteCompletedCallback(connection_id: ConnectionId, stream_id: StreamId, total_bytes_written: usize, context: ?*anyopaque) void {
+        const span = trace.span(.data_write_completed_callback);
+        defer span.deinit();
+
+        span.debug("Data write completed on stream {d} (connection {d}), bytes written: {d}", .{ stream_id, connection_id, total_bytes_written });
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .data_write_completed = .{ .connection_id = connection_id, .stream_id = stream_id, .total_bytes_written = total_bytes_written } };
         _ = self.event_queue.push(event, .instant);
     }
 
     fn internalDataReadErrorCallback(connection_id: ConnectionId, stream_id: StreamId, error_code: i32, context: ?*anyopaque) void {
+        const span = trace.span(.data_read_error_callback);
+        defer span.deinit();
+
+        span.err("Data read error on stream {d} (connection {d}), error code: {d}", .{ stream_id, connection_id, error_code });
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .data_read_error = .{ .connection_id = connection_id, .stream_id = stream_id, .error_code = @intCast(error_code) } };
         _ = self.event_queue.push(event, .instant);
     }
 
     fn internalDataWriteErrorCallback(connection_id: ConnectionId, stream_id: StreamId, error_code: i32, context: ?*anyopaque) void {
+        const span = trace.span(.data_write_error_callback);
+        defer span.deinit();
+
+        span.err("Data write error on stream {d} (connection {d}), error code: {d}", .{ stream_id, connection_id, error_code });
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .data_write_error = .{ .connection_id = connection_id, .stream_id = stream_id, .error_code = @intCast(error_code) } };
         _ = self.event_queue.push(event, .instant);
     }
 
     fn internalDataReadWouldBlockCallback(connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void {
+        const span = trace.span(.data_read_would_block_callback);
+        defer span.deinit();
+
+        span.debug("Data read would block on stream {d} (connection {d})", .{ stream_id, connection_id });
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .data_read_would_block = .{ .connection_id = connection_id, .stream_id = stream_id } };
         _ = self.event_queue.push(event, .instant);
     }
 
     fn internalDataWriteWouldBlockCallback(connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) void {
+        const span = trace.span(.data_write_would_block_callback);
+        defer span.deinit();
+
+        span.debug("Data write would block on stream {d} (connection {d})", .{ stream_id, connection_id });
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .data_write_would_block = .{ .connection_id = connection_id, .stream_id = stream_id } };
         _ = self.event_queue.push(event, .instant);
@@ -522,6 +670,11 @@ pub const Server = struct {
         connection_id: ConnectionId,
 
         pub fn sendData(self: *StreamHandle, data: []const u8) !void {
+            const span = trace.span(.stream_send_data);
+            defer span.deinit();
+
+            span.debug("Stream {d}: Sending data ({d} bytes)", .{ self.stream_id, data.len });
+            span.trace("Data: {any}", .{std.fmt.fmtSliceHexLower(data)});
             return self.sendDataWithCallback(data, null, null);
         }
 
@@ -547,6 +700,10 @@ pub const Server = struct {
         }
 
         pub fn wantRead(self: *StreamHandle, want: bool) !void {
+            const span = trace.span(.stream_want_read_api);
+            defer span.deinit();
+
+            span.debug("Stream {d}: Setting wantRead={}", .{ self.stream_id, want });
             return self.wantReadWithCallback(want, null, null);
         }
 
@@ -565,6 +722,10 @@ pub const Server = struct {
         }
 
         pub fn wantWrite(self: *StreamHandle, want: bool) !void {
+            const span = trace.span(.stream_want_write_api);
+            defer span.deinit();
+
+            span.debug("Stream {d}: Setting wantWrite={}", .{ self.stream_id, want });
             return self.wantWriteWithCallback(want, null, null);
         }
 
@@ -583,6 +744,10 @@ pub const Server = struct {
         }
 
         pub fn flush(self: *StreamHandle) !void {
+            const span = trace.span(.stream_flush_api);
+            defer span.deinit();
+
+            span.debug("Stream {d}: Flushing", .{self.stream_id});
             return self.flushWithCallback(null, null);
         }
 
@@ -600,6 +765,10 @@ pub const Server = struct {
         }
 
         pub fn shutdown(self: *StreamHandle, how: c_int) !void {
+            const span = trace.span(.stream_shutdown_api);
+            defer span.deinit();
+
+            span.debug("Stream {d}: Shutting down (how={d})", .{ self.stream_id, how });
             return self.shutdownWithCallback(how, null, null);
         }
 
@@ -618,6 +787,10 @@ pub const Server = struct {
         }
 
         pub fn close(self: *StreamHandle) !void {
+            const span = trace.span(.stream_close_api);
+            defer span.deinit();
+
+            span.debug("Stream {d}: Closing", .{self.stream_id});
             return self.closeWithCallback(null, null);
         }
 
@@ -711,9 +884,14 @@ pub const Server = struct {
         },
 
         pub fn invokeCallback(self: Event) void {
+            const span = trace.span(.invoke_event_callback);
+            defer span.deinit();
+
+            span.debug("Invoking callback for event: {s}", .{@tagName(self)});
             switch (self) {
                 .listening => |e| e.result.invokeCallback(),
                 else => {
+                    span.err("Event callback not implemented for this event type", .{});
                     @panic("Event callback not implemented for this event type");
                 },
             }
@@ -723,6 +901,10 @@ pub const Server = struct {
     // --- API Methods ---
 
     pub fn listen(self: *Server, address: []const u8, port: u16) !void {
+        const span = trace.span(.listen);
+        defer span.deinit();
+
+        span.debug("Starting server listen on {s}:{d}", .{ address, port });
         return self.listenWithCallback(address, port, null, null);
     }
 
@@ -733,6 +915,10 @@ pub const Server = struct {
         callback: ?CommandCallback(anyerror!network.EndPoint),
         context: ?*anyopaque,
     ) !void {
+        const span = trace.span(.listen_with_callback);
+        defer span.deinit();
+
+        span.debug("Starting server listen with callback on {s}:{d}", .{ address, port });
         const command = ServerThread.Command{ .listen = .{
             .data = .{ .address = address, .port = port },
             .metadata = .{ .callback = callback, .context = context },
@@ -742,6 +928,10 @@ pub const Server = struct {
     }
 
     pub fn disconnectClient(self: *Server, connection_id: ConnectionId) !void {
+        const span = trace.span(.disconnect_client_api);
+        defer span.deinit();
+
+        span.debug("API: Disconnecting client: {}", .{connection_id});
         return self.disconnectClientWithCallback(connection_id, null, null);
     }
 
@@ -751,6 +941,10 @@ pub const Server = struct {
         callback: ?CommandCallback(anyerror!void),
         context: ?*anyopaque,
     ) !void {
+        const span = trace.span(.disconnect_client_with_callback);
+        defer span.deinit();
+
+        span.debug("API: Disconnecting client with callback: {}", .{connection_id});
         const command = ServerThread.Command{ .disconnect_client = .{
             .data = .{ .connection_id = connection_id },
             .metadata = .{ .callback = callback, .context = context },
@@ -761,6 +955,10 @@ pub const Server = struct {
 
     /// Server initiates a stream to a client
     pub fn createStream(self: *Server, connection_id: ConnectionId) !void {
+        const span = trace.span(.create_stream_api);
+        defer span.deinit();
+
+        span.debug("API: Creating stream for connection: {}", .{connection_id});
         return self.createStreamWithCallback(connection_id, null, null);
     }
 
@@ -773,6 +971,10 @@ pub const Server = struct {
         callback: ?CommandCallback(anyerror!StreamId), // Change T to anyerror!void?
         context: ?*anyopaque,
     ) !void {
+        const span = trace.span(.create_stream_with_callback);
+        defer span.deinit();
+
+        span.debug("API: Creating stream with callback for connection: {}", .{connection_id});
         const command = ServerThread.Command{ .create_stream = .{
             .data = .{ .connection_id = connection_id },
             .metadata = .{ .callback = callback, .context = context },
@@ -782,21 +984,50 @@ pub const Server = struct {
     }
 
     pub fn shutdown(self: *Server) !void {
+        const span = trace.span(.server_shutdown);
+        defer span.deinit();
+
+        span.debug("API: Server shutdown requested", .{});
         try self.thread.shutdown();
     }
 
     /// Tries to pop an event from the event queue without blocking.
     pub fn pollEvent(self: *Server) ?Event {
-        return self.thread.event_queue.pop();
+        const span = trace.span(.poll_event);
+        defer span.deinit();
+
+        const event = self.thread.event_queue.pop();
+        if (event) |e| {
+            span.debug("Polled event: {s}", .{@tagName(e)});
+        } else {
+            span.debug("No event available", .{});
+        }
+        return event;
     }
 
     /// Pops an event from the event queue, blocking until one is available.
     pub fn waitEvent(self: *Server) Event {
-        return self.thread.event_queue.blockingPop();
+        const span = trace.span(.wait_event);
+        defer span.deinit();
+
+        span.debug("Waiting for event", .{});
+        const event = self.thread.event_queue.blockingPop();
+        span.debug("Received event: {s}", .{@tagName(event)});
+        return event;
     }
 
     /// Pops an event from the event queue, blocking until one is available or timeout occurs.
     pub fn timedWaitEvent(self: *Server, timeout_ms: u64) ?Event {
-        return self.thread.event_queue.timedBlockingPop(timeout_ms);
+        const span = trace.span(.timed_wait_event);
+        defer span.deinit();
+
+        span.debug("Waiting for event with timeout: {d}ms", .{timeout_ms});
+        const event = self.thread.event_queue.timedBlockingPop(timeout_ms);
+        if (event) |e| {
+            span.debug("Received event: {s}", .{@tagName(e)});
+        } else {
+            span.debug("Timeout waiting for event", .{});
+        }
+        return event;
     }
 };

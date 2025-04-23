@@ -18,10 +18,10 @@ pub const TestServer = struct {
         const maybe_event = self.server.timedWaitEvent(timeout_ms);
         if (maybe_event) |event| {
             if (@as(std.meta.FieldEnum(net_server.Server.Event), event) != event_type) {
-                std.debug.print("Expected event type {}, but got {}\n", .{ event_type, event });
+                std.log.debug("Expected event type {}, but got {}\n", .{ event_type, event });
                 return error.InvalidEventType;
             }
-            std.debug.print("Received expected event: {}\n", .{event});
+            // std.debug.print("Received expected event: {}\n", .{event});
             return event;
         } else {
             return error.Timeout;
@@ -33,11 +33,6 @@ pub const TestServer = struct {
     }
 
     pub fn join(self: *TestServer) void {
-        std.debug.print("Joining server thread...\n", .{});
-        // Ensure shutdown is called before joining the thread
-        self.server.shutdown() catch |err| {
-            std.log.err("Error shutting down server: {s}", .{@errorName(err)});
-        };
         self.thread_handle.join();
     }
 
@@ -45,7 +40,11 @@ pub const TestServer = struct {
         self.thread.deinit();
     }
 
-    pub fn joinAndDeinit(self: *TestServer) void {
+    pub fn shutdownJoinAndDeinit(self: *TestServer) void {
+        // Ensure shutdown is called before joining the thread
+        self.server.shutdown() catch |err| {
+            std.log.err("Error shutting down server: {s}", .{@errorName(err)});
+        };
         self.join();
         self.deinit();
     }
@@ -102,7 +101,7 @@ pub const TestClient = struct {
                 std.debug.print("Expected client event type {}, but got {}\n", .{ event_type, event });
                 return error.InvalidEventType;
             }
-            std.debug.print("Received expected client event: {}\n", .{event});
+            // std.debug.print("Received expected client event: {}\n", .{event});
             return event;
         } else {
             return error.Timeout;
@@ -114,10 +113,6 @@ pub const TestClient = struct {
     }
 
     pub fn join(self: *TestClient) void {
-        // Ensure shutdown is called before joining the thread
-        self.client.shutdown() catch |err| {
-            std.log.err("Error shutting down client: {s}", .{@errorName(err)});
-        };
         self.thread_handle.join();
     }
 
@@ -125,12 +120,13 @@ pub const TestClient = struct {
         self.thread.deinit();
     }
 
-    pub fn joinAndDeinit(self: *TestClient) void {
-        std.debug.print("DONE\n", .{});
+    pub fn shutdownJoinAndDeinit(self: *TestClient) void {
+        // Ensure shutdown is called before joining the thread
+        self.client.shutdown() catch |err| {
+            std.log.err("Error shutting down client: {s}", .{@errorName(err)});
+        };
         self.join();
-        std.debug.print("DONE\n", .{});
         self.deinit();
-        std.debug.print("DONE\n", .{});
     }
 };
 

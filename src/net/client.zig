@@ -1,4 +1,3 @@
-//!
 //! Implementation of the ClientThread and Client. The design is
 //! straightforward: the ClientThread is equipped with a mailbox capable of
 //! receiving commands asynchronously. Upon execution of a command by the
@@ -19,6 +18,8 @@ const JamSnpClient = jamsnp_client.JamSnpClient;
 const StreamHandle = @import("stream_handle.zig").StreamHandle;
 
 const Mailbox = @import("../datastruct/blocking_queue.zig").BlockingQueue;
+
+const trace = @import("../tracing.zig").scoped(.network);
 
 /// Builder for creating a ClientThread instance.
 /// Ensures that the underlying JamSnpClient is also initialized.
@@ -233,7 +234,10 @@ pub const ClientThread = struct {
 
     /// Deinitializes the ClientThread and the JamSnpClient it owns.
     pub fn deinit(self: *ClientThread) void {
-        std.debug.print("Deinit ClientThread\n", .{});
+        const span = trace.span(.deinit);
+        defer span.deinit();
+        span.debug("Deinitializing ClientThread", .{});
+
         // The sequence of operations is critical in this context. Initially,
         // terminate the client, which will consequently dismantle the engine,
         // thereby closing all active connections and streams. Subsequently,
@@ -253,21 +257,30 @@ pub const ClientThread = struct {
     pub fn threadMain(self: *ClientThread) void {
         // Handle errors gracefully
         self.threadMain_() catch |err| {
-            std.log.warn("error in thread err={}", .{err});
+            const span = trace.span(.thread_main);
+            defer span.deinit();
+            span.err("Error in thread: {}", .{err});
         };
     }
 
     fn threadMain_(self: *ClientThread) !void {
+        const span = trace.span(.thread_main_impl);
+        defer span.deinit();
+        span.debug("Starting ClientThread main loop", .{});
+
         try self.threadSetup();
         defer self.threadCleanup();
+
+        span.debug("Registering wakeup and stop callbacks", .{});
         self.wakeup.wait(&self.loop, &self.wakeup_c, ClientThread, self, wakeupCallback);
         self.stop.wait(&self.loop, &self.stop_c, ClientThread, self, stopCallback);
 
         // Initial notify might not be needed if setup doesn't queue commands
         // try self.wakeup.notify();
+        span.debug("Running event loop", .{});
         _ = try self.loop.run(.until_done);
 
-        std.debug.print("ClientThread main loop exited\n", .{});
+        span.debug("ClientThread main loop exited", .{});
     }
 
     fn threadSetup(_: *ClientThread) !void {
@@ -284,8 +297,12 @@ pub const ClientThread = struct {
         _: *xev.Completion,
         r: xev.Async.WaitError!void,
     ) xev.CallbackAction {
+        const span = trace.span(.wakeup_callback);
+        defer span.deinit();
+        span.debug("Wakeup callback triggered", .{});
+
         _ = r catch |err| {
-            std.log.err("error in wakeup err={}", .{err});
+            span.err("Error in wakeup callback: {}", .{err});
             // Consider pushing error event?
             return .rearm;
         };
@@ -293,10 +310,11 @@ pub const ClientThread = struct {
         const thread = self_.?;
 
         thread.drainMailbox() catch |err| {
-            std.log.err("error processing mailbox err={}", .{err});
+            span.err("Error processing mailbox: {}", .{err});
             // Consider pushing error event?
         };
 
+        span.debug("Rearming wakeup callback", .{});
         return .rearm;
     }
 
@@ -306,22 +324,38 @@ pub const ClientThread = struct {
         _: *xev.Completion,
         r: xev.Async.WaitError!void,
     ) xev.CallbackAction {
-        std.debug.print("ClientThread stopping...\n", .{});
+        const span = trace.span(.stop_callback);
+        defer span.deinit();
+        span.debug("ClientThread stopping...", .{});
+
         if (r) {} else |err| {
-            std.log.err("error in stop err={}", .{err});
+            span.err("Error in stop callback: {}", .{err});
         }
 
+        span.debug("Stopping event loop", .{});
         self.?.loop.stop();
         return .disarm;
     }
 
     fn drainMailbox(self: *ClientThread) !void {
+        const span = trace.span(.drain_mailbox);
+        defer span.deinit();
+        span.debug("Draining mailbox", .{});
+
+        var processed: usize = 0;
         while (self.mailbox.pop()) |command| {
+            processed += 1;
             try self.processCommand(command);
         }
+
+        span.debug("Processed {d} commands from mailbox", .{processed});
     }
 
     fn processCommand(self: *ClientThread, command: Command) !void {
+        const span = trace.span(.process_command);
+        defer span.deinit();
+        span.debug("Processing command: {s}", .{@tagName(command)});
+
         // Find the connection or stream based on IDs in the command data
         // This requires the ClientThread to have access to the JamSnpClient's
         // connections and streams maps (or query the JamSnpClient).
@@ -330,13 +364,23 @@ pub const ClientThread = struct {
         // Execute the command via JamSnpClient
         switch (command) {
             .connect => |cmd| {
+                const cmd_span = span.child(.connect);
+                defer cmd_span.deinit();
+                cmd_span.debug("Connecting to endpoint: {}", .{cmd.data});
+
                 // The actual result (success or failure) comes via ConnectionEstablished/ConnectionFailed events
                 _ = self.client.connect(cmd.data) catch |err| {
+                    cmd_span.err("Connection attempt failed immediately: {}", .{err});
                     // If connect() itself fails immediately, invoke callback with error
                     try self.pushEvent(.{ .connection_failed = .{ .endpoint = cmd.data, .err = err } });
                 };
+                cmd_span.debug("Connection attempt initiated", .{});
             },
             .disconnect => |cmd| {
+                const cmd_span = span.child(.disconnect);
+                defer cmd_span.deinit();
+                cmd_span.debug("Disconnect requested for connection {}", .{cmd.data.connection_id});
+
                 // Disconnect is often synchronous in effect (signals intent)
                 // Actual closure confirmed by ConnectionClosed event
                 // TODO: JamSnpClient needs a `disconnect` method.
@@ -346,14 +390,19 @@ pub const ClientThread = struct {
                 //     return;
                 // };
                 // Invoke void callback immediately for disconnect command request
+                cmd_span.warn("Disconnect operation not implemented", .{});
                 cmd.metadata.callWithResult(error.UnsupportedOperation); // Placeholder until disconnect implemented
             },
             .create_stream => |cmd| {
+                const cmd_span = span.child(.create_stream);
+                defer cmd_span.deinit();
+                cmd_span.debug("Creating stream on connection {}", .{cmd.data.connection_id});
+
                 // Find the connection by ID
                 if (self.client.connections.get(cmd.data.connection_id)) |conn| {
                     // TODO: ClientConnection needs a createStream method
                     conn.createStream() catch |err| {
-                        std.log.err("Failed to request stream creation on conn {}: {}", .{ cmd.data.connection_id, err });
+                        cmd_span.err("Failed to request stream creation on conn {}: {}", .{ cmd.data.connection_id, err });
                         // If we were storing metadata, invoke callback with error here:
                         // if (self.pending_stream_creates.fetchRemove(cmd.data.connection_id)) |meta| {
                         //     meta.value.callWithResult(err);
@@ -361,90 +410,122 @@ pub const ClientThread = struct {
                         cmd.metadata.callWithResult(err); // Invoke directly for now
                         return;
                     };
+                    cmd_span.debug("Stream creation requested successfully", .{});
                     // Success/failure is signaled by the StreamCreated event later
                     // Callback will be invoked in internalStreamCreatedCallback
                 } else {
-                    std.log.warn("CreateStream command for unknown connection ID: {}", .{cmd.data.connection_id});
+                    cmd_span.warn("CreateStream command for unknown connection ID: {}", .{cmd.data.connection_id});
                     cmd.metadata.callWithResult(error.ConnectionNotFound);
                 }
             },
             .destroy_stream => |cmd| {
+                const cmd_span = span.child(.destroy_stream);
+                defer cmd_span.deinit();
+                cmd_span.debug("Destroying stream {} on connection {}", .{ cmd.data.stream_id, cmd.data.connection_id });
+
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.close() catch |err| {
-                        std.log.err("Failed to close stream {}: {}", .{ cmd.data.stream_id, err });
+                        cmd_span.err("Failed to close stream {}: {}", .{ cmd.data.stream_id, err });
                         cmd.metadata.callWithResult(err);
                         return; // Don't invoke success below
                     };
+                    cmd_span.debug("Stream close requested successfully", .{});
                     // Success/failure is signaled by the StreamClosed event later.
                     // Invoke void callback immediately for destroy command intent.
                     cmd.metadata.callWithResult({});
                 } else {
-                    std.log.warn("DestroyStream command for unknown stream ID: {}", .{cmd.data.stream_id});
+                    cmd_span.warn("DestroyStream command for unknown stream ID: {}", .{cmd.data.stream_id});
                     cmd.metadata.callWithResult(error.StreamNotFound);
                 }
             },
             .send_data => |cmd| {
+                const cmd_span = span.child(.send_data);
+                defer cmd_span.deinit();
+                cmd_span.debug("Sending data on stream {} ({} bytes)", .{ cmd.data.stream_id, cmd.data.data.len });
+                cmd_span.trace("Data: {any}", .{std.fmt.fmtSliceHexLower(cmd.data.data)});
+
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     // This sets the buffer for the next onWrite callback
                     stream.setWriteBuffer(cmd.data.data) catch |err| {
-                        std.log.err("Failed to set write buffer for stream {}: {}", .{ cmd.data.stream_id, err });
+                        cmd_span.err("Failed to set write buffer for stream {}: {}", .{ cmd.data.stream_id, err });
                         cmd.metadata.callWithResult(err);
                         return; // Don't proceed if buffer setting fails
                     };
                     // Trigger the write callback
                     stream.wantWrite(true);
+                    cmd_span.debug("Data queued successfully", .{});
                     // Command success means data was buffered. Actual send success
                     // comes via DataWriteCompleted/DataWriteError events.
                     // Invoke void callback immediately for send command intent.
                     cmd.metadata.callWithResult({});
                 } else {
-                    std.log.warn("SendData command for unknown stream ID: {}", .{cmd.data.stream_id});
+                    cmd_span.warn("SendData command for unknown stream ID: {}", .{cmd.data.stream_id});
                     cmd.metadata.callWithResult(error.StreamNotFound);
                 }
             },
             .stream_want_read => |cmd| {
+                const cmd_span = span.child(.stream_want_read);
+                defer cmd_span.deinit();
+                cmd_span.debug("Setting wantRead({}) on stream {}", .{ cmd.data.want, cmd.data.stream_id });
+
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.wantRead(cmd.data.want);
+                    cmd_span.debug("wantRead set successfully", .{});
                     cmd.metadata.callWithResult({}); // Immediate success
                 } else {
-                    std.log.warn("StreamWantRead command for unknown stream ID: {}", .{cmd.data.stream_id});
+                    cmd_span.warn("StreamWantRead command for unknown stream ID: {}", .{cmd.data.stream_id});
                     cmd.metadata.callWithResult(error.StreamNotFound);
                 }
             },
             .stream_want_write => |cmd| {
+                const cmd_span = span.child(.stream_want_write);
+                defer cmd_span.deinit();
+                cmd_span.debug("Setting wantWrite({}) on stream {}", .{ cmd.data.want, cmd.data.stream_id });
+
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.wantWrite(cmd.data.want);
+                    cmd_span.debug("wantWrite set successfully", .{});
                     cmd.metadata.callWithResult({}); // Immediate success
                 } else {
-                    std.log.warn("StreamWantWrite command for unknown stream ID: {}", .{cmd.data.stream_id});
+                    cmd_span.warn("StreamWantWrite command for unknown stream ID: {}", .{cmd.data.stream_id});
                     cmd.metadata.callWithResult(error.StreamNotFound);
                 }
             },
             .stream_flush => |cmd| {
+                const cmd_span = span.child(.stream_flush);
+                defer cmd_span.deinit();
+                cmd_span.debug("Flushing stream {}", .{cmd.data.stream_id});
+
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.flush() catch |err| {
-                        std.log.err("Failed to flush stream {}: {}", .{ cmd.data.stream_id, err });
+                        cmd_span.err("Failed to flush stream {}: {}", .{ cmd.data.stream_id, err });
                         cmd.metadata.callWithResult(err);
                         return; // Don't invoke success below
                     };
+                    cmd_span.debug("Stream flushed successfully", .{});
                     // Success is immediate (or error)
                     cmd.metadata.callWithResult({});
                 } else {
-                    std.log.warn("StreamFlush command for unknown stream ID: {}", .{cmd.data.stream_id});
+                    cmd_span.warn("StreamFlush command for unknown stream ID: {}", .{cmd.data.stream_id});
                     cmd.metadata.callWithResult(error.StreamNotFound);
                 }
             },
             .stream_shutdown => |cmd| {
+                const cmd_span = span.child(.stream_shutdown);
+                defer cmd_span.deinit();
+                cmd_span.debug("Shutting down stream {} with mode {d}", .{ cmd.data.stream_id, cmd.data.how });
+
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.shutdown(cmd.data.how) catch |err| {
-                        std.log.err("Failed to shutdown stream {}: {}", .{ cmd.data.stream_id, err });
+                        cmd_span.err("Failed to shutdown stream {}: {}", .{ cmd.data.stream_id, err });
                         cmd.metadata.callWithResult(err);
                         return; // Don't invoke success below
                     };
+                    cmd_span.debug("Stream shutdown successful", .{});
                     // Success is immediate (or error)
                     cmd.metadata.callWithResult({});
                 } else {
-                    std.log.warn("StreamShutdown command for unknown stream ID: {}", .{cmd.data.stream_id});
+                    cmd_span.warn("StreamShutdown command for unknown stream ID: {}", .{cmd.data.stream_id});
                     cmd.metadata.callWithResult(error.StreamNotFound);
                 }
             },
@@ -475,63 +556,106 @@ pub const ClientThread = struct {
     }
 
     fn pushEvent(self: *ClientThread, event: Client.Event) !void {
+        const span = trace.span(.push_event);
+        defer span.deinit();
+        span.debug("Pushing event: {s}", .{@tagName(event)});
+
         // Helper to push event, logs if queue is full
         if (self.event_queue.push(event, .instant) == 0) {
-            std.log.warn("Client event queue full, dropping event: {any}", .{event});
+            span.err("Client event queue full, dropping event: {s}", .{@tagName(event)});
             return error.QueueFull;
         }
+        span.debug("Event pushed successfully", .{});
     }
 
     fn internalConnectionEstablishedCallback(connection_id: ConnectionId, endpoint: network.EndPoint, context: ?*anyopaque) !void {
+        const span = trace.span(.connection_established);
+        defer span.deinit();
+        span.debug("Connection established: ID={} endpoint={}", .{ connection_id, endpoint });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         // Check if there was a pending connect command for this endpoint
         if (self.pending_connects.fetchRemove(endpoint)) |metadata| {
+            span.debug("Found pending connect command, invoking callback", .{});
             metadata.value.callWithResult(connection_id); // Call command callback with success (ConnectionId)
         } else {
             // This can happen if connection was established without an explicit API call? Or a race?
-            std.log.warn("ConnectionEstablished event for endpoint {} with no pending connect command", .{endpoint});
+            span.warn("ConnectionEstablished event for endpoint {} with no pending connect command", .{endpoint});
         }
         try self.pushEvent(.{ .connected = .{ .connection_id = connection_id, .endpoint = endpoint } });
     }
 
     fn internalConnectionFailedCallback(endpoint: network.EndPoint, err: anyerror, context: ?*anyopaque) !void {
+        const span = trace.span(.connection_failed);
+        defer span.deinit();
+        span.err("Connection failed: endpoint={} error={}", .{ endpoint, err });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         // Check if there was a pending connect command for this endpoint
         if (self.pending_connects.fetchRemove(endpoint)) |metadata| {
+            span.debug("Found pending connect command, invoking callback with error", .{});
             metadata.value.callWithResult(err); // Call command callback with error
         } else {
-            std.log.warn("ConnectionFailed event for endpoint {} with no pending connect command", .{endpoint});
+            span.warn("ConnectionFailed event for endpoint {} with no pending connect command", .{endpoint});
         }
         try self.pushEvent(.{ .connection_failed = .{ .endpoint = endpoint, .err = err } });
     }
 
     fn internalConnectionClosedCallback(connection_id: ConnectionId, context: ?*anyopaque) !void {
+        const span = trace.span(.connection_closed);
+        defer span.deinit();
+        span.debug("Connection closed: ID={}", .{connection_id});
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         try self.pushEvent(.{ .disconnected = .{ .connection_id = connection_id } });
     }
 
     fn internalStreamCreatedCallback(connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) !void {
+        const span = trace.span(.stream_created);
+        defer span.deinit();
+        span.debug("Stream created: connection={} stream={}", .{ connection_id, stream_id });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         try self.pushEvent(.{ .stream_created = .{ .connection_id = connection_id, .stream_id = stream_id } });
     }
 
     fn internalStreamClosedCallback(connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) !void {
+        const span = trace.span(.stream_closed);
+        defer span.deinit();
+        span.debug("Stream closed: connection={} stream={}", .{ connection_id, stream_id });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         try self.pushEvent(.{ .stream_closed = .{ .connection_id = connection_id, .stream_id = stream_id } });
     }
 
     fn internalDataReceivedCallback(connection_id: ConnectionId, stream_id: StreamId, data: []const u8, context: ?*anyopaque) !void {
+        const span = trace.span(.data_received);
+        defer span.deinit();
+        span.debug("Data received: connection={} stream={} size={d} bytes", .{ connection_id, stream_id, data.len });
+        span.trace("Data: {any}", .{std.fmt.fmtSliceHexLower(data)});
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         try self.pushEvent(.{ .data_received = .{ .connection_id = connection_id, .stream_id = stream_id, .data = data } });
     }
 
     fn internalDataEndOfStreamCallback(connection_id: ConnectionId, stream_id: StreamId, data_read: []const u8, context: ?*anyopaque) !void {
+        const span = trace.span(.data_end_of_stream);
+        defer span.deinit();
+        span.debug("End of stream: connection={} stream={} final_data_size={d} bytes", .{ connection_id, stream_id, data_read.len });
+        if (data_read.len > 0) {
+            span.trace("Final data: {any}", .{std.fmt.fmtSliceHexLower(data_read)});
+        }
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         // Data might be partial from last read attempt. Copy it if needed.
         try self.pushEvent(.{ .data_end_of_stream = .{ .connection_id = connection_id, .stream_id = stream_id, .final_data = data_read } });
     }
 
     fn internalDataReadErrorCallback(connection_id: ConnectionId, stream_id: StreamId, error_code: i32, context: ?*anyopaque) !void {
+        const span = trace.span(.data_read_error);
+        defer span.deinit();
+        span.err("Stream read error: connection={} stream={} error_code={d}", .{ connection_id, stream_id, error_code });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         // Convert i32 error code to a Zig error if possible/meaningful
         const err = error.StreamReadError; // Placeholder
@@ -539,27 +663,39 @@ pub const ClientThread = struct {
     }
 
     fn internalDataReadWouldBlockCallback(connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) !void {
+        const span = trace.span(.data_read_would_block);
+        defer span.deinit();
+        span.debug("Read would block: connection={} stream={}", .{ connection_id, stream_id });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         try self.pushEvent(.{ .data_read_would_block = .{ .connection_id = connection_id, .stream_id = stream_id } });
     }
 
     fn internalDataWriteCompletedCallback(connection_id: ConnectionId, stream_id: StreamId, total_bytes_written: usize, context: ?*anyopaque) !void {
+        const span = trace.span(.data_write_completed);
+        defer span.deinit();
+        span.debug("Write completed: connection={} stream={} bytes={d}", .{ connection_id, stream_id, total_bytes_written });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         try self.pushEvent(.{ .data_write_completed = .{ .connection_id = connection_id, .stream_id = stream_id, .bytes_written = total_bytes_written } });
     }
 
     fn internalDataWriteProgressCallback(connection_id: ConnectionId, stream_id: StreamId, bytes_written: usize, total_size: usize, context: ?*anyopaque) void {
+        const span = trace.span(.data_write_progress);
+        defer span.deinit();
+        span.debug("Write progress: connection={} stream={} bytes={d}/{d} ({d}%)", .{ connection_id, stream_id, bytes_written, total_size, if (total_size > 0) (bytes_written * 100) / total_size else 0 });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         // Optional: Push a progress event if desired by the application
         _ = self;
-        _ = connection_id;
-        _ = stream_id;
-        _ = bytes_written;
-        _ = total_size;
         // self.pushEvent(.{ .data_write_progress = .{ ... } });
     }
 
     fn internalDataWriteErrorCallback(connection_id: ConnectionId, stream_id: StreamId, error_code: i32, context: ?*anyopaque) !void {
+        const span = trace.span(.data_write_error);
+        defer span.deinit();
+        span.err("Stream write error: connection={} stream={} error_code={d}", .{ connection_id, stream_id, error_code });
+
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
         const err = error.StreamWriteError; // Placeholder
         try self.pushEvent(.{ .data_write_error = .{ .connection_id = connection_id, .stream_id = stream_id, .err = err, .raw_error_code = error_code } });
@@ -663,6 +799,10 @@ pub const Client = struct {
         callback: ?CommandCallback(anyerror!ConnectionId),
         context: ?*anyopaque,
     ) !void {
+        const span = trace.span(.connect_with_callback);
+        defer span.deinit();
+        span.debug("Connect requested to endpoint: {}", .{endpoint});
+
         const command = ClientThread.Command{ .connect = .{
             .data = endpoint,
             .metadata = .{
@@ -671,8 +811,11 @@ pub const Client = struct {
             },
         } };
         if (self.thread.mailbox.push(command, .instant) == 0) {
+            span.err("Mailbox full, cannot queue connect command", .{});
             return error.MailboxFull;
         }
+
+        span.debug("Connect command queued successfully", .{});
         try self.thread.wakeup.notify();
     }
 
@@ -713,6 +856,10 @@ pub const Client = struct {
         callback: ?CommandCallback(anyerror!StreamId), // Callback returns StreamId
         context: ?*anyopaque,
     ) !void {
+        const span = trace.span(.create_stream_with_callback);
+        defer span.deinit();
+        span.debug("Create stream requested on connection: {}", .{connection_id});
+
         const command = ClientThread.Command{ .create_stream = .{
             .data = .{
                 .connection_id = connection_id,
@@ -723,8 +870,11 @@ pub const Client = struct {
             },
         } };
         if (!self.thread.mailbox.push(command, .{ .instant = {} })) {
+            span.err("Mailbox full, cannot queue create stream command", .{});
             return error.MailboxFull;
         }
+
+        span.debug("Create stream command queued successfully", .{});
         try self.thread.wakeup.notify();
     }
 
@@ -739,6 +889,10 @@ pub const Client = struct {
         callback: ?CommandCallback(anyerror!void),
         context: ?*anyopaque,
     ) !void {
+        const span = trace.span(.destroy_stream_with_callback);
+        defer span.deinit();
+        span.debug("Destroy stream requested: connection={} stream={}", .{ stream.connection_id, stream.stream_id });
+
         const command = ClientThread.Command{ .destroy_stream = .{
             .data = .{
                 .connection_id = stream.connection_id,
@@ -750,14 +904,21 @@ pub const Client = struct {
             },
         } };
         if (!self.thread.mailbox.push(command, .{ .instant = {} })) {
+            span.err("Mailbox full, cannot queue destroy stream command", .{});
             return error.MailboxFull;
         }
+
+        span.debug("Destroy stream command queued successfully", .{});
         try self.thread.wakeup.notify();
     }
 
     // --- Client API Methods ---
 
     pub fn shutdown(self: *Client) !void {
+        const span = trace.span(.client_shutdown);
+        defer span.deinit();
+        span.debug("Shutting down client", .{});
+
         // Notify the thread to stop
         try self.thread.stop.notify();
     }
