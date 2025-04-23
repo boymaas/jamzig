@@ -61,10 +61,6 @@ test "create stream and send data" {
     const stream_id = client_stream_event.stream_created.stream_id;
     std.log.info("Client created stream with ID: {}", .{stream_id});
 
-    // Wait for the server to observe the new stream
-    // const server_stream_event = try test_server.expectEvent(timeout_ms, .stream_created_by_client);
-    // std.log.info("Server observed stream creation with ID: {}", .{server_stream_event.stream_created_by_client.stream_id});
-
     // --- Send data over the stream ---
     var stream_handle = StreamHandle{
         .thread = test_client.thread,
@@ -74,6 +70,10 @@ test "create stream and send data" {
 
     const payload = "Hello, JamSnp!";
     try stream_handle.sendData(payload);
+
+    // QUIC server will create the stream on the first STREAM FRAME with Offset 0 received
+    const server_stream_event = try test_server.expectEvent(timeout_ms, .stream_created_by_client);
+    std.log.info("Server observed stream creation with ID: {}", .{server_stream_event.stream_created_by_client.stream_id});
 
     // Wait for the server to receive the data
     const data_event = try test_server.expectEvent(timeout_ms, .data_received);

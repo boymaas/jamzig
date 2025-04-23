@@ -199,6 +199,22 @@ pub fn Stream(T: type) type {
             return @ptrCast(stream);
         }
 
+        pub fn onStreamCreatedServer(
+            ea_stream_if_ctx: ?*anyopaque, // ea_stream_if_ctx (unused)
+            maybe_lsquic_stream: ?*lsquic.lsquic_stream_t,
+        ) callconv(.C) *lsquic.lsquic_stream_ctx_t {
+            const span = trace.span(.on_stream_created_server);
+            defer span.deinit();
+
+            const ctx = onStreamCreated(ea_stream_if_ctx, maybe_lsquic_stream);
+            // We need to set the stream to read mode to get any data from client
+            if (lsquic.lsquic_stream_wantread(maybe_lsquic_stream, 1) != 0) {
+                span.err("Failed to set stream to read mode for stream", .{});
+            }
+
+            return ctx;
+        }
+
         pub fn onStreamRead(
             maybe_lsquic_stream: ?*lsquic.lsquic_stream_t,
             maybe_stream_ctx: ?*lsquic.lsquic_stream_ctx_t,
@@ -381,6 +397,12 @@ pub fn Stream(T: type) type {
                 stream.write_buffer_pos = 0;
                 span.trace("Disabling write interest for stream ID {}", .{stream.id});
                 stream.wantWrite(false);
+
+                // Flush the stream to ensure all data is sent
+                span.debug("Flushing stream ID {} after write completion", .{stream.id});
+                if (lsquic.lsquic_stream_flush(stream.lsquic_stream) != 0) {
+                    span.err("Failed to flush stream ID {} after write completion", .{stream.id});
+                }
             }
             // else: Keep wantWrite true
         }
