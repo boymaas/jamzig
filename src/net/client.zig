@@ -810,13 +810,7 @@ pub const Client = struct {
                 .context = context,
             },
         } };
-        if (self.thread.mailbox.push(command, .instant) == 0) {
-            span.err("Mailbox full, cannot queue connect command", .{});
-            return error.MailboxFull;
-        }
-
-        span.debug("Connect command queued successfully", .{});
-        try self.thread.wakeup.notify();
+        try self.pushCommand(command);
     }
 
     // Disconnect assumes JamSnpClient/Connection implements it
@@ -839,10 +833,7 @@ pub const Client = struct {
                 .context = context,
             },
         } };
-        if (!self.thread.mailbox.push(command, .{ .instant = {} })) {
-            return error.MailboxFull;
-        }
-        try self.thread.wakeup.notify();
+        self.pushCommand(command);
     }
 
     // CreateStream assumes JamSnpClient/Connection implements it
@@ -869,13 +860,7 @@ pub const Client = struct {
                 .context = context,
             },
         } };
-        if (self.thread.mailbox.push(command, .{ .instant = {} }) == 0) {
-            span.err("Mailbox full, cannot queue create stream command", .{});
-            return error.MailboxFull;
-        }
-
-        span.debug("Create stream command queued successfully", .{});
-        try self.thread.wakeup.notify();
+        try self.pushCommand(command);
     }
 
     // DestroyStream uses StreamHandle
@@ -903,12 +888,20 @@ pub const Client = struct {
                 .context = context,
             },
         } };
-        if (!self.thread.mailbox.push(command, .{ .instant = {} })) {
-            span.err("Mailbox full, cannot queue destroy stream command", .{});
+        self.pushCommand(command);
+    }
+
+    pub fn pushCommand(self: *Client, command: ClientThread.Command) !void {
+        const span = trace.span(.push_command);
+        defer span.deinit();
+        span.debug("Pushing command: {s}", .{@tagName(command)});
+
+        if (self.thread.mailbox.push(command, .instant) == 0) {
+            span.err("Mailbox full, cannot queue command", .{});
             return error.MailboxFull;
         }
 
-        span.debug("Destroy stream command queued successfully", .{});
+        span.debug("Command pushed successfully", .{});
         try self.thread.wakeup.notify();
     }
 

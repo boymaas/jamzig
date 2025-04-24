@@ -923,8 +923,7 @@ pub const Server = struct {
             .data = .{ .address = address, .port = port },
             .metadata = .{ .callback = callback, .context = context },
         } };
-        _ = self.thread.mailbox.push(command, .instant);
-        try self.thread.wakeup.notify();
+        try self.pushCommand(command);
     }
 
     pub fn disconnectClient(self: *Server, connection_id: ConnectionId) !void {
@@ -949,8 +948,7 @@ pub const Server = struct {
             .data = .{ .connection_id = connection_id },
             .metadata = .{ .callback = callback, .context = context },
         } };
-        _ = self.thread.mailbox.push(command, .{ .instant = {} });
-        try self.thread.wakeup.notify();
+        try self.pushCommand(command);
     }
 
     /// Server initiates a stream to a client
@@ -979,8 +977,7 @@ pub const Server = struct {
             .data = .{ .connection_id = connection_id },
             .metadata = .{ .callback = callback, .context = context },
         } };
-        _ = self.thread.mailbox.push(command, .{ .instant = {} });
-        try self.thread.wakeup.notify();
+        try self.pushCommand(command);
     }
 
     pub fn shutdown(self: *Server) !void {
@@ -989,6 +986,20 @@ pub const Server = struct {
 
         span.debug("API: Server shutdown requested", .{});
         try self.thread.shutdown();
+    }
+
+    pub fn pushCommand(self: *Server, command: ServerThread.Command) !void {
+        const span = trace.span(.push_command);
+        defer span.deinit();
+        span.debug("Pushing command: {s}", .{@tagName(command)});
+
+        if (self.thread.mailbox.push(command, .instant) == 0) {
+            span.err("Mailbox full, cannot queue command", .{});
+            return error.MailboxFull;
+        }
+
+        span.debug("Command pushed successfully", .{});
+        try self.thread.wakeup.notify();
     }
 
     /// Tries to pop an event from the event queue without blocking.
