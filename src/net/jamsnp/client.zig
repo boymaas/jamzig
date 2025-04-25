@@ -391,8 +391,12 @@ pub const JamSnpClient = struct {
 
         const peer_endpoint = try network.EndPoint.parse(parsable);
 
+        const connection_id = uuid.v4.new();
+
         // Call the main connect function
-        return self.connect(peer_endpoint);
+        try self.connect(peer_endpoint, connection_id);
+
+        return connection_id;
     }
 
     pub fn connect(self: *JamSnpClient, peer_endpoint: network.EndPoint, connection_id: ConnectionId) !void {
