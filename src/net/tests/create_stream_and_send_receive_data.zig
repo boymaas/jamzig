@@ -56,26 +56,26 @@ test "create stream and send data" {
     std.log.info("Server received connection with ID: {}", .{server_connection_event.client_connected.connection_id});
 
     // --- Create a stream from client to server ---
-    try test_client.client.createStream(connected_event.connected.connection_id, StreamKind.block_announcement);
+    try test_client.client.createStream(connected_event.connected.connection_id, .block_announcement);
 
     // Wait for the stream_created event on the client
     const client_stream_event = try test_client.expectEvent(timeout_ms, .stream_created);
     const stream_id = client_stream_event.stream_created.stream_id;
     std.log.info("Client created stream with ID: {}", .{stream_id});
 
+    // QUIC server will create the stream on the first STREAM FRAME with Offset 0 received
+    // Since the client will send 1 byte indicating the stream kind this will trigger a stream_created_by client
+    const server_stream_event = try test_server.expectEvent(timeout_ms, .stream_created_by_client);
+    std.log.info("Server observed stream creation with ID: {}", .{server_stream_event.stream_created_by_client.stream_id});
+
     // --- Send data over the stream ---
-    var stream_handle = StreamHandle{
-        .thread = test_client.thread,
-        .stream_id = stream_id,
-        .connection_id = connected_event.connected.connection_id,
-    };
+    var stream_handle = try test_client.buildStreamHandle(
+        connected_event.connected.connection_id,
+        stream_id,
+    );
 
     const payload = "Hello, JamSnp!";
     try stream_handle.sendData(payload);
-
-    // QUIC server will create the stream on the first STREAM FRAME with Offset 0 received
-    const server_stream_event = try test_server.expectEvent(timeout_ms, .stream_created_by_client);
-    std.log.info("Server observed stream creation with ID: {}", .{server_stream_event.stream_created_by_client.stream_id});
 
     // Wait for the server to receive the data
     const data_event = try test_server.expectEvent(timeout_ms, .data_received);

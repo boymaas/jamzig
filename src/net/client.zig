@@ -13,11 +13,11 @@ const jamsnp_client = @import("jamsnp/client.zig");
 const network = @import("network"); // Added for EndPoint
 
 const shared = @import("jamsnp/shared_types.zig");
-const ConnectionId = shared.ConnectionId;
-const StreamId = shared.StreamId;
-const StreamKind = shared.StreamKind;
-const JamSnpClient = jamsnp_client.JamSnpClient;
-const StreamHandle = @import("stream_handle.zig").StreamHandle;
+pub const ConnectionId = shared.ConnectionId;
+pub const StreamId = shared.StreamId;
+pub const StreamKind = shared.StreamKind;
+pub const JamSnpClient = jamsnp_client.JamSnpClient;
+pub const StreamHandle = @import("stream_handle.zig").StreamHandle;
 
 const Mailbox = @import("../datastruct/blocking_queue.zig").BlockingQueue;
 

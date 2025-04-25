@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const shared = @import("../jamsnp/shared_types.zig");
 const net_server = @import("../server.zig");
 const net_client = @import("../client.zig");
 const network = @import("network");
@@ -106,6 +107,18 @@ pub const TestClient = struct {
         } else {
             return error.Timeout;
         }
+    }
+
+    pub fn buildStreamHandle(
+        self: *TestClient,
+        connection_id: net_client.ConnectionId,
+        stream_id: net_client.StreamId,
+    ) !net_client.StreamHandle {
+        return .{
+            .thread = self.thread,
+            .stream_id = stream_id,
+            .connection_id = connection_id,
+        };
     }
 
     pub fn enableDetailedLogging(self: *TestClient) void {
