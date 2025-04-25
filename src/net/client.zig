@@ -19,6 +19,10 @@ pub const StreamKind = shared.StreamKind;
 pub const JamSnpClient = jamsnp_client.JamSnpClient;
 pub const StreamHandle = @import("stream_handle.zig").StreamHandle;
 
+const common = @import("common.zig");
+const CommandCallback = common.CommandCallback;
+const CommandMetadata = common.CommandMetadata;
+
 const Mailbox = @import("../datastruct/blocking_queue.zig").BlockingQueue;
 
 const trace = @import("../tracing.zig").scoped(.network);
@@ -74,24 +78,6 @@ pub const ClientThreadBuilder = struct {
         return ClientThread.init(alloc, jclient);
     }
 };
-
-/// Callback type for command completion
-pub fn CommandCallback(T: type) type {
-    return *const fn (result: T, context: ?*anyopaque) void;
-}
-
-pub fn CommandMetadata(T: type) type {
-    return struct {
-        callback: ?CommandCallback(T) = null,
-        context: ?*anyopaque = null,
-
-        pub fn callWithResult(self: *const CommandMetadata(T), result: T) void {
-            if (self.callback) |callback| {
-                callback(result, self.context);
-            }
-        }
-    };
-}
 
 pub const ClientThread = struct {
     alloc: std.mem.Allocator,

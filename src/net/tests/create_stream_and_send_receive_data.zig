@@ -88,7 +88,6 @@ test "create stream and send message" {
     // _ = try test_server.expectEvent(timeout_ms, .data_write_completed);
 
     // Verify message contents
-    try testing.expectEqual(@as(usize, message_content.len), message_event.message_received.message.len);
     try testing.expect(std.mem.eql(u8, message_content, message_event.message_received.message));
     std.log.info("Client->Server message verified: '{s}'", .{message_content});
 

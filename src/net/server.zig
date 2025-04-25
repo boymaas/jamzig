@@ -10,12 +10,16 @@ const posix = std.posix;
 
 const shared = @import("jamsnp/shared_types.zig");
 
-const ConnectionId = shared.ConnectionId;
-const StreamId = shared.StreamId;
-const StreamKind = shared.StreamKind;
-const JamSnpServer = @import("jamsnp/server.zig").JamSnpServer;
-const ServerConnection = @import("jamsnp/connection.zig").Connection(JamSnpServer);
-const ServerStream = @import("jamsnp/stream.zig").Stream(JamSnpServer);
+pub const ConnectionId = shared.ConnectionId;
+pub const StreamId = shared.StreamId;
+pub const StreamKind = shared.StreamKind;
+pub const JamSnpServer = @import("jamsnp/server.zig").JamSnpServer;
+pub const ServerConnection = @import("jamsnp/connection.zig").Connection(JamSnpServer);
+pub const ServerStream = @import("jamsnp/stream.zig").Stream(JamSnpServer);
+
+const common = @import("common.zig");
+const CommandCallback = common.CommandCallback;
+const CommandMetadata = common.CommandMetadata;
 
 const Mailbox = @import("../datastruct/blocking_queue.zig").BlockingQueue;
 
@@ -66,28 +70,6 @@ pub const ServerThreadBuilder = struct {
         return ServerThread.init(alloc, jserver);
     }
 };
-
-pub fn CommandCallback(T: type) type {
-    return *const fn (result: T, context: ?*anyopaque) void;
-}
-
-pub fn CommandMetadata(T: type) type {
-    return struct {
-        callback: ?CommandCallback(T) = null,
-        context: ?*anyopaque = null,
-
-        pub fn callWithResult(self: *const CommandMetadata(T), result: T) void {
-            std.debug.print("Command callback invoked with result: {}\n", .{@TypeOf(result)});
-            if (self.callback) |callback| {
-                const span = trace.span(.callback_invocation);
-                defer span.deinit();
-                span.debug("Invoking command callback", .{});
-                callback(result, self.context);
-                span.debug("Command callback completed", .{});
-            }
-        }
-    };
-}
 
 pub const ServerThread = struct {
     alloc: std.mem.Allocator,
