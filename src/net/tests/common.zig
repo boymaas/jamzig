@@ -24,7 +24,7 @@ pub const TestServer = struct {
                 std.log.debug("Expected event type {}, but got {}\n", .{ event_type, event });
                 return error.InvalidEventType;
             }
-            // std.debug.print("Received expected event: {}\n", .{event});
+            std.debug.print("Received expected event: {}\n", .{event});
             return event;
         } else {
             return error.Timeout;
@@ -116,7 +116,7 @@ pub const TestClient = struct {
                 std.debug.print("Expected client event type {}, but got {}\n", .{ event_type, event });
                 return error.InvalidEventType;
             }
-            // std.debug.print("Received expected client event: {}\n", .{event});
+            std.debug.print("Received expected client event: {}\n", .{event});
             return event;
         } else {
             return error.Timeout;

@@ -816,7 +816,6 @@ pub const Client = struct {
             stream_id: StreamId,
             bytes_written: usize,
         },
-        // data_write_progress: struct { ... }, // Optional
         message_received: struct {
             connection_id: ConnectionId,
             stream_id: StreamId,
@@ -849,15 +848,21 @@ pub const Client = struct {
             details: ?anyerror,
         },
 
-        // --- Helper method to free associated data ---
-        pub fn freeData(self: Event, allocator: std.mem.Allocator) void {
+        pub fn deinit(self: Event, alloc: std.mem.Allocator) void {
             switch (self) {
-                .data_received => |ev| allocator.free(ev.data),
-                .data_end_of_stream => |ev| allocator.free(ev.final_data),
-                .message_received => |ev| allocator.free(ev.message),
-                // Free message if allocated
-                // .@"error" => |ev| if (ev.message_is_allocated) allocator.free(ev.message),
-                else => {},
+                .data_received => |data| {
+                    // Free the data buffer if it was allocated
+                    alloc.free(data.data);
+                },
+                .message_received => |msg| {
+                    // Free the message buffer if it was allocated
+                    alloc.free(msg.message);
+                },
+                .data_end_of_stream => |data| {
+                    // Free the final_data buffer if it was allocated
+                    alloc.free(data.final_data);
+                },
+                else => |_| {},
             }
         }
     };

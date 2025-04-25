@@ -55,6 +55,8 @@ test "create stream and send message" {
     // Wait for the stream_created event on the client
     const client_stream_created_event = try test_client.expectEvent(timeout_ms, .stream_created);
     const stream_id = client_stream_created_event.stream_created.stream_id;
+    // FIXME: since I am sending the stream kind its generating an event which should be ignored
+    _ = try test_client.expectEvent(timeout_ms, .data_write_completed);
     std.log.info("Client created stream with ID: {}", .{stream_id});
 
     // Wait for the stream creation event on the server side
@@ -76,26 +78,33 @@ test "create stream and send message" {
     // Create a test message
     const message_content = "JamZig⚡";
     try client_stream_handle.sendMessage(message_content);
+    // Wait for the client to complete the sending of the message
+    _ = try test_client.expectEvent(timeout_ms, .data_write_completed);
 
     // Wait for the server to receive the message, ownership of the buffer
     // is with us. So handle freeing it in event or in the callback
-    var message_event = try test_server.expectEvent(timeout_ms, .message_received);
-    defer message_event.deinit(allocator); // free buffer passed to us
-    std.log.info("Server received message with length({}): '{s}'", .{ message_event.message_received.message.len, message_event.message_received.message });
-
-    // Wait for the server to receive the message
-    // _ = try test_server.expectEvent(timeout_ms, .data_write_completed);
+    var server_message_rcv_event = try test_server.expectEvent(timeout_ms, .message_received);
+    defer server_message_rcv_event.deinit(allocator); // free buffer passed to us
+    std.log.info("Server received message with length({}): '{s}'", .{ server_message_rcv_event.message_received.message.len, server_message_rcv_event.message_received.message });
 
     // Verify message contents
-    try testing.expect(std.mem.eql(u8, message_content, message_event.message_received.message));
+    try testing.expect(std.mem.eql(u8, message_content, server_message_rcv_event.message_received.message));
     std.log.info("Client->Server message verified: '{s}'", .{message_content});
 
-    // Wait for the client to receive the response
-    _ = try test_client.expectEvent(timeout_ms, .data_write_completed);
-
     // --- Send a response message from server to client ---
-    const response_content = "This is a response message from server to client.";
+    std.log.info("Server sending response message", .{});
+    const response_content = "Rocks🪨";
     try server_stream_handle.sendMessage(response_content);
+    // Wait for the server to complete the sending of the message
+    _ = try test_server.expectEvent(timeout_ms, .data_write_completed);
+    std.log.info("Server sent message with length({}): '{s}'", .{ response_content.len, response_content });
+
+    var client_message_rcv_event = try test_client.expectEvent(timeout_ms, .message_received);
+    defer client_message_rcv_event.deinit(allocator); // free buffer passed to us
+    std.log.info("Server received message with length({}): '{s}'", .{ client_message_rcv_event.message_received.message.len, client_message_rcv_event.message_received.message });
+
+    try testing.expect(std.mem.eql(u8, response_content, client_message_rcv_event.message_received.message));
+    std.log.info("Server->Client message verified: '{s}'", .{response_content});
 
     // Test complete - success!
     std.log.info("Message-based communication verified successfully", .{});
