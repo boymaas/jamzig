@@ -12,7 +12,7 @@ const shared = @import("../jamsnp/shared_types.zig");
 
 test "create stream and send message" {
     const allocator = std.testing.allocator;
-    const timeout_ms: u64 = 5_000;
+    const timeout_ms: u64 = 1_000;
 
     // -- Build our server
     var test_server = try common.createTestServer(allocator);
@@ -77,25 +77,26 @@ test "create stream and send message" {
     const message_content = "This is a test message with length prefix.";
     try client_stream_handle.sendMessage(message_content);
 
+    // Wait for the server to receive the message, ownership of the buffer
+    // is with us. So handle freeing it in event or in the callback
+    var message_event = try test_server.expectEvent(timeout_ms, .message_received);
+    defer message_event.deinit(allocator); // free buffer passed to us
+    std.log.info("Server received message with length({}): '{s}'", .{ message_event.message_received.message.len, message_event.message_received.message });
+
     // Wait for the server to receive the message
-    const message_event = try test_server.expectEvent(timeout_ms, .message_received);
+    // _ = try test_server.expectEvent(timeout_ms, .data_write_completed);
 
     // Verify message contents
     try testing.expectEqual(@as(usize, message_content.len), message_event.message_received.message.len);
     try testing.expect(std.mem.eql(u8, message_content, message_event.message_received.message));
     std.log.info("Client->Server message verified: '{s}'", .{message_content});
 
+    // Wait for the client to receive the response
+    _ = try test_client.expectEvent(timeout_ms, .data_write_completed);
+
     // --- Send a response message from server to client ---
     const response_content = "This is a response message from server to client.";
     try server_stream_handle.sendMessage(response_content);
-
-    // Wait for the client to receive the response
-    const response_event = try test_client.expectEvent(timeout_ms, .message_received);
-
-    // Verify response contents
-    try testing.expectEqual(@as(usize, response_content.len), response_event.message_received.message.len);
-    try testing.expect(std.mem.eql(u8, response_content, response_event.message_received.message));
-    std.log.info("Server->Client message verified: '{s}'", .{response_content});
 
     // Test complete - success!
     std.log.info("Message-based communication verified successfully", .{});

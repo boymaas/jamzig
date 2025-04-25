@@ -592,7 +592,7 @@ pub fn Stream(T: type) type {
                     // Handle edge case of zero-length message
                     if (message_length == 0) {
                         // Deliver empty message immediately
-                        span.debug("Zero-length message received on stream ID: {}", .{stream.id});
+                        span.warn("Zero-length message received on stream ID: {}", .{stream.id});
                         shared.invokeCallback(&stream.connection.owner.callback_handlers, .MessageReceived, .{
                             .MessageReceived = .{
                                 .connection = stream.connection.id,
@@ -696,12 +696,10 @@ pub fn Stream(T: type) type {
                         .MessageReceived = .{
                             .connection = stream.connection.id,
                             .stream = stream.id,
-                            .message = message_buffer,
+                            .message = message_buffer, // pass ownership to callback
                         },
                     });
 
-                    // Cleanup by freeing the buffer and resetting state
-                    stream.connection.owner.allocator.free(message_buffer);
                     stream.message_buffer = null;
                     stream.message_length = null;
                     stream.message_reading_state = .idle;

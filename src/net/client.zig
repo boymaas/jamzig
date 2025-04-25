@@ -260,6 +260,7 @@ pub const ClientThread = struct {
         // deallocate the remaining resources.
         self.client.deinit();
 
+        self.pending_streams.deinit();
         self.pending_connects.deinit(); // Deinit pending command maps
         // Deinit other pending command maps here
         self.event_queue.destroy(self.alloc);

@@ -689,18 +689,14 @@ pub const ServerThread = struct {
 
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
 
-        // We need to make a copy of the message since we take ownership in the event
-        const message_copy = self.alloc.dupe(u8, message) catch |err| {
-            span.err("Failed to duplicate message data: {}", .{err});
-            return;
-        };
-
-        const event = Server.Event{ .message_received = .{ .connection_id = connection_id, .stream_id = stream_id, .message = message_copy } };
+        // Ownership passed to event
+        const event = Server.Event{ .message_received = .{ .connection_id = connection_id, .stream_id = stream_id, .message = message } };
 
         if (self.event_queue.push(event, .instant) == 0) {
-            // If push failed, free the allocated memory
+            // If push failed, free the allocated memory for message
+            // FIXME: this should fail
             span.err("Failed to push message_received event to queue", .{});
-            self.alloc.free(message_copy);
+            self.alloc.free(message);
         }
     }
 };
@@ -988,6 +984,22 @@ pub const Server = struct {
                     @panic("Event callback not implemented for this event type");
                 },
             }
+        }
+
+        pub fn deinit(self: *Event, alloc: std.mem.Allocator) void {
+            const span = trace.span(.deinit_event);
+            defer span.deinit();
+
+            switch (self.*) {
+                .message_received => |e| {
+                    // Free the message buffer if it was allocated
+                    if (e.message.len > 0) {
+                        alloc.free(e.message);
+                    }
+                },
+                else => {},
+            }
+            self.* = undefined;
         }
     };
 
