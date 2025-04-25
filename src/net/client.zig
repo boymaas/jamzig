@@ -409,17 +409,8 @@ pub const ClientThread = struct {
                 defer cmd_span.deinit();
                 cmd_span.debug("Disconnect requested for connection {}", .{cmd.data.connection_id});
 
-                // Disconnect is often synchronous in effect (signals intent)
-                // Actual closure confirmed by ConnectionClosed event
-                // TODO: JamSnpClient needs a `disconnect` method.
-                // For now, assume it exists and might return an immediate error.
-                // self.client.disconnect(cmd.data.connection_id) catch |err| {
-                //     cmd.metadata.callWithResult(err);
-                //     return;
-                // };
-                // Invoke void callback immediately for disconnect command request
                 cmd_span.warn("Disconnect operation not implemented", .{});
-                cmd.metadata.callWithResult(error.UnsupportedOperation); // Placeholder until disconnect implemented
+                // FIXME: generate an event here
             },
             .create_stream => |cmd| {
                 const cmd_span = span.child(.create_stream);
@@ -441,7 +432,7 @@ pub const ClientThread = struct {
                     // Callback will be invoked in internalStreamCreatedCallback
                 } else {
                     cmd_span.warn("CreateStream command for unknown connection ID: {}", .{cmd.data.connection_id});
-                    cmd.metadata.callWithResult(error.ConnectionNotFound);
+                    // FIXME: need to send an event here
                 }
             },
             .destroy_stream => |cmd| {
@@ -452,16 +443,16 @@ pub const ClientThread = struct {
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.close() catch |err| {
                         cmd_span.err("Failed to close stream {}: {}", .{ cmd.data.stream_id, err });
-                        cmd.metadata.callWithResult(err);
+                        // FIXME: generate an event here
                         return; // Don't invoke success below
                     };
                     cmd_span.debug("Stream close requested successfully", .{});
                     // Success/failure is signaled by the StreamClosed event later.
                     // Invoke void callback immediately for destroy command intent.
-                    cmd.metadata.callWithResult({});
+                    // FIXME: generate an event here
                 } else {
                     cmd_span.warn("DestroyStream command for unknown stream ID: {}", .{cmd.data.stream_id});
-                    cmd.metadata.callWithResult(error.StreamNotFound);
+                    // FIXME: generate an event here
                 }
             },
             .send_data => |cmd| {
@@ -474,7 +465,7 @@ pub const ClientThread = struct {
                     // This sets the buffer for the next onWrite callback
                     stream.setWriteBuffer(cmd.data.data) catch |err| {
                         cmd_span.err("Failed to set write buffer for stream {}: {}", .{ cmd.data.stream_id, err });
-                        cmd.metadata.callWithResult(err);
+                        // FIXME: generate an event here
                         return; // Don't proceed if buffer setting fails
                     };
                     // Trigger the write callback
@@ -483,10 +474,10 @@ pub const ClientThread = struct {
                     // Command success means data was buffered. Actual send success
                     // comes via DataWriteCompleted/DataWriteError events.
                     // Invoke void callback immediately for send command intent.
-                    cmd.metadata.callWithResult({});
+                    // FIXME: generate an event here
                 } else {
                     cmd_span.warn("SendData command for unknown stream ID: {}", .{cmd.data.stream_id});
-                    cmd.metadata.callWithResult(error.StreamNotFound);
+                    // FIXME generate and event here
                 }
             },
             .send_message => |cmd| {
@@ -499,7 +490,7 @@ pub const ClientThread = struct {
                     // This creates a new buffer with length prefix and message data
                     stream.setMessageBuffer(cmd.data.message) catch |err| {
                         cmd_span.err("Failed to set message buffer for stream {}: {}", .{ cmd.data.stream_id, err });
-                        cmd.metadata.callWithResult(err);
+                        // FIXME: generate an event here
                         return; // Don't proceed if buffer setting fails
                     };
                     // Trigger the write callback
@@ -519,10 +510,10 @@ pub const ClientThread = struct {
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.wantRead(cmd.data.want);
                     cmd_span.debug("wantRead set successfully", .{});
-                    cmd.metadata.callWithResult({}); // Immediate success
+                    // FIXME: generate an event here
                 } else {
                     cmd_span.warn("StreamWantRead command for unknown stream ID: {}", .{cmd.data.stream_id});
-                    cmd.metadata.callWithResult(error.StreamNotFound);
+                    // FIXME: generate an event here
                 }
             },
             .stream_want_write => |cmd| {
@@ -533,10 +524,10 @@ pub const ClientThread = struct {
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.wantWrite(cmd.data.want);
                     cmd_span.debug("wantWrite set successfully", .{});
-                    cmd.metadata.callWithResult({}); // Immediate success
+                    // FIXME: generate an event here
                 } else {
                     cmd_span.warn("StreamWantWrite command for unknown stream ID: {}", .{cmd.data.stream_id});
-                    cmd.metadata.callWithResult(error.StreamNotFound);
+                    // FIXME: generate an event here
                 }
             },
             .stream_flush => |cmd| {
@@ -547,15 +538,15 @@ pub const ClientThread = struct {
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.flush() catch |err| {
                         cmd_span.err("Failed to flush stream {}: {}", .{ cmd.data.stream_id, err });
-                        cmd.metadata.callWithResult(err);
+                        // FIXME: generate an event here
                         return; // Don't invoke success below
                     };
                     cmd_span.debug("Stream flushed successfully", .{});
                     // Success is immediate (or error)
-                    cmd.metadata.callWithResult({});
+                    // FIXME: generate an event here
                 } else {
                     cmd_span.warn("StreamFlush command for unknown stream ID: {}", .{cmd.data.stream_id});
-                    cmd.metadata.callWithResult(error.StreamNotFound);
+                    // FIXME: generate an event here
                 }
             },
             .stream_shutdown => |cmd| {
@@ -566,15 +557,15 @@ pub const ClientThread = struct {
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
                     stream.shutdown(cmd.data.how) catch |err| {
                         cmd_span.err("Failed to shutdown stream {}: {}", .{ cmd.data.stream_id, err });
-                        cmd.metadata.callWithResult(err);
+                        // FIXME: generate an event here
                         return; // Don't invoke success below
                     };
                     cmd_span.debug("Stream shutdown successful", .{});
                     // Success is immediate (or error)
-                    cmd.metadata.callWithResult({});
+                    // FIXME: generate an event here
                 } else {
                     cmd_span.warn("StreamShutdown command for unknown stream ID: {}", .{cmd.data.stream_id});
-                    cmd.metadata.callWithResult(error.StreamNotFound);
+                    // FIXME: generate an event here
                 }
             },
         }
