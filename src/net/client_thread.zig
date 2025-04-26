@@ -31,39 +31,39 @@ const trace = @import("../tracing.zig").scoped(.network);
 
 /// Builder for creating a ClientThread instance.
 /// Ensures that the underlying JamSnpClient is also initialized.
-pub const ClientThreadBuilder = struct {
+pub const Builder = struct {
     _allocator: ?std.mem.Allocator = null,
     _keypair: ?crypto.sign.Ed25519.KeyPair = null,
     _genesis_hash: ?[]const u8 = null,
     _is_builder: bool = false,
 
-    pub fn init() ClientThreadBuilder {
+    pub fn init() Builder {
         return .{};
     }
 
-    pub fn allocator(self: *ClientThreadBuilder, alloc: std.mem.Allocator) *ClientThreadBuilder {
+    pub fn allocator(self: *Builder, alloc: std.mem.Allocator) *Builder {
         self._allocator = alloc;
         return self;
     }
 
-    pub fn keypair(self: *ClientThreadBuilder, kp: crypto.sign.Ed25519.KeyPair) *ClientThreadBuilder {
+    pub fn keypair(self: *Builder, kp: crypto.sign.Ed25519.KeyPair) *Builder {
         self._keypair = kp;
         return self;
     }
 
-    pub fn genesisHash(self: *ClientThreadBuilder, hash: []const u8) *ClientThreadBuilder {
+    pub fn genesisHash(self: *Builder, hash: []const u8) *Builder {
         self._genesis_hash = hash;
         return self;
     }
 
-    pub fn isBuilder(self: *ClientThreadBuilder, is_builder: bool) *ClientThreadBuilder {
+    pub fn isBuilder(self: *Builder, is_builder: bool) *Builder {
         self._is_builder = is_builder;
         return self;
     }
 
     /// Builds the ClientThread.
     /// This involves initializing the JamSnpClient first, then the ClientThread itself.
-    pub fn build(self: *const ClientThreadBuilder) !*ClientThread {
+    pub fn build(self: *const Builder) !*ClientThread {
         const alloc = self._allocator orelse return error.AllocatorNotSet;
         const kp = self._keypair orelse return error.KeypairNotSet;
         const gh = self._genesis_hash orelse return error.GenesisHashNotSet;

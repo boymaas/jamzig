@@ -29,38 +29,38 @@ const trace = @import("../tracing.zig").scoped(.network);
 
 /// Builder for creating a ServerThread instance.
 /// Ensures that the underlying JamSnpServer is also initialized.
-pub const ServerThreadBuilder = struct {
+pub const Builder = struct {
     _alloc: ?std.mem.Allocator = null,
     _genesis_hash: ?[]const u8 = null,
     _key_pair: ?std.crypto.sign.Ed25519.KeyPair = null,
     _allow_builders: ?bool = false,
 
-    pub fn init() ServerThreadBuilder {
+    pub fn init() Builder {
         return .{};
     }
 
-    pub fn allocator(self: *ServerThreadBuilder, alloc: std.mem.Allocator) *ServerThreadBuilder {
+    pub fn allocator(self: *Builder, alloc: std.mem.Allocator) *Builder {
         self._alloc = alloc;
         return self;
     }
 
-    pub fn genesisHash(self: *ServerThreadBuilder, genesis_hash: []const u8) *ServerThreadBuilder {
+    pub fn genesisHash(self: *Builder, genesis_hash: []const u8) *Builder {
         self._genesis_hash = genesis_hash;
         return self;
     }
 
-    pub fn keypair(self: *ServerThreadBuilder, key_pair: std.crypto.sign.Ed25519.KeyPair) *ServerThreadBuilder {
+    pub fn keypair(self: *Builder, key_pair: std.crypto.sign.Ed25519.KeyPair) *Builder {
         self._key_pair = key_pair;
         return self;
     }
 
-    pub fn allowBuilders(self: *ServerThreadBuilder, allow_builders: bool) *ServerThreadBuilder {
+    pub fn allowBuilders(self: *Builder, allow_builders: bool) *Builder {
         self._allow_builders = allow_builders;
         return self;
     }
 
     /// Builds the ServerThread.
-    pub fn build(self: *const ServerThreadBuilder) !*ServerThread {
+    pub fn build(self: *const Builder) !*ServerThread {
         const alloc = self._alloc orelse return error.AllocatorNotSet;
         const genesis_hash = self._genesis_hash orelse return error.GenesisHashNotSet;
         const key_pair = self._key_pair orelse return error.KeyPairNotSet;

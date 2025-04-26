@@ -73,7 +73,7 @@ pub fn createTestServer(allocator: std.mem.Allocator) !TestServer {
     const genesis_hash = "test_genesis_hash";
 
     // -- Create server using builder
-    var server_thread_builder = net_server_thread.ServerThreadBuilder.init();
+    var server_thread_builder = net_server_thread.Builder.init();
     var server_thread = server_thread_builder
         .allocator(allocator)
         .keypair(keypair)
@@ -165,7 +165,7 @@ pub fn createTestClient(allocator: std.mem.Allocator) !TestClient {
     const genesis_hash = "test_genesis_hash"; // Same as server for test communication
 
     // -- Create client using builder
-    var client_thread_builder = net_client_thread.ClientThreadBuilder.init();
+    var client_thread_builder = net_client_thread.Builder.init();
     var client_thread = client_thread_builder
         .allocator(allocator)
         .keypair(keypair)
