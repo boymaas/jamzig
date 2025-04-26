@@ -2,7 +2,9 @@ const std = @import("std");
 const testing = std.testing;
 const shared = @import("../jamsnp/shared_types.zig");
 const net_server = @import("../server.zig");
+const net_server_thread = @import("../server_thread.zig");
 const net_client = @import("../client.zig");
+const net_client_thread = @import("../client_thread.zig");
 const network = @import("network");
 
 const StreamHandle = @import("../stream_handle.zig").StreamHandle;
@@ -71,7 +73,7 @@ pub fn createTestServer(allocator: std.mem.Allocator) !TestServer {
     const genesis_hash = "test_genesis_hash";
 
     // -- Create server using builder
-    var server_thread_builder = net_server.ServerThreadBuilder.init();
+    var server_thread_builder = net_server_thread.ServerThreadBuilder.init();
     var server_thread = server_thread_builder
         .allocator(allocator)
         .keypair(keypair)
@@ -163,7 +165,7 @@ pub fn createTestClient(allocator: std.mem.Allocator) !TestClient {
     const genesis_hash = "test_genesis_hash"; // Same as server for test communication
 
     // -- Create client using builder
-    var client_thread_builder = net_client.ClientThreadBuilder.init();
+    var client_thread_builder = net_client_thread.ClientThreadBuilder.init();
     var client_thread = client_thread_builder
         .allocator(allocator)
         .keypair(keypair)
