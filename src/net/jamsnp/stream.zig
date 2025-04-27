@@ -554,6 +554,9 @@ pub fn Stream(T: type) type {
             if (stream.read_state.position == stream.read_state.buffer.?.len) {
                 span.debug("Read buffer filled, we completed our read: {}. .", .{stream.id});
 
+                // We disable reading here, so our callback can decide if we want to enable it again
+                stream.wantRead(false);
+
                 switch (stream.read_state.callback_method) {
                     .events => {
                         span.debug("Generating DataReadCompleted event for stream ID: {}", .{stream.id});
@@ -583,7 +586,6 @@ pub fn Stream(T: type) type {
 
                 // cleanup
                 stream.read_state.reset();
-                stream.wantRead(false);
             }
         }
 

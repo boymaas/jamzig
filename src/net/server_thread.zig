@@ -650,6 +650,8 @@ pub const ServerThread = struct {
 
         span.debug("Remote initiated stream: {}", .{stream_kind});
 
+        stream.wantRead(true);
+
         // set the kind on the stream
         stream.kind = stream_kind;
 
