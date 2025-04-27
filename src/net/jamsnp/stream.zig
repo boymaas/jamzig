@@ -77,8 +77,37 @@ pub fn Stream(T: type) type {
             return stream;
         }
 
+        // The brilliance of the QUIC Stream ID design lies in its encoding of crucial stream properties directly within the ID itself, specifically using the two least significant bits (LSBs). This allows any endpoint to determine the stream's initiator and directionality simply by examining the ID value.  
+        //
+        // Initiator (Least Significant Bit - LSB - Bit 0): The very first bit (value 0x01) indicates which endpoint initiated the stream:
+        // Bit 0 = 0: The stream was initiated by the Client.
+        // Bit 0 = 1: The stream was initiated by the Server.
+        // Directionality (Second Least Significant Bit - Bit 1): The second bit (value 0x02) determines whether the stream allows data flow in one or both directions:
+        // Bit 1 = 0: The stream is Bidirectional. Both the client and the server can send data on this stream.
+        // Bit 1 = 1: The stream is Unidirectional. Data flows only from the initiator of the stream to its peer. The peer can only receive data on this stream.
+        //
+        // Now to determine from the stream perspectiv if this stream was initiated locally, thus by a a call to
+        // lsquic_conn_stream_create, or remotely, we need to take the Stream perspective into account. And the
+        // fact if the first bit is set.
+
+        // This function is used to determine the stream perspective (client/server)
+        pub const StreamPerspective = enum {
+            client,
+            server,
+        };
+        pub fn streamPerspective() StreamPerspective {
+            return if (T == @import("client.zig").JamSnpClient) StreamPerspective.client else StreamPerspective.server;
+        }
+
         pub fn origin(self: *Stream(T)) shared.StreamOrigin {
-            return if (self.lsquic_stream_id % 2 != 0) shared.StreamOrigin.local_initiated else shared.StreamOrigin.remote_initiated;
+            switch (streamPerspective()) {
+                .client => {
+                    return if (self.lsquic_stream_id & 0x01 == 0) .local_initiated else .remote_initiated;
+                },
+                .server => {
+                    return if (self.lsquic_stream_id & 0x01 == 0) .remote_initiated else .local_initiated;
+                },
+            }
         }
 
         pub fn destroy(self: *Stream(T), alloc: std.mem.Allocator) void {
@@ -126,8 +155,7 @@ pub fn Stream(T: type) type {
             self.want_write = want; // Update internal state
         }
 
-        /// Prepare the stream to read into the provided buffer.
-        /// Called internally when a Stream read command is processed.
+        /// Prepare the stream to read into the provided buffer. We take ownership of the buffer
         pub fn setReadBuffer(self: *Stream(T), buffer: []u8) !void {
             const span = trace.span(.stream_set_read_buffer);
             defer span.deinit();
@@ -246,6 +274,8 @@ pub fn Stream(T: type) type {
             const span = trace.span(.on_stream_created);
             defer span.deinit();
 
+            span.debug("onStreamCreated triggered", .{});
+
             // Check if this connection is still valid, when we have null means connection
             // is going away
             const lsquic_stream = maybe_lsquic_stream orelse {
@@ -257,6 +287,7 @@ pub fn Stream(T: type) type {
             // seems to be the only way to determine if the stream was created locally
             // or remote
             const lsquic_stream_id = lsquic.lsquic_stream_id(lsquic_stream);
+            span.debug("LSQUIC Stream ID: {}", .{lsquic_stream_id});
 
             // Get the parent Connection context
             const lsquic_connection = lsquic.lsquic_stream_conn(maybe_lsquic_stream);
@@ -279,22 +310,6 @@ pub fn Stream(T: type) type {
             shared.invokeCallback(T, &connection.owner.callback_handlers, .StreamCreated, .{
                 .StreamCreated = stream,
             });
-
-            // // Determine origin based on stream ID parity
-            // // Odd IDs are client-initiated (local via lsquic_conn_make_stream)
-            // // Even IDs are server-initiated (remote)
-            // if (lsquic_stream_id % 2 != 0) {
-            //     // Stream was initiated locally by calling lsquic_conn_make_stream
-            //     span.debug("Stream {d} was initiated locally.", .{lsquic_stream_id});
-            // } else {
-            //     // Stream was initiated by the remote peer
-            //     span.debug("Stream {d} was initiated remotely.", .{lsquic_stream_id});
-            //     // We need to set the stream to read mode to get any data from peer, as we expect
-            //     // the peer to send us some data starting the handshake
-            //     if (lsquic.lsquic_stream_wantread(maybe_lsquic_stream, 1) != 0) {
-            //         span.err("Failed to set stream to read mode for stream", .{});
-            //     }
-            // }
 
             return @ptrCast(stream);
         }

@@ -416,7 +416,7 @@ pub const ClientThread = struct {
                     // Create the stream, this will call lsquic to create it, we need to
                     // wait until the StreamCreated event to know the stream ID.
                     conn.createStream();
-                    cmd_span.debug("Stream creation requested successfully", .{});
+                    cmd_span.debug("Stream creation requested to LSQUIC", .{});
                     // Success/failure is signaled by the StreamCreated event later
                     // Callback will be invoked in internalStreamCreatedCallback
                 } else {
@@ -658,12 +658,13 @@ pub const ClientThread = struct {
 
         switch (stream.origin()) {
             .local_initiated => {
+                span.debug("Local initiated stream", .{});
                 if (client_thread.pending_streams.readItem()) |cmd| {
                     // Set the write buffer and trigger lsquic to send it by setting
                     // wantWrite to true
                     try stream.setWriteBuffer(try client_thread.alloc.dupe(u8, std.mem.asBytes(&cmd.data.kind)), .owned, .none);
                     stream.wantWrite(true);
-                    span.debug("Data queued successfully", .{});
+                    span.debug("Sending StreamKind to peer", .{});
                     try client_thread.pushEvent(.{ .stream_created = .{
                         .connection_id = stream.connection.id,
                         .stream_id = stream.id,
@@ -677,8 +678,10 @@ pub const ClientThread = struct {
                 }
             },
             .remote_initiated => {
+                span.debug("Remote initiated stream", .{});
                 // This is a server-initiated stream, we need to create a new stream
                 // object and push it to the event queue
+                span.debug("Reading StreamKind from peer", .{});
                 const stream_kind_buffer = try client_thread.alloc.alloc(u8, 1);
                 try stream.setReadBuffer(stream_kind_buffer);
                 stream.wantRead(true);

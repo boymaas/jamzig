@@ -13,6 +13,7 @@ const shared = @import("jamsnp/shared_types.zig");
 const Server = @import("server.zig").Server;
 
 pub const ConnectionId = shared.ConnectionId;
+pub const Stream = @import("jamsnp/stream.zig").Stream;
 pub const StreamId = shared.StreamId;
 pub const StreamKind = shared.StreamKind;
 pub const JamSnpServer = @import("jamsnp/server.zig").JamSnpServer;
@@ -576,14 +577,48 @@ pub const ServerThread = struct {
         _ = self.event_queue.push(event, .instant);
     }
 
-    fn internalStreamCreatedCallback(connection_id: ConnectionId, stream_id: StreamId, kind: StreamKind, context: ?*anyopaque) void {
-        const span = trace.span(.stream_created_callback);
+    fn internalStreamCreatedCallback(stream: *Stream(JamSnpServer), context: ?*anyopaque) !void {
+        const span = trace.span(.stream_created);
         defer span.deinit();
+        span.debug("Stream created: connection={} stream={}", .{ stream.connection.id, stream.id });
 
-        span.debug("Stream created by client: {d} on connection {d}. Kind {}", .{ stream_id, connection_id, kind });
-        const self: *ServerThread = @ptrCast(@alignCast(context.?));
-        const event = Server.Event{ .stream_created = .{ .connection_id = connection_id, .stream_id = stream_id, .kind = kind } };
-        _ = self.event_queue.push(event, .instant);
+        const server_thread: *ServerThread = @ptrCast(@alignCast(context.?));
+
+        switch (stream.origin()) {
+            .local_initiated => {
+                span.debug("Local initiated stream", .{});
+                @panic("Local initiated stream not supported yet");
+                // if (server_thread.pending_streams.readItem()) |cmd| {
+                //     // Set the write buffer and trigger lsquic to send it by setting
+                //     // wantWrite to true
+                //     try stream.setWriteBuffer(try server_thread.alloc.dupe(u8, std.mem.asBytes(&cmd.data.kind)), .owned, .none);
+                //     stream.wantWrite(true);
+                //     span.debug("Sending StreamKind to peer", .{});
+                //     try server_thread.pushEvent(.{ .stream_created = .{
+                //         .connection_id = stream.connection.id,
+                //         .stream_id = stream.id,
+                //         .kind = cmd.data.kind,
+                //         .metadata = cmd.metadata,
+                //     } });
+                // } else {
+                //     // This should never happen.
+                //     span.warn("StreamCreated event for connection {} with no pending stream command", .{stream.connection.id});
+                //     std.debug.panic("StreamCreated event for connection {} with no pending stream command", .{stream.connection.id});
+                // }
+            },
+            .remote_initiated => {
+                span.debug("Remote initiated stream", .{});
+                // This is a server-initiated stream, we need to create a new stream
+                // object and push it to the event queue
+                span.debug("Reading StreamKind from peer", .{});
+                const stream_kind_buffer = try server_thread.alloc.alloc(u8, 1);
+                try stream.setReadBuffer(stream_kind_buffer);
+                stream.wantRead(true);
+
+                // FIXME: on setReadBuffer, also add the ownership and if we shuold invoke a callback
+                // and what callback to invoke. And what about timeouts how are we going to handle that?
+            },
+        }
     }
 
     // Need a corresponding event for server-initiated streams too
