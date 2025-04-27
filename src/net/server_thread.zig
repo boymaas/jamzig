@@ -233,6 +233,7 @@ pub const ServerThread = struct {
         self.server.setCallback(.DataWriteError, internalDataWriteErrorCallback, self);
         self.server.setCallback(.DataWouldBlock, internalDataReadWouldBlockCallback, self);
         self.server.setCallback(.MessageReceived, internalMessageReceivedCallback, self);
+        self.server.setCallback(.MessageSend, internalMessageSendCallback, self);
     }
 
     pub fn shutdown(self: *ServerThread) !void {
@@ -758,6 +759,15 @@ pub const ServerThread = struct {
         const self: *ServerThread = @ptrCast(@alignCast(context.?));
         const event = Server.Event{ .data_write_would_block = .{ .connection_id = connection_id, .stream_id = stream_id } };
         _ = self.event_queue.push(event, .instant);
+    }
+
+    fn internalMessageSendCallback(connection_id: ConnectionId, stream_id: StreamId, context: ?*anyopaque) !void {
+        const span = trace.span(.message_send);
+        defer span.deinit();
+        span.debug("Message send: connection={} stream={}", .{ connection_id, stream_id });
+
+        const self: *ServerThread = @ptrCast(@alignCast(context.?));
+        try self.pushEvent(.{ .message_send = .{ .connection_id = connection_id, .stream_id = stream_id } });
     }
 
     fn internalMessageReceivedCallback(connection_id: ConnectionId, stream_id: StreamId, message: []const u8, context: ?*anyopaque) void {
