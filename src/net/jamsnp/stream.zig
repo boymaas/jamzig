@@ -126,7 +126,11 @@ pub fn Stream(T: type) type {
             return stream;
         }
 
-        // The brilliance of the QUIC Stream ID design lies in its encoding of crucial stream properties directly within the ID itself, specifically using the two least significant bits (LSBs). This allows any endpoint to determine the stream's initiator and directionality simply by examining the ID value.  
+        // The brilliance of the QUIC Stream ID design lies in its encoding of
+        // crucial stream properties directly within the ID itself,
+        // specifically using the two least significant bits (LSBs). This
+        // allows any endpoint to determine the stream's initiator and
+        // directionality simply by examining the ID value.  
         //
         // Initiator (Least Significant Bit - LSB - Bit 0): The very first bit (value 0x01) indicates which endpoint initiated the stream:
         // Bit 0 = 0: The stream was initiated by the Client.
