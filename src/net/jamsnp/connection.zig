@@ -60,26 +60,25 @@ pub fn Connection(T: type) type {
         ) callconv(.C) ?*lsquic.lsquic_conn_ctx_t {
             const span = trace.span(.on_connection_created);
             defer span.deinit();
-
-            // Retrieve the connection context we passed to lsquic_engine_connect
-            const conn_ctx = lsquic.lsquic_conn_get_ctx(maybe_lsquic_connection).?;
-            const connection: *Connection(T) = @alignCast(@ptrCast(conn_ctx));
-            span.debug("LSQUIC Client connection created for endpoint: {}, Assigning ID: {}", .{ connection.endpoint, connection.id });
-
-            // Store the lsquic connection pointer
-            connection.lsquic_connection = maybe_lsquic_connection orelse {
-                // This shouldn't happen if lsquic calls this, but good practice
-                span.err("onConnectionCreated called with null lsquic connection pointer!", .{});
-                // TODO: Returning null might signal an error to lsquic? Check docs.
-                // Let's assume it's non-null for now.
-                return null;
+            // While the documentation doesn't explicitly state that the
+            // lsquic_conn_t *c parameter cannot be null, the context strongly
+            // implies it will always be a valid pointer to the newly created
+            // connection object.
+            const lsquic_connection = maybe_lsquic_connection orelse {
+                std.debug.panic("onConnectionCreated called with null lsquic connection pointer!", .{});
             };
 
-            shared.invokeCallback(T, &connection.owner.callback_handlers, .ConnectionEstablished, .{
-                .ConnectionEstablished = .{
-                    .connection = connection.id,
-                    .endpoint = connection.endpoint,
-                },
+            // Context is always defined, as this is set at invocation time
+            const conn_ctx = lsquic.lsquic_conn_get_ctx(lsquic_connection).?;
+            const connection: *Connection(T) = @alignCast(@ptrCast(conn_ctx));
+
+            span.debug("onClientConnectionCreated: {}, Assigning ID: {}", .{ connection.endpoint, connection.id });
+
+            // Store the lsquic connection pointer
+            connection.lsquic_connection = lsquic_connection;
+
+            shared.invokeCallback(T, &connection.owner.callback_handlers, .{
+                .connection_established = connection,
             });
 
             // Return our connection struct pointer as the context for lsquic
@@ -137,11 +136,8 @@ pub fn Connection(T: type) type {
                 return null; // Let errdefer clean up, signal error
             };
 
-            shared.invokeCallback(T, &owner.callback_handlers, .ClientConnected, .{
-                .ClientConnected = .{
-                    .connection = connection.id,
-                    .endpoint = connection.endpoint,
-                },
+            shared.invokeCallback(T, &owner.callback_handlers, .{
+                .connection_established = connection,
             });
 
             span.debug("Connection context created successfully for ID: {}", .{connection.id});
@@ -170,8 +166,8 @@ pub fn Connection(T: type) type {
             span.debug("Connection closed callback triggered for ID: {}", .{conn_id});
 
             // Invoke user callback *before* removing/destroying
-            shared.invokeCallback(T, &owner.callback_handlers, .ConnectionClosed, .{
-                .ConnectionClosed = .{ .connection = conn_id },
+            shared.invokeCallback(T, &owner.callback_handlers, .{
+                .connection_closed = conn_id,
             });
 
             // Remove from bookkeeping map using UUID

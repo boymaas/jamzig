@@ -362,6 +362,10 @@ pub fn Stream(T: type) type {
 
             // Check if this connection is still valid, when we have null means connection
             // is going away
+            //
+            // The documentation within the lsquic.h header implies the stream
+            // object, identified by the pointer s, exists and is accessible from
+            // the point of this callback until the on_close event occurs
             const lsquic_stream = maybe_lsquic_stream orelse {
                 span.err("Stream created callback received null stream, doing nothing", .{});
                 return null;
@@ -391,8 +395,8 @@ pub fn Stream(T: type) type {
                 std.debug.panic("OutOfMemory adding stream to map", .{});
 
             // Invoke the user-facing callback via the client
-            shared.invokeCallback(T, &connection.owner.callback_handlers, .StreamCreated, .{
-                .StreamCreated = stream,
+            shared.invokeCallback(T, &connection.owner.callback_handlers, .{
+                .stream_created = stream,
             });
 
             return @ptrCast(stream);
@@ -409,6 +413,7 @@ pub fn Stream(T: type) type {
                 span.err("onStreamRead called with null context!", .{});
                 return;
             };
+
             const stream: *Stream(T) = @alignCast(@ptrCast(stream_ctx)); // This is the internal Stream
             span.debug("onStreamRead triggered for internal stream ID: {}", .{stream.id});
 
@@ -423,11 +428,10 @@ pub fn Stream(T: type) type {
                         error.MessageTooLarge => {
                             span.err("Message too large on stream ID {}, max allowed: {d}", .{ stream.id, shared.MAX_MESSAGE_SIZE });
                             // We could add a specific error callback for this
-                            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadError, .{
-                                .DataReadError = .{
-                                    .connection = stream.connection.id,
-                                    .stream = stream.id,
-                                    .error_code = 9999, // Custom error code for message too large
+                            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                                .data_read_error = .{
+                                    .stream = stream,
+                                    .error_code = 9999, // TODO: Custom error code for message too large
                                 },
                             });
                             // Close the stream - protocol violation
@@ -437,10 +441,9 @@ pub fn Stream(T: type) type {
                         },
                         error.OutOfMemory => {
                             span.err("Out of memory when allocating for message on stream ID {}", .{stream.id});
-                            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadError, .{
-                                .DataReadError = .{
-                                    .connection = stream.connection.id,
-                                    .stream = stream.id,
+                            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                                .data_read_error = .{
+                                    .stream = stream,
                                     .error_code = 9998, // Custom error code for OOM
                                 },
                             });
@@ -448,10 +451,9 @@ pub fn Stream(T: type) type {
                         else => {
                             span.err("Generic error in message read processing for stream ID {}", .{stream.id});
                             // Generic error handling
-                            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadError, .{
-                                .DataReadError = .{
-                                    .connection = stream.connection.id,
-                                    .stream = stream.id,
+                            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                                .data_read_error = .{
+                                    .stream = stream,
                                     .error_code = 9997, // Custom error code for other errors
                                 },
                             });
@@ -477,11 +479,8 @@ pub fn Stream(T: type) type {
 
             if (bytes_read_or_error == 0) {
                 span.debug("End of stream reached for stream ID: {}", .{stream.id});
-                shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadEndOfStream, .{
-                    .DataReadEndOfStream = .{
-                        .connection = stream.connection.id,
-                        .stream = stream.id,
-                    },
+                shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                    .data_read_end_of_stream = stream,
                 });
                 stream.read_state.reset();
                 stream.read_state.freeBufferIfOwned(stream.connection.owner.allocator);
@@ -491,11 +490,8 @@ pub fn Stream(T: type) type {
                     std.posix.E.AGAIN => {
                         span.debug("Read would block for stream ID: {}", .{stream.id});
                         if (stream.read_state.callback_method == .events)
-                            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataWouldBlock, .{
-                                .DataWouldBlock = .{
-                                    .connection = stream.connection.id,
-                                    .stream = stream.id,
-                                },
+                            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                                .data_would_block = stream,
                             });
                         // Keep wantRead true, LSQUIC will call us again when ready
                         return;
@@ -504,10 +500,9 @@ pub fn Stream(T: type) type {
                         span.err("Error reading from stream ID {}: {s}", .{ stream.id, @tagName(err) });
                         switch (stream.read_state.callback_method) {
                             .events => {
-                                shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadError, .{
-                                    .DataReadError = .{
-                                        .connection = stream.connection.id,
-                                        .stream = stream.id,
+                                shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                                    .data_read_error = .{
+                                        .stream = stream,
                                         .error_code = @intFromEnum(err),
                                     },
                                 });
@@ -542,10 +537,9 @@ pub fn Stream(T: type) type {
 
             // FIXME: remove the DtaReadProgress event
             if (stream.read_state.callback_method == .events)
-                shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadProgress, .{
-                    .DataReadProgress = .{
-                        .connection = stream.connection.id,
-                        .stream = stream.id,
+                shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                    .data_read_progress = .{
+                        .stream = stream,
                         .bytes_read = stream.read_state.position,
                         .total_size = stream.read_state.buffer.?.len,
                     },
@@ -561,10 +555,9 @@ pub fn Stream(T: type) type {
                     .events => {
                         span.debug("Generating DataReadCompleted event for stream ID: {}", .{stream.id});
                         stream.read_state.ownership = .borrow; // make sure we don't free it
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadCompleted, .{
-                            .DataReadCompleted = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .data_read_completed = .{
+                                .stream = stream,
                                 .data = stream.read_state.buffer.?,
                             },
                         });
@@ -611,11 +604,8 @@ pub fn Stream(T: type) type {
                 if (read_result == 0) {
                     // End of stream during length reading
                     span.debug("End of stream reached while reading message length on stream ID: {}", .{stream.id});
-                    shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadEndOfStream, .{
-                        .DataReadEndOfStream = .{
-                            .connection = stream.connection.id,
-                            .stream = stream.id,
-                        },
+                    shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                        .data_read_end_of_stream = stream,
                     });
                     stream.wantRead(false);
                     return error.EndOfStream;
@@ -624,20 +614,16 @@ pub fn Stream(T: type) type {
                     if (err == std.posix.E.AGAIN) {
                         // Would block, try again later
                         span.debug("Read would block while reading message length on stream ID: {}", .{stream.id});
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataWouldBlock, .{
-                            .DataWouldBlock = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
-                            },
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .data_would_block = stream,
                         });
                         return; // Keep wantRead true
                     } else {
                         // Real error
                         span.err("Error reading message length from stream ID {}: {s}", .{ stream.id, @tagName(err) });
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadError, .{
-                            .DataReadError = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .data_read_error = .{
+                                .stream = stream,
                                 .error_code = @intFromEnum(err),
                             },
                         });
@@ -670,10 +656,9 @@ pub fn Stream(T: type) type {
                     if (message_length == 0) {
                         // Deliver empty message immediately
                         span.warn("Zero-length message received on stream ID: {}", .{stream.id});
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .MessageReceived, .{
-                            .MessageReceived = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .message_received = .{
+                                .stream = stream,
                                 .message = &[0]u8{}, // Empty slice
                             },
                         });
@@ -713,11 +698,8 @@ pub fn Stream(T: type) type {
                 if (read_result == 0) {
                     // End of stream during body reading - unexpected termination
                     span.err("End of stream reached while reading message body on stream ID: {}", .{stream.id});
-                    shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadEndOfStream, .{
-                        .DataReadEndOfStream = .{
-                            .connection = stream.connection.id,
-                            .stream = stream.id,
-                        },
+                    shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                        .data_read_end_of_stream = stream,
                     });
 
                     // Free allocated buffer since we can't complete the message
@@ -729,19 +711,15 @@ pub fn Stream(T: type) type {
                     if (err == std.posix.E.AGAIN) {
                         // Would block, try again later
                         span.debug("Read would block while reading message body on stream ID: {}", .{stream.id});
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataWouldBlock, .{
-                            .DataWouldBlock = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
-                            },
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .data_would_block = stream,
                         });
                         return; // Keep wantRead true, LSQUIC will try again later
                     } else {
                         span.err("Error reading message body from stream ID {}: {s}", .{ stream.id, @tagName(err) });
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataReadError, .{
-                            .DataReadError = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .data_read_error = .{
+                                .stream = stream,
                                 .error_code = @intFromEnum(err),
                             },
                         });
@@ -768,10 +746,9 @@ pub fn Stream(T: type) type {
                     span.debug("Complete message of {d} bytes received on stream ID: {}", .{ message_length, stream.id });
 
                     // Trigger the message received callback with the full message
-                    shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .MessageReceived, .{
-                        .MessageReceived = .{
-                            .connection = stream.connection.id,
-                            .stream = stream.id,
+                    shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                        .message_received = .{
+                            .stream = stream,
                             .message = message_buffer, // pass ownership to callback
                         },
                     });
@@ -827,10 +804,9 @@ pub fn Stream(T: type) type {
                 } else {
                     span.err("Stream write failed for stream ID {} with error code: {d}", .{ stream.id, written_or_errorcode });
                     if (stream.write_state.callback_method != .none) {
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataWriteError, .{
-                            .DataWriteError = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .data_write_error = .{
+                                .stream = stream,
                                 .error_code = @intCast(-written_or_errorcode),
                             },
                         });
@@ -846,10 +822,9 @@ pub fn Stream(T: type) type {
             stream.write_state.position += bytes_written;
 
             if (stream.write_state.callback_method != .none)
-                shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataWriteProgress, .{
-                    .DataWriteProgress = .{
-                        .connection = stream.connection.id,
-                        .stream = stream.id,
+                shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                    .data_write_progress = .{
+                        .stream = stream,
                         .bytes_written = stream.write_state.position,
                         .total_size = total_size,
                     },
@@ -863,20 +838,16 @@ pub fn Stream(T: type) type {
                         // No callback to invoke
                     },
                     .datawritecompleted => {
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .DataWriteCompleted, .{
-                            .DataWriteCompleted = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .data_write_completed = .{
+                                .stream = stream,
                                 .total_bytes_written = stream.write_state.position,
                             },
                         });
                     },
                     .messagecompleted => {
-                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .MessageSend, .{
-                            .MessageSend = .{
-                                .connection = stream.connection.id,
-                                .stream = stream.id,
-                            },
+                        shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                            .message_send = stream,
                         });
                     },
                 }
@@ -924,8 +895,8 @@ pub fn Stream(T: type) type {
             }
 
             // Invoke the user-facing callback
-            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .StreamClosed, .{
-                .StreamClosed = .{
+            shared.invokeCallback(T, &stream.connection.owner.callback_handlers, .{
+                .stream_closed = .{
                     .connection = stream.connection.id,
                     .stream = stream.id,
                 },

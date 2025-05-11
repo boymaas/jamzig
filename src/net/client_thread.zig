@@ -362,20 +362,13 @@ pub const ClientThread = struct {
         defer span.deinit();
         span.debug("Processing command: {s}", .{@tagName(command)});
 
-        // Find the connection or stream based on IDs in the command data
-        // This requires the ClientThread to have access to the JamSnpClient's
-        // connections and streams maps (or query the JamSnpClient).
-        // For simplicity, let's assume direct access or helper functions exist.
-
-        // Execute the command via JamSnpClient
         switch (command) {
             .connect => |cmd| {
                 const cmd_span = span.child(.connect);
                 defer cmd_span.deinit();
                 cmd_span.debug("Connecting to endpoint: {}", .{cmd.data});
 
-                // Store this pending connection, need to be defined here, as the onConnectionCreated
-                // callback can ve called synchronously in lsquic
+                // Store metadata so we forward the metadata back to the client
                 try self.pending_connects.put(cmd.data.connection_id, cmd.metadata);
 
                 // The actual result (success or failure) comes via ConnectionEstablished/ConnectionFailed events
@@ -569,20 +562,20 @@ pub const ClientThread = struct {
 
     fn registerClientCallbacks(self: *ClientThread) void {
         // Pass 'self' as context so callbacks can access the thread state (event_queue, pending_connects)
-        self.client.setCallback(.ConnectionEstablished, internalConnectionEstablishedCallback, self);
-        self.client.setCallback(.ConnectionFailed, internalConnectionFailedCallback, self);
-        self.client.setCallback(.ConnectionClosed, internalConnectionClosedCallback, self);
-        self.client.setCallback(.StreamCreated, internalStreamCreatedCallback, self);
-        self.client.setCallback(.StreamClosed, internalStreamClosedCallback, self);
-        self.client.setCallback(.DataReadCompleted, internalDataReadCompletedCallback, self);
-        self.client.setCallback(.DataReadEndOfStream, internalDataReadEndOfStreamCallback, self);
-        self.client.setCallback(.DataReadError, internalDataReadErrorCallback, self);
-        self.client.setCallback(.DataWouldBlock, internalDataReadWouldBlockCallback, self);
-        self.client.setCallback(.DataWriteCompleted, internalDataWriteCompletedCallback, self);
-        self.client.setCallback(.DataWriteProgress, internalDataWriteProgressCallback, self);
-        self.client.setCallback(.DataWriteError, internalDataWriteErrorCallback, self);
-        self.client.setCallback(.MessageSend, internalMessageSendCallback, self);
-        self.client.setCallback(.MessageReceived, internalMessageReceivedCallback, self);
+        self.client.setCallback(.connection_established, internalConnectionEstablishedCallback, self);
+        self.client.setCallback(.connection_failed, internalConnectionFailedCallback, self);
+        self.client.setCallback(.connection_closed, internalConnectionClosedCallback, self);
+        self.client.setCallback(.stream_created, internalStreamCreatedCallback, self);
+        self.client.setCallback(.stream_closed, internalStreamClosedCallback, self);
+        self.client.setCallback(.data_read_completed, internalDataReadCompletedCallback, self);
+        self.client.setCallback(.data_read_end_of_stream, internalDataReadEndOfStreamCallback, self);
+        self.client.setCallback(.data_read_error, internalDataReadErrorCallback, self);
+        self.client.setCallback(.data_would_block, internalDataReadWouldBlockCallback, self);
+        self.client.setCallback(.data_write_completed, internalDataWriteCompletedCallback, self);
+        self.client.setCallback(.data_write_progress, internalDataWriteProgressCallback, self);
+        self.client.setCallback(.data_write_error, internalDataWriteErrorCallback, self);
+        self.client.setCallback(.message_send, internalMessageSendCallback, self);
+        self.client.setCallback(.message_received, internalMessageReceivedCallback, self);
     }
 
     fn pushEvent(self: *ClientThread, event: Client.Event) !void {

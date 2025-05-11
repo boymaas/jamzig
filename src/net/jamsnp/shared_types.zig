@@ -11,6 +11,7 @@ pub const ConnectionId = uuid.Uuid;
 pub const StreamId = uuid.Uuid;
 
 pub const Stream = @import("stream.zig").Stream;
+pub const Connection = @import("connection.zig").Connection;
 
 pub const StreamOrigin = enum {
     /// Stream is initiated by the client
@@ -118,27 +119,6 @@ pub const StreamKind = enum(u8) {
     }
 };
 
-// -- Client Callback Types
-pub const EventType = enum {
-    ClientConnected,
-    ConnectionEstablished,
-    ConnectionFailed,
-    ConnectionClosed,
-    StreamCreated,
-    StreamClosed,
-    DataReadProgress,
-    DataReadCompleted,
-    DataReadEndOfStream,
-    DataReadError,
-    DataWouldBlock,
-    DataWriteProgress,
-    DataWriteCompleted,
-    DataWriteError,
-    /// A complete message has been received (length-prefixed)
-    MessageSend,
-    MessageReceived,
-};
-
 pub const ClientConnectedCallbackFn = *const fn (connection: ConnectionId, endpoint: network.EndPoint, context: ?*anyopaque) void;
 pub const ConnectionEstablishedCallbackFn = *const fn (connection: ConnectionId, endpoint: network.EndPoint, context: ?*anyopaque) void;
 pub const ConnectionFailedCallbackFn = *const fn (connection: ConnectionId, endpoint: network.EndPoint, err: anyerror, context: ?*anyopaque) void;
@@ -165,110 +145,141 @@ pub const CallbackHandler = struct {
 };
 
 // -- Callback Invocation
-
-pub const CallbackHandlers = [@typeInfo(EventType).@"enum".fields.len]CallbackHandler;
-pub const CALLBACK_HANDLERS_EMPTY = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len;
+pub const CallbackType = enum {
+    // client_connected,
+    connection_established,
+    connection_failed,
+    connection_closed,
+    stream_created,
+    stream_closed,
+    data_read_progress,
+    data_read_completed,
+    data_read_end_of_stream,
+    data_read_error,
+    data_would_block,
+    data_write_progress,
+    data_write_completed,
+    data_write_error,
+    /// A complete message has been received (length-prefixed)
+    message_send,
+    message_received,
+};
+pub const CallbackHandlers = [@typeInfo(CallbackType).@"enum".fields.len]CallbackHandler;
+pub const CALLBACK_HANDLERS_EMPTY = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(CallbackType).@"enum".fields.len;
 
 // Argument Union for invokeCallback (using shared types)
-pub fn EventArg(T: type) type {
-    return union(EventType) {
-        ClientConnected: struct { connection: ConnectionId, endpoint: network.EndPoint },
-        ConnectionEstablished: struct { connection: ConnectionId, endpoint: network.EndPoint },
-        ConnectionFailed: struct { endpoint: network.EndPoint, err: anyerror },
-        ConnectionClosed: struct { connection: ConnectionId },
-        StreamCreated: *Stream(T),
-        StreamClosed: struct { connection: ConnectionId, stream: StreamId },
-        DataReadProgress: struct { connection: ConnectionId, stream: StreamId, bytes_read: usize, total_size: usize },
-        DataReadCompleted: struct { connection: ConnectionId, stream: StreamId, data: []const u8 },
-        DataReadEndOfStream: struct { connection: ConnectionId, stream: StreamId },
-        DataReadError: struct { connection: ConnectionId, stream: StreamId, error_code: i32 },
-        DataWouldBlock: struct { connection: ConnectionId, stream: StreamId },
-        DataWriteProgress: struct { connection: ConnectionId, stream: StreamId, bytes_written: usize, total_size: usize },
-        DataWriteCompleted: struct { connection: ConnectionId, stream: StreamId, total_bytes_written: usize },
-        DataWriteError: struct { connection: ConnectionId, stream: StreamId, error_code: i32 },
-        MessageSend: struct {
-            connection: ConnectionId,
-            stream: StreamId,
-        },
-        MessageReceived: struct { connection: ConnectionId, stream: StreamId, message: []const u8 },
+pub fn CallbackArg(T: type) type {
+    return union(CallbackType) {
+        // ClientConnected: *Connection(T),
+        connection_established: *Connection(T),
+        connection_failed: struct { connection: *Connection(T), err: anyerror },
+        connection_closed: ConnectionId,
+        stream_created: *Stream(T),
+        stream_closed: struct { connection: ConnectionId, stream: StreamId },
+        data_read_progress: struct { stream: *Stream(T), bytes_read: usize, total_size: usize },
+        data_read_completed: struct { stream: *Stream(T), data: []const u8 },
+        data_read_end_of_stream: *Stream(T),
+        data_read_error: struct { stream: *Stream(T), error_code: i32 },
+        data_would_block: *Stream(T),
+        data_write_progress: struct { stream: *Stream(T), bytes_written: usize, total_size: usize },
+        data_write_completed: struct { stream: *Stream(T), total_bytes_written: usize },
+        data_write_error: struct { stream: *Stream(T), error_code: i32 },
+        message_send: *Stream(T),
+        message_received: struct { stream: *Stream(T), message: []const u8 },
     };
 }
 
-pub fn invokeCallback(T: type, callback_handlers: *const CallbackHandlers, event_tag: EventType, args: EventArg(T)) void {
+pub fn invokeCallback(T: type, callback_handlers: *const CallbackHandlers, args: CallbackArg(T)) void {
     const span = trace.span(.invoke_callback);
     defer span.deinit();
-    std.debug.assert(event_tag == @as(EventType, @enumFromInt(@intFromEnum(args))));
 
-    const handler = &callback_handlers[@intFromEnum(event_tag)];
+    const active_tag = std.meta.activeTag(args);
+    const handler = &callback_handlers[@intFromEnum(active_tag)];
     if (handler.callback) |callback_ptr| {
-        span.debug("Invoking callback for event {s}", .{@tagName(event_tag)});
+        span.debug("Invoking callback for event {s}", .{@tagName(active_tag)});
         switch (args) {
-            .ClientConnected => |ev_args| {
-                const callback: ClientConnectedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.endpoint, handler.context);
+            .connection_established => |ev_args| {
+                const callback: ConnectionEstablishedCallbackFn = @ptrCast(@alignCast(callback_ptr));
+                callback(ev_args.id, ev_args.endpoint, handler.context);
             },
-            .ConnectionEstablished => |ev_args| {
-                const callback: ClientConnectedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.endpoint, handler.context);
-            },
-            .ConnectionClosed => |ev_args| {
+            .connection_closed => |connection_id| {
                 const callback: ConnectionClosedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, handler.context);
+                callback(connection_id, handler.context);
             },
-            .StreamCreated => |stream| {
+            .stream_created => |stream| {
                 const callback: StreamCreatedCallbackFn(T) = @ptrCast(@alignCast(callback_ptr));
                 callback(stream, handler.context);
             },
-            .StreamClosed => |ev_args| {
+            .stream_closed => |ev_args| {
                 const callback: StreamClosedCallbackFn = @ptrCast(@alignCast(callback_ptr));
                 callback(ev_args.connection, ev_args.stream, handler.context);
             },
-            .DataReadProgress => |ev_args| {
+            .data_read_progress => |ev_args| {
                 const callback: DataReadProgressCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, ev_args.bytes_read, ev_args.total_size, handler.context);
+                const connection_id = ev_args.stream.id;
+                const stream_id = ev_args.stream.id;
+                callback(connection_id, stream_id, ev_args.bytes_read, ev_args.total_size, handler.context);
             },
-            .DataReadCompleted => |ev_args| {
+            .data_read_completed => |ev_args| {
                 const callback: DataReceivedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, ev_args.data, handler.context);
+                const connection_id = ev_args.stream.id;
+                const stream_id = ev_args.stream.id;
+                callback(connection_id, stream_id, ev_args.data, handler.context);
             },
-            .DataWriteCompleted => |ev_args| {
+            .data_write_completed => |ev_args| {
                 const callback: DataWriteCompletedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, ev_args.total_bytes_written, handler.context);
+                const connection_id = ev_args.stream.id;
+                const stream_id = ev_args.stream.id;
+                callback(connection_id, stream_id, ev_args.total_bytes_written, handler.context);
             },
-            .DataReadEndOfStream => |ev_args| {
+            .data_read_end_of_stream => |stream| {
                 const callback: DataEndOfStreamCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, handler.context);
+                const connection_id = stream.id;
+                const stream_id = stream.id;
+                callback(connection_id, stream_id, handler.context);
             },
-            .DataReadError => |ev_args| {
+            .data_read_error => |ev_args| {
                 const callback: DataErrorCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, ev_args.error_code, handler.context);
+                const connection_id = ev_args.stream.id;
+                const stream_id = ev_args.stream.id;
+                callback(connection_id, stream_id, ev_args.error_code, handler.context);
             },
-            .DataWriteError => |ev_args| {
+            .data_write_error => |ev_args| {
                 const callback: DataErrorCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, ev_args.error_code, handler.context);
+                const connection_id = ev_args.stream.id;
+                const stream_id = ev_args.stream.id;
+                callback(connection_id, stream_id, ev_args.error_code, handler.context);
             },
-            .DataWouldBlock => |ev_args| {
+            .data_would_block => |stream| {
                 const callback: DataWouldBlockCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, handler.context);
+                const connection_id = stream.id;
+                const stream_id = stream.id;
+                callback(connection_id, stream_id, handler.context);
             },
-            .DataWriteProgress => |ev_args| {
+            .data_write_progress => |ev_args| {
                 const callback: DataWriteProgressCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, ev_args.bytes_written, ev_args.total_size, handler.context);
+                const connection_id = ev_args.stream.id;
+                const stream_id = ev_args.stream.id;
+                callback(connection_id, stream_id, ev_args.bytes_written, ev_args.total_size, handler.context);
             },
-            .MessageSend => |ev_args| {
+            .message_send => |stream| {
                 const callback: MessageSendCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, handler.context);
+                const connection_id = stream.id;
+                const stream_id = stream.id;
+                callback(connection_id, stream_id, handler.context);
             },
-            .MessageReceived => |ev_args| {
+            .message_received => |ev_args| {
                 const callback: MessageReceivedCallbackFn = @ptrCast(@alignCast(callback_ptr));
-                callback(ev_args.connection, ev_args.stream, ev_args.message, handler.context);
+                const connection_id = ev_args.stream.id;
+                const stream_id = ev_args.stream.id;
+                callback(connection_id, stream_id, ev_args.message, handler.context);
             },
-            .ConnectionFailed => |ev_args| {
-                // This seems to be server-specific, not used in client callbacks
-                span.warn("Unhandled ConnectionFailed event for endpoint: {}", .{ev_args.endpoint});
+            .connection_failed => |ev_args| {
+                const callback: ConnectionFailedCallbackFn = @ptrCast(@alignCast(callback_ptr));
+                callback(ev_args.connection.id, ev_args.connection.endpoint, ev_args.err, handler.context);
             },
         }
     } else {
-        span.trace("No server callback registered for event type {s}", .{@tagName(event_tag)});
+        span.trace("No server callback registered for event type {s}", .{@tagName(active_tag)});
     }
 }

@@ -18,7 +18,7 @@ const trace = @import("../../tracing.zig").scoped(.network);
 // Use shared types
 pub const ConnectionId = shared.ConnectionId;
 pub const StreamId = shared.StreamId;
-pub const EventType = shared.EventType; // Use renamed type
+pub const EventType = shared.CallbackType; // Use renamed type
 pub const CallbackHandler = shared.CallbackHandler;
 
 // -- JamSnpClient Struct

@@ -223,17 +223,17 @@ pub const ServerThread = struct {
 
     fn registerServerCallbacks(self: *ServerThread) void {
         // Pass 'self' as context so callbacks can access the thread state (event_queue)
-        self.server.setCallback(.ClientConnected, internalClientConnectedCallback, self);
-        self.server.setCallback(.ConnectionEstablished, internalClientDisconnectedCallback, self);
-        self.server.setCallback(.StreamCreated, internalStreamCreatedCallback, self);
-        self.server.setCallback(.StreamClosed, internalStreamClosedByClientCallback, self);
-        self.server.setCallback(.DataReadCompleted, internalDataReadCompletedCallback, self);
-        self.server.setCallback(.DataWriteCompleted, internalDataWriteCompletedCallback, self); // Server might need this?
-        self.server.setCallback(.DataReadError, internalDataReadErrorCallback, self);
-        self.server.setCallback(.DataWriteError, internalDataWriteErrorCallback, self);
-        self.server.setCallback(.DataWouldBlock, internalDataReadWouldBlockCallback, self);
-        self.server.setCallback(.MessageReceived, internalMessageReceivedCallback, self);
-        self.server.setCallback(.MessageSend, internalMessageSendCallback, self);
+        self.server.setCallback(.connection_established, internalClientConnectedCallback, self);
+        self.server.setCallback(.connection_closed, internalClientDisconnectedCallback, self);
+        self.server.setCallback(.stream_created, internalStreamCreatedCallback, self);
+        self.server.setCallback(.stream_closed, internalStreamClosedByClientCallback, self);
+        self.server.setCallback(.data_read_completed, internalDataReadCompletedCallback, self);
+        self.server.setCallback(.data_write_completed, internalDataWriteCompletedCallback, self); // Server might need this?
+        self.server.setCallback(.data_read_error, internalDataReadErrorCallback, self);
+        self.server.setCallback(.data_write_error, internalDataWriteErrorCallback, self);
+        self.server.setCallback(.data_would_block, internalDataReadWouldBlockCallback, self);
+        self.server.setCallback(.message_received, internalMessageReceivedCallback, self);
+        self.server.setCallback(.message_send, internalMessageSendCallback, self);
     }
 
     pub fn shutdown(self: *ServerThread) !void {
