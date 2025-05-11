@@ -21,6 +21,8 @@ pub fn build(b: *std.Build) !void {
     const clap_module = b.dependency("clap", dep_opts).module("clap");
     const tmpfile_module = b.dependency("tmpfile", .{}).module("tmpfile");
 
+    const uuid_module = b.dependency("uuid", .{}).module("uuid");
+
     // Event loop
     const xev_dep = b.dependency("libxev", dep_opts);
     const xev_mod = xev_dep.module("xev");
@@ -49,6 +51,8 @@ pub fn build(b: *std.Build) !void {
     // jamzig_exe.linkLibC();
     jamzig_exe.root_module.addOptions("build-options", build_options);
     rust_deps.staticallyLinkTo(jamzig_exe);
+
+    jamzig_exe.root_module.addImport("uuid", uuid_module);
     jamzig_exe.root_module.addImport("xev", xev_mod);
     jamzig_exe.root_module.addImport("znet", zig_network_mod);
     jamzig_exe.root_module.addImport("lsquic", lsquic_mod);
@@ -128,6 +132,7 @@ pub fn build(b: *std.Build) !void {
     unit_tests.root_module.addImport("diffz", diffz_module);
     unit_tests.root_module.addImport("tmpfile", tmpfile_module);
 
+    unit_tests.root_module.addImport("uuid", uuid_module);
     unit_tests.root_module.addImport("xev", xev_mod);
     unit_tests.root_module.addImport("network", zig_network_mod);
     unit_tests.root_module.addImport("lsquic", lsquic_mod);
