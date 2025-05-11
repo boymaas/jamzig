@@ -375,7 +375,7 @@ pub fn formatValue(value: anytype, writer: anytype, options: Options) !void {
             inline for (std.meta.fields(@TypeOf(value))) |field| {
                 if (std.meta.activeTag(value) == @field(@TypeOf(value), field.name)) {
                     if (field.type == void) {
-                        try writer.writeAll("void");
+                        try writer.writeAll("void\n");
                     } else {
                         try formatValue(@field(value, field.name), writer, options);
                     }

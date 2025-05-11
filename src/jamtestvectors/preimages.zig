@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("../types.zig");
+const jam_types = @import("jam_types.zig");
 
 pub const jam_params = @import("../jam_params.zig");
 
@@ -94,12 +95,14 @@ pub const AccountsMapEntry = struct {
 pub const State = struct {
     // [δ] Relevant services account data
     accounts: []AccountsMapEntry,
+    statistics: jam_types.ServiceStatistics,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.accounts) |*account| {
             account.deinit(allocator);
         }
         allocator.free(self.accounts);
+        self.statistics.deinit(allocator);
         self.* = undefined;
     }
 };

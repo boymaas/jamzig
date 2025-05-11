@@ -30,7 +30,7 @@ fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, tes
     );
     defer test_vector.deinit(allocator);
 
-    // std.debug.print("{}", .{@import("./types/fmt.zig").format(test_vector)});
+    std.debug.print("{}", .{@import("./types/fmt.zig").format(test_vector)});
 
     try runPreimagesTest(params, allocator, test_vector);
 }
