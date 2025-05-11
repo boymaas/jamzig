@@ -30,6 +30,7 @@ pub const AccountsMapEntry = struct {
     data: Account,
 };
 
+// TODO: use the types from ./jam_types.zig
 pub const CoresStatistics = struct {
     stats: []state.validator_stats.CoreActivityRecord,
 

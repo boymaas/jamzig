@@ -68,6 +68,8 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
                     .bad_judgement_age => error.BadJudgementAge,
                     .bad_validator_index => error.BadValidatorIndex,
                     .bad_signature => error.BadSignature,
+                    .bad_guarantor_key => error.BadGuarantorKey,
+                    .bad_auditor_key => error.BadAuditorKey,
                 };
                 std.debug.print("\nExpected error: {any} => {any} got error {any}\n", .{ expected_error, mapped_expected_error, actual_error });
                 try std.testing.expectEqual(mapped_expected_error, actual_error);

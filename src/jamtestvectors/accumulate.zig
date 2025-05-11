@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("../types.zig");
+const jam_types = @import("./jam_types.zig");
 
 pub const jam_params = @import("../jam_params.zig");
 
@@ -91,6 +92,9 @@ pub const State = struct {
     accumulated: AccumulatedQueue,
     /// [χ] Privileged service identities
     privileges: Privileges,
+
+    statistics: jam_types.ServiceStatistics,
+
     /// [δ] Service accounts
     accounts: []ServiceAccount,
 
@@ -98,6 +102,7 @@ pub const State = struct {
         self.ready_queue.deinit(allocator);
         self.accumulated.deinit(allocator);
         self.privileges.deinit(allocator);
+        self.statistics.deinit(allocator);
         for (self.accounts) |*account| {
             account.deinit(allocator);
         }
