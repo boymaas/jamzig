@@ -38,8 +38,8 @@ pub fn permuteAssignments(
         try assignments.append(core);
     }
 
-    // Shuffle using Fisher-Yates
-    @import("fisher_yates.zig").shuffle(u32, allocator, assignments.items, entropy);
+    // Shuffle using non-allocating Fisher-Yates with compile-time known validator count
+    @import("fisher_yates.zig").shuffle(u32, params.validators_count, assignments.items, entropy);
 
     // Calculate rotation based on slot
     const rotation = @divFloor(@mod(slot, params.epoch_length), params.validator_rotation_period);

@@ -20,7 +20,7 @@ test "entropy" {
         }
 
         // Perform the shuffle
-        fisher_yates.shuffleWithHash(u32, allocator, sequence, shuffle_test.entropy);
+        fisher_yates.shuffleWithHashAlloc(u32, allocator, sequence, shuffle_test.entropy);
 
         // Verify the result matches expected output
         try std.testing.expectEqualSlices(u32, shuffle_test.output, sequence);
