@@ -31,57 +31,44 @@ pub fn deriveEntropy(i: usize, hash: [32]u8) u32 {
     return decodeU32(output[start .. start + 4]);
 }
 
-/// Recursive Fisher-Yates shuffle implementation
-fn shuffleRecursive(
+/// Core Fisher-Yates implementation used by all public functions
+/// Takes result and working copy slices to avoid code duplication
+fn shuffleCore(
     comptime T: type,
-    allocator: std.mem.Allocator,
-    sequence: []const T,
-    entropy_index: usize,
+    sequence: []T,
+    result: []T,
+    seq_copy: []T,
     hash: [32]u8,
-) ![]T {
-    // Base case: empty sequence returns empty array
-    if (sequence.len == 0) {
-        return allocator.alloc(T, 0);
+) void {
+    // Copy input to working copy
+    @memcpy(seq_copy, sequence);
+
+    var seq_len = sequence.len;
+
+    // Process each element in order (Fisher-Yates algorithm)
+    for (0..sequence.len) |i| {
+        // Calculate index based on entropy
+        const idx = deriveEntropy(i, hash) % seq_len;
+
+        // Take the element at that index for the result
+        result[i] = seq_copy[idx];
+
+        // Replace the selected element with the last element in the working set
+        // This effectively removes the selected element from consideration
+        if (idx < seq_len - 1) {
+            seq_copy[idx] = seq_copy[seq_len - 1];
+        }
+
+        // Reduce the working set size
+        seq_len -= 1;
     }
 
-    // Calculate index using current entropy value
-    const index = deriveEntropy(entropy_index, hash) % sequence.len;
-
-    // Extract head element at calculated index
-    const head = sequence[index];
-
-    // Create new sequence with last element moved to index position
-    var seq_post = try allocator.alloc(T, sequence.len);
-    defer allocator.free(seq_post);
-
-    // Copy original sequence
-    @memcpy(seq_post, sequence);
-
-    // Move last element to selected index position
-    seq_post[index] = sequence[sequence.len - 1];
-
-    // Recursively shuffle remainder of sequence
-    const result = try shuffleRecursive(
-        T,
-        allocator,
-        seq_post[0 .. sequence.len - 1],
-        entropy_index + 1,
-        hash,
-    );
-
-    // Prepend head to recursive result
-    var final_result = try allocator.alloc(T, sequence.len);
-    final_result[0] = head;
-    @memcpy(final_result[1..], result);
-
-    // Free intermediate result
-    allocator.free(result);
-
-    return final_result;
+    // Copy result back to the input sequence
+    @memcpy(sequence, result);
 }
 
 /// Fisher-Yates shuffle implementation following the formal specification
-pub fn shuffleWithHash(
+pub fn shuffleWithHashAlloc(
     comptime T: type,
     allocator: std.mem.Allocator,
     sequence: []T,
@@ -90,50 +77,78 @@ pub fn shuffleWithHash(
     // Handle empty sequence case
     if (sequence.len < 1) return;
 
-    // Calculate total memory needed:
-    // For each recursion level (sequence.len times):
-    // - One temporary sequence of size n-i
-    // - One final result array of size n-i
-    // where i goes from 0 to sequence.len-1
-
-    // Calculate total memory needed for all recursion levels:
-    //
-    // For a sequence of n=1023 validators, each validator being 4 bytes (u32):
-    // Level 0: two arrays of size 1023 = 2 * 1023 * 4 = 8,184 bytes
-    // Level 1: two arrays of size 1022 = 2 * 1022 * 4 = 8,176 bytes
-    // Level 2: two arrays of size 1021 = 2 * 1021 * 4 = 8,168 bytes
-    // ...and so on until...
-    // Level 1022: two arrays of size 1 = 2 * 1 * 4 = 8 bytes
-    //
-    // Total bytes = sequence.len * (sizeOf(T) * sequence.len)
-    // For n=1023, T=u32: 1023 * (4 * 1023) = 4,186,116 bytes ≈ 4.1MB
-    //
-    // Note: This is an upper bound as we allocate full sequence.len for simplicity,
-    // actual memory use is less since each level needs smaller arrays
-    //
-    // TODO: OPTIMIZE THIS!
-    const total_size = sequence.len * (@sizeOf(T) * sequence.len);
-    _ = total_size;
-
-    // Initialize arena with calculated capacity
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-
-    // Perform recursive shuffle and copy result back to input sequence
-    if (shuffleRecursive(T, arena.allocator(), sequence, 0, hash)) |result| {
-        @memcpy(sequence, result);
-    } else |err| {
-        std.debug.print("Shuffle failed with error: {}\n", .{err});
+    // Allocate a single buffer for both the result and working copy
+    const buffer = allocator.alloc(T, sequence.len * 2) catch |err| {
+        std.debug.print("Failed to allocate memory for shuffle: {}\n", .{err});
         return;
-    }
+    };
+    defer allocator.free(buffer);
+
+    // Split the buffer into result and working copy sections
+    const result = buffer[0..sequence.len];
+    const seq_copy = buffer[sequence.len..];
+
+    // Use the common core implementation
+    shuffleCore(T, sequence, result, seq_copy, hash);
 }
 
-/// The original shuffle implementation
-pub fn shuffle(
+// Constant representing the maximum safe allocation on stack (in bytes)
+const MAX_SAFE_STACK_BYTES = 500 * 1024;
+
+/// Compile-time maximum size Fisher-Yates shuffle with zero heap allocations
+/// This function is ideal for where the maximum count is known at compile time
+pub fn shuffleWithHash(
+    comptime T: type,
+    comptime max_size: usize,
+    sequence: []T,
+    hash: [32]u8,
+) void {
+    // Calculate total bytes needed for both arrays at compile time
+    const total_bytes_needed = 2 * max_size * @sizeOf(T);
+
+    // If the size is too large for stack allocation, panic at compile time
+    if (comptime total_bytes_needed > MAX_SAFE_STACK_BYTES) {
+        @compileError("Fisher-Yates stack arrays would exceed safe stack size limit. " ++
+            "Array size: " ++ std.fmt.comptimePrint("{}", .{total_bytes_needed}) ++ " bytes, " ++
+            "limit: " ++ std.fmt.comptimePrint("{}", .{MAX_SAFE_STACK_BYTES}) ++ " bytes. " ++
+            "Use shuffleWithHashAlloc for large sequences.");
+    }
+
+    // Handle empty sequence case
+    if (sequence.len < 1) return;
+
+    // Verify the sequence size is within compile-time limits
+    if (sequence.len > max_size) {
+        @panic("shuffleWithHash: sequence length exceeds compile-time maximum");
+    }
+
+    // Fixed-size implementation - uses stack memory instead of heap
+    var result: [max_size]T = undefined;
+    var seq_copy: [max_size]T = undefined;
+
+    // Only use the portion of the arrays we need
+    const result_slice = result[0..sequence.len];
+    const seq_copy_slice = seq_copy[0..sequence.len];
+
+    // Use the common core implementation
+    shuffleCore(T, sequence, result_slice, seq_copy_slice, hash);
+}
+
+/// The original shuffle implementation (for backward compatibility)
+pub fn shuffleAlloc(
     comptime T: type,
     allocator: std.mem.Allocator,
     sequence: []T,
     entropy: [32]u8,
 ) void {
-    shuffleWithHash(T, allocator, sequence, entropy);
+    shuffleWithHashAlloc(T, allocator, sequence, entropy);
+}
+
+pub fn shuffle(
+    comptime T: type,
+    comptime max_size: usize,
+    sequence: []T,
+    entropy: [32]u8,
+) void {
+    shuffleWithHash(T, max_size, sequence, entropy);
 }
