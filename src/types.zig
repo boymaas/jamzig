@@ -161,8 +161,9 @@ pub const WorkExecResult = union(enum(u8)) {
     ok: []const u8 = 0,
     out_of_gas: void = 1,
     panic: void = 2,
-    bad_code: void = 3,
-    code_oversize: void = 4,
+    bad_exports: void = 3,
+    bad_code: void = 4,
+    code_oversize: void = 5,
 
     /// length of result
     pub fn len(self: *const @This()) usize {
@@ -209,8 +210,9 @@ pub const WorkExecResult = union(enum(u8)) {
             .ok => 0,
             .out_of_gas => 1,
             .panic => 2,
-            .bad_code => 3,
-            .code_oversize => 4,
+            .bad_exports => 3,
+            .bad_code => 4,
+            .code_oversize => 5,
         };
         try writer.writeByte(tag);
 
@@ -238,8 +240,9 @@ pub const WorkExecResult = union(enum(u8)) {
             },
             1 => WorkExecResult{ .out_of_gas = {} },
             2 => WorkExecResult{ .panic = {} },
-            3 => WorkExecResult{ .bad_code = {} },
-            4 => WorkExecResult{ .code_oversize = {} },
+            3 => WorkExecResult{ .bad_exports = {} },
+            4 => WorkExecResult{ .bad_code = {} },
+            5 => WorkExecResult{ .code_oversize = {} },
             else => error.InvalidTag,
         };
     }

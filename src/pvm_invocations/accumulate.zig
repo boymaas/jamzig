@@ -390,6 +390,9 @@ pub const AccumulationOperand = struct {
                 .panic => .{
                     .err = .ProgramTermination,
                 },
+                .bad_exports => .{
+                    .err = .InvalidExportCount,
+                },
                 .bad_code => .{
                     .err = .ServiceCodeUnavailable,
                 },
