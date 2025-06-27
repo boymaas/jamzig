@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const jam_params = @import("../jam_params.zig");
 
-const BASE_PATH = "src/jamtestvectors/data/disputes/";
+const BASE_PATH = "src/jamtestvectors/data/stf/disputes/";
 
 pub const State = struct {
     psi: types.DisputesRecords,
