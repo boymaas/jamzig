@@ -1,46 +1,73 @@
-# JAMZIG
+# JAMZIG - M1 Release
 
-JAMZIG is a Zig-based implementation of a node for the JAM (JamCore) distributed system. This project focuses on providing a robust, efficient, and scalable solution for network communication and data processing.
+JAMZIG is a Zig-based implementation of a JAM (Join-Accumulate Machine) node. JAM is a next-generation blockchain protocol designed as a potential successor to the Polkadot Relay Chain, introducing a novel computational model that addresses the size-coherency antagonism in distributed systems.
+
+**This is a code cutoff open-sourced for the M1 milestone delivery review process.** Ongoing development continues privately toward the M2 milestone.
 
 JamZig account: 14T1UcnoaMND24ubV86FCT4YxJ8q5CKVG7winwZ7umAit8g2
 
 ## What is JAM?
 
-JAM is a decentralized hybrid protocol that combines elements of both Polkadot and Ethereum. It provides:
+JAM is a decentralized protocol that combines the best of both worlds:
 
-1. A global singleton permissionless object environment (similar to Ethereum's smart contracts)
-2. Secure sideband computation parallelized over a scalable node network (similar to Polkadot's approach)
+1. **Global singleton permissionless object environment** (like Ethereum's smart contracts)
+2. **Secure sideband computation parallelized over a scalable node network** (like Polkadot's approach)
 
-The protocol is designed around a "collect-refine-join-accumulate" model that enables massive parallelization while maintaining state coherency.
+The protocol uses a **collect-refine-join-accumulate** model that enables massive parallelization while maintaining state coherency. JAM's key innovation is solving the size-coherency antagonism through pipelined computation, separating scalable async work (Refine) from coherent sync work (Accumulate).
 
-## Why JAM?
+## Project Architecture
 
-According to the graypaper, JAM was developed to address five key goals:
+### Core Components
 
-1. Resilience: High resistance to being stopped, corrupted, or censored
-2. Generality: Ability to perform Turing-complete computation
-3. Performance: Ability to perform computation quickly and at low cost
-4. Coherency: Maintaining causal relationships between different elements of state
-5. Accessibility: Ensuring negligible barriers to innovation with easy, fast, cheap, and permissionless access
+- **`src/pvm/`** - Polka Virtual Machine (RISC-V based VM with gas metering)
+- **`src/state_*/`** - State management, encoding/decoding, and merklization
+- **`src/safrole/`** - Safrole consensus mechanism for block production
+- **`src/net/`** - QUIC-based networking with JAM Simple Networking Protocol (JAMSNP)
+- **`src/crypto/`** - Cryptographic primitives (Rust FFI bindings)
 
-## In-Core vs On-Chain Computation
+### Development Tools
 
-JAM introduces two distinct execution environments:
+- **`src/repl/`** - Interactive REPL for JAM system interaction
+- **`src/jamtestvectors/`** - Comprehensive test vectors against reference implementations
+- **`src/pvm_fuzzer.zig`** - PVM fuzzing tool for testing
+- **`src/jamtestnet_export.zig`** - Testnet data export utilities
 
-- **In-Core Computation**: Allows for massive parallelization of work across the validator network. Work done in-core is verified through a crypto-economic game of guaranteeing, assuring, auditing, and potentially judging.
+### Key Features
 
-- **On-Chain Computation**: Similar to traditional blockchain computation where all nodes must process and verify the same state transitions.
+- **16-segment state partitioning** for parallel computation (α, β, γ, δ, etc.)
+- **Service-based architecture** replacing traditional account model
+- **Crypto-economic validation** through guaranteeing, assuring, and auditing
+- **Bandersnatch Ring VRF** for validator selection
+- **Erasure coding** for data availability
 
-## Key Technical Features
+## Building and Running
 
-- Implementation of the Polka Virtual Machine (PVM), based on RISC-V instruction set architecture
-- Sophisticated erasure coding system for data availability
-- Safrole consensus mechanism for block production
-- GRANDPA for block finalization
-- Novel authorization system for managing compute resources
-- Bandersnatch Ring VRF for validator selection
-- Service-based architecture replacing traditional account model
+### Prerequisites
 
-The protocol is designed to achieve theoretical performance of around 341 cores processing in parallel. 
+- [Zig 0.14.0](https://ziglang.org/download/)
+- Rust toolchain (beta channel)
+- Cargo for Rust FFI dependencies
 
-For more information about JAM and JAMZIG, visit our website: [https://jamzig.dev](https://jamzig.dev) or see: [https://graypaper.com](https://graypaper.com).
+### Commands
+
+```bash
+# Build the project
+zig build
+
+# Run tests
+zig build test
+
+# Run specific test
+zig build test -Dtest-filter=<test_name>
+
+# Run the node
+zig build run
+
+# Run REPL
+zig build run
+
+# Run PVM fuzzer
+zig build pvm_fuzz && zig build run -- pvm_fuzz
+```
+
+For more information about JAM and JAMZIG, visit: [https://jamzig.dev](https://jamzig.dev) or see the JAM Gray Paper: [https://graypaper.com](https://graypaper.com).
