@@ -17,6 +17,19 @@ pub const Id = enum(u32) {
     solicit = 14, // Host call for soliciting a preimage
     forget = 15, // Host call for forgetting/removing a preimage
     yield = 16, // Host call for yielding accumulation trie result
+    historical_lookup = 17, // Host call for looking up historical state
+    // Refine hostcalls
+    fetch = 18, // Host call for fetching work packages
+    @"export" = 19, // Host call for exporting data to data lake
+    machine = 20, // Host call for accessing machine information
+    peek = 21, // Host call for reading from data lake
+    poke = 22, // Host call for writing to data lake
+    zero = 23, // Host call for clearing service account state
+    void = 24, // Host call for marking service as void
+    invoke = 25, // Host call for invoking another service
+    expunge = 26, // Host call for removing data from data lake
+    provide = 27, // Host call for providing data to accumulation
+    // Logging
     log = 100, // Host call for logging
 };
 
