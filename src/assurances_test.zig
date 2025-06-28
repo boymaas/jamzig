@@ -5,7 +5,7 @@ const runAssuranceTest = @import("assurances_test/runner.zig").runAssuranceTest;
 
 const diffz = @import("disputes_test/diffz.zig");
 
-const BASE_PATH = "src/jamtestvectors/data/assurances/";
+const BASE_PATH = "src/jamtestvectors/data/stf/assurances/";
 
 // Debug helper function
 fn printStateDiff(allocator: std.mem.Allocator, pre_state: *const tvector.State, post_state: *const tvector.State) !void {
@@ -25,75 +25,9 @@ pub const jam_params = @import("jam_params.zig");
 
 // Tiny test vectors
 pub const TINY_PARAMS = jam_params.TINY_PARAMS;
-
-const TEST_FILES = [_][]const u8{
-    "assurance_for_not_engaged_core-1.bin",
-    "assurances_for_stale_report-1.bin",
-    "assurances_with_bad_signature-1.bin",
-    "assurances_with_bad_validator_index-1.bin",
-    "assurance_with_bad_attestation_parent-1.bin",
-    "assurers_not_sorted_or_unique-1.bin",
-    "assurers_not_sorted_or_unique-2.bin",
-    "no_assurances-1.bin",
-    "no_assurances_with_stale_report-1.bin",
-    "some_assurances-1.bin",
-};
+pub const FULL_PARAMS = jam_params.FULL_PARAMS;
 
 const loader = @import("jamtestvectors/loader.zig");
-
-test "tiny/no_assurances-1.bin" {
-    const allocator = std.testing.allocator;
-
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/no_assurances-1.bin");
-}
-
-test "tiny/no_assurances_with_stale_report-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/no_assurances_with_stale_report-1.bin");
-}
-
-test "tiny/some_assurances-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/some_assurances-1.bin");
-}
-
-test "tiny/assurance_for_not_engaged_core-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurance_for_not_engaged_core-1.bin");
-}
-
-test "tiny/assurances_for_stale_report-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurances_for_stale_report-1.bin");
-}
-
-test "tiny/assurances_with_bad_signature-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurances_with_bad_signature-1.bin");
-}
-
-test "tiny/assurances_with_bad_validator_index-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurances_with_bad_validator_index-1.bin");
-}
-
-test "tiny/assurance_with_bad_attestation_parent-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurance_with_bad_attestation_parent-1.bin");
-}
-
-test "tiny/assurers_not_sorted_or_unique-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurers_not_sorted_or_unique-1.bin");
-}
-
-test "tiny/assurers_not_sorted_or_unique-2.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/assurers_not_sorted_or_unique-2.bin");
-}
-
-// Full test vectors
-pub const FULL_PARAMS = jam_params.FULL_PARAMS;
 
 fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, test_bin: []const u8) !void {
     std.debug.print("Running test: {s}\n", .{test_bin});
@@ -121,17 +55,6 @@ test "all.tiny.vectors" {
         }
         try runTest(TINY_PARAMS, allocator, test_file.path);
     }
-}
-
-//  _____      _ _  __     __        _
-// |  ___|   _| | | \ \   / /__  ___| |_ ___  _ __ ___
-// | |_ | | | | | |  \ \ / / _ \/ __| __/ _ \| '__/ __|
-// |  _|| |_| | | |   \ V /  __/ (__| || (_) | |  \__ \
-// |_|   \__,_|_|_|    \_/ \___|\___|\__\___/|_|  |___/
-
-test "full/assurances_for_stale_report-1.bin" {
-    const allocator = std.testing.allocator;
-    try runTest(FULL_PARAMS, allocator, BASE_PATH ++ "full/assurances_for_stale_report-1.bin");
 }
 
 test "all.full.vectors" {
