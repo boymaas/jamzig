@@ -3,7 +3,7 @@ const tvector = @import("jamtestvectors/reports.zig");
 const runReportTest = @import("reports_test/runner.zig").runReportTest;
 const diffz = @import("disputes_test/diffz.zig");
 
-const BASE_PATH = "src/jamtestvectors/data/reports/";
+const BASE_PATH = "src/jamtestvectors/data/stf/reports/";
 
 pub const jam_params = @import("jam_params.zig");
 

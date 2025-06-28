@@ -5,7 +5,7 @@ pub const jam_params = @import("jam_params.zig");
 const tvector = @import("jamtestvectors/preimages.zig");
 const runPreimagesTest = @import("preimages_test/runner.zig").runPreimagesTest;
 
-const BASE_PATH = "src/jamtestvectors/data/preimages/";
+const BASE_PATH = "src/jamtestvectors/data/stf/preimages/";
 
 // Debug helper function
 fn printStateDiff(allocator: std.mem.Allocator, pre_state: *const tvector.State, post_state: *const tvector.State) !void {

@@ -9,7 +9,7 @@ const disputes = @import("disputes.zig");
 
 const stf = @import("stf.zig");
 
-const BASE_PATH = "src/jamtestvectors/data/disputes/";
+const BASE_PATH = "src/jamtestvectors/data/stf/disputes/";
 
 const runDisputeTest = @import("disputes_test/runner.zig").runDisputeTest;
 

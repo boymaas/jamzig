@@ -69,7 +69,7 @@ test "tiny: Run tiny safrole tests" {
     try runSafroleTestDir(
         @import("../jam_params.zig").TINY_PARAMS,
         std.testing.allocator,
-        "src/jamtestvectors/data/safrole/tiny",
+        "src/jamtestvectors/data/stf/safrole/tiny",
     );
 }
 
@@ -77,6 +77,6 @@ test "full: Run full safrole tests" {
     try runSafroleTestDir(
         @import("../jam_params.zig").FULL_PARAMS,
         std.testing.allocator,
-        "src/jamtestvectors/data/safrole/full",
+        "src/jamtestvectors/data/stf/safrole/full",
     );
 }
