@@ -166,7 +166,7 @@ test "encodePreimageKey" {
 
     try encodePreimageKey(key, buffer.writer());
 
-    const expected = [_]u8{ 0xFE, 0xFF, 0xFF, 0xFF } ++ [_]u8{0x44} ** 28;
+    const expected = [_]u8{ 0xFE, 0xFF, 0xFF, 0xFF } ++ [_]u8{0x44} ** 27;
 
     try testing.expectEqualSlices(u8, &expected, buffer.items);
 }

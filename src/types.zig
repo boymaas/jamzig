@@ -148,6 +148,19 @@ pub const WorkPackage = struct {
     context: RefineContext,
     items: []WorkItem, // SIZE(1..4)
 
+    /// Validates WorkPackage constraints according to JAM 0.6.6 specification
+    pub fn validate(self: *const @This(), comptime params: @import("jam_params.zig").Params) !void {
+        // WA: Authorization code size limit (64,000 octets)
+        if (self.authorization.len > params.max_authorization_code_size) {
+            return error.AuthorizationCodeTooLarge;
+        }
+        
+        // I: Work items count constraint (1..4 in current implementation, 1..16 per spec)
+        if (self.items.len == 0 or self.items.len > params.max_work_items_per_package) {
+            return error.InvalidWorkItemsCount;
+        }
+    }
+
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.authorization);
         self.authorizer.deinit(allocator);

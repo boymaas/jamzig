@@ -61,6 +61,8 @@ pub const Params = struct {
     validators_count: u32 = 1023, // V
     // V_s: The number of validators required for a super-majority
     validators_super_majority: u32 = 683,
+    // WA: The maximum size of authorization code in octets
+    max_authorization_code_size: u32 = 64_000, // WA
     // WC: The maximum size of service code in octets
     max_service_code_size: u32 = 4_000_000, // WC
     // WE: The basic size of erasure-coded pieces in octets
