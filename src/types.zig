@@ -453,6 +453,44 @@ pub const WorkReport = struct {
         allocator.free(self.results);
         self.* = undefined;
     }
+
+    pub fn encode(self: *const @This(), comptime params: anytype, writer: anytype) !void {
+        const codec = @import("codec.zig");
+
+        // Encode each field in order
+        try codec.serialize(@TypeOf(self.package_spec), params, writer, self.package_spec);
+        try codec.serialize(@TypeOf(self.context), params, writer, self.context);
+
+        // Variable encode the core_index
+        try codec.writeInteger(self.core_index, writer);
+
+        try codec.serialize(@TypeOf(self.authorizer_hash), params, writer, self.authorizer_hash);
+        try codec.serialize(@TypeOf(self.auth_output), params, writer, self.auth_output);
+        try codec.serialize(@TypeOf(self.segment_root_lookup), params, writer, self.segment_root_lookup);
+        try codec.serialize(@TypeOf(self.results), params, writer, self.results);
+        try codec.serialize(@TypeOf(self.stats), params, writer, self.stats);
+    }
+
+    pub fn decode(comptime params: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
+        const codec = @import("codec.zig");
+
+        var self: @This() = undefined;
+
+        // Decode each field in order
+        self.package_spec = try codec.deserializeAlloc(WorkPackageSpec, params, allocator, reader);
+        self.context = try codec.deserializeAlloc(RefineContext, params, allocator, reader);
+
+        // Variable decode the core_index
+        self.core_index = @as(CoreIndex, @truncate(try codec.readInteger(reader)));
+
+        self.authorizer_hash = try codec.deserializeAlloc(@TypeOf(self.authorizer_hash), params, allocator, reader);
+        self.auth_output = try codec.deserializeAlloc(@TypeOf(self.auth_output), params, allocator, reader);
+        self.segment_root_lookup = try codec.deserializeAlloc(@TypeOf(self.segment_root_lookup), params, allocator, reader);
+        self.results = try codec.deserializeAlloc(@TypeOf(self.results), params, allocator, reader);
+        self.stats = try codec.deserializeAlloc(@TypeOf(self.stats), params, allocator, reader);
+
+        return self;
+    }
 };
 
 pub const MmrPeak = ?OpaqueHash;
