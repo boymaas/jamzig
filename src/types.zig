@@ -247,12 +247,21 @@ pub const WorkExecResult = union(enum(u8)) {
     pub fn decode(_: anytype, reader: anytype, alloc: std.mem.Allocator) !@This() {
         const tag = try reader.readByte();
 
+        const tracing = comptime @import("tracing.zig").scoped(.codec);
+        const span = tracing.span(.work_exec_result_decode);
+        span.debug("Decoding WorkExecResult with tag: {d}", .{tag});
+
         return switch (tag) {
             0 => blk: {
                 const codec = @import("codec.zig");
                 const length = try codec.readInteger(reader);
                 const data = try alloc.alloc(u8, length);
+
                 try reader.readNoEof(data);
+
+                span.debug("Reading WorkExecResult.ok with length: {d}", .{length});
+                span.trace("Reading WorkExecResult.ok data: {s}", .{std.fmt.fmtSliceHexLower(data)});
+
                 break :blk WorkExecResult{ .ok = data };
             },
             1 => WorkExecResult{ .out_of_gas = {} },

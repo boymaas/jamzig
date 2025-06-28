@@ -121,8 +121,20 @@ pub const ServiceAccount = struct {
     }
 };
 
+pub const StorageMapEntry = struct {
+    key: []u8,
+    value: []u8,
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.key);
+        allocator.free(self.value);
+        self.* = undefined;
+    }
+};
+
 pub const Account = struct {
     service: types.ServiceInfo,
+    storage: []StorageMapEntry,
     preimages: []PreimageEntry,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -130,6 +142,10 @@ pub const Account = struct {
             entry.deinit(allocator);
         }
         allocator.free(self.preimages);
+        for (self.storage) |*entry| {
+            entry.deinit(allocator);
+        }
+        allocator.free(self.storage);
         self.* = undefined;
     }
 };
@@ -196,7 +212,7 @@ pub const TestCase = struct {
     }
 };
 
-test "Load and dump a tiny test vector, and check the outputs" {
+test "tiny_load_and_dump" {
     const allocator = std.testing.allocator;
 
     const test_jsons: [1][]const u8 = .{
@@ -215,7 +231,7 @@ test "Load and dump a tiny test vector, and check the outputs" {
     }
 }
 
-test "Correct parsing of all tiny test vectors" {
+test "tiny_all" {
     const allocator = std.testing.allocator;
 
     const dir = @import("dir.zig");
@@ -228,7 +244,7 @@ test "Correct parsing of all tiny test vectors" {
     defer test_vectors.deinit();
 }
 
-test "Correct parsing of all full test vectors" {
+test "full_all" {
     const allocator = std.testing.allocator;
 
     const dir = @import("dir.zig");
