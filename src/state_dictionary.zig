@@ -15,29 +15,29 @@ const Params = @import("jam_params.zig").Params;
 // |_|\_\___|\__, |  \____\___/|_| |_|___/\__|_|   \__,_|\___|\__|_|\___/|_| |_|
 //           |___/
 
-/// Constructs a 32-byte key with the input byte as the first element and zeros for the rest.
+/// Constructs a 31-byte state key with the input byte as the first element and zeros for the rest.
 ///
 /// @param input - The byte to use as the first element of the key
-/// @return A 32-byte array representing the key
+/// @return A 31-byte array representing the key
 /// TODO: rename to state component
-pub fn constructSimpleByteKey(input: u8) [32]u8 {
-    var result: [32]u8 = [_]u8{0} ** 32;
+pub fn constructSimpleByteKey(input: u8) types.StateKey {
+    var result: types.StateKey = [_]u8{0} ** 31;
     result[0] = input;
     return result;
 }
 
-pub fn deconstructSimpleByteKey(key: [32]u8) u8 {
+pub fn deconstructSimpleByteKey(key: types.StateKey) u8 {
     return key[0];
 }
 
-/// Constructs a 32-byte key using a byte and a service index.
+/// Constructs a 31-byte key using a byte and a service index.
 /// The first byte is set to the input byte, followed by the 4-byte service index in little-endian format.
 ///
 /// @param i - The byte to use as the first element of the key
 /// @param s - The service index to encode in the key
-/// @return A 32-byte array representing the key
-pub fn constructByteServiceIndexKey(i: u8, s: u32) [32]u8 {
-    var result: [32]u8 = [_]u8{0} ** 32;
+/// @return A 31-byte array representing the key
+pub fn constructByteServiceIndexKey(i: u8, s: u32) types.StateKey {
+    var result: types.StateKey = [_]u8{0} ** 31;
 
     result[0] = i;
     var service_bytes: [4]u8 = undefined;
@@ -51,7 +51,7 @@ pub fn constructByteServiceIndexKey(i: u8, s: u32) [32]u8 {
     return result;
 }
 
-pub fn deconstructByteServiceIndexKey(key: [32]u8) struct { byte: u8, service_index: u32 } {
+pub fn deconstructByteServiceIndexKey(key: types.StateKey) struct { byte: u8, service_index: u32 } {
     // Reconstruct service index from repeated bytes
     var service_bytes: [4]u8 = undefined;
     service_bytes[0] = key[1];
@@ -65,15 +65,15 @@ pub fn deconstructByteServiceIndexKey(key: [32]u8) struct { byte: u8, service_in
     };
 }
 
-/// Constructs a 32-byte key by interleaving a service index with a hash.
+/// Constructs a 31-byte key by interleaving a service index with a hash.
 /// The service index bytes are interleaved with the first 4 bytes of the hash,
-/// followed by the remaining 24 bytes of the hash.
+/// followed by the remaining hash bytes.
 ///
 /// @param s - The service index to encode in the key
 /// @param h - A 32-byte hash to incorporate into the key
-/// @return A 32-byte array representing the key
-pub fn constructServiceIndexHashKey(s: u32, h: [32]u8) [32]u8 {
-    var result: [32]u8 = [_]u8{0} ** 32;
+/// @return A 31-byte array representing the key
+pub fn constructServiceIndexHashKey(s: u32, h: [32]u8) types.StateKey {
+    var result: types.StateKey = [_]u8{0} ** 31;
 
     // Write service index in pieces
     var service_bytes: [4]u8 = undefined;
@@ -89,13 +89,13 @@ pub fn constructServiceIndexHashKey(s: u32, h: [32]u8) [32]u8 {
     result[6] = service_bytes[3];
     result[7] = h[3];
 
-    // Copy remaining hash bytes
-    std.mem.copyForwards(u8, result[8..], h[4..28]);
+    // Copy remaining hash bytes (23 bytes for 31-byte key)
+    std.mem.copyForwards(u8, result[8..], h[4..27]);
     return result;
 }
 
-pub fn deconstructServiceIndexHashKey(key: [32]u8) struct { service_index: u32, hash: LossyHash(28) } {
-    var hash: [28]u8 = undefined;
+pub fn deconstructServiceIndexHashKey(key: types.StateKey) struct { service_index: u32, hash: LossyHash(27) } {
+    var hash: [27]u8 = undefined;
 
     // Reconstruct service index from interleaved bytes
     const service_bytes = [4]u8{
@@ -115,7 +115,7 @@ pub fn deconstructServiceIndexHashKey(key: [32]u8) struct { service_index: u32, 
 
     return .{
         .service_index = service_index,
-        .hash = .{ .hash = hash, .start = 0, .end = 28 },
+        .hash = .{ .hash = hash, .start = 0, .end = 27 },
     };
 }
 
@@ -163,65 +163,65 @@ pub fn LossyHash(comptime size: usize) type {
     };
 }
 
-pub fn buildStorageKey(k: [32]u8) [32]u8 {
-    var result: [32]u8 = undefined;
+pub fn buildStorageKey(k: [32]u8) types.StateKey {
+    var result: types.StateKey = undefined;
     std.mem.writeInt(u32, result[0..4], 0xFFFFFFFF, .little);
-    @memcpy(result[4..32], k[0..28]);
+    @memcpy(result[4..31], k[0..27]);
     return result;
 }
 
-pub fn deconstructStorageKey(key: [28]u8) ?[24]u8 {
+pub fn deconstructStorageKey(key: [27]u8) ?[23]u8 {
     // Verify the expected magic number
     const magic = std.mem.readInt(u32, key[0..4], .little);
     if (magic != 0xFFFFFFFF) return null;
 
-    var result: [24]u8 = undefined;
-    @memcpy(&result, key[4..28]); // Copy the stored data back
+    var result: [23]u8 = undefined;
+    @memcpy(&result, key[4..27]); // Copy the stored data back
     return result;
 }
 
 // TODO: rename to construct ...
-pub fn buildPreimageKey(k: [32]u8) [32]u8 {
-    var result: [32]u8 = undefined;
+pub fn buildPreimageKey(k: [32]u8) types.StateKey {
+    var result: types.StateKey = undefined;
     std.mem.writeInt(u32, result[0..4], 0xFFFFFFFE, .little);
-    @memcpy(result[4..32], k[1..29]);
+    @memcpy(result[4..31], k[1..28]);
     return result;
 }
 
-pub fn deconstructPreimageKey(key: [28]u8) ?LossyHash(24) {
+pub fn deconstructPreimageKey(key: [27]u8) ?LossyHash(23) {
     // Verify the expected magic number
     const magic = std.mem.readInt(u32, key[0..4], .little);
     if (magic != 0xFFFFFFFE) return null;
 
-    var result: [24]u8 = undefined;
+    var result: [23]u8 = undefined;
     @memcpy(&result, key[4..]); // Copy the stored data back
-    return .{ .hash = result, .start = 1, .end = 25 };
+    return .{ .hash = result, .start = 1, .end = 24 };
 }
 
 const services = @import("services.zig");
-pub fn buildPreimageLookupKey(key: services.PreimageLookupKey) [32]u8 {
+pub fn buildPreimageLookupKey(key: services.PreimageLookupKey) types.StateKey {
     const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
     var hash: [32]u8 = undefined;
     Blake2b256.hash(&key.hash, &hash, .{});
-    var lookup_key: [32]u8 = undefined;
-    @memcpy(lookup_key[4..], hash[2..30]);
+    var lookup_key: types.StateKey = undefined;
+    @memcpy(lookup_key[4..], hash[2..29]);
     std.mem.writeInt(u32, lookup_key[0..4], key.length, .little);
     return lookup_key;
 }
 
-pub fn deconstructPreimageLookupKey(key: [28]u8) struct { length: u32, lossy_hash_of_hash: LossyHash(24) } {
+pub fn deconstructPreimageLookupKey(key: [27]u8) struct { length: u32, lossy_hash_of_hash: LossyHash(23) } {
     // Extract the length from the first 4 bytes
     const length = std.mem.readInt(u32, key[0..4], .little);
 
     // Create a zeroed hash buffer
-    var result: [24]u8 = undefined;
+    var result: [23]u8 = undefined;
 
-    // Copy the stored hash portion (bytes 2-29 of the original Blake2b hash)
+    // Copy the stored hash portion (bytes 2-28 of the original Blake2b hash)
     @memcpy(&result, key[4..]);
 
     return .{
         .length = length,
-        .lossy_hash_of_hash = .{ .hash = result, .start = 2, .end = 26 },
+        .lossy_hash_of_hash = .{ .hash = result, .start = 2, .end = 25 },
     };
 }
 
@@ -439,7 +439,7 @@ pub const DictMetadata = union(DictKeyType) {
 
 // Enhanced dictionary entry with metadata
 pub const DictEntry = struct {
-    key: [32]u8,
+    key: types.StateKey,
     value: []const u8,
     metadata: ?DictMetadata = null,
 
@@ -458,14 +458,14 @@ pub const DictEntry = struct {
 };
 
 pub const MerklizationDictionary = struct {
-    entries: std.AutoHashMap([32]u8, DictEntry),
+    entries: std.AutoHashMap(types.StateKey, DictEntry),
 
     // FIX: move these entries to a shared type file
     pub const MerkleEntry = @import("merkle.zig").Entry;
 
     pub fn init(allocator: std.mem.Allocator) MerklizationDictionary {
         return .{
-            .entries = std.AutoHashMap([32]u8, DictEntry).init(allocator),
+            .entries = std.AutoHashMap(types.StateKey, DictEntry).init(allocator),
         };
     }
 
@@ -613,7 +613,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
     state: *const jamstate.JamState(params),
     comptime config: DictionaryConfig,
 ) !MerklizationDictionary {
-    var map = std.AutoHashMap([32]u8, DictEntry).init(allocator);
+    var map = std.AutoHashMap(types.StateKey, DictEntry).init(allocator);
     errdefer map.deinit();
 
     // Helpers to ...
@@ -810,7 +810,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                 // Storage entries
                 var storage_iter = account.storage.iterator();
                 while (storage_iter.next()) |storage_entry| {
-                    const storage_key = constructServiceIndexHashKey(service_idx, buildStorageKey(storage_entry.key_ptr.*));
+                    const storage_key = constructServiceIndexHashKey(service_idx, storage_entry.key_ptr.*);
                     try map.put(storage_key, .{
                         .key = storage_key,
                         .value = try allocator.dupe(u8, storage_entry.value_ptr.*),
@@ -824,7 +824,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                     // Preimage lookups
                     var preimage_iter = account.preimages.iterator();
                     while (preimage_iter.next()) |preimage_entry| {
-                        const preimage_key = constructServiceIndexHashKey(service_idx, buildPreimageKey(preimage_entry.key_ptr.*));
+                        const preimage_key = constructServiceIndexHashKey(service_idx, preimage_entry.key_ptr.*);
                         try map.put(preimage_key, .{
                             .key = preimage_key,
                             .value = try allocator.dupe(u8, preimage_entry.value_ptr.*),
@@ -845,7 +845,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                             var preimage_lookup = try std.ArrayList(u8).initCapacity(allocator, 24);
                             try delta_encoder.encodePreimageLookup(lookup_entry.value_ptr.*, preimage_lookup.writer());
 
-                            const lookup_key = constructServiceIndexHashKey(service_idx, buildPreimageLookupKey(key));
+                            const lookup_key = buildPreimageLookupKey(key);
                             try map.put(lookup_key, .{
                                 .key = lookup_key,
                                 .value = try preimage_lookup.toOwnedSlice(),
@@ -933,5 +933,5 @@ test "constructServiceIndexHashKey" {
     try testing.expectEqual(@as(u8, 0x12), key[6]);
     try testing.expectEqual(@as(u8, 0x03), key[7]);
 
-    try testing.expectEqualSlices(u8, hash[4..28], key[8..]);
+    try testing.expectEqualSlices(u8, hash[4..27], key[8..]);
 }

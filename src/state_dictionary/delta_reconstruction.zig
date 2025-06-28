@@ -14,7 +14,7 @@ const log = std.log.scoped(.state_dictionary);
 pub fn reconstructServiceAccountBase(
     allocator: std.mem.Allocator,
     delta: *state.Delta,
-    key: [32]u8,
+    key: types.StateKey,
     value: []const u8,
 ) !void {
     const span = trace.span(.reconstruct_service_account_base);

@@ -11,6 +11,9 @@ pub const U64 = u64;
 pub const ByteSequence = []u8;
 pub const ByteArray32 = [32]u8;
 
+// State dictionary key type (31 bytes per JAM 0.6.6)
+pub const StateKey = [31]u8;
+
 pub const OpaqueHash = ByteArray32;
 pub const Hash = ByteArray32;
 pub const Epoch = U32;
