@@ -127,6 +127,9 @@ comptime {
     // Networking
     _ = @import("net/tests.zig");
 
+    // Fuzz Protocol
+    _ = @import("fuzz_protocol/tests/target_test.zig");
+
     // Proof of Concepts
     _ = @import("lab/thread/reactor_pattern.zig");
 }

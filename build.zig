@@ -86,6 +86,17 @@ pub fn build(b: *std.Build) !void {
     try rust_deps.staticallyLinkDepTo("polkavm_ffi", pvm_fuzzer);
     b.installArtifact(pvm_fuzzer);
 
+    const fuzz_protocol_target = b.addExecutable(.{
+        .name = "jamzig-fuzz-protocol-target",
+        .root_source_file = b.path("src/fuzz_protocol_target.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    fuzz_protocol_target.root_module.addOptions("build_options", build_options);
+    fuzz_protocol_target.linkLibCpp();
+    rust_deps.staticallyLinkTo(fuzz_protocol_target);
+    b.installArtifact(fuzz_protocol_target);
+
     // Run Steps
     // NODE
     const run_cmd = b.addRunArtifact(jamzig_exe);
@@ -113,6 +124,15 @@ pub fn build(b: *std.Build) !void {
     }
     const run_pvm_fuzzer_step = b.step("pvm_fuzz", "Run the pvm fuzzer");
     run_pvm_fuzzer_step.dependOn(&run_pvm_fuzzer.step);
+
+    // FUZZ PROTOCOL TARGET
+    const run_fuzz_protocol_target = b.addRunArtifact(fuzz_protocol_target);
+    run_fuzz_protocol_target.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_fuzz_protocol_target.addArgs(args);
+    }
+    const run_fuzz_protocol_target_step = b.step("fuzz_protocol_target", "Run the fuzz protocol target server");
+    run_fuzz_protocol_target_step.dependOn(&run_fuzz_protocol_target.step);
 
     // This creates the test step
     const unit_tests = b.addTest(.{
