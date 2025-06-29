@@ -9,11 +9,15 @@ const pvm = @import("../pvm.zig");
 const pvm_invocation = @import("../pvm/invocation.zig");
 
 const host_calls_map = @import("ontransfer/host_calls_map.zig");
+const HostCalls = @import("ontransfer/host_calls.zig").HostCalls;
 
-pub const OnTransferContext = @import("ontransfer/context.zig").OnTransferContext;
 pub const DeferredTransfer = @import("accumulate/types.zig").DeferredTransfer;
 
 const Params = @import("../jam_params.zig").Params;
+
+pub fn OnTransferContext(comptime params: Params) type {
+    return HostCalls(params).Context;
+}
 
 // Add tracing import
 const trace = @import("../tracing.zig").scoped(.ontransfer);
@@ -29,7 +33,7 @@ const OnTransferArgs = struct {
 pub fn invoke(
     comptime params: Params,
     allocator: std.mem.Allocator,
-    context: *OnTransferContext,
+    context: *OnTransferContext(params),
     tau: types.TimeSlot,
     service_id: types.ServiceId,
     transfers: []const DeferredTransfer,

@@ -394,7 +394,7 @@ pub fn processAccumulateReports(
             const service_id = entry.key_ptr.*;
             const deferred_transfers = entry.value_ptr.*.items;
 
-            var context = @import("pvm_invocations/ontransfer.zig").OnTransferContext{
+            var context = @import("pvm_invocations/ontransfer.zig").OnTransferContext(params){
                 .service_id = entry.key_ptr.*,
                 .service_accounts = @import("services_snapshot.zig").DeltaSnapshot.init(delta_prime),
                 .allocator = allocator,

@@ -17,6 +17,11 @@ pub fn AccumulationContext(params: Params) type {
         authorizer_queue: CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)), // q ∈ _C⟦H⟧^Q_H_C
         privileges: CopyOnWrite(state.Chi), // x ∈ (N_S, N_S, N_S, D⟨N_S → N_G⟩)
         time: *const params.Time(),
+        
+        // Additional context for fetch selectors (JAM graypaper §1.7.2)
+        entropy: types.Entropy, // η - entropy for current block (fetch selector 1)
+        authorizer_hash_output: ?types.Hash, // ω - authorizer execution output (fetch selector 2)
+        outputs: std.ArrayList(types.AccumulateOutput), // accumulated outputs from services (fetch selector 17)
 
         const InitArgs = struct {
             service_accounts: *state.Delta,
@@ -24,6 +29,8 @@ pub fn AccumulationContext(params: Params) type {
             authorizer_queue: *state.Phi(params.core_count, params.max_authorizations_queue_items),
             privileges: *state.Chi,
             time: *const params.Time(),
+            entropy: types.Entropy = [_]u8{0} ** 32, // Default entropy if not provided
+            authorizer_hash_output: ?types.Hash = null,
         };
 
         pub fn build(allocator: std.mem.Allocator, args: InitArgs) @This() {
@@ -33,7 +40,16 @@ pub fn AccumulationContext(params: Params) type {
                 .authorizer_queue = CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)).init(allocator, args.authorizer_queue),
                 .privileges = CopyOnWrite(state.Chi).init(allocator, args.privileges),
                 .time = args.time,
+                .entropy = args.entropy,
+                .authorizer_hash_output = args.authorizer_hash_output,
+                .outputs = std.ArrayList(types.AccumulateOutput).init(allocator),
             };
+        }
+
+        /// Update entropy and authorizer hash output for a specific service invocation
+        pub fn updateFetchContext(self: *@This(), entropy: types.Entropy, authorizer_hash_output: ?types.Hash) void {
+            self.entropy = entropy;
+            self.authorizer_hash_output = authorizer_hash_output;
         }
 
         pub fn commit(self: *@This()) !void {
@@ -58,6 +74,9 @@ pub fn AccumulationContext(params: Params) type {
                 // The above deepClones clone the wrappers, the references stay intack
                 // since time is not a wrapper. We just pass the pointer, as this will never be mutated
                 .time = self.time,
+                .entropy = self.entropy,
+                .authorizer_hash_output = self.authorizer_hash_output,
+                .outputs = try self.outputs.clone(),
             };
         }
 
@@ -68,6 +87,8 @@ pub fn AccumulationContext(params: Params) type {
             self.privileges.deinit();
             // Deinitialize the DeltaSnapshot
             self.service_accounts.deinit();
+            // Deinitialize the outputs ArrayList
+            self.outputs.deinit();
 
             // Set self to undefined to prevent use-after-free
             self.* = undefined;

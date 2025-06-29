@@ -54,6 +54,24 @@ pub fn invoke(
 
     span.debug("Found service account for ID {d}", .{service_id});
 
+    // Extract authorizer hash output from accumulation operands (JAM graypaper §B.7, §1.7.2)
+    // 
+    // The authorizer hash output is sourced from the 'a' field (authorizer hash) of accumulation operands.
+    // This value is used by fetch selector 2 (ω) to provide services access to the authorizer execution
+    // output for the current work package being processed. According to JAM graypaper §1.7.2,
+    // fetch selector 2 returns "The 32-byte Blake2s hash of the authorization-output of the
+    // authorizer of the current work package being refined or accumulated."
+    //
+    // In accumulation context, this comes from work reports that contain the authorizer hash
+    // produced during the work package's authorizer execution phase.
+    var authorizer_hash_output: ?types.Hash = null;
+    if (accumulation_operands.len > 0) {
+        // Use the authorizer hash from the first operand as the authorizer hash output
+        // This represents the hash of the authorizer execution output for the work package
+        authorizer_hash_output = accumulation_operands[0].a;
+        span.debug("Extracted authorizer hash output from operands: {s}", .{std.fmt.fmtSliceHexLower(&authorizer_hash_output.?)});
+    }
+
     // Prepare accumulation arguments
     span.debug("Preparing accumulation arguments", .{});
     var args_buffer = std.ArrayList(u8).init(allocator);
@@ -75,12 +93,18 @@ pub fn invoke(
     var host_call_map = try HostCallMap.buildOrGetCached(params, allocator);
     defer host_call_map.deinit(allocator);
 
+    // Clone the context and update it with entropy and authorizer hash output for this invocation
+    span.debug("Cloning accumulation context and updating fetch context", .{});
+    var enhanced_context = try context.deepClone();
+    defer enhanced_context.deinit();
+    enhanced_context.updateFetchContext(entropy, authorizer_hash_output);
+
     // Initialize host call context B.6
     span.debug("Initializing host call context", .{});
     var host_call_context = try AccumulateHostCalls(params).Context.constructUsingRegular(.{
         .allocator = allocator,
         .service_id = service_id,
-        .context = try context.deepClone(),
+        .context = enhanced_context,
         .new_service_id = service_util.generateServiceId(&context.service_accounts, service_id, entropy, tau),
         .deferred_transfers = std.ArrayList(DeferredTransfer).init(allocator),
         .accumulation_output = null,
@@ -189,6 +213,18 @@ pub fn invoke(
 
     if (accumulation_output) |output| {
         span.debug("Accumulation output present: {s}", .{std.fmt.fmtSliceHexLower(&output)});
+        
+        // Add the accumulation output to the outputs list for future services to access via fetch selector 17
+        // 
+        // JAM graypaper §1.7.2 specifies that fetch selector 17 returns "The sequence of 32-byte
+        // accumulation outputs made available in the current block." This enables services to
+        // access results from previously executed accumulation invocations within the same block,
+        // allowing for cross-service communication and coordination.
+        //
+        // The outputs are accumulated in order of service execution, providing a chronological
+        // record of accumulation results that can be used by subsequent services for decision making.
+        try collapsed_dimension.context.outputs.append(output);
+        span.debug("Added accumulation output to context outputs list (total: {d})", .{collapsed_dimension.context.outputs.items.len});
     } else {
         span.debug("No accumulation output produced", .{});
     }

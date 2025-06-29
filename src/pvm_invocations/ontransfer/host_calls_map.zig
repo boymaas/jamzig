@@ -10,16 +10,17 @@ const PVM = @import("../../pvm.zig").PVM;
 
 const trace = @import("../../tracing.zig").scoped(.ontransfer);
 
-pub fn buildOrGetCached(comptime _: Params, allocator: std.mem.Allocator) !std.AutoHashMapUnmanaged(u32, PVM.HostCallFn) {
+pub fn buildOrGetCached(comptime params: Params, allocator: std.mem.Allocator) !std.AutoHashMapUnmanaged(u32, PVM.HostCallFn) {
     const span = trace.span(.build_host_call_fn_map);
     defer span.deinit();
 
     var host_call_map = std.AutoHashMapUnmanaged(u32, PVM.HostCallFn){};
-    const HostCalls = HostCallsOnTransfer;
+    const HostCalls = HostCallsOnTransfer(params);
 
     // Register host calls
     span.debug("Registering host call functions", .{});
     try host_call_map.put(allocator, @intFromEnum(HostCallId.gas), HostCalls.gasRemaining);
+    try host_call_map.put(allocator, @intFromEnum(HostCallId.fetch), HostCalls.fetch);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.lookup), HostCalls.lookupPreimage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.read), HostCalls.readStorage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.write), HostCalls.writeStorage);

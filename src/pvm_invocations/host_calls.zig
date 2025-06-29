@@ -1,6 +1,7 @@
 /// Enum representing all possible host call operations
 pub const Id = enum(u32) {
     gas = 0, // Host call for retrieving remaining gas counter
+    fetch = 18, // Host call for fetching work packages
     lookup = 1, // Host call for looking up preimages by hash
     read = 2, // Host call for reading from service storage
     write = 3, // Host call for writing to service storage
@@ -19,7 +20,6 @@ pub const Id = enum(u32) {
     yield = 16, // Host call for yielding accumulation trie result
     historical_lookup = 17, // Host call for looking up historical state
     // Refine hostcalls
-    fetch = 18, // Host call for fetching work packages
     @"export" = 19, // Host call for exporting data to data lake
     machine = 20, // Host call for accessing machine information
     peek = 21, // Host call for reading from data lake
