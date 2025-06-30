@@ -83,7 +83,7 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
     for (account.data.preimages) |preimage| {
         const preimage_key = state_keys.constructServicePreimageKey(account.id, preimage.hash);
         try service_account.addPreimage(preimage_key, preimage.blob);
-        try service_account.registerPreimageAvailable(preimage.hash, @intCast(preimage.blob.len), null);
+        try service_account.registerPreimageAvailable(account.id, preimage.hash, @intCast(preimage.blob.len), null);
     }
 
     return service_account;

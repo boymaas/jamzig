@@ -71,11 +71,6 @@ pub const PreimageLookup = struct {
     }
 };
 
-pub const PreimageLookupKey = struct {
-    hash: Hash,
-    length: u32,
-};
-
 pub const PreimageSubmission = struct {
     index: ServiceId,
     hash: Hash,
@@ -101,7 +96,7 @@ pub const ServiceAccount = struct {
     // through a process of being marked as unavailable, and only after a period of
     // time may it be removed from state - using 31-byte structured keys
     preimages: std.AutoHashMap(types.StateKey, []const u8),
-    preimage_lookups: std.AutoHashMap(PreimageLookupKey, PreimageLookup),
+    preimage_lookups: std.AutoHashMap(types.StateKey, PreimageLookup),
 
     // Must be present in pre-image lookup, this in self.preimages
     code_hash: Hash,
@@ -119,7 +114,7 @@ pub const ServiceAccount = struct {
         return .{
             .storage = std.AutoHashMap(types.StateKey, []const u8).init(allocator),
             .preimages = std.AutoHashMap(types.StateKey, []const u8).init(allocator),
-            .preimage_lookups = std.AutoHashMap(PreimageLookupKey, PreimageLookup).init(allocator),
+            .preimage_lookups = std.AutoHashMap(types.StateKey, PreimageLookup).init(allocator),
             .code_hash = undefined,
             .balance = 0,
             .min_gas_accumulate = 0,
@@ -254,19 +249,20 @@ pub const ServiceAccount = struct {
 
     //  PreImageLookups assume correct state, that is when you sollicit a
     //  preimage. It should not be available already.
-    pub fn getPreimageLookup(self: *const ServiceAccount, hash: Hash, length: u32) ?PreimageLookup {
-        const key = PreimageLookupKey{ .hash = hash, .length = length };
+    pub fn getPreimageLookup(self: *const ServiceAccount, service_id: u32, hash: Hash, length: u32) ?PreimageLookup {
+        const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
         return self.preimage_lookups.get(key);
     }
 
     /// Created an entry in preimages_lookups indicating we need a preimage
     pub fn solicitPreimage(
         self: *ServiceAccount,
+        service_id: u32,
         hash: Hash,
         length: u32,
         current_timeslot: types.TimeSlot,
     ) !void {
-        const key = PreimageLookupKey{ .hash = hash, .length = length };
+        const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
         // Check if we already have an entry for this hash/length
         if (self.preimage_lookups.getPtr(key)) |preimage_lookup| {
@@ -286,26 +282,26 @@ pub const ServiceAccount = struct {
     }
 
     /// Forgets a preimage
-    /// TEMPORARY: Still uses hash-based lookup until Phase 3 updates host calls
     pub fn forgetPreimage(
         self: *ServiceAccount,
+        service_id: u32,
         hash: Hash,
         length: u32,
         current_slot: types.TimeSlot,
         preimage_expungement_period: u32,
     ) !void {
         // we can remove the entries when timeout occurred
-        const lookup_key = PreimageLookupKey{ .hash = hash, .length = length };
+        const lookup_key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
         if (self.preimage_lookups.getPtr(lookup_key)) |preimage_lookup| {
             var pi = preimage_lookup.asSliceMut();
             if (pi.len == 0) {
                 _ = self.preimage_lookups.remove(lookup_key);
-                self.removePreimageByHash(hash);
+                self.removePreimageByHash(service_id, hash);
             } else if (pi.len == 1) {
                 preimage_lookup.status[1] = current_slot; // [x, t]
             } else if (pi.len == 2 and pi[1].? < current_slot -| preimage_expungement_period) {
                 _ = self.preimage_lookups.remove(lookup_key);
-                self.removePreimageByHash(hash);
+                self.removePreimageByHash(service_id, hash);
             } else if (pi.len == 3 and pi[1].? < current_slot -| preimage_expungement_period) {
                 // [x,y,w]
                 pi[0] = pi[2];
@@ -321,37 +317,19 @@ pub const ServiceAccount = struct {
     }
 
     /// Internal helper to remove preimage by hash
-    /// TEMPORARY: Used during transition period
-    fn removePreimageByHash(self: *ServiceAccount, target_hash: Hash) void {
-        // Iterate through preimages to find one with matching hash portion
-        var iter = self.preimages.iterator();
-        var key_to_remove: ?types.StateKey = null;
+    fn removePreimageByHash(self: *ServiceAccount, service_id: u32, target_hash: Hash) void {
+        // Create the structured preimage key directly
+        const preimage_key = state_keys.constructServicePreimageKey(service_id, target_hash);
         
-        while (iter.next()) |entry| {
-            const key = entry.key_ptr.*;
-            
-            // Check if this is a preimage key and extract hash portion
-            if (key[1] == 254 and key[3] == 255 and key[5] == 255 and key[7] == 255) {
-                // This is a preimage key, compare the hash portion (h₁...h₂₈)
-                // Hash bytes h₁...h₂₈ are at positions 8-30 in the key
-                if (std.mem.eql(u8, key[8..31], target_hash[1..29])) {
-                    key_to_remove = key;
-                    break;
-                }
-            }
-        }
-        
-        if (key_to_remove) |key| {
-            if (self.preimages.fetchRemove(key)) |removed| {
-                self.preimages.allocator.free(removed.value);
-            }
+        if (self.preimages.fetchRemove(preimage_key)) |removed| {
+            self.preimages.allocator.free(removed.value);
         }
     }
 
     // method to determine if this service needs a preimage
-    pub fn needsPreImage(self: *const ServiceAccount, hash: Hash, length: u32, current_timeslot: Timeslot) bool {
+    pub fn needsPreImage(self: *const ServiceAccount, service_id: u32, hash: Hash, length: u32, current_timeslot: Timeslot) bool {
         // Check if we have an entry in preimage_lookups
-        const key = PreimageLookupKey{ .hash = hash, .length = length };
+        const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
         if (self.preimage_lookups.get(key)) |*lookup| {
             const status = lookup.asSlice();
@@ -384,11 +362,12 @@ pub const ServiceAccount = struct {
     // method to always set the pre-image lookup value
     pub fn registerPreimageAvailable(
         self: *ServiceAccount,
+        service_id: u32,
         hash: Hash,
         length: u32,
         timeslot: ?Timeslot,
     ) !void {
-        const key = PreimageLookupKey{ .hash = hash, .length = length };
+        const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
         // If we do not have one, easy just set first on and ready
         const existing_lookup = self.preimage_lookups.get(key) orelse {
@@ -419,11 +398,15 @@ pub const ServiceAccount = struct {
     }
 
     // 9.2.2 Implement the historical lookup function
-    pub fn historicalLookup(self: *ServiceAccount, time: Timeslot, hash: Hash) ?[]const u8 {
+    pub fn historicalLookup(self: *ServiceAccount, service_id: u32, time: Timeslot, hash: Hash) ?[]const u8 {
+        // Create the structured preimage key
+        const preimage_key = state_keys.constructServicePreimageKey(service_id, hash);
+        
         // first get the preimage, if not return null
-        if (self.getPreimageByHash(hash)) |preimage| {
+        if (self.getPreimage(preimage_key)) |preimage| {
             // see if we have it in the lookup table
-            if (self.preimage_lookups.get(PreimageLookupKey{ .hash = hash, .length = @intCast(preimage.len) })) |lookup| {
+            const lookup_key = state_keys.constructServicePreimageLookupKey(service_id, @intCast(preimage.len), hash);
+            if (self.preimage_lookups.get(lookup_key)) |lookup| {
                 const status = lookup.status;
                 if (status[0] == null) {
                     return null;
@@ -463,10 +446,20 @@ pub const ServiceAccount = struct {
         // a_i
         const a_i: u32 = (2 * self.preimage_lookups.count()) + self.storage.count();
         // a_l
-        var plkeys = self.preimage_lookups.keyIterator();
+        var plkeys = self.preimage_lookups.iterator();
         var a_o: u64 = 0;
-        while (plkeys.next()) |plkey| {
-            a_o += 81 + plkey.length;
+        while (plkeys.next()) |entry| {
+            // Extract length from the preimage lookup key
+            // Key format: [n₀, l₀, n₁, l₁, n₂, l₂, n₃, l₃, h₀, h₁, ..., h₂₂]
+            // Length bytes are at positions 1, 3, 5, 7 (little-endian)
+            const key_bytes = &entry.key_ptr.*;
+            var length_bytes: [4]u8 = undefined;
+            length_bytes[0] = key_bytes[1];
+            length_bytes[1] = key_bytes[3];
+            length_bytes[2] = key_bytes[5];
+            length_bytes[3] = key_bytes[7];
+            const length = std.mem.readInt(u32, &length_bytes, .little);
+            a_o += 81 + length;
         }
 
         var svals = self.storage.valueIterator();
@@ -560,7 +553,7 @@ pub const Delta = struct {
                 // Create structured preimage key using the service ID and hash
                 const preimage_key = state_keys.constructServicePreimageKey(item.index, item.hash);
                 try account.addPreimage(preimage_key, item.preimage);
-                try account.registerPreimageAvailable(item.hash, @intCast(item.preimage.len), t);
+                try account.registerPreimageAvailable(item.index, item.hash, @intCast(item.preimage.len), t);
             } else {
                 return error.AccountNotFound;
             }
@@ -633,38 +626,38 @@ test "ServiceAccount historicalLookup" {
     const preimage_key = state_keys.constructServicePreimageKey(42, hash);
     try account.addPreimage(preimage_key, preimage);
 
-    const key = PreimageLookupKey{ .hash = hash, .length = @intCast(preimage.len) };
+    const key = state_keys.constructServicePreimageLookupKey(42, @intCast(preimage.len), hash);
 
     // Test case 1: Empty status
     try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ null, null, null } });
-    try testing.expectEqual(null, account.historicalLookup(5, hash));
+    try testing.expectEqual(null, account.historicalLookup(42, 5, hash));
 
     // Test case 2: Status with 1 entry
     try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, null, null } });
-    try testing.expectEqual(null, account.historicalLookup(5, hash));
-    try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
+    try testing.expectEqual(null, account.historicalLookup(42, 5, hash));
+    try testing.expectEqualStrings(preimage, account.historicalLookup(42, 15, hash).?);
 
     // Test case 3: Status with 2 entries
     try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, null } });
-    try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
-    try testing.expectEqual(null, account.historicalLookup(25, hash));
+    try testing.expectEqualStrings(preimage, account.historicalLookup(42, 15, hash).?);
+    try testing.expectEqual(null, account.historicalLookup(42, 25, hash));
 
     // Test case 4: Status with 3 entries
     try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, 30 } });
-    try testing.expectEqual(null, account.historicalLookup(5, hash));
-    try testing.expectEqualStrings(preimage, account.historicalLookup(15, hash).?);
-    try testing.expectEqual(null, account.historicalLookup(25, hash));
-    try testing.expectEqualStrings(preimage, account.historicalLookup(35, hash).?);
+    try testing.expectEqual(null, account.historicalLookup(42, 5, hash));
+    try testing.expectEqualStrings(preimage, account.historicalLookup(42, 15, hash).?);
+    try testing.expectEqual(null, account.historicalLookup(42, 25, hash));
+    try testing.expectEqualStrings(preimage, account.historicalLookup(42, 35, hash).?);
 
     // Test case 5: Non-existent hash
     const non_existent_hash = [_]u8{2} ** 32;
-    try testing.expectEqual(null, account.historicalLookup(15, non_existent_hash));
+    try testing.expectEqual(null, account.historicalLookup(42, 15, non_existent_hash));
 
     // Test case 6: Preimage doesn't exist in preimages
     const hash_without_preimage = [_]u8{3} ** 32;
     try account.preimage_lookups.put(
-        PreimageLookupKey{ .hash = hash_without_preimage, .length = 10 },
+        state_keys.constructServicePreimageLookupKey(42, 10, hash_without_preimage),
         PreimageLookup{ .status = .{ 10, 0, 0 } },
     );
-    try testing.expect(account.historicalLookup(15, hash_without_preimage) == null);
+    try testing.expect(account.historicalLookup(42, 15, hash_without_preimage) == null);
 }

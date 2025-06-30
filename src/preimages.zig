@@ -89,7 +89,7 @@ pub fn processPreimagesExtrinsic(
         };
 
         // Check if preimage hash is already recorded
-        if (!service_account.needsPreImage(preimage_hash, @intCast(preimage.blob.len), stx.time.current_slot)) {
+        if (!service_account.needsPreImage(service_id, preimage_hash, @intCast(preimage.blob.len), stx.time.current_slot)) {
             preimage_span.err("Preimage not needed for service {d}, hash: {s}", .{ service_id, std.fmt.fmtSliceHexLower(&preimage_hash) });
             return error.PreimageUnneeded;
         }
@@ -101,6 +101,7 @@ pub fn processPreimagesExtrinsic(
 
         // Update the lookup metadata
         try service_account.registerPreimageAvailable(
+            service_id,
             preimage_hash,
             @intCast(preimage.blob.len),
             stx.time.current_slot,

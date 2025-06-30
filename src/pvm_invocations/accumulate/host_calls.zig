@@ -624,7 +624,7 @@ pub fn HostCalls(params: Params) type {
             new_account.balance = initial_balance;
 
             span.debug("Integrating preimage lookup", .{});
-            new_account.solicitPreimage(code_hash, code_len, ctx_regular.context.time.current_slot) catch {
+            new_account.solicitPreimage(ctx_regular.new_service_id, code_hash, code_len, ctx_regular.context.time.current_slot) catch {
                 span.err("Failed to integrate preimage lookup, out of memory", .{});
                 return .{ .terminal = .panic };
             };
@@ -704,7 +704,7 @@ pub fn HostCalls(params: Params) type {
             // First determine the length
             const footprint = target_service.storageFootprint();
             const l = @max(81, footprint.a_o) - 81;
-            const lookup_status = target_service.getPreimageLookup(hash, @intCast(l)) orelse {
+            const lookup_status = target_service.getPreimageLookup(@intCast(target_service_id), hash, @intCast(l)) orelse {
                 span.debug("Hash lookup not found, returning HUH error", .{});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                 return .play;
@@ -796,7 +796,7 @@ pub fn HostCalls(params: Params) type {
 
             // Query preimage status
             span.debug("Querying preimage status", .{});
-            const lookup_status = service_account.getPreimageLookup(hash, @intCast(preimage_size)) orelse {
+            const lookup_status = service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size)) orelse {
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                 return .play;
             };
@@ -914,9 +914,9 @@ pub fn HostCalls(params: Params) type {
 
             // Try to solicit the preimage
             span.debug("Attempting to solicit preimage", .{});
-            if (service_account.solicitPreimage(hash, @intCast(preimage_size), current_timeslot)) |_| {
+            if (service_account.solicitPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot)) |_| {
                 // Success, preimage solicited
-                span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(hash, @intCast(preimage_size))});
+                span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size))});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             } else |err| {
                 // Error occurred while soliciting preimage
@@ -972,7 +972,7 @@ pub fn HostCalls(params: Params) type {
             // Try to forget the preimage, this either succeeds and mutates the service, or fails and it did not mutate
             span.debug("Attempting to forget preimage", .{});
             // span.trace("Service Account: {}", .{types.fmt.format(service_account.preimage_lookup)});
-            service_account.forgetPreimage(hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch |err| {
+            service_account.forgetPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch |err| {
                 span.err("Error while forgetting preimage: {}", .{err});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                 return .play;
@@ -1138,7 +1138,7 @@ pub fn HostCalls(params: Params) type {
             span.trace("Data hash: {s}", .{std.fmt.fmtSliceHexLower(&data_hash)});
 
             // Check if this data is already in the preimage lookups (per graypaper condition)
-            if (service_account.getPreimageLookup(data_hash, @intCast(data_size))) |lookup_status| {
+            if (service_account.getPreimageLookup(service_id, data_hash, @intCast(data_size))) |lookup_status| {
                 const status = lookup_status.asSlice();
                 if (status.len != 0) {
                     span.debug("Data already has preimage lookup status, returning HUH error", .{});
