@@ -29,21 +29,59 @@ pub const WorkReportBuilder = struct {
         };
 
         var results = std.ArrayList(types.WorkResult).init(allocator);
-        defer results.deinit();
+        errdefer {
+            // Clean up any WorkResults that were created if we fail
+            for (results.items) |*result| {
+                result.deinit(allocator);
+            }
+            results.deinit();
+        }
 
         for (0..num_results) |_| {
             const work_result = try generateRandomWorkResult(allocator, random, complexity);
             try results.append(work_result);
         }
 
+        var context = generateRandomRefineContext(allocator, random, complexity) catch |err| {
+            // Clean up results before propagating error
+            for (results.items) |*result| {
+                result.deinit(allocator);
+            }
+            results.deinit();
+            return err;
+        };
+        errdefer context.deinit(allocator);
+
+        const segment_root_lookup = generateRandomSegmentRootLookup(allocator, random, complexity) catch |err| {
+            // Clean up before propagating error
+            context.deinit(allocator);
+            for (results.items) |*result| {
+                result.deinit(allocator);
+            }
+            results.deinit();
+            return err;
+        };
+        errdefer allocator.free(segment_root_lookup);
+
+        const auth_output_slice = try auth_output.toOwnedSlice();
+        errdefer allocator.free(auth_output_slice);
+        
+        const results_slice = try results.toOwnedSlice();
+        errdefer {
+            for (results_slice) |*result| {
+                result.deinit(allocator);
+            }
+            allocator.free(results_slice);
+        }
+
         return types.WorkReport{
             .package_spec = generateRandomWorkPackageSpec(random, complexity),
-            .context = try generateRandomRefineContext(allocator, random, complexity),
+            .context = context,
             .core_index = random.int(types.CoreIndex),
             .authorizer_hash = generateRandomHash(random),
-            .auth_output = try auth_output.toOwnedSlice(),
-            .segment_root_lookup = try generateRandomSegmentRootLookup(allocator, random, complexity),
-            .results = try results.toOwnedSlice(),
+            .auth_output = auth_output_slice,
+            .segment_root_lookup = segment_root_lookup,
+            .results = results_slice,
             .stats = generateRandomWorkReportStats(random, complexity),
         };
     }
@@ -68,7 +106,10 @@ pub const WorkReportBuilder = struct {
 
         // Generate work execution result
         const exec_result = switch (random.intRangeAtMost(u8, 0, 5)) {
-            0 => types.WorkExecResult{ .ok = try payload.toOwnedSlice() },
+            0 => blk: {
+                const owned_payload = try payload.toOwnedSlice();
+                break :blk types.WorkExecResult{ .ok = owned_payload };
+            },
             1 => types.WorkExecResult.out_of_gas,
             2 => types.WorkExecResult.panic,
             3 => types.WorkExecResult.bad_exports,
@@ -123,7 +164,7 @@ pub const WorkReportBuilder = struct {
         };
 
         var prerequisites = std.ArrayList(types.WorkPackageHash).init(allocator);
-        defer prerequisites.deinit();
+        errdefer prerequisites.deinit();
 
         for (0..prereq_count) |_| {
             try prerequisites.append(generateRandomHash(random));
@@ -151,7 +192,7 @@ pub const WorkReportBuilder = struct {
         };
 
         var lookup_items = std.ArrayList(types.SegmentRootLookupItem).init(allocator);
-        defer lookup_items.deinit();
+        errdefer lookup_items.deinit();
 
         for (0..entry_count) |_| {
             const item = types.SegmentRootLookupItem{

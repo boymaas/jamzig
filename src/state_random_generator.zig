@@ -4,9 +4,9 @@ const types = @import("types.zig");
 const Params = @import("jam_params.zig").Params;
 
 pub const StateComplexity = enum {
-    minimal,    // Only required fields populated
-    moderate,   // Some optional components populated
-    maximal,    // All components at reasonable limits
+    minimal, // Only required fields populated
+    moderate, // Some optional components populated
+    maximal, // All components at reasonable limits
 };
 
 pub const RandomStateGenerator = struct {
@@ -32,17 +32,38 @@ pub const RandomStateGenerator = struct {
             .minimal => {
                 // Initialize only the most basic required components
                 try self.generateMinimalState(params, &state);
+
+                // Initialize Theta and Rho with minimal complexity
+                try state.initTheta(self.allocator);
+                try self.generateRandomTheta(params, .minimal, &state.theta.?);
+
+                try state.initRho(self.allocator);
+                try self.generateRandomRho(params, .minimal, &state.rho.?);
             },
             .moderate => {
                 // Initialize basic components plus some optional ones
                 try self.generateMinimalState(params, &state);
                 try self.generateModerateState(params, &state);
+
+                // Initialize Theta and Rho with moderate complexity (not done in generateModerateState to avoid duplication)
+                try state.initTheta(self.allocator);
+                try self.generateRandomTheta(params, .moderate, &state.theta.?);
+
+                try state.initRho(self.allocator);
+                try self.generateRandomRho(params, .moderate, &state.rho.?);
             },
             .maximal => {
                 // Initialize all components with realistic data
                 try self.generateMinimalState(params, &state);
                 try self.generateModerateState(params, &state);
                 try self.generateMaximalState(params, &state);
+
+                // Initialize Theta and Rho with maximal complexity
+                try state.initTheta(self.allocator);
+                try self.generateRandomTheta(params, .maximal, &state.theta.?);
+
+                try state.initRho(self.allocator);
+                try self.generateRandomRho(params, .maximal, &state.rho.?);
             },
         }
 
@@ -64,13 +85,6 @@ pub const RandomStateGenerator = struct {
         for (&state.eta.?) |*entropy| {
             self.rng.bytes(entropy);
         }
-
-        // Initialize theta and rho with minimal complexity
-        try state.initTheta(self.allocator);
-        try self.generateRandomTheta(params, .minimal, &state.theta.?);
-
-        try state.initRho(self.allocator);
-        try self.generateRandomRho(params, .minimal, &state.rho.?);
     }
 
     /// Generate moderate complexity state components
@@ -90,13 +104,6 @@ pub const RandomStateGenerator = struct {
         // Initialize service accounts (delta)
         try state.initDelta(self.allocator);
         try self.generateRandomDelta(params, &state.delta.?);
-
-        // Initialize theta and rho with moderate complexity
-        try state.initTheta(self.allocator);
-        try self.generateRandomTheta(params, .moderate, &state.theta.?);
-
-        try state.initRho(self.allocator);
-        try self.generateRandomRho(params, .moderate, &state.rho.?);
     }
 
     /// Generate maximal complexity state components
@@ -160,7 +167,7 @@ pub const RandomStateGenerator = struct {
     ) !void {
         // Generate a random number of blocks (0 to max_blocks)
         const num_blocks = self.rng.uintAtMost(usize, beta.max_blocks);
-        
+
         for (0..num_blocks) |_| {
             // Generate random BlockInfo
             const block_info = try self.generateRandomBlockInfo(params);
@@ -173,11 +180,11 @@ pub const RandomStateGenerator = struct {
         // Generate random header hash
         var header_hash: types.Hash = undefined;
         self.rng.bytes(&header_hash);
-        
+
         // Generate random state root
         var state_root: types.Hash = undefined;
         self.rng.bytes(&state_root);
-        
+
         // Generate random MMR (1-10 peaks, some may be null)
         const mmr_size = self.rng.uintAtMost(usize, 10) + 1;
         const beefy_mmr = try self.allocator.alloc(?types.Hash, mmr_size);
@@ -190,7 +197,7 @@ pub const RandomStateGenerator = struct {
                 peak.* = null;
             }
         }
-        
+
         // Generate random work reports (0-5 reports)
         const num_reports = self.rng.uintAtMost(usize, 5);
         const work_reports = try self.allocator.alloc(types.ReportedWorkPackage, num_reports);
@@ -198,7 +205,7 @@ pub const RandomStateGenerator = struct {
             self.rng.bytes(&report.hash);
             self.rng.bytes(&report.exports_root);
         }
-        
+
         return types.BlockInfo{
             .header_hash = header_hash,
             .state_root = state_root,
@@ -215,71 +222,71 @@ pub const RandomStateGenerator = struct {
     ) !void {
         // Generate only 1 simple service account to avoid performance issues
         const service_id = self.rng.int(u32);
-        
+
         var service_account = @import("services.zig").ServiceAccount.init(self.allocator);
-        
+
         // Generate only basic fields
         self.rng.bytes(&service_account.code_hash);
         service_account.balance = self.rng.int(u64) % 1000;
         service_account.min_gas_accumulate = self.rng.int(u64) % 1000;
         service_account.min_gas_on_transfer = self.rng.int(u64) % 1000;
-        
+
         // Skip storage and preimage generation for now to avoid performance issues
-        
+
         try delta.accounts.put(service_id, service_account);
     }
 
     /// Helper function to generate a random ServiceAccount
     fn generateRandomServiceAccount(self: *RandomStateGenerator) !@import("services.zig").ServiceAccount {
         var service_account = @import("services.zig").ServiceAccount.init(self.allocator);
-        
+
         // Generate random code hash
         self.rng.bytes(&service_account.code_hash);
-        
+
         // Generate random balance (0 to 1M tokens)
         service_account.balance = self.rng.int(u64) % 1_000_000;
-        
+
         // Generate random gas limits
         service_account.min_gas_accumulate = self.rng.int(u64) % 100_000;
         service_account.min_gas_on_transfer = self.rng.int(u64) % 50_000;
-        
+
         // Generate random storage entries (0-5 entries)
         const num_storage = self.rng.uintAtMost(u8, 5);
         for (0..num_storage) |_| {
             var storage_key: types.StateKey = undefined;
             self.rng.bytes(&storage_key);
-            
+
             // Generate random storage value (1-512 bytes)
             const value_size = self.rng.uintAtMost(usize, 512) + 1;
             const storage_value = try self.allocator.alloc(u8, value_size);
             self.rng.bytes(storage_value);
-            
+
             try service_account.storage.put(storage_key, storage_value);
         }
-        
+
         // Generate random preimage entries (0-3 entries)
         const num_preimages = self.rng.uintAtMost(u8, 3);
         for (0..num_preimages) |_| {
             var preimage_key: types.StateKey = undefined;
             self.rng.bytes(&preimage_key);
-            
+
             // Generate random preimage data (1-1024 bytes)
             const preimage_size = self.rng.uintAtMost(usize, 1024) + 1;
             const preimage_data = try self.allocator.alloc(u8, preimage_size);
             self.rng.bytes(preimage_data);
-            
+
             try service_account.preimages.put(preimage_key, preimage_data);
-            
+
             // Create corresponding preimage lookup with random status
             var lookup = @import("services.zig").PreimageLookup{ .status = [_]?types.TimeSlot{null} ** 3 };
             const status_count = self.rng.uintAtMost(u8, 3) + 1;
             for (0..status_count) |i| {
                 lookup.status[i] = self.rng.int(types.TimeSlot);
             }
-            
+
             try service_account.preimage_lookups.put(preimage_key, lookup);
         }
-        
+
         return service_account;
     }
 
@@ -291,17 +298,17 @@ pub const RandomStateGenerator = struct {
     ) !void {
         // Generate random validator set (k field)
         try self.generateRandomValidatorSet(&gamma.k);
-        
+
         // Generate random VRF root (z field) - 144-byte BLS public key
         self.rng.bytes(&gamma.z);
-        
+
         // For now, only generate small simple structures to avoid performance issues
         // TODO: Implement full s field generation when structure is more stable
-        
+
         // Generate minimal ticket array (a field) - limit to 3 for performance
         const num_tickets_a = self.rng.uintAtMost(usize, 3);
         gamma.a = try self.allocator.alloc(types.TicketBody, num_tickets_a);
-        
+
         for (gamma.a) |*ticket| {
             self.rng.bytes(&ticket.id);
             ticket.attempt = self.rng.int(u8);
@@ -319,7 +326,7 @@ pub const RandomStateGenerator = struct {
             // Generate random queue length (0 to max_items, but limit to 5 for performance)
             const max_items = @min(params.max_authorizations_queue_items, 5);
             const queue_length = self.rng.uintAtMost(u8, max_items);
-            
+
             for (0..queue_length) |_| {
                 var hash: [32]u8 = undefined;
                 self.rng.bytes(&hash);
@@ -338,7 +345,7 @@ pub const RandomStateGenerator = struct {
         chi.manager = if (self.rng.int(u8) % 10 < 3) null else self.rng.intRangeAtMost(u32, 1, 1000);
         chi.assign = if (self.rng.int(u8) % 10 < 3) null else self.rng.intRangeAtMost(u32, 1, 1000);
         chi.designate = if (self.rng.int(u8) % 10 < 3) null else self.rng.intRangeAtMost(u32, 1, 1000);
-        
+
         // Generate always_accumulate services map (0-5 entries for performance)
         const num_always_accumulate = self.rng.uintAtMost(u8, 5);
         for (0..num_always_accumulate) |_| {
@@ -361,7 +368,7 @@ pub const RandomStateGenerator = struct {
             self.rng.bytes(&hash);
             try psi.good_set.put(hash, {});
         }
-        
+
         // Generate random hashes for bad_set (0-3 entries for performance)
         const bad_count = self.rng.uintAtMost(u8, 3);
         for (0..bad_count) |_| {
@@ -369,7 +376,7 @@ pub const RandomStateGenerator = struct {
             self.rng.bytes(&hash);
             try psi.bad_set.put(hash, {});
         }
-        
+
         // Generate random hashes for wonky_set (0-3 entries for performance)
         const wonky_count = self.rng.uintAtMost(u8, 3);
         for (0..wonky_count) |_| {
@@ -377,7 +384,7 @@ pub const RandomStateGenerator = struct {
             self.rng.bytes(&hash);
             try psi.wonky_set.put(hash, {});
         }
-        
+
         // Generate random public keys for punish_set (0-3 entries for performance)
         const punish_count = self.rng.uintAtMost(u8, 3);
         for (0..punish_count) |_| {
@@ -457,12 +464,12 @@ pub const RandomStateGenerator = struct {
         // Generate random work packages - they will be added to the newest slot automatically
         // Limit total work packages to avoid performance issues
         const total_packages = self.rng.uintAtMost(usize, 10);
-        
+
         for (0..total_packages) |_| {
             // Generate random work package hash
             var work_package_hash: types.WorkPackageHash = undefined;
             self.rng.bytes(&work_package_hash);
-            
+
             // Add work package (automatically goes to newest slot)
             try xi.addWorkPackage(work_package_hash);
         }
@@ -476,10 +483,14 @@ pub const RandomStateGenerator = struct {
         theta: *jamstate.Theta(params.epoch_length),
     ) !void {
         const WorkReportBuilder = @import("state_random_generator/work_report_builder.zig").WorkReportBuilder;
-        
-        // Generate 1-3 work reports to avoid performance issues
-        const num_reports = self.rng.uintAtMost(usize, 3) + 1;
-        
+
+        // Generate work reports based on complexity
+        const num_reports: usize = switch (complexity) {
+            .minimal => 1,
+            .moderate => self.rng.uintAtMost(usize, 2) + 1, // 1-2 reports
+            .maximal => self.rng.uintAtMost(usize, 3) + 1, // 1-3 reports
+        };
+
         for (0..num_reports) |_| {
             const work_report = try WorkReportBuilder.generateRandomWorkReport(
                 params,
@@ -487,13 +498,12 @@ pub const RandomStateGenerator = struct {
                 self.rng,
                 complexity,
             );
-            
+
             // Add to theta's ready reports (use a random time slot within epoch bounds)
             const time_slot = self.rng.uintAtMost(types.TimeSlot, params.epoch_length - 1);
             try theta.addWorkReport(time_slot, work_report);
         }
     }
-
 
     /// Generate random rho (pending reports) data
     fn generateRandomRho(
@@ -503,13 +513,17 @@ pub const RandomStateGenerator = struct {
         rho: *jamstate.Rho(params.core_count),
     ) !void {
         const WorkReportBuilder = @import("state_random_generator/work_report_builder.zig").WorkReportBuilder;
-        
-        // Populate only a few cores with minimal data to avoid complexity
-        const num_cores_to_populate = self.rng.uintAtMost(usize, 3);
-        
+
+        // Populate cores based on complexity
+        const num_cores_to_populate: usize = switch (complexity) {
+            .minimal => 1,
+            .moderate => self.rng.uintAtMost(usize, 2) + 1, // 1-2 cores
+            .maximal => self.rng.uintAtMost(usize, 3) + 1, // 1-3 cores
+        };
+
         for (0..num_cores_to_populate) |_| {
             const core_index = self.rng.uintAtMost(u16, params.core_count - 1);
-            
+
             // Only populate if the slot is currently null
             if (rho.reports[core_index] == null) {
                 const work_report = try WorkReportBuilder.generateRandomWorkReport(
@@ -518,19 +532,19 @@ pub const RandomStateGenerator = struct {
                     self.rng,
                     complexity,
                 );
-                
+
                 // Create AvailabilityAssignment with the work report and random timeout
                 const assignment = types.AvailabilityAssignment{
                     .report = work_report,
                     .timeout = self.rng.int(types.TimeSlot),
                 };
-                
+
                 // Create RhoEntry with the assignment
                 const rho_entry = @import("reports_pending.zig").RhoEntry.init(
                     @intCast(core_index),
                     assignment,
                 );
-                
+
                 rho.reports[core_index] = rho_entry;
             }
         }
@@ -545,13 +559,13 @@ pub const RandomStateGenerator = struct {
         for (validator_set.validators) |*validator| {
             // Generate random Bandersnatch public key (32 bytes)
             self.rng.bytes(&validator.bandersnatch);
-            
+
             // Generate random Ed25519 public key (32 bytes)
             self.rng.bytes(&validator.ed25519);
-            
+
             // Generate random BLS public key (144 bytes)
             self.rng.bytes(&validator.bls);
-            
+
             // Generate random metadata (128 bytes)
             self.rng.bytes(&validator.metadata);
         }
@@ -568,13 +582,13 @@ pub const RandomStateGenerator = struct {
 test "random_state_generator_minimal" {
     const allocator = std.testing.allocator;
     const TINY = @import("jam_params.zig").TINY_PARAMS;
-    
+
     var prng = std.Random.DefaultPrng.init(42);
     var generator = RandomStateGenerator.init(allocator, prng.random());
-    
+
     var state = try generator.generateRandomState(TINY, .minimal);
     defer state.deinit(allocator);
-    
+
     // Verify basic components are initialized
     try std.testing.expect(state.tau != null);
     try std.testing.expect(state.eta != null);
@@ -583,13 +597,13 @@ test "random_state_generator_minimal" {
 test "random_state_generator_moderate" {
     const allocator = std.testing.allocator;
     const TINY = @import("jam_params.zig").TINY_PARAMS;
-    
+
     var prng = std.Random.DefaultPrng.init(123);
     var generator = RandomStateGenerator.init(allocator, prng.random());
-    
+
     var state = try generator.generateRandomState(TINY, .moderate);
     defer state.deinit(allocator);
-    
+
     // Verify moderate components are initialized
     try std.testing.expect(state.tau != null);
     try std.testing.expect(state.eta != null);
@@ -601,13 +615,13 @@ test "random_state_generator_moderate" {
 test "random_state_generator_maximal" {
     const allocator = std.testing.allocator;
     const TINY = @import("jam_params.zig").TINY_PARAMS;
-    
+
     var prng = std.Random.DefaultPrng.init(456);
     var generator = RandomStateGenerator.init(allocator, prng.random());
-    
+
     var state = try generator.generateRandomState(TINY, .maximal);
     defer state.deinit(allocator);
-    
+
     // Verify all components are initialized
     try std.testing.expect(state.tau != null);
     try std.testing.expect(state.eta != null);
@@ -626,3 +640,4 @@ test "random_state_generator_maximal" {
     try std.testing.expect(state.kappa != null);
     try std.testing.expect(state.lambda != null);
 }
+
