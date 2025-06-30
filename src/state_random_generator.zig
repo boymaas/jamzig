@@ -64,6 +64,13 @@ pub const RandomStateGenerator = struct {
         for (&state.eta.?) |*entropy| {
             self.rng.bytes(entropy);
         }
+
+        // Initialize theta and rho with minimal complexity
+        try state.initTheta(self.allocator);
+        try self.generateRandomTheta(params, .minimal, &state.theta.?);
+
+        try state.initRho(self.allocator);
+        try self.generateRandomRho(params, .minimal, &state.rho.?);
     }
 
     /// Generate moderate complexity state components
@@ -83,6 +90,13 @@ pub const RandomStateGenerator = struct {
         // Initialize service accounts (delta)
         try state.initDelta(self.allocator);
         try self.generateRandomDelta(params, &state.delta.?);
+
+        // Initialize theta and rho with moderate complexity
+        try state.initTheta(self.allocator);
+        try self.generateRandomTheta(params, .moderate, &state.theta.?);
+
+        try state.initRho(self.allocator);
+        try self.generateRandomRho(params, .moderate, &state.rho.?);
     }
 
     /// Generate maximal complexity state components
@@ -109,12 +123,6 @@ pub const RandomStateGenerator = struct {
 
         try state.initXi(self.allocator);
         try self.generateRandomXi(params, &state.xi.?);
-
-        try state.initTheta(self.allocator);
-        try self.generateRandomTheta(params, &state.theta.?);
-
-        try state.initRho(self.allocator);
-        try self.generateRandomRho(params, &state.rho.?);
 
         // Initialize validator sets
         state.iota = try types.ValidatorSet.init(self.allocator, params.validators_count);
@@ -462,13 +470,28 @@ pub const RandomStateGenerator = struct {
 
     /// Generate random theta (reports ready) data
     fn generateRandomTheta(
-        _: *RandomStateGenerator,
+        self: *RandomStateGenerator,
         comptime params: Params,
-        _: *jamstate.Theta(params.epoch_length),
+        complexity: StateComplexity,
+        theta: *jamstate.Theta(params.epoch_length),
     ) !void {
-        // TODO: Theta is very complex with nested WorkReport structures
-        // For now, we'll leave it empty to avoid compilation complexity
-        // This can be implemented later when needed for specific testing
+        const WorkReportBuilder = @import("state_random_generator/work_report_builder.zig").WorkReportBuilder;
+        
+        // Generate 1-3 work reports to avoid performance issues
+        const num_reports = self.rng.uintAtMost(usize, 3) + 1;
+        
+        for (0..num_reports) |_| {
+            const work_report = try WorkReportBuilder.generateRandomWorkReport(
+                params,
+                self.allocator,
+                self.rng,
+                complexity,
+            );
+            
+            // Add to theta's ready reports (use a random time slot within epoch bounds)
+            const time_slot = self.rng.uintAtMost(types.TimeSlot, params.epoch_length - 1);
+            try theta.addWorkReport(time_slot, work_report);
+        }
     }
 
 
@@ -476,26 +499,41 @@ pub const RandomStateGenerator = struct {
     fn generateRandomRho(
         self: *RandomStateGenerator,
         comptime params: Params,
+        complexity: StateComplexity,
         rho: *jamstate.Rho(params.core_count),
     ) !void {
-        // Rho is complex with nested WorkReport structures like Theta
-        // For now, we'll populate only a few cores with minimal data to avoid complexity
+        const WorkReportBuilder = @import("state_random_generator/work_report_builder.zig").WorkReportBuilder;
+        
+        // Populate only a few cores with minimal data to avoid complexity
         const num_cores_to_populate = self.rng.uintAtMost(usize, 3);
         
         for (0..num_cores_to_populate) |_| {
-            const core_index = self.rng.uintAtMost(u16, params.core_count);
+            const core_index = self.rng.uintAtMost(u16, params.core_count - 1);
             
             // Only populate if the slot is currently null
             if (rho.reports[core_index] == null) {
-                // Create minimal assignment with basic timeout
-                // NOTE: We would need to create a full WorkReport here, but that's very complex
-                // For now, we'll skip this implementation to avoid the complexity of WorkReport generation
-                // This can be implemented later when specific Rho testing is needed
+                const work_report = try WorkReportBuilder.generateRandomWorkReport(
+                    params,
+                    self.allocator,
+                    self.rng,
+                    complexity,
+                );
+                
+                // Create AvailabilityAssignment with the work report and random timeout
+                const assignment = types.AvailabilityAssignment{
+                    .report = work_report,
+                    .timeout = self.rng.int(types.TimeSlot),
+                };
+                
+                // Create RhoEntry with the assignment
+                const rho_entry = @import("reports_pending.zig").RhoEntry.init(
+                    @intCast(core_index),
+                    assignment,
+                );
+                
+                rho.reports[core_index] = rho_entry;
             }
         }
-        
-        // TODO: Implement full RhoEntry generation when WorkReport generation is stable
-        // For now, all cores remain null to avoid complex WorkReport generation
     }
 
     /// Generate random validator set data
