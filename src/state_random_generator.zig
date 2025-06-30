@@ -200,11 +200,63 @@ pub const RandomStateGenerator = struct {
 
     /// Generate random pi (validator stats) data
     fn generateRandomPi(
-        _: *RandomStateGenerator,
+        self: *RandomStateGenerator,
         comptime _: Params,
-        _: *jamstate.Pi,
+        pi: *jamstate.Pi,
     ) !void {
-        // TODO: Implement once Pi structure is analyzed
+        // Generate random validator stats for current epoch
+        for (pi.current_epoch_stats.items) |*validator_stats| {
+            validator_stats.blocks_produced = self.rng.int(u32) % 100;
+            validator_stats.tickets_introduced = self.rng.int(u32) % 50;
+            validator_stats.preimages_introduced = self.rng.int(u32) % 25;
+            validator_stats.octets_across_preimages = self.rng.int(u32) % 10000;
+            validator_stats.reports_guaranteed = self.rng.int(u32) % 75;
+            validator_stats.availability_assurances = self.rng.int(u32) % 30;
+        }
+
+        // Generate random validator stats for previous epoch
+        for (pi.previous_epoch_stats.items) |*validator_stats| {
+            validator_stats.blocks_produced = self.rng.int(u32) % 100;
+            validator_stats.tickets_introduced = self.rng.int(u32) % 50;
+            validator_stats.preimages_introduced = self.rng.int(u32) % 25;
+            validator_stats.octets_across_preimages = self.rng.int(u32) % 10000;
+            validator_stats.reports_guaranteed = self.rng.int(u32) % 75;
+            validator_stats.availability_assurances = self.rng.int(u32) % 30;
+        }
+
+        // Generate random core activity records
+        for (pi.core_stats.items) |*core_record| {
+            core_record.da_load = self.rng.int(u32) % 1000;
+            core_record.popularity = self.rng.int(u16) % 500;
+            core_record.imports = self.rng.int(u16) % 200;
+            core_record.exports = self.rng.int(u16) % 200;
+            core_record.extrinsic_count = self.rng.int(u16) % 100;
+            core_record.extrinsic_size = self.rng.int(u32) % 50000;
+            core_record.bundle_size = self.rng.int(u32) % 100000;
+            core_record.gas_used = self.rng.int(u64) % 1000000;
+        }
+
+        // Optionally add some random service stats
+        const num_services = self.rng.int(u8) % 5; // 0-4 services
+        var i: u8 = 0;
+        while (i < num_services) : (i += 1) {
+            const service_id = self.rng.int(u32);
+            const service_record = @import("validator_stats.zig").ServiceActivityRecord{
+                .provided_count = self.rng.int(u16) % 100,
+                .provided_size = self.rng.int(u32) % 10000,
+                .refinement_count = self.rng.int(u32) % 50,
+                .refinement_gas_used = self.rng.int(u64) % 500000,
+                .accumulate_count = self.rng.int(u32) % 25,
+                .accumulate_gas_used = self.rng.int(u64) % 250000,
+                .imports = self.rng.int(u32) % 5000,
+                .exports = self.rng.int(u32) % 5000,
+                .extrinsic_count = self.rng.int(u32) % 25,
+                .extrinsic_size = self.rng.int(u32) % 2500,
+                .on_transfers_count = self.rng.int(u32) % 10,
+                .on_transfers_gas_used = self.rng.int(u64) % 100000,
+            };
+            try pi.service_stats.put(service_id, service_record);
+        }
     }
 
     /// Generate random xi (accumulated reports) data

@@ -110,7 +110,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize Pi component
         pub fn initPi(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.pi = try Pi.init(allocator, params.validators_count, params.validators_count);
+            self.pi = try Pi.init(allocator, params.validators_count, params.core_count);
         }
 
         /// Initialize Xi component
