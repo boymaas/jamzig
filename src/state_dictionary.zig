@@ -244,7 +244,7 @@ pub const DeltaBaseMetadata = struct {
 
 // Metadata for storage entries
 pub const DeltaStorageMetadata = struct {
-    storage_key: [32]u8,
+    storage_key: types.StateKey, // [31]u8 to match ServiceAccount.storage
 };
 
 // Metadata for preimage entries
@@ -644,13 +644,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                         .key = storage_key,
                         .value = try allocator.dupe(u8, storage_entry.value_ptr.*),
                         .metadata = .{ .delta_storage = .{
-                            .storage_key = blk: {
-                                // Convert 31-byte StateKey to 32-byte hash for metadata compatibility
-                                // TODO: Update metadata structure to use StateKey directly
-                                var hash: [32]u8 = [_]u8{0} ** 32;
-                                @memcpy(hash[0..31], &storage_entry.key_ptr.*);
-                                break :blk hash;
-                            },
+                            .storage_key = storage_entry.key_ptr.*,
                         } },
                     });
                 }

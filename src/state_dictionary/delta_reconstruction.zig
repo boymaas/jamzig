@@ -87,24 +87,9 @@ pub fn reconstructPreimageEntry(
     const owned_value = try allocator.dupe(u8, dict_entry.value);
     errdefer allocator.free(owned_value);
 
-    // we have to decode the value to add it the account preimages, but we also do
-    // not have access to the hash
-    try account.preimages.put(dict_entry.metadata.?.delta_preimage.hash, owned_value);
+    // Store preimage using the StateKey directly - no conversion needed
+    try account.preimages.put(dict_entry.key, owned_value);
     span.debug("Successfully stored preimage in account", .{});
-
-    // GP0.5.0 @ 9.2.1 The state of the lookup system natu-
-    // rally satisfies a number of invariants. Firstly, any preim-
-    // age value must correspond to its hash.
-    // TODO: leave this in??
-
-    // if (tau == null) {
-    //     log.warn("tau not set yet", .{});
-    // }
-    // try account.integratePreimageLookup(
-    //     hash_of_value,
-    //     @intCast(value.len),
-    //     tau,
-    // );
 }
 
 pub fn reconstructPreimageLookupEntry(
@@ -132,10 +117,6 @@ pub fn reconstructPreimageLookupEntry(
         stream.reader(),
     );
 
-    // add it to the account
-    const metadata = dict_entry.metadata.?.delta_preimage_lookup;
-    try account.preimage_lookups.put(
-        services.PreimageLookupKey{ .hash = metadata.hash, .length = metadata.preimage_length },
-        entry,
-    );
+    // Store preimage lookup using the StateKey directly - no conversion needed
+    try account.preimage_lookups.put(dict_entry.key, entry);
 }

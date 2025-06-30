@@ -56,6 +56,8 @@ comptime {
 
     _ = @import("state_merklization.zig");
     _ = @import("state_test.zig");
+    _ = @import("state_random_generator.zig");
+    _ = @import("state_merklization_roundtrip_test.zig");
 
     _ = @import("state_encoding.zig");
     _ = @import("state_decoding.zig");
