@@ -341,6 +341,7 @@ pub fn processAccumulateReports(
             .authorizer_queue = try stx.ensure(.phi_prime),
             .privileges = try stx.ensure(.chi_prime),
             .time = &stx.time,
+            .entropy = (try stx.ensure(.eta_prime))[0], // Posterior entropy CHECKED
         },
     );
     defer accumulation_context.deinit();
@@ -394,10 +395,13 @@ pub fn processAccumulateReports(
             const service_id = entry.key_ptr.*;
             const deferred_transfers = entry.value_ptr.*.items;
 
-            var context = @import("pvm_invocations/ontransfer.zig").OnTransferContext{
+            var context = @import("pvm_invocations/ontransfer.zig").OnTransferContext(params){
                 .service_id = entry.key_ptr.*,
                 .service_accounts = @import("services_snapshot.zig").DeltaSnapshot.init(delta_prime),
                 .allocator = allocator,
+                .transfers = deferred_transfers,
+                .entropy = (try stx.ensure(.eta_prime))[0],
+                .timeslot = stx.time.current_slot,
             };
             defer context.deinit();
 
@@ -405,9 +409,6 @@ pub fn processAccumulateReports(
                 params,
                 allocator,
                 &context,
-                stx.time.current_slot,
-                service_id,
-                deferred_transfers,
             );
 
             // Store transfer stats

@@ -39,7 +39,7 @@ pub const Program = struct {
         const span = trace.span(.decode);
         defer span.deinit();
         span.debug("Starting program decoding, raw size: {d} bytes", .{raw_program.len});
-        span.trace("Raw program bytes: {any}", .{std.fmt.fmtSliceHexLower(raw_program)});
+        //span.trace("Raw program bytes: {any}", .{std.fmt.fmtSliceHexLower(raw_program)});
 
         // Validate minimum header size (jump table length + item length + code length)
         if (raw_program.len < 3) {

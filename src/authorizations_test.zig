@@ -17,7 +17,7 @@ const converters = @import("authorizations_test/converters.zig");
 
 const trace = @import("tracing.zig").scoped(.authorizations_test);
 
-const BASE_PATH = "src/jamtestvectors/data/authorizations/";
+const BASE_PATH = "src/jamtestvectors/data/stf/authorizations/";
 
 test "authorizations:tiny" {
     const allocator = testing.allocator;

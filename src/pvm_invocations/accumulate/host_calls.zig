@@ -16,7 +16,10 @@ const PVM = @import("../../pvm.zig").PVM;
 // Add tracing import
 const trace = @import("../../tracing.zig").scoped(.host_calls);
 
-pub fn HostCalls(params: Params) type {
+// Import shared encoding utilities
+const encoding_utils = @import("../encoding_utils.zig");
+
+pub fn HostCalls(comptime params: Params) type {
     return struct {
         pub const Context = struct {
             regular: Dimension,
@@ -63,12 +66,12 @@ pub fn HostCalls(params: Params) type {
                 return new_context;
             }
 
-            pub fn toGeneralContext(self: *@This()) general.GeneralContext {
-                return .{
-                    .service_id = self.service_id,
-                    .service_accounts = &self.context.service_accounts,
-                    .allocator = self.allocator,
-                };
+            pub fn toGeneralContext(self: *@This()) general.GeneralHostCalls(params).Context {
+                return general.GeneralHostCalls(params).Context.init(
+                    self.service_id,
+                    &self.context.service_accounts,
+                    self.allocator,
+                );
             }
 
             pub fn deinit(self: *@This()) void {
@@ -83,7 +86,7 @@ pub fn HostCalls(params: Params) type {
             exec_ctx: *PVM.ExecutionContext,
             _: ?*anyopaque,
         ) PVM.HostCallResult {
-            return general.gasRemaining(exec_ctx);
+            return general.GeneralHostCalls(params).gasRemaining(exec_ctx);
         }
 
         /// Host call implementation for lookup preimage (Ω_L)
@@ -94,7 +97,7 @@ pub fn HostCalls(params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             var ctx_regular = &host_ctx.regular;
 
-            return general.lookupPreimage(
+            return general.GeneralHostCalls(params).lookupPreimage(
                 exec_ctx,
                 ctx_regular.toGeneralContext(),
             );
@@ -108,7 +111,7 @@ pub fn HostCalls(params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             var ctx_regular = &host_ctx.regular;
 
-            return general.readStorage(
+            return general.GeneralHostCalls(params).readStorage(
                 exec_ctx,
                 ctx_regular.toGeneralContext(),
             );
@@ -122,7 +125,7 @@ pub fn HostCalls(params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             var ctx_regular = &host_ctx.regular;
 
-            return general.writeStorage(
+            return general.GeneralHostCalls(params).writeStorage(
                 exec_ctx,
                 ctx_regular.toGeneralContext(),
             );
@@ -136,7 +139,7 @@ pub fn HostCalls(params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             var ctx_regular = &host_ctx.regular;
 
-            return general.infoService(
+            return general.GeneralHostCalls(params).infoService(
                 exec_ctx,
                 ctx_regular.toGeneralContext(),
             );
@@ -608,7 +611,7 @@ pub fn HostCalls(params: Params) type {
             new_account.balance = initial_balance;
 
             span.debug("Integrating preimage lookup", .{});
-            new_account.solicitPreimage(code_hash, code_len, ctx_regular.context.time.current_slot) catch {
+            new_account.solicitPreimage(ctx_regular.new_service_id, code_hash, code_len, ctx_regular.context.time.current_slot) catch {
                 span.err("Failed to integrate preimage lookup, out of memory", .{});
                 return .{ .terminal = .panic };
             };
@@ -688,7 +691,7 @@ pub fn HostCalls(params: Params) type {
             // First determine the length
             const footprint = target_service.storageFootprint();
             const l = @max(81, footprint.a_o) - 81;
-            const lookup_status = target_service.getPreimageLookup(hash, @intCast(l)) orelse {
+            const lookup_status = target_service.getPreimageLookup(@intCast(target_service_id), hash, @intCast(l)) orelse {
                 span.debug("Hash lookup not found, returning HUH error", .{});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                 return .play;
@@ -780,7 +783,7 @@ pub fn HostCalls(params: Params) type {
 
             // Query preimage status
             span.debug("Querying preimage status", .{});
-            const lookup_status = service_account.getPreimageLookup(hash, @intCast(preimage_size)) orelse {
+            const lookup_status = service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size)) orelse {
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                 return .play;
             };
@@ -898,9 +901,9 @@ pub fn HostCalls(params: Params) type {
 
             // Try to solicit the preimage
             span.debug("Attempting to solicit preimage", .{});
-            if (service_account.solicitPreimage(hash, @intCast(preimage_size), current_timeslot)) |_| {
+            if (service_account.solicitPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot)) |_| {
                 // Success, preimage solicited
-                span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(hash, @intCast(preimage_size))});
+                span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size))});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             } else |err| {
                 // Error occurred while soliciting preimage
@@ -956,7 +959,7 @@ pub fn HostCalls(params: Params) type {
             // Try to forget the preimage, this either succeeds and mutates the service, or fails and it did not mutate
             span.debug("Attempting to forget preimage", .{});
             // span.trace("Service Account: {}", .{types.fmt.format(service_account.preimage_lookup)});
-            service_account.forgetPreimage(hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch |err| {
+            service_account.forgetPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch |err| {
                 span.err("Error while forgetting preimage: {}", .{err});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                 return .play;
@@ -1007,11 +1010,325 @@ pub fn HostCalls(params: Params) type {
             return .play;
         }
 
+        /// Host call implementation for designate validators (Ω_D)
+        pub fn designateValidators(
+            exec_ctx: *PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) PVM.HostCallResult {
+            const span = trace.span(.host_call_designate);
+            defer span.deinit();
+
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
+
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular: *Dimension = &host_ctx.regular;
+
+            // Get register per graypaper: [o] - offset to validator keys
+            const offset_ptr = exec_ctx.registers[7]; // Offset to validator keys array
+
+            span.debug("Host call: designate validators", .{});
+            span.debug("Offset pointer: 0x{x}", .{offset_ptr});
+
+            // Check if current service has the delegator privilege
+            const privileges: *const state.Chi = ctx_regular.context.privileges.getReadOnly();
+            if (privileges.designate != ctx_regular.service_id) {
+                span.debug("Service {d} does not have designate privilege, current designator is {?d}", .{
+                    ctx_regular.service_id, privileges.designate,
+                });
+                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
+                return .play;
+            }
+
+            // Calculate total size needed: 336 bytes per validator * V validators
+            const validator_count: u32 = params.validators_count;
+            const total_size: u32 = 336 * validator_count;
+
+            span.debug("Reading {d} validators, total size: {d} bytes", .{ validator_count, total_size });
+
+            // Read validator keys from memory
+            var validator_data = exec_ctx.memory.readSlice(@truncate(offset_ptr), total_size) catch {
+                span.err("Memory access failed while reading validator keys", .{});
+                return .{ .terminal = .panic };
+            };
+            defer validator_data.deinit();
+
+            // Parse the validator keys (336 bytes each)
+            // TODO: Implement proper validator key parsing and storage
+            // For now, just validate the memory is accessible and return success
+
+            // Update the staging set in the state
+            // TODO: Implement proper staging set update
+            span.debug("Validator keys read successfully, updating staging set", .{});
+
+            // Return success
+            span.debug("Validators designated successfully", .{});
+            exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
+            return .play;
+        }
+
+        /// Host call implementation for provide (Ω_Aries)
+        pub fn provide(
+            exec_ctx: *PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) PVM.HostCallResult {
+            const span = trace.span(.host_call_provide);
+            defer span.deinit();
+
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
+
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular: *Dimension = &host_ctx.regular;
+
+            // Get registers per graypaper: [service_id*, data_ptr, data_size]
+            const service_id_reg = exec_ctx.registers[7]; // Service ID (s* - can be current service if 2^64-1)
+            const data_ptr = exec_ctx.registers[8]; // Data pointer (o)
+            const data_size = exec_ctx.registers[9]; // Data size (z)
+
+            span.debug("Host call: provide", .{});
+            span.debug("Service ID reg: {d}, data ptr: 0x{x}, data size: {d}", .{ service_id_reg, data_ptr, data_size });
+
+            // Determine the actual service ID
+            const service_id: types.ServiceId = if (service_id_reg == 0xFFFFFFFFFFFFFFFF)
+                ctx_regular.service_id
+            else
+                @intCast(service_id_reg);
+
+            span.debug("Providing data for service: {d}", .{service_id});
+
+            // Check if the service exists
+            const service_account = ctx_regular.context.service_accounts.getReadOnly(service_id) orelse {
+                span.debug("Service {d} not found, returning WHO error", .{service_id});
+                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
+                return .play;
+            };
+
+            // Read data from memory
+            span.debug("Reading {d} bytes from memory at 0x{x}", .{ data_size, data_ptr });
+            var data_slice = exec_ctx.memory.readSlice(@truncate(data_ptr), @truncate(data_size)) catch {
+                span.err("Memory access failed while reading provide data", .{});
+                return .{ .terminal = .panic };
+            };
+            defer data_slice.deinit();
+
+            // Create a copy of the data for storage
+            const data_copy = ctx_regular.allocator.dupe(u8, data_slice.buffer) catch {
+                span.err("Failed to allocate memory for provide data", .{});
+                return .{ .terminal = .panic };
+            };
+
+            // Hash the data
+            var data_hash: [32]u8 = undefined;
+            std.crypto.hash.blake2.Blake2b256.hash(data_copy, &data_hash, .{});
+
+            span.trace("Data hash: {s}", .{std.fmt.fmtSliceHexLower(&data_hash)});
+
+            // Check if this data is already in the preimage lookups (per graypaper condition)
+            if (service_account.getPreimageLookup(service_id, data_hash, @intCast(data_size))) |lookup_status| {
+                const status = lookup_status.asSlice();
+                if (status.len != 0) {
+                    span.debug("Data already has preimage lookup status, returning HUH error", .{});
+                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
+                    ctx_regular.allocator.free(data_copy);
+                    return .play;
+                }
+            }
+
+            // Check if this provision already exists
+            // TODO: Check if the provision already exists in the set (graypaper condition)
+
+            // Add to provisions set
+            // For now, implement a basic version - this needs to be integrated with the actual provision tracking
+            span.debug("Adding provision for service {d}, data size {d}", .{ service_id, data_size });
+
+            // TODO: Implement proper provision set management
+            // The provision should be stored in the accumulation context
+
+            // Free the data copy for now since we don't have proper storage yet
+            ctx_regular.allocator.free(data_copy);
+
+            // Return success
+            span.debug("Provision added successfully", .{});
+            exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
+            return .play;
+        }
+
+        /// Host call implementation for fetch (Ω_Y) - Accumulate context
+        /// ΩY(ϱ, ω, µ, ∅, η'₀, ∅, ∅, ∅, x, ∅, t)
+        /// Fetch for accumulate context supporting selectors:
+        /// 0: System constants
+        /// 1: Current random accumulator (η'₀)
+        /// 14: Operand data (from context x)
+        /// 15: Specific operand by index (from context x)
+        /// 16: Transfer list (from t)
+        /// 17: Specific transfer by index (from t)
+        pub fn fetch(
+            exec_ctx: *PVM.ExecutionContext,
+            call_ctx: ?*anyopaque,
+        ) PVM.HostCallResult {
+            const span = trace.span(.host_call_fetch);
+            defer span.deinit();
+
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
+
+            const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
+            const ctx_regular = &host_ctx.regular;
+
+            const output_ptr = exec_ctx.registers[7]; // Output pointer (o)
+            const offset = exec_ctx.registers[8]; // Offset (f)
+            const limit = exec_ctx.registers[9]; // Length limit (l)
+            const selector = exec_ctx.registers[10]; // Data selector
+            const index1 = @as(u32, @intCast(exec_ctx.registers[11])); // Index 1
+
+            span.debug("Host call: fetch selector={d}", .{selector});
+            span.debug("Output ptr: 0x{x}, offset: {d}, limit: {d}", .{ output_ptr, offset, limit });
+
+            // Determine what data to fetch based on selector
+            var data_to_fetch: ?[]const u8 = null;
+            var needs_cleanup = false;
+
+            switch (selector) {
+                0 => {
+                    // Return JAM parameters as encoded bytes per graypaper
+                    span.debug("Encoding JAM chain constants", .{});
+                    const encoded_constants = encoding_utils.encodeJamParams(ctx_regular.allocator, params) catch {
+                        span.err("Failed to encode JAM chain constants", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    };
+                    data_to_fetch = encoded_constants;
+                    needs_cleanup = true;
+                },
+
+                1 => {
+                    // Selector 1: Current random accumulator (η'₀)
+                    span.debug("Random accumulator available from accumulate context", .{});
+                    data_to_fetch = ctx_regular.context.entropy[0..];
+                },
+
+                14 => {
+                    // Selector 14: Encoded operand tuples
+                    if (ctx_regular.context.operand_tuples) |operand_tuples| {
+                        const operand_tuples_data = encoding_utils.encodeOperandTuples(ctx_regular.allocator, operand_tuples) catch {
+                            span.err("Failed to encode operand tuples", .{});
+                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                            return .play;
+                        };
+                        span.debug("Operand tuples encoded successfully, count={d}", .{operand_tuples.len});
+                        data_to_fetch = operand_tuples_data;
+                        needs_cleanup = true;
+                    } else {
+                        span.debug("Operand tuples not available in accumulate context", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    }
+                },
+
+                15 => {
+                    // Selector 15: Specific operand tuple
+                    if (ctx_regular.context.operand_tuples) |operand_tuples| {
+                        if (index1 < operand_tuples.len) {
+                            const operand_tuple = &operand_tuples[index1];
+                            const operand_tuple_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand_tuple) catch {
+                                span.err("Failed to encode operand tuple", .{});
+                                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                                return .play;
+                            };
+                            span.debug("Operand tuple encoded successfully: index={d}", .{index1});
+                            data_to_fetch = operand_tuple_data;
+                            needs_cleanup = true;
+                        } else {
+                            span.debug("Operand tuple index out of bounds: index={d}, count={d}", .{ index1, operand_tuples.len });
+                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                            return .play;
+                        }
+                    } else {
+                        span.debug("Operand tuples not available in accumulate context", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    }
+                },
+
+                16 => {
+                    // Selector 16: Encoded transfer sequence - access from deferred transfers
+                    if (ctx_regular.deferred_transfers.items.len > 0) {
+                        const transfers_data = encoding_utils.encodeTransfers(ctx_regular.allocator, ctx_regular.deferred_transfers.items) catch {
+                            span.err("Failed to encode transfer sequence", .{});
+                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                            return .play;
+                        };
+                        span.debug("Transfer sequence encoded successfully, count={d}", .{ctx_regular.deferred_transfers.items.len});
+                        data_to_fetch = transfers_data;
+                        needs_cleanup = true;
+                    } else {
+                        span.debug("No deferred transfers available in accumulate context", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    }
+                },
+
+                17 => {
+                    // Selector 17: Specific transfer by index
+                    if (ctx_regular.deferred_transfers.items.len > 0) {
+                        if (index1 < ctx_regular.deferred_transfers.items.len) {
+                            const transfer_item = &ctx_regular.deferred_transfers.items[index1];
+                            const transfer_data = encoding_utils.encodeTransfer(ctx_regular.allocator, transfer_item) catch {
+                                span.err("Failed to encode transfer", .{});
+                                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                                return .play;
+                            };
+                            span.debug("Transfer encoded successfully: index={d}", .{index1});
+                            data_to_fetch = transfer_data;
+                            needs_cleanup = true;
+                        } else {
+                            span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.deferred_transfers.items.len });
+                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                            return .play;
+                        }
+                    } else {
+                        span.debug("No deferred transfers available in accumulate context", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    }
+                },
+
+                else => {
+                    // Invalid selector for accumulate context
+                    span.debug("Invalid fetch selector for accumulate: {d} (valid: 0,1,14,15,16,17)", .{selector});
+                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                    return .play;
+                },
+            }
+            defer if (needs_cleanup and data_to_fetch != null) ctx_regular.allocator.free(data_to_fetch.?);
+
+            if (data_to_fetch) |data| {
+                // Calculate what to return based on offset and limit
+                const f = @min(offset, data.len);
+                const l = @min(limit, data.len - f);
+
+                span.debug("Fetching {d} bytes from offset {d}", .{ l, f });
+
+                // Write data to memory
+                exec_ctx.memory.writeSlice(@truncate(output_ptr), data[f..][0..l]) catch {
+                    span.err("Memory access failed while writing fetch data", .{});
+                    return .{ .terminal = .panic };
+                };
+
+                // Return the total length of the data
+                exec_ctx.registers[7] = data.len;
+                span.debug("Fetch successful, total length: {d}", .{data.len});
+            }
+
+            return .play;
+        }
+
         pub fn debugLog(
             exec_ctx: *PVM.ExecutionContext,
             _: ?*anyopaque,
         ) PVM.HostCallResult {
-            return general.debugLog(
+            return general.GeneralHostCalls(params).debugLog(
                 exec_ctx,
             );
         }

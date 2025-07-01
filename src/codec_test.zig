@@ -50,9 +50,9 @@ test "codec: decode" {
 fn testDecodeAndCompare(comptime test_case: TestCase) !void {
     const allocator = std.testing.allocator;
 
-    const json_path = try std.fmt.allocPrint(allocator, "src/jamtestvectors/data/codec/data/{s}.json", .{test_case.name});
+    const json_path = try std.fmt.allocPrint(allocator, "src/jamtestvectors/data/codec/tiny/{s}.json", .{test_case.name});
     defer allocator.free(json_path);
-    const bin_path = try std.fmt.allocPrint(allocator, "src/jamtestvectors/data/codec/data/{s}.bin", .{test_case.name});
+    const bin_path = try std.fmt.allocPrint(allocator, "src/jamtestvectors/data/codec/tiny/{s}.bin", .{test_case.name});
     defer allocator.free(bin_path);
 
     const DomainType = @field(types, test_case.domain_type);

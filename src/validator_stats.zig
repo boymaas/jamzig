@@ -130,9 +130,9 @@ pub const ServiceActivityRecord = struct {
     refinement_count: U32 = 0,
     refinement_gas_used: U64 = 0,
     imports: U32 = 0,
-    extrinsic_count: U32 = 0,
-    extrinsic_size: U32 = 0,
     exports: U32 = 0,
+    extrinsic_size: U32 = 0,
+    extrinsic_count: U32 = 0,
     accumulate_count: U32 = 0,
     accumulate_gas_used: U64 = 0,
     on_transfers_count: U32 = 0,
@@ -151,9 +151,9 @@ pub const ServiceActivityRecord = struct {
         try codec.writeInteger(self.refinement_count, writer);
         try codec.writeInteger(self.refinement_gas_used, writer);
         try codec.writeInteger(self.imports, writer);
-        try codec.writeInteger(self.extrinsic_count, writer);
-        try codec.writeInteger(self.extrinsic_size, writer);
         try codec.writeInteger(self.exports, writer);
+        try codec.writeInteger(self.extrinsic_size, writer);
+        try codec.writeInteger(self.extrinsic_count, writer);
         try codec.writeInteger(self.accumulate_count, writer);
         try codec.writeInteger(self.accumulate_gas_used, writer);
         try codec.writeInteger(self.on_transfers_count, writer);
@@ -170,9 +170,9 @@ pub const ServiceActivityRecord = struct {
         const refinement_count = @as(U32, @truncate(try codec.readInteger(reader)));
         const refinement_gas_used = try codec.readInteger(reader);
         const imports = @as(U32, @truncate(try codec.readInteger(reader)));
-        const extrinsic_count = @as(U32, @truncate(try codec.readInteger(reader)));
-        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
         const exports = @as(U32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_count = @as(U32, @truncate(try codec.readInteger(reader)));
         const accumulate_count = @as(U32, @truncate(try codec.readInteger(reader)));
         const accumulate_gas_used = try codec.readInteger(reader);
         const on_transfers_count = @as(U32, @truncate(try codec.readInteger(reader)));

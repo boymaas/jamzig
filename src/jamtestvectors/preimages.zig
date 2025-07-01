@@ -4,7 +4,7 @@ const jam_types = @import("jam_types.zig");
 
 pub const jam_params = @import("../jam_params.zig");
 
-pub const BASE_PATH = "src/jamtestvectors/data/preimages/";
+pub const BASE_PATH = "src/jamtestvectors/data/stf/preimages/";
 
 // --------------------------------------------
 // -- Preimages
@@ -168,7 +168,7 @@ pub const TestCase = struct {
     }
 };
 
-test "Correct parsing of all  test vectors" {
+test "Correct parsing of all tiny test vectors" {
     const allocator = std.testing.allocator;
 
     const dir = @import("dir.zig");
@@ -176,7 +176,19 @@ test "Correct parsing of all  test vectors" {
         TestCase,
         jam_params.TINY_PARAMS,
         allocator,
-        BASE_PATH ++ "data/",
+        BASE_PATH ++ "tiny/",
+    );
+    defer test_vectors.deinit();
+}
+
+test "Correct parsing of all full test vectors" {
+    const allocator = std.testing.allocator;
+    const dir = @import("dir.zig");
+    var test_vectors = try dir.scan(
+        TestCase,
+        jam_params.FULL_PARAMS,
+        allocator,
+        BASE_PATH ++ "full/",
     );
     defer test_vectors.deinit();
 }

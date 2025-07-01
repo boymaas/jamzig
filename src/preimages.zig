@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const state = @import("state.zig");
 const state_delta = @import("state_delta.zig");
+const state_keys = @import("state_keys.zig");
 
 const Params = @import("jam_params.zig").Params;
 
@@ -88,17 +89,19 @@ pub fn processPreimagesExtrinsic(
         };
 
         // Check if preimage hash is already recorded
-        if (!service_account.needsPreImage(preimage_hash, @intCast(preimage.blob.len), stx.time.current_slot)) {
+        if (!service_account.needsPreImage(service_id, preimage_hash, @intCast(preimage.blob.len), stx.time.current_slot)) {
             preimage_span.err("Preimage not needed for service {d}, hash: {s}", .{ service_id, std.fmt.fmtSliceHexLower(&preimage_hash) });
             return error.PreimageUnneeded;
         }
 
-        // Add the preimage to the service account
-        try service_account.addPreimage(preimage_hash, preimage.blob);
+        // Add the preimage to the service account using structured key
+        const preimage_key = state_keys.constructServicePreimageKey(service_id, preimage_hash);
+        try service_account.addPreimage(preimage_key, preimage.blob);
         preimage_span.debug("Added preimage to service {d}", .{service_id});
 
         // Update the lookup metadata
         try service_account.registerPreimageAvailable(
+            service_id,
             preimage_hash,
             @intCast(preimage.blob.len),
             stx.time.current_slot,

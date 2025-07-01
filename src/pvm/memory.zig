@@ -66,17 +66,26 @@ pub const Memory = struct {
             const new_end = start_address + (num_pages * Memory.Z_P);
             span.trace("Pages will span from 0x{X:0>8} to 0x{X:0>8}", .{ start_address, new_end });
 
+            // Sort pages first to ensure consistent ordering for overlap checks
+            std.sort.insertion(Page, self.pages.items, {}, struct {
+                fn lessThan(_: void, a: Page, b: Page) bool {
+                    return a.address < b.address;
+                }
+            }.lessThan);
+
             // Check for overlapping pages
             const overlap_span = span.child(.check_overlap);
             defer overlap_span.deinit();
             overlap_span.debug("Checking for page overlaps with {d} existing pages", .{self.pages.items.len});
 
-            for (self.pages.items, 0..) |page, i| {
+            for (self.pages.items) |page| {
                 const page_end = page.address + Memory.Z_P;
-                overlap_span.trace("Checking page {d}: 0x{X:0>8} - 0x{X:0>8}", .{ i, page.address, page_end });
+                overlap_span.trace("Checking page: 0x{X:0>8} - 0x{X:0>8}", .{ page.address, page_end });
 
+                // Check if new range overlaps with existing page
                 if ((start_address >= page.address and start_address < page_end) or
-                    (new_end > page.address and new_end <= page_end))
+                    (new_end > page.address and new_end <= page_end) or
+                    (page.address >= start_address and page.address < new_end))
                 {
                     overlap_span.err("Overlap detected with page at 0x{X:0>8}", .{page.address});
                     return error.PageOverlap;
@@ -99,7 +108,7 @@ pub const Memory = struct {
                 alloc_span.debug("Created page at 0x{X:0>8} with flags {s}", .{ page.address, @tagName(page.flags) });
             }
 
-            // Sort pages by address
+            // Re-sort pages by address (after adding new ones)
             const sort_span = span.child(.sort_pages);
             defer sort_span.deinit();
             sort_span.debug("Sorting {d} pages by address", .{self.pages.items.len});
@@ -112,6 +121,43 @@ pub const Memory = struct {
 
             sort_span.debug("Pages sorted successfully", .{});
             span.debug("Page allocation complete", .{});
+        }
+
+        /// Frees a contiguous range of pages starting at the given address
+        pub fn freePages(self: *PageTable, start_address: u32, num_pages: usize) !void {
+            const span = trace.span(.free_pages);
+            defer span.deinit();
+            span.debug("Freeing {d} page(s) starting at 0x{X:0>8}", .{ num_pages, start_address });
+
+            // Sanity check
+            if (num_pages == 0) {
+                span.debug("Nothing to free (0 pages requested)", .{});
+                return;
+            }
+
+            // Calculate end address
+            const end_address = start_address + (num_pages * Memory.Z_P);
+            span.trace("Pages will span from 0x{X:0>8} to 0x{X:0>8}", .{ start_address, end_address });
+
+            // Iterate over pages and free them
+            var i: usize = 0;
+            while (i < self.pages.items.len) {
+                const page = &self.pages.items[i];
+                const page_end = page.address + Memory.Z_P;
+
+                // Check if the page is within the range to be freed
+                if ((page.address >= start_address and page.address < end_address) or
+                    (page_end > start_address and page_end <= end_address))
+                {
+                    span.trace("Freeing page at 0x{X:0>8}", .{page.address});
+                    page.deinit(self.allocator);
+                    _ = self.pages.orderedRemove(i);
+                } else {
+                    i += 1;
+                }
+            }
+
+            span.debug("Page freeing complete", .{});
         }
 
         /// Returns the index of the page containing the given address using binary search
@@ -202,6 +248,10 @@ pub const Memory = struct {
     read_only_size_in_pages: u16,
     stack_size_in_pages: u16,
     heap_size_in_pages: u16,
+    heap_top: u32 = 0, // Current top of the heap
+
+    // Controls whether dynamic memory allocation is allowed beyond the initial heap size
+    dynamic_allocation_enabled: bool = false,
 
     // Artificial limit on how many allocations we allow
     // mainly for the fuzzer, this is not in the spec
@@ -220,7 +270,7 @@ pub const Memory = struct {
     pub const INPUT_ADDRESS: u32 = 0xFFFFFFFF - Z_Z - Z_I + 1;
     pub const STACK_BASE_ADDRESS: u32 = 0xFFFFFFFF - (2 * Z_Z) - Z_I + 1;
     pub fn STACK_BOTTOM_ADDRESS(stack_size_in_pages: u16) !u32 {
-        return STACK_BASE_ADDRESS - @as(u32, @intCast(try alignToPageSize(stack_size_in_pages)));
+        return STACK_BASE_ADDRESS - (@as(u32, @intCast(stack_size_in_pages)) * Z_P);
     }
 
     pub const ViolationType = enum {
@@ -251,7 +301,7 @@ pub const Memory = struct {
         span.debug("Creating deep clone of memory system", .{});
 
         // Initialize a new empty memory system
-        var new_memory = try Memory.initEmpty(allocator);
+        var new_memory = try Memory.initEmpty(allocator, self.dynamic_allocation_enabled);
         errdefer new_memory.deinit();
 
         // Clone all pages
@@ -396,7 +446,7 @@ pub const Memory = struct {
         span.debug("Memory layout within limits", .{});
     }
 
-    pub fn initEmpty(allocator: Allocator) !Memory {
+    pub fn initEmpty(allocator: Allocator, dynamic_allocation: bool) !Memory {
         // Initialize page table
         var page_table = PageTable.init(allocator);
         errdefer page_table.deinit();
@@ -409,6 +459,7 @@ pub const Memory = struct {
             .read_only_size_in_pages = 0,
             .stack_size_in_pages = 0,
             .heap_size_in_pages = 0,
+            .dynamic_allocation_enabled = dynamic_allocation,
         };
     }
 
@@ -418,6 +469,7 @@ pub const Memory = struct {
         heap_size_in_pages: u16,
         input_size_in_bytes: usize,
         stack_size_in_bytes: usize,
+        dynamic_allocation: bool,
     ) !Memory {
         const span = trace.span(.memory_init);
         defer span.deinit();
@@ -465,6 +517,8 @@ pub const Memory = struct {
             .read_only_size_in_pages = try sizeInBytesToPages(read_only_size_in_bytes),
             .stack_size_in_pages = stack_size_in_pages,
             .heap_size_in_pages = heap_size_in_pages,
+            .heap_top = heap_base, // Initialize heap_top to the start of the heap
+            .dynamic_allocation_enabled = dynamic_allocation,
         };
     }
 
@@ -475,6 +529,7 @@ pub const Memory = struct {
         input: []const u8,
         stack_size_in_bytes: u24,
         heap_size_in_pages: u16,
+        dynamic_allocation: bool,
     ) !Memory {
         const span = trace.span(.memory_init);
         defer span.deinit();
@@ -499,6 +554,7 @@ pub const Memory = struct {
             heap_pages,
             input.len,
             stack_size_in_bytes,
+            dynamic_allocation,
         );
         memory_init_span.debug("Base memory system initialized", .{});
         errdefer {
@@ -552,7 +608,11 @@ pub const Memory = struct {
         // Stack is already zero-initialized by initWithCapacity
         span.debug("Stack is zero-initialized, size: {d} bytes", .{stack_size_in_bytes});
 
-        span.debug("Memory initialization complete", .{});
+        // Initialize heap_top to the base of the heap + read-write data size
+        const heap_base = try HEAP_BASE_ADDRESS(@intCast(ro_pages * Z_P));
+        memory.heap_top = heap_base + @as(u32, @intCast(read_write.len));
+
+        span.debug("Memory initialization complete with heap_top set to 0x{X:0>8}", .{memory.heap_top});
         return memory;
     }
 
@@ -595,78 +655,86 @@ pub const Memory = struct {
         defer span.deinit();
         span.debug("Allocating {d} bytes of memory", .{memory_requested});
 
-        // Check allocation limit
-        if (self.heap_allocation_limit) |limit| {
-            const pages_required = try sizeInBytesToPages(memory_requested);
-            if (self.heap_size_in_pages + pages_required > limit) {
-                span.err("Memory allocation exceeds limit - requested: {d} pages, limit: {d} pages", .{ pages_required, limit });
-                return error.MemoryLimitExceeded;
-            }
-            span.trace("Memory allocation within limits (pages: {d}/{d})", .{ self.heap_size_in_pages + pages_required, limit });
+        // Initialize heap_top if not set
+        if (self.heap_top == 0) {
+            const heap_base = try HEAP_BASE_ADDRESS(@as(usize, self.read_only_size_in_pages) * Z_P);
+            self.heap_top = heap_base;
+            span.debug("Initialized heap_top to 0x{X:0>8}", .{self.heap_top});
         }
 
-        // Calculate required pages, rounding up to nearest page size
-        const aligned_size = try alignToPageSize(memory_requested);
-        const pages_needed = aligned_size / Z_P;
-        span.debug("Allocation requires {d} pages ({d} bytes aligned)", .{ pages_needed, aligned_size });
-
-        // Check if the size is within bounds
-        const check_span = span.child(.check_limits);
-        defer check_span.deinit();
-        check_span.debug("Checking memory limits", .{});
-        check_span.trace("Current sizes - RO: {d} pages, Heap: {d} pages, Stack: {d} pages", .{ self.read_only_size_in_pages, self.heap_size_in_pages, self.stack_size_in_pages });
-
-        try checkMemoryLimits(
-            pagesToSizeInBytes(self.read_only_size_in_pages),
-            pagesToSizeInBytes(self.heap_size_in_pages),
-            pagesToSizeInBytes(self.stack_size_in_pages),
-        );
-        check_span.debug("Memory limits verification passed", .{});
-
-        // Find the last ReadWrite page (heap section)
-        const find_span = span.child(.find_last_rw);
-        defer find_span.deinit();
-        find_span.debug("Finding last ReadWrite page", .{});
-
-        var last_rw_page: ?PageTable.PageResult = null;
-        for (self.page_table.pages.items, 0..) |*page, i| {
-            if (page.flags == .ReadWrite) {
-                find_span.trace("Found ReadWrite page at index {d}: 0x{X:0>8}", .{ i, page.address });
-                last_rw_page = PageTable.PageResult{
-                    .page = page,
-                    .index = i,
-                    .page_table = &self.page_table,
-                };
-            }
-        }
-
-        const last_page = last_rw_page orelse {
-            find_span.err("Could not find any ReadWrite pages", .{});
-            return Error.CouldNotFindRwPage;
-        };
-        find_span.debug("Last ReadWrite page found at 0x{X:0>8}", .{last_page.page.address});
-
-        // Calculate new allocation address (immediately after last ReadWrite page)
-        const new_address = last_page.page.address + Z_P;
-        span.debug("New allocation will start at address 0x{X:0>8}", .{new_address});
-
-        // Special case when size is 0, we are not going to allocate
-        // anything, we will return the address of the next page
+        // Special case when size is 0
         if (memory_requested == 0) {
-            span.debug("Zero-sized allocation, returning address 0x{X:0>8} without allocating pages", .{new_address});
-            return new_address;
+            span.debug("Zero-sized allocation, returning address 0x{X:0>8}", .{self.heap_top});
+            return self.heap_top;
         }
 
-        // Allocate the new pages
-        span.debug("Allocating {d} pages starting at 0x{X:0>8}", .{ pages_needed, new_address });
-        try self.page_table.allocatePages(new_address, pages_needed, .ReadWrite);
+        // Save the current heap_top as the result to return
+        const result = self.heap_top;
+        const new_heap_top = self.heap_top + memory_requested;
 
-        // Do some bookkeeping
-        self.heap_size_in_pages += 1;
-        span.debug("Heap size increased to {d} pages", .{self.heap_size_in_pages});
-        span.debug("Memory allocation successful, returning address 0x{X:0>8}", .{new_address});
+        // Calculate which pages this allocation will span
+        const start_page_addr = (self.heap_top / Z_P) * Z_P;
+        const end_page_addr = ((new_heap_top - 1) / Z_P) * Z_P;
+        const start_page_index = start_page_addr / Z_P;
+        const end_page_index = end_page_addr / Z_P;
+        const pages_spanned = end_page_index - start_page_index + 1;
 
-        return new_address;
+        span.debug("Allocation from 0x{X:0>8} to 0x{X:0>8} spans {d} page(s)", .{ self.heap_top, new_heap_top, pages_spanned });
+
+        // Check which pages need to be allocated
+        var pages_to_allocate: u32 = 0;
+        var first_missing_page_addr: ?u32 = null;
+
+        var page_addr = start_page_addr;
+        while (page_addr <= end_page_addr) : (page_addr += Z_P) {
+            if (self.page_table.findPageOfAddresss(page_addr) == null) {
+                if (first_missing_page_addr == null) {
+                    first_missing_page_addr = page_addr;
+                }
+                pages_to_allocate += 1;
+                span.trace("Page at 0x{X:0>8} needs allocation", .{page_addr});
+            }
+        }
+
+        // Check allocation limits before allocating new pages
+        if (pages_to_allocate > 0 and !self.dynamic_allocation_enabled) {
+            if (self.heap_allocation_limit) |limit| {
+                if (self.heap_size_in_pages + pages_to_allocate > limit) {
+                    span.err("Memory allocation exceeds limit - would need {d} new pages, limit: {d} total pages", .{ pages_to_allocate, limit });
+                    return error.MemoryLimitExceeded;
+                }
+            }
+
+            // Check global memory limits including the new pages
+            const check_span = span.child(.check_limits);
+            defer check_span.deinit();
+            check_span.debug("Checking memory limits with {d} additional pages", .{pages_to_allocate});
+
+            try checkMemoryLimits(
+                pagesToSizeInBytes(self.read_only_size_in_pages),
+                pagesToSizeInBytes(self.heap_size_in_pages + @as(u16, @intCast(pages_to_allocate))),
+                pagesToSizeInBytes(self.stack_size_in_pages),
+            );
+            check_span.debug("Memory limits verification passed", .{});
+        }
+
+        // Allocate missing pages if needed
+        if (pages_to_allocate > 0) {
+            if (first_missing_page_addr) |first_addr| {
+                span.debug("Allocating {d} pages starting at 0x{X:0>8}", .{ pages_to_allocate, first_addr });
+
+                // Allocate all missing pages in one operation
+                try self.page_table.allocatePages(first_addr, pages_to_allocate, .ReadWrite);
+                self.heap_size_in_pages += @intCast(pages_to_allocate);
+                span.debug("Heap size increased to {d} pages", .{self.heap_size_in_pages});
+            }
+        }
+
+        // Update heap_top
+        self.heap_top = new_heap_top;
+
+        span.debug("Memory allocation successful, returning address 0x{X:0>8}", .{result});
+        return result;
     }
 
     /// Read an integer type from memory (u8, u16, u32, u64)

@@ -20,13 +20,14 @@ pub fn buildOrGetCached(comptime params: Params, allocator: std.mem.Allocator) !
     // Register host calls
     span.debug("Registering host call functions", .{});
     try host_call_map.put(allocator, @intFromEnum(HostCallId.gas), HostCall.gasRemaining);
+    try host_call_map.put(allocator, @intFromEnum(HostCallId.fetch), HostCall.fetch);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.lookup), HostCall.lookupPreimage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.read), HostCall.readStorage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.write), HostCall.writeStorage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.info), HostCall.infoService);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.bless), HostCall.blessService);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.assign), HostCall.assignCore);
-    // try host_call_map.put(allocator, @intFromEnum(HostCallId.designate), host_calls.designateValidators);
+    try host_call_map.put(allocator, @intFromEnum(HostCallId.designate), HostCall.designateValidators);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.checkpoint), HostCall.checkpoint);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.new), HostCall.newService);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.upgrade), HostCall.upgradeService);
@@ -36,6 +37,7 @@ pub fn buildOrGetCached(comptime params: Params, allocator: std.mem.Allocator) !
     try host_call_map.put(allocator, @intFromEnum(HostCallId.solicit), HostCall.solicitPreimage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.forget), HostCall.forgetPreimage);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.yield), HostCall.yieldAccumulationResult);
+    try host_call_map.put(allocator, @intFromEnum(HostCallId.provide), HostCall.provide);
 
     try host_call_map.put(allocator, @intFromEnum(HostCallId.log), HostCall.debugLog);
 

@@ -4,7 +4,7 @@ const types = @import("../types.zig");
 const services = @import("../services.zig");
 const ServiceAccount = services.ServiceAccount;
 const PreimageLookup = services.PreimageLookup;
-const PreimageLookupKey = services.PreimageLookupKey;
+// PreimageLookupKey removed - using types.StateKey directly
 
 const trace = @import("../tracing.zig").scoped(.codec);
 
@@ -36,62 +36,6 @@ pub fn encodeServiceAccountBase(account: *const ServiceAccount, writer: anytype)
 }
 
 const state_dictionary = @import("../state_dictionary.zig");
-
-/// Encodes storage entries: C(s, h) ↦ v
-pub fn encodeStorageEntry(storage_entry: []const u8, writer: anytype) !void {
-    const span = trace.span(.encode_storage_entry);
-    defer span.deinit();
-    span.debug("Starting storage entry encoding", .{});
-    span.trace("Storage entry length: {d}", .{storage_entry.len});
-    span.trace("Storage entry data: {s}", .{std.fmt.fmtSliceHexLower(storage_entry)});
-    // Write value (v)
-    try writer.writeAll(storage_entry);
-}
-
-/// Encodes storage key using buildStorageKey helper
-pub fn encodeStorageEntryKey(key: [32]u8, writer: anytype) !void {
-    const span = trace.span(.encode_storage_entry_key);
-    defer span.deinit();
-    span.debug("Starting storage entry key encoding", .{});
-    span.trace("Input key: {s}", .{std.fmt.fmtSliceHexLower(&key)});
-
-    const storage_key = state_dictionary.buildStorageKey(key);
-    try writer.writeAll(&storage_key);
-}
-
-/// Encodes preimage key using buildPreimageKey helper
-pub fn encodePreimageKey(key: [32]u8, writer: anytype) !void {
-    const span = trace.span(.encode_preimage_key);
-    defer span.deinit();
-    span.debug("Starting preimage key encoding", .{});
-    span.trace("Input key: {s}", .{std.fmt.fmtSliceHexLower(&key)});
-
-    const preimage_key = state_dictionary.buildPreimageKey(key);
-    try writer.writeAll(&preimage_key);
-}
-
-/// Encodes preimage lookups: C(s, h) ↦ p
-pub fn encodePreimage(pre_image: []const u8, writer: anytype) !void {
-    const span = trace.span(.encode_preimage);
-    defer span.deinit();
-    span.debug("Starting preimage encoding", .{});
-    span.trace("Preimage length: {d}", .{pre_image.len});
-    span.trace("Preimage data: {s}", .{std.fmt.fmtSliceHexLower(pre_image)});
-
-    // Write value (p)
-    try writer.writeAll(pre_image);
-}
-
-/// Encodes preimage timestamps: E_4(l) ⌢ (¬h_4...)
-pub fn encodePreimageLookupKey(key: PreimageLookupKey, writer: anytype) !void {
-    const span = trace.span(.encode_preimage_lookup_key);
-    defer span.deinit();
-    span.debug("Starting preimage lookup key encoding", .{});
-    span.trace("Key hash: {s}, length: {d}", .{ std.fmt.fmtSliceHexLower(&key.hash), key.length });
-
-    const preimage_lookup_key = @import("../state_dictionary.zig").buildPreimageLookupKey(key);
-    try writer.writeAll(&preimage_lookup_key);
-}
 
 /// Encodes preimage lookup:  E(↕[E_4(x) | x <− t])
 pub fn encodePreimageLookup(lookup: PreimageLookup, writer: anytype) !void {
@@ -145,41 +89,6 @@ test "encodeServiceAccountBase" {
     };
 
     try testing.expectEqualSlices(u8, &expected, buffer.items);
-}
-
-test "encodeStorageEntry" {
-    const storage_entry = [_]u8{ 10, 20, 30, 40, 50 };
-
-    var buffer = std.ArrayList(u8).init(testing.allocator);
-    defer buffer.deinit();
-
-    try encodeStorageEntry(&storage_entry, buffer.writer());
-
-    try testing.expectEqualSlices(u8, &storage_entry, buffer.items);
-}
-
-test "encodePreimageKey" {
-    const key = [_]u8{0x44} ** 32;
-
-    var buffer = std.ArrayList(u8).init(testing.allocator);
-    defer buffer.deinit();
-
-    try encodePreimageKey(key, buffer.writer());
-
-    const expected = [_]u8{ 0xFE, 0xFF, 0xFF, 0xFF } ++ [_]u8{0x44} ** 28;
-
-    try testing.expectEqualSlices(u8, &expected, buffer.items);
-}
-
-test "encodePreimage" {
-    const pre_image = [_]u8{ 1, 2, 3, 4, 5 };
-
-    var buffer = std.ArrayList(u8).init(testing.allocator);
-    defer buffer.deinit();
-
-    try encodePreimage(&pre_image, buffer.writer());
-
-    try testing.expectEqualSlices(u8, &pre_image, buffer.items);
 }
 
 test "encodePreimageLookup" {

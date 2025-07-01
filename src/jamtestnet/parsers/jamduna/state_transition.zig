@@ -88,8 +88,8 @@ pub const KeyVal = struct {
     id: []const u8,
     desc: []const u8,
 
-    pub fn getKey(self: *const @This()) [32]u8 {
-        return self.key[0..32].*;
+    pub fn getKey(self: *const @This()) types.StateKey {
+        return self.key[0..31].*;
     }
 
     pub fn decode(_: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
@@ -285,12 +285,12 @@ pub const TestStateTransition = struct {
         return dict;
     }
 
-    fn keyValToKey(key_bytes: []const u8) !types.OpaqueHash {
+    fn keyValToKey(key_bytes: []const u8) !types.StateKey {
         if (key_bytes.len != 32) {
             return error.InvalidKeyLength;
         }
-        var key: types.OpaqueHash = undefined;
-        std.mem.copyForwards(u8, &key, key_bytes[0..32]);
+        var key: types.StateKey = undefined;
+        std.mem.copyForwards(u8, &key, key_bytes[0..31]);
         return key;
     }
 };

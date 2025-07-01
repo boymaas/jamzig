@@ -340,6 +340,7 @@ pub const PVMFuzzer = struct {
             1024, // Stack size
             4, // Heap size
             self.config.max_gas,
+            false,
         ) catch |err| {
             span.err("ExecutionContext initialization failed: {s}", .{@errorName(err)});
             return FuzzResult{

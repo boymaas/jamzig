@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("../types.zig");
 
-pub const BASE_PATH = "src/jamtestvectors/data/assurances/";
+pub const BASE_PATH = "src/jamtestvectors/data/stf/assurances/";
 
 /// Represents the state for assurance processing according to the GP
 pub const State = struct {

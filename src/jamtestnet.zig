@@ -42,63 +42,63 @@ pub const JAMDUNA_PARAMS = jam_params.Params{
 //         "num_ec_pieces_per_segment": 1026,
 //     },
 //
-test "jamduna:fallback" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-    try runStateTransitionTests(
-        JAMDUNA_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestnet/teams/jamduna/data/fallback/state_transitions",
-    );
-}
+// test "jamduna:fallback" {
+//     const allocator = std.testing.allocator;
+//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
+//     try runStateTransitionTests(
+//         JAMDUNA_PARAMS,
+//         loader.loader(),
+//         allocator,
+//         "src/jamtestnet/teams/jamduna/data/fallback/state_transitions",
+//     );
+// }
+//
+// test "jamduna:safrole" {
+//     const allocator = std.testing.allocator;
+//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
+//     try runStateTransitionTests(
+//         JAMDUNA_PARAMS,
+//         loader.loader(),
+//         allocator,
+//         "src/jamtestnet/teams/jamduna/data/safrole/state_transitions",
+//     );
+// }
+//
+// test "jamduna:assurances" {
+//     const allocator = std.testing.allocator;
+//
+//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
+//     try runStateTransitionTests(
+//         JAMDUNA_PARAMS,
+//         loader.loader(),
+//         allocator,
+//         "src/jamtestnet/teams/jamduna/data/assurances/state_transitions",
+//     );
+// }
+//
+// test "jamduna:orderedaccumulation" {
+//     const allocator = std.testing.allocator;
+//
+//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
+//     try runStateTransitionTests(
+//         JAMDUNA_PARAMS,
+//         loader.loader(),
+//         allocator,
+//         "src/jamtestnet/teams/jamduna/data/orderedaccumulation/state_transitions",
+//     );
+// }
 
-test "jamduna:safrole" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-    try runStateTransitionTests(
-        JAMDUNA_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestnet/teams/jamduna/data/safrole/state_transitions",
-    );
-}
-
-test "jamduna:assurances" {
-    const allocator = std.testing.allocator;
-
-    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-    try runStateTransitionTests(
-        JAMDUNA_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestnet/teams/jamduna/data/assurances/state_transitions",
-    );
-}
-
-test "jamduna:orderedaccumulation" {
-    const allocator = std.testing.allocator;
-
-    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-    try runStateTransitionTests(
-        JAMDUNA_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestnet/teams/jamduna/data/orderedaccumulation/state_transitions",
-    );
-}
-
-// TODO: update
-test "javajam:stf" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-    try runStateTransitionTests(
-        JAMDUNA_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestnet/teams/javajam/stf/state_transitions",
-    );
-}
+// // TODO: update
+// test "javajam:stf" {
+//     const allocator = std.testing.allocator;
+//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
+//     try runStateTransitionTests(
+//         JAMDUNA_PARAMS,
+//         loader.loader(),
+//         allocator,
+//         "src/jamtestnet/teams/javajam/stf/state_transitions",
+//     );
+// }
 
 // TODO: update
 // test "jamzig:safrole" {

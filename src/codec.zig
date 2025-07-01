@@ -70,7 +70,20 @@ pub fn deserializeAlloc(
     defer span.deinit();
     span.debug("Starting allocation-based deserialization for type {s}", .{@typeName(T)});
 
-    const result = try recursiveDeserializeLeaky(T, params, allocator, reader);
+    const TrackingAllocator = @import("tracking_allocator.zig").TrackingAllocator;
+    var tracking_allocator = TrackingAllocator.init(allocator);
+    defer tracking_allocator.deinit();
+
+    const result = recursiveDeserializeLeaky(T, params, tracking_allocator.allocator(), reader) catch |err| {
+        const inner_span = span.child(.cleanup_on_error);
+        defer inner_span.deinit();
+        inner_span.debug("Deserialization failed, cleaning up {d} tracked allocations", .{tracking_allocator.allocations.items.len});
+        tracking_allocator.freeAllAllocations();
+        return err;
+    };
+
+    // Success - commit allocations to prevent cleanup
+    tracking_allocator.commitAllocations();
     span.debug("Successfully deserialized type {s} with allocator", .{@typeName(T)});
     return result;
 }

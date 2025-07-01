@@ -48,7 +48,7 @@ pub fn jsonStringify(self: *const Delta, jw: anytype) !void {
         while (lookup_it.next()) |lookup_entry| {
             const key = lookup_entry.key_ptr.*;
             const value = lookup_entry.value_ptr.*;
-            const lookup_key = try std.fmt.allocPrint(self.allocator, "{s}:{d}", .{ std.fmt.fmtSliceHexLower(&key.hash), key.length });
+            const lookup_key = try std.fmt.allocPrint(self.allocator, "{s}", .{std.fmt.fmtSliceHexLower(&key)});
             defer self.allocator.free(lookup_key);
             try jw.objectField(lookup_key);
             const value_str = try std.fmt.allocPrint(self.allocator, "{d},{d},{d}", .{ value.status[0] orelse 0, value.status[1] orelse 0, value.status[2] orelse 0 });

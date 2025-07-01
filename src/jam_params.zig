@@ -26,16 +26,16 @@ pub const Params = struct {
     // GA: The total gas allocated to a core for Accumulation
     // See: https://github.com/w3f/jamtestvectors/pull/20#issuecomment-2526203035
     gas_alloc_accumulation: u32 = 10_000_000, // GA
-    // GI: The gas allocated to invoke a work-package’s Is-Authorized logic
+    // GI: The gas allocated to invoke a work-package Is-Authorized logic
     gas_alloc_is_authorized: u32 = 1_000_000, // GI
-    // GR: The total gas allocated for a work-package’s Refine logic
+    // GR: The total gas allocated for a work-package Refine logic
     gas_alloc_refine: u32 = 500_000_000, // GR
     // GT: The total gas allocated across all cores for Accumulation
     total_gas_alloc_accumulation: u32 = 35_000_000, // GT
     // H: The size of recent history, in blocks
     recent_history_size: u8 = 8, // H
     // I: The maximum amount of work items in a package
-    max_work_items_per_package: u8 = 4, // I
+    max_work_items_per_package: u8 = 16, // I
     // J: The maximum amount of dependencies in a work report segment-root
     // lookup dictionary and the number of pre-requisites for a work item
     max_number_of_dependencies_for_work_reports: u8 = 8, // J
@@ -55,36 +55,46 @@ pub const Params = struct {
     validator_rotation_period: u32 = 10, // R
     // S: The maximum number of entries in the accumulation queue
     max_accumulation_queue_entries: u32 = 1024, // S
+    // T: The maximum number of extrinsics in a work-package
+    max_extrinsics_per_work_package: u8 = 128, // T
     // U: The period in timeslots after which reported but unavailable work may be replaced
     work_replacement_period: u8 = 5, // U
     // V: The total number of validators
     validators_count: u32 = 1023, // V
     // V_s: The number of validators required for a super-majority
     validators_super_majority: u32 = 683,
+    // WA: The maximum size of authorization code in octets
+    max_authorization_code_size: u32 = 64_000, // WA
+    // WB: The maximum size of an encoded work-package together with its extrinsic data and import implications, in octets
+    max_work_package_size_with_extrinsics: u32 = 12 * (1 << 20), // WB = 12,582,912
     // WC: The maximum size of service code in octets
     max_service_code_size: u32 = 4_000_000, // WC
     // WE: The basic size of erasure-coded pieces in octets
     erasure_coded_piece_size: u16 = 684, // WE
-    // WM: The maximum number of entries in a work-package manifest
-    max_manifest_entries: u16 = 2 ^ 11, // WM
-    // WP: The maximum size of an encoded work-package together with its extrinsic data and import implications, in octets
-    max_work_package_size: u32 = 12 * 2 ^ 20, // W...
+    // WG: The size of a segment in octets (WP * WE)
+    segment_size: u16 = 4104, // WG
+    // WM: The maximum number of imports in a work-package
+    max_imports_per_work_package: u16 = 3072, // WM
+    // WP: The number of erasure-coded pieces in a segment
+    erasure_coded_pieces_per_segment: u8 = 6, // WP
     // WR: The maximum size of an encoded work-report in octets
-    max_work_report_size: u32 = 96 * 2 ^ 10, // WR
-    // WS: The size of an exported segment in erasure-coded pieces in octets
-    exported_segment_size: u8 = 6, // WP
+    max_work_report_size: u32 = 96 * (1 << 10), // WR = 98,304
+    // WS: The size of an exported segment in erasure-coded pieces (same as WP)
+    exported_segment_size: u8 = 6, // WS
     // WT: The size of a transfer memo in octets
     transfer_memo_size: u8 = 128, // WT
+    // WX: The maximum number of exports in a work-package
+    max_exports_per_work_package: u16 = 3072, // WX
     // Y: The number of slots into an epoch at which ticket-submission ends
     ticket_submission_end_epoch_slot: u32 = 500, // Y
     // ZA: The pvm dynamic address alignment factor
     pvm_dynamic_address_alignment_factor: u8 = 2, // ZA
     // ZI: The standard pvm program initialization input data size
-    pvm_program_init_input_size: u32 = 2 ^ 24, // ZI
+    pvm_program_init_input_size: u32 = 1 << 24, // ZI = 16,777,216
     // ZP: The standard pvm program initialization page size
-    pvm_program_init_page_size: u16 = 2 ^ 14, // ZP
+    pvm_program_init_page_size: u16 = 1 << 12, // ZP = 4,096
     // ZQ: The standard pvm program initialization segment size
-    pvm_program_init_segment_size: u32 = 2 ^ 16, // ZQ
+    pvm_program_init_segment_size: u32 = 1 << 16, // ZQ = 65,536
     //
 
     // NOTE: this has to be here for the codec,
@@ -92,7 +102,8 @@ pub const Params = struct {
     avail_bitfield_bytes: usize = (341 + 7) / 8,
 
     pub fn segmentSizeInOctets(comptime self: *const Params) u16 {
-        return self.exported_segment_size * self.erasure_coded_piece_size;
+        // WG = WP * WE
+        return self.erasure_coded_pieces_per_segment * self.erasure_coded_piece_size;
     }
 
     // Helpers for tast init based on params

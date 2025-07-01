@@ -5,7 +5,7 @@ pub const jam_params = @import("jam_params.zig");
 const tvector = @import("jamtestvectors/preimages.zig");
 const runPreimagesTest = @import("preimages_test/runner.zig").runPreimagesTest;
 
-const BASE_PATH = "src/jamtestvectors/data/preimages/";
+const BASE_PATH = "src/jamtestvectors/data/stf/preimages/";
 
 // Debug helper function
 fn printStateDiff(allocator: std.mem.Allocator, pre_state: *const tvector.State, post_state: *const tvector.State) !void {
@@ -35,10 +35,24 @@ fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, tes
     try runPreimagesTest(params, allocator, test_vector);
 }
 
-test "all.vectors" {
+test "tiny.vectors" {
     const allocator = std.testing.allocator;
 
-    var tiny_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "data");
+    var tiny_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "tiny");
+    defer tiny_test_files.deinit();
+
+    for (tiny_test_files.items()) |test_file| {
+        if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
+            continue;
+        }
+        try runTest(TINY_PARAMS, allocator, test_file.path);
+    }
+}
+
+test "full.vectors" {
+    const allocator = std.testing.allocator;
+
+    var tiny_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "full");
     defer tiny_test_files.deinit();
 
     for (tiny_test_files.items()) |test_file| {

@@ -6,6 +6,7 @@ const accumulate = @import("../accumulate.zig");
 
 const services = @import("../services.zig");
 const state_theta = @import("../reports_ready.zig");
+const state_keys = @import("../state_keys.zig");
 
 const tv_types = @import("../jamtestvectors/accumulate.zig");
 const Params = @import("../jam_params.zig").Params;
@@ -80,8 +81,9 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
 
     // Add all preimages
     for (account.data.preimages) |preimage| {
-        try service_account.addPreimage(preimage.hash, preimage.blob);
-        try service_account.registerPreimageAvailable(preimage.hash, @intCast(preimage.blob.len), null);
+        const preimage_key = state_keys.constructServicePreimageKey(account.id, preimage.hash);
+        try service_account.addPreimage(preimage_key, preimage.blob);
+        try service_account.registerPreimageAvailable(account.id, preimage.hash, @intCast(preimage.blob.len), null);
     }
 
     return service_account;

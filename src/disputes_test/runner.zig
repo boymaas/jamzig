@@ -84,7 +84,7 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
                 var expected_marks_map = std.AutoArrayHashMap(disputes.PublicKey, void).init(allocator);
                 defer expected_marks_map.deinit();
 
-                for (expected_marks.offenders_mark.items) |mark| {
+                for (expected_marks.offenders_mark) |mark| {
                     try expected_marks_map.put(mark, {});
                 }
 

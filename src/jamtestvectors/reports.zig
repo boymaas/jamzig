@@ -3,7 +3,7 @@ const types = @import("../types.zig");
 const state = @import("../state.zig");
 const jam_params = @import("../jam_params.zig");
 
-pub const BASE_PATH = "src/jamtestvectors/data/reports/";
+pub const BASE_PATH = "src/jamtestvectors/data/stf/reports/";
 
 pub const AuthPools = struct {
     pools: [][]types.OpaqueHash,

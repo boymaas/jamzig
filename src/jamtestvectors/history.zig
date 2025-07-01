@@ -44,7 +44,7 @@ pub const TestCase = struct {
 
 pub const HistoryTestVector = @import("json_types/utils.zig").TestVector;
 
-pub const BASE_PATH = "src/jamtestvectors/data/history/data";
+pub const BASE_PATH = "src/jamtestvectors/data/stf/history/full";
 
 test "history: parsing the test case" {
     const allocator = std.testing.allocator;

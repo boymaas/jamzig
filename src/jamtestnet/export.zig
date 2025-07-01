@@ -9,7 +9,7 @@ const codec = @import("../codec.zig");
 const state_dictionary = @import("../state_dictionary.zig");
 
 pub const KeyVal = struct {
-    key: [32]u8,
+    key: types.StateKey,
     val: []const u8,
     metadata: ?state_dictionary.DictMetadata,
 

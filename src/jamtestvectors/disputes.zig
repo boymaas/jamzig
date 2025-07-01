@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const jam_params = @import("../jam_params.zig");
 
-const BASE_PATH = "src/jamtestvectors/data/disputes/";
+const BASE_PATH = "src/jamtestvectors/data/stf/disputes/";
 
 pub const State = struct {
     psi: types.DisputesRecords,
@@ -52,7 +52,7 @@ pub const OutputData = struct {
     offenders_mark: types.OffendersMark,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        self.offenders_mark.deinit(allocator);
+        allocator.free(self.offenders_mark);
         self.* = undefined;
     }
 };
@@ -132,7 +132,6 @@ test "Correct parsing of all tiny test vectors" {
 
 test "Correct parsing of all full test vectors" {
     const allocator = std.testing.allocator;
-
     const dir = @import("dir.zig");
     var test_vectors = try dir.scan(
         TestCase,

@@ -11,6 +11,9 @@ pub const U64 = u64;
 pub const ByteSequence = []u8;
 pub const ByteArray32 = [32]u8;
 
+// State dictionary key type (31 bytes per JAM 0.6.6)
+pub const StateKey = [31]u8;
+
 pub const OpaqueHash = ByteArray32;
 pub const Hash = ByteArray32;
 pub const Epoch = U32;
@@ -46,6 +49,7 @@ pub const BandersnatchVrfRoot = BlsPublic; // TODO: check if this is correct
 pub const BandersnatchVrfSignature = [96]u8;
 pub const BandersnatchIetfVrfSignature = [96]u8;
 pub const BandersnatchRingVrfSignature = [784]u8;
+pub const BandersnatchRingCommitment = [144]u8;
 pub const Ed25519Signature = [64]u8;
 
 pub const BandersnatchKeyPair = struct {
@@ -145,6 +149,19 @@ pub const WorkPackage = struct {
     context: RefineContext,
     items: []WorkItem, // SIZE(1..4)
 
+    /// Validates WorkPackage constraints according to JAM 0.6.6 specification
+    pub fn validate(self: *const @This(), comptime params: @import("jam_params.zig").Params) !void {
+        // WA: Authorization code size limit (64,000 octets)
+        if (self.authorization.len > params.max_authorization_code_size) {
+            return error.AuthorizationCodeTooLarge;
+        }
+
+        // I: Work items count constraint (1..4 in current implementation, 1..16 per spec)
+        if (self.items.len == 0 or self.items.len > params.max_work_items_per_package) {
+            return error.InvalidWorkItemsCount;
+        }
+    }
+
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.authorization);
         self.authorizer.deinit(allocator);
@@ -161,8 +178,9 @@ pub const WorkExecResult = union(enum(u8)) {
     ok: []const u8 = 0,
     out_of_gas: void = 1,
     panic: void = 2,
-    bad_code: void = 3,
-    code_oversize: void = 4,
+    bad_exports: void = 3,
+    bad_code: void = 4,
+    code_oversize: void = 5,
 
     /// length of result
     pub fn len(self: *const @This()) usize {
@@ -209,8 +227,9 @@ pub const WorkExecResult = union(enum(u8)) {
             .ok => 0,
             .out_of_gas => 1,
             .panic => 2,
-            .bad_code => 3,
-            .code_oversize => 4,
+            .bad_exports => 3,
+            .bad_code => 4,
+            .code_oversize => 5,
         };
         try writer.writeByte(tag);
 
@@ -228,18 +247,28 @@ pub const WorkExecResult = union(enum(u8)) {
     pub fn decode(_: anytype, reader: anytype, alloc: std.mem.Allocator) !@This() {
         const tag = try reader.readByte();
 
+        const tracing = comptime @import("tracing.zig").scoped(.codec);
+        const span = tracing.span(.work_exec_result_decode);
+        span.debug("Decoding WorkExecResult with tag: {d}", .{tag});
+
         return switch (tag) {
             0 => blk: {
                 const codec = @import("codec.zig");
                 const length = try codec.readInteger(reader);
                 const data = try alloc.alloc(u8, length);
+
                 try reader.readNoEof(data);
+
+                span.debug("Reading WorkExecResult.ok with length: {d}", .{length});
+                span.trace("Reading WorkExecResult.ok data: {s}", .{std.fmt.fmtSliceHexLower(data)});
+
                 break :blk WorkExecResult{ .ok = data };
             },
             1 => WorkExecResult{ .out_of_gas = {} },
             2 => WorkExecResult{ .panic = {} },
-            3 => WorkExecResult{ .bad_code = {} },
-            4 => WorkExecResult{ .code_oversize = {} },
+            3 => WorkExecResult{ .bad_exports = {} },
+            4 => WorkExecResult{ .bad_code = {} },
+            5 => WorkExecResult{ .code_oversize = {} },
             else => error.InvalidTag,
         };
     }
@@ -432,6 +461,44 @@ pub const WorkReport = struct {
         }
         allocator.free(self.results);
         self.* = undefined;
+    }
+
+    pub fn encode(self: *const @This(), comptime params: anytype, writer: anytype) !void {
+        const codec = @import("codec.zig");
+
+        // Encode each field in order
+        try codec.serialize(@TypeOf(self.package_spec), params, writer, self.package_spec);
+        try codec.serialize(@TypeOf(self.context), params, writer, self.context);
+
+        // Variable encode the core_index
+        try codec.writeInteger(self.core_index, writer);
+
+        try codec.serialize(@TypeOf(self.authorizer_hash), params, writer, self.authorizer_hash);
+        try codec.serialize(@TypeOf(self.auth_output), params, writer, self.auth_output);
+        try codec.serialize(@TypeOf(self.segment_root_lookup), params, writer, self.segment_root_lookup);
+        try codec.serialize(@TypeOf(self.results), params, writer, self.results);
+        try codec.serialize(@TypeOf(self.stats), params, writer, self.stats);
+    }
+
+    pub fn decode(comptime params: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
+        const codec = @import("codec.zig");
+
+        var self: @This() = undefined;
+
+        // Decode each field in order
+        self.package_spec = try codec.deserializeAlloc(WorkPackageSpec, params, allocator, reader);
+        self.context = try codec.deserializeAlloc(RefineContext, params, allocator, reader);
+
+        // Variable decode the core_index
+        self.core_index = @as(CoreIndex, @truncate(try codec.readInteger(reader)));
+
+        self.authorizer_hash = try codec.deserializeAlloc(@TypeOf(self.authorizer_hash), params, allocator, reader);
+        self.auth_output = try codec.deserializeAlloc(@TypeOf(self.auth_output), params, allocator, reader);
+        self.segment_root_lookup = try codec.deserializeAlloc(@TypeOf(self.segment_root_lookup), params, allocator, reader);
+        self.results = try codec.deserializeAlloc(@TypeOf(self.results), params, allocator, reader);
+        self.stats = try codec.deserializeAlloc(@TypeOf(self.stats), params, allocator, reader);
+
+        return self;
     }
 };
 
@@ -687,20 +754,7 @@ pub const GammaS = union(enum) {
 pub const GammaA = []TicketBody;
 pub const GammaZ = BlsPublic;
 
-pub const OffendersMark = struct {
-    items: []Ed25519Public, // SIZE(0..validators_count)
-
-    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.items);
-        self.* = undefined;
-    }
-
-    pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
-        return @This(){
-            .items = try allocator.dupe(Ed25519Public, self.offenders),
-        };
-    }
-};
+pub const OffendersMark = []Ed25519Public; // SIZE(0..validators_count)
 
 pub const HeaderUnsigned = struct {
     parent: HeaderHash,

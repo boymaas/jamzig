@@ -7,6 +7,7 @@ const MerklizationDictionary = @import("../state_dictionary.zig").MerklizationDi
 const delta_reconstruction = @import("delta_reconstruction.zig");
 const Params = @import("../jam_params.zig").Params;
 const reconstruct = @import("reconstruct.zig");
+const state_keys = @import("../state_keys.zig");
 
 const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
 
@@ -21,8 +22,8 @@ test "reconstruct delta base account" {
 
     const service_id: u32 = 42;
 
-    // Create a base account key (type 255)
-    const base_key = state_dictionary.constructByteServiceIndexKey(255, service_id);
+    // Create a base account key using new service_keys module
+    const base_key = state_keys.constructServiceBaseKey(service_id);
 
     // Create sample account data
     const base_value = [_]u8{1} ** 68; // Sample account data

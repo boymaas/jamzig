@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 const state_delta = @import("../state_delta.zig");
+const state_keys = @import("../state_keys.zig");
 
 const tv_types = @import("../jamtestvectors/preimages.zig");
 const Params = @import("../jam_params.zig").Params;
@@ -36,20 +37,21 @@ pub fn convertAccountsEntries(
     errdefer delta.deinit();
 
     for (accounts) |account_entry| {
-        const service_account = try convertAccount(allocator, account_entry.data);
+        const service_account = try convertAccount(allocator, account_entry.id, account_entry.data);
         try delta.accounts.put(account_entry.id, service_account);
     }
 
     return delta;
 }
 
-pub fn convertAccount(allocator: std.mem.Allocator, account: tv_types.Account) !state.services.ServiceAccount {
+pub fn convertAccount(allocator: std.mem.Allocator, service_id: u32, account: tv_types.Account) !state.services.ServiceAccount {
     var service_account = state.services.ServiceAccount.init(allocator);
     errdefer service_account.deinit();
 
-    // Add preimages
+    // Add preimages - need to construct proper structured keys
     for (account.preimages) |preimage_entry| {
-        try service_account.addPreimage(preimage_entry.hash, preimage_entry.blob);
+        const preimage_key = state_keys.constructServicePreimageKey(service_id, preimage_entry.hash);
+        try service_account.addPreimage(preimage_key, preimage_entry.blob);
     }
 
     // Add lookup metadata
@@ -62,11 +64,13 @@ pub fn convertAccount(allocator: std.mem.Allocator, account: tv_types.Account) !
             pre_image_lookup.status[idx] = slot;
         }
 
+        const lookup_key = state_keys.constructServicePreimageLookupKey(
+            service_id,
+            lookup_entry.key.length,
+            lookup_entry.key.hash,
+        );
         try service_account.preimage_lookups.put(
-            state.services.PreimageLookupKey{
-                .hash = lookup_entry.key.hash,
-                .length = lookup_entry.key.length,
-            },
+            lookup_key,
             pre_image_lookup,
         );
     }

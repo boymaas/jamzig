@@ -5,7 +5,7 @@ const runAccumulateTest = @import("accumulate_test/runner.zig").runAccumulateTes
 
 const diffz = @import("disputes_test/diffz.zig");
 
-const BASE_PATH = "src/jamtestvectors/data/accumulate/";
+const BASE_PATH = "src/jamtestvectors/data/stf/accumulate/";
 
 // Debug helper function
 fn printStateDiff(allocator: std.mem.Allocator, pre_state: *const tvector.State, post_state: *const tvector.State) !void {

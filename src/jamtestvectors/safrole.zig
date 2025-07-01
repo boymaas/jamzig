@@ -194,7 +194,7 @@ test "parse.safrole.tiny" {
     // Initialize allocator for test
     const TINY = @import("../jam_params.zig").TINY_PARAMS;
 
-    var test_cases = try dir.scan(TestCase, TINY, testing.allocator, "src/jamtestvectors/data/safrole/tiny");
+    var test_cases = try dir.scan(TestCase, TINY, testing.allocator, "src/jamtestvectors/data/stf/safrole/tiny");
     defer test_cases.deinit();
 }
 
@@ -205,7 +205,7 @@ test "parse.safrole.full" {
     // Initialize allocator for test
     const FULL = @import("../jam_params.zig").FULL_PARAMS;
 
-    var test_cases = try dir.scan(TestCase, FULL, testing.allocator, "src/jamtestvectors/data/safrole/full");
+    var test_cases = try dir.scan(TestCase, FULL, testing.allocator, "src/jamtestvectors/data/stf/safrole/full");
     defer test_cases.deinit();
 }
 
@@ -252,10 +252,10 @@ fn testSafroleRoundtrip(comptime params: Params, test_dir: []const u8, allocator
 
 test "parse.safrole.tiny.deserialize-serialize-roundtrip" {
     const TINY = @import("../jam_params.zig").TINY_PARAMS;
-    try testSafroleRoundtrip(TINY, "src/jamtestvectors/data/safrole/tiny", std.testing.allocator);
+    try testSafroleRoundtrip(TINY, "src/jamtestvectors/data/stf/safrole/tiny", std.testing.allocator);
 }
 
 test "parse.safrole.full.deserialize-serialize-roundtrip" {
     const FULL = @import("../jam_params.zig").FULL_PARAMS;
-    try testSafroleRoundtrip(FULL, "src/jamtestvectors/data/safrole/full", std.testing.allocator);
+    try testSafroleRoundtrip(FULL, "src/jamtestvectors/data/stf/safrole/full", std.testing.allocator);
 }

@@ -40,9 +40,7 @@ comptime {
     _ = @import("pvm_test/fuzzer/polkavm_ffi.zig");
 
     _ = @import("pvm_invocations/accumulate.zig");
-    _ = @import("pvm_invocations/accumulate_test.zig");
     _ = @import("pvm_invocations/ontransfer.zig");
-    _ = @import("pvm_invocations/ontransfer_test.zig");
 
     _ = @import("merkle.zig");
     _ = @import("merkle_test.zig");
@@ -79,6 +77,9 @@ comptime {
     _ = @import("services.zig");
     _ = @import("services_snapshot.zig");
     _ = @import("services_priviledged.zig");
+
+    _ = @import("state_keys.zig");
+    _ = @import("state_recovery.zig");
 
     _ = @import("recent_blocks.zig");
 

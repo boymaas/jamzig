@@ -23,11 +23,14 @@ pub fn main() !void {
 
     var progress = false;
     var nocapture = false;
+    var exit_on_fail = false;
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--progress")) {
             progress = true;
         } else if (std.mem.eql(u8, arg, "--nocapture")) {
             nocapture = true;
+        } else if (std.mem.eql(u8, arg, "--exit-on-fail")) {
+            exit_on_fail = true;
         } else {
             std.debug.print("Error: unrecognized command line argument '{s}'\n", .{arg});
             return;
@@ -36,7 +39,7 @@ pub fn main() !void {
 
     fba.reset();
 
-    try mainTerminal(progress, nocapture);
+    try mainTerminal(progress, nocapture, exit_on_fail);
 }
 
 fn redirectStderr() !posix.fd_t {
@@ -53,7 +56,7 @@ fn restoreStderr(old_fd: posix.fd_t) !void {
     posix.close(old_fd);
 }
 
-fn mainTerminal(progress: bool, nocapture: bool) !void {
+fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool) !void {
     @disableInstrumentation();
     const test_fn_list = builtin.test_functions;
     var ok_count: usize = 0;
@@ -119,6 +122,11 @@ fn mainTerminal(progress: bool, nocapture: bool) !void {
 
                 if (@errorReturnTrace()) |trace| {
                     std.debug.dumpStackTrace(trace.*);
+                }
+
+                // Exit immediately on first test failure if flag is set
+                if (exit_on_fail) {
+                    std.process.exit(1);
                 }
             },
         }

@@ -43,6 +43,7 @@ test "pvm:jamduna_service_code" {
         raw_program,
         &[_]u8{3} ** 32,
         std.math.maxInt(u32),
+        false,
     );
     defer execution_context.deinit(allocator);
 
@@ -91,6 +92,7 @@ test "pvm:simple" {
         1024,
         4,
         std.math.maxInt(u32),
+        false,
     );
     defer execution_context.deinit(allocator);
 
@@ -132,7 +134,7 @@ test "pvm:game_of_life" {
         40,  73,  162, 36,  137, 146, 36,  74,  146, 40,  73,  162, 36,  137, 146, 52,  42,  33,
     };
 
-    var execution_context = try pvmlib.PVM.ExecutionContext.initSimple(allocator, &raw_program, 1024, 4, std.math.maxInt(u32));
+    var execution_context = try pvmlib.PVM.ExecutionContext.initSimple(allocator, &raw_program, 1024, 4, std.math.maxInt(u32), false);
     defer execution_context.deinit(allocator);
 
     // const status = try pvmlib.PVM.execute(&execution_context);

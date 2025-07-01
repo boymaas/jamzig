@@ -3,6 +3,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const jamstate = @import("state.zig");
 const state_encoder = @import("state_encoding.zig");
+const state_keys = @import("state_keys.zig");
 
 pub const reconstruct = @import("state_dictionary/reconstruct.zig");
 
@@ -14,110 +15,9 @@ const Params = @import("jam_params.zig").Params;
 // | . \  __/ |_| | | |__| (_) | | | \__ \ |_| |  | |_| | (__| |_| | (_) | | | |
 // |_|\_\___|\__, |  \____\___/|_| |_|___/\__|_|   \__,_|\___|\__|_|\___/|_| |_|
 //           |___/
-
-/// Constructs a 32-byte key with the input byte as the first element and zeros for the rest.
-///
-/// @param input - The byte to use as the first element of the key
-/// @return A 32-byte array representing the key
-/// TODO: rename to state component
-pub fn constructSimpleByteKey(input: u8) [32]u8 {
-    var result: [32]u8 = [_]u8{0} ** 32;
-    result[0] = input;
-    return result;
-}
-
-pub fn deconstructSimpleByteKey(key: [32]u8) u8 {
-    return key[0];
-}
-
-/// Constructs a 32-byte key using a byte and a service index.
-/// The first byte is set to the input byte, followed by the 4-byte service index in little-endian format.
-///
-/// @param i - The byte to use as the first element of the key
-/// @param s - The service index to encode in the key
-/// @return A 32-byte array representing the key
-pub fn constructByteServiceIndexKey(i: u8, s: u32) [32]u8 {
-    var result: [32]u8 = [_]u8{0} ** 32;
-
-    result[0] = i;
-    var service_bytes: [4]u8 = undefined;
-    std.mem.writeInt(u32, &service_bytes, s, .little);
-
-    result[1] = service_bytes[0];
-    result[3] = service_bytes[1];
-    result[5] = service_bytes[2];
-    result[7] = service_bytes[3];
-
-    return result;
-}
-
-pub fn deconstructByteServiceIndexKey(key: [32]u8) struct { byte: u8, service_index: u32 } {
-    // Reconstruct service index from repeated bytes
-    var service_bytes: [4]u8 = undefined;
-    service_bytes[0] = key[1];
-    service_bytes[1] = key[3];
-    service_bytes[2] = key[5];
-    service_bytes[3] = key[7];
-
-    return .{
-        .byte = key[0],
-        .service_index = std.mem.readInt(u32, &service_bytes, .little),
-    };
-}
-
-/// Constructs a 32-byte key by interleaving a service index with a hash.
-/// The service index bytes are interleaved with the first 4 bytes of the hash,
-/// followed by the remaining 24 bytes of the hash.
-///
-/// @param s - The service index to encode in the key
-/// @param h - A 32-byte hash to incorporate into the key
-/// @return A 32-byte array representing the key
-pub fn constructServiceIndexHashKey(s: u32, h: [32]u8) [32]u8 {
-    var result: [32]u8 = [_]u8{0} ** 32;
-
-    // Write service index in pieces
-    var service_bytes: [4]u8 = undefined;
-    std.mem.writeInt(u32, &service_bytes, s, .little);
-
-    // Interleave service bytes with hash
-    result[0] = service_bytes[0];
-    result[1] = h[0];
-    result[2] = service_bytes[1];
-    result[3] = h[1];
-    result[4] = service_bytes[2];
-    result[5] = h[2];
-    result[6] = service_bytes[3];
-    result[7] = h[3];
-
-    // Copy remaining hash bytes
-    std.mem.copyForwards(u8, result[8..], h[4..28]);
-    return result;
-}
-
-pub fn deconstructServiceIndexHashKey(key: [32]u8) struct { service_index: u32, hash: LossyHash(28) } {
-    var hash: [28]u8 = undefined;
-
-    // Reconstruct service index from interleaved bytes
-    const service_bytes = [4]u8{
-        key[0],
-        key[2],
-        key[4],
-        key[6],
-    };
-    const service_index = std.mem.readInt(u32, &service_bytes, .little);
-
-    // Reconstruct hash from interleaved and remaining bytes
-    hash[0] = key[1];
-    hash[1] = key[3];
-    hash[2] = key[5];
-    hash[3] = key[7];
-    @memcpy(hash[4..], key[8..]);
-
-    return .{
-        .service_index = service_index,
-        .hash = .{ .hash = hash, .start = 0, .end = 28 },
-    };
-}
+//
+// REFACTORED: All key construction functions moved to state_keys.zig
+// This module now imports and uses centralized key construction.
 
 //  _  __            __  __                   _ _
 // | |/ /___ _   _  |  \/  | __ _ _ __   __ _| (_)_ __   __ _
@@ -133,97 +33,26 @@ pub const DictKeyType = enum {
     delta_preimage_lookup, // Service preimage lookup entries
 };
 
-// represents a lossy hash and the start and end of where the has was cut
-pub fn LossyHash(comptime size: usize) type {
-    return struct {
-        hash: [size]u8,
-        start: usize,
-        end: usize,
+// REFACTORED: LossyHash type removed - no longer needed with structured 31-byte keys
 
-        pub fn matches(self: *const @This(), other: *const [32]u8) bool {
-            // Compare the stored hash portion with the corresponding slice of the input hash
-            return std.mem.eql(u8, &self.hash, other[self.start..self.end]);
-        }
-
-        pub fn format(
-            self: @This(),
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
-            try writer.print("LossyHash(size={d}, {d}..{d}): {s}", .{
-                size,
-                self.start,
-                self.end,
-                std.fmt.fmtSliceHexLower(&self.hash),
-            });
-        }
-    };
-}
-
-pub fn buildStorageKey(k: [32]u8) [32]u8 {
-    var result: [32]u8 = undefined;
-    std.mem.writeInt(u32, result[0..4], 0xFFFFFFFF, .little);
-    @memcpy(result[4..32], k[0..28]);
-    return result;
-}
-
-pub fn deconstructStorageKey(key: [28]u8) ?[24]u8 {
-    // Verify the expected magic number
-    const magic = std.mem.readInt(u32, key[0..4], .little);
-    if (magic != 0xFFFFFFFF) return null;
-
-    var result: [24]u8 = undefined;
-    @memcpy(&result, key[4..28]); // Copy the stored data back
-    return result;
-}
-
-// TODO: rename to construct ...
-pub fn buildPreimageKey(k: [32]u8) [32]u8 {
-    var result: [32]u8 = undefined;
-    std.mem.writeInt(u32, result[0..4], 0xFFFFFFFE, .little);
-    @memcpy(result[4..32], k[1..29]);
-    return result;
-}
-
-pub fn deconstructPreimageKey(key: [28]u8) ?LossyHash(24) {
-    // Verify the expected magic number
-    const magic = std.mem.readInt(u32, key[0..4], .little);
-    if (magic != 0xFFFFFFFE) return null;
-
-    var result: [24]u8 = undefined;
-    @memcpy(&result, key[4..]); // Copy the stored data back
-    return .{ .hash = result, .start = 1, .end = 25 };
-}
+// REFACTORED: All legacy key building functions removed
+// Key construction now centralized in state_keys.zig
 
 const services = @import("services.zig");
-pub fn buildPreimageLookupKey(key: services.PreimageLookupKey) [32]u8 {
-    const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
-    var hash: [32]u8 = undefined;
-    Blake2b256.hash(&key.hash, &hash, .{});
-    var lookup_key: [32]u8 = undefined;
-    @memcpy(lookup_key[4..], hash[2..30]);
-    std.mem.writeInt(u32, lookup_key[0..4], key.length, .little);
-    return lookup_key;
+
+// TEMPORARY: Compatibility functions for transitional phase
+// These will be removed when ServiceAccount is updated to use structured keys
+
+/// Temporary compatibility function for hash-based storage keys
+/// Will be removed when ServiceAccount uses structured 31-byte keys
+fn constructServiceIndexHashKey(s: u32, h: [32]u8) types.StateKey {
+    // Use the new preimage key construction as a temporary compatibility layer
+    return state_keys.constructServicePreimageKey(s, h);
 }
 
-pub fn deconstructPreimageLookupKey(key: [28]u8) struct { length: u32, lossy_hash_of_hash: LossyHash(24) } {
-    // Extract the length from the first 4 bytes
-    const length = std.mem.readInt(u32, key[0..4], .little);
-
-    // Create a zeroed hash buffer
-    var result: [24]u8 = undefined;
-
-    // Copy the stored hash portion (bytes 2-29 of the original Blake2b hash)
-    @memcpy(&result, key[4..]);
-
-    return .{
-        .length = length,
-        .lossy_hash_of_hash = .{ .hash = result, .start = 2, .end = 26 },
-    };
-}
+/// Temporary compatibility function for preimage lookup keys
+/// Will be removed when ServiceAccount uses structured 31-byte keys  
+// buildPreimageLookupKey function removed - we now use StateKey directly
 
 //  _   _ _   _ _
 // | | | | |_(_) |___
@@ -279,7 +108,7 @@ pub const DiffType = enum {
 };
 
 pub const DiffEntry = struct {
-    key: [32]u8,
+    key: types.StateKey,
     diff_type: DiffType,
     me_value: ?[]const u8 = null,
     other_value: ?[]const u8 = null,
@@ -439,7 +268,7 @@ pub const DictMetadata = union(DictKeyType) {
 
 // Enhanced dictionary entry with metadata
 pub const DictEntry = struct {
-    key: [32]u8,
+    key: types.StateKey,
     value: []const u8,
     metadata: ?DictMetadata = null,
 
@@ -458,14 +287,14 @@ pub const DictEntry = struct {
 };
 
 pub const MerklizationDictionary = struct {
-    entries: std.AutoHashMap([32]u8, DictEntry),
+    entries: std.AutoHashMap(types.StateKey, DictEntry),
 
     // FIX: move these entries to a shared type file
     pub const MerkleEntry = @import("merkle.zig").Entry;
 
     pub fn init(allocator: std.mem.Allocator) MerklizationDictionary {
         return .{
-            .entries = std.AutoHashMap([32]u8, DictEntry).init(allocator),
+            .entries = std.AutoHashMap(types.StateKey, DictEntry).init(allocator),
         };
     }
 
@@ -613,7 +442,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
     state: *const jamstate.JamState(params),
     comptime config: DictionaryConfig,
 ) !MerklizationDictionary {
-    var map = std.AutoHashMap([32]u8, DictEntry).init(allocator);
+    var map = std.AutoHashMap(types.StateKey, DictEntry).init(allocator);
     errdefer map.deinit();
 
     // Helpers to ...
@@ -622,7 +451,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
     // Encode the simple state components using specific encoders
     {
         // Alpha (1)
-        const alpha_key = constructSimpleByteKey(1);
+        const alpha_key = state_keys.constructStateComponentKey(1);
         var alpha_managed = try getOrInitManaged(allocator, &state.alpha, .{});
         defer alpha_managed.deinit(allocator);
         const alpha_value = try encodeAndOwnSlice(
@@ -636,7 +465,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Phi (2)
-        const phi_key = constructSimpleByteKey(2);
+        const phi_key = state_keys.constructStateComponentKey(2);
         var phi_managed = try getOrInitManaged(allocator, &state.phi, .{allocator});
         defer phi_managed.deinit(allocator);
         const phi_value = try encodeAndOwnSlice(
@@ -650,7 +479,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Beta (3)
-        const beta_key = constructSimpleByteKey(3);
+        const beta_key = state_keys.constructStateComponentKey(3);
         var beta_managed = try getOrInitManaged(allocator, &state.beta, .{ allocator, params.recent_history_size });
         defer beta_managed.deinit(allocator);
         const beta_value = try encodeAndOwnSlice(
@@ -664,7 +493,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Gamma (4)
-        const gamma_key = constructSimpleByteKey(4);
+        const gamma_key = state_keys.constructStateComponentKey(4);
         var gamma_managed = try getOrInitManaged(allocator, &state.gamma, .{allocator});
         defer gamma_managed.deinit(allocator);
         var gamma_buffer = std.ArrayList(u8).init(allocator);
@@ -676,7 +505,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Psi (5)
-        const psi_key = constructSimpleByteKey(5);
+        const psi_key = state_keys.constructStateComponentKey(5);
         var psi_managed = try getOrInitManaged(allocator, &state.psi, .{allocator});
         defer psi_managed.deinit(allocator);
         const psi_value = try encodeAndOwnSlice(allocator, state_encoder.encodePsi, .{psi_managed.ptr});
@@ -686,7 +515,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Eta (6) does not contain allocations
-        const eta_key = constructSimpleByteKey(6);
+        const eta_key = state_keys.constructStateComponentKey(6);
         const eta_managed = if (state.eta) |eta| eta else [_]types.Entropy{[_]u8{0} ** 32} ** 4;
         const eta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeEta, .{&eta_managed});
         try map.put(eta_key, .{
@@ -695,7 +524,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Iota (7)
-        const iota_key = constructSimpleByteKey(7);
+        const iota_key = state_keys.constructStateComponentKey(7);
         var iota_managed = try getOrInitManaged(allocator, &state.iota, .{ allocator, params.validators_count });
         defer iota_managed.deinit(allocator);
         const iota_value = try encodeAndOwnSlice(allocator, state_encoder.encodeIota, .{iota_managed.ptr});
@@ -705,7 +534,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Kappa (8)
-        const kappa_key = constructSimpleByteKey(8);
+        const kappa_key = state_keys.constructStateComponentKey(8);
         var kappa_managed = try getOrInitManaged(allocator, &state.kappa, .{ allocator, params.validators_count });
         defer kappa_managed.deinit(allocator);
         const kappa_value = try encodeAndOwnSlice(allocator, state_encoder.encodeKappa, .{kappa_managed.ptr});
@@ -715,7 +544,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Lambda (9)
-        const lambda_key = constructSimpleByteKey(9);
+        const lambda_key = state_keys.constructStateComponentKey(9);
         var lambda_managed = try getOrInitManaged(allocator, &state.lambda, .{ allocator, params.validators_count });
         defer lambda_managed.deinit(allocator);
         const lambda_value = try encodeAndOwnSlice(allocator, state_encoder.encodeLambda, .{lambda_managed.ptr});
@@ -725,7 +554,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Rho (10)
-        const rho_key = constructSimpleByteKey(10);
+        const rho_key = state_keys.constructStateComponentKey(10);
         var rho_managed = try getOrInitManaged(allocator, &state.rho, .{allocator});
         defer rho_managed.deinit(allocator);
 
@@ -738,7 +567,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Tau (11)
-        const tau_key = constructSimpleByteKey(11);
+        const tau_key = state_keys.constructStateComponentKey(11);
         const tau_managed = if (state.tau) |tau| tau else 0; // stack managed
         const tau_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTau, .{tau_managed});
         try map.put(tau_key, .{
@@ -747,7 +576,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Chi (12)
-        const chi_key = constructSimpleByteKey(12);
+        const chi_key = state_keys.constructStateComponentKey(12);
         var chi_managed = try getOrInitManaged(allocator, &state.chi, .{allocator});
         defer chi_managed.deinit(allocator);
         const chi_value = try encodeAndOwnSlice(allocator, state_encoder.encodeChi, .{chi_managed.ptr});
@@ -757,7 +586,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Pi (13)
-        const pi_key = constructSimpleByteKey(13);
+        const pi_key = state_keys.constructStateComponentKey(13);
         var pi_managed = try getOrInitManaged(allocator, &state.pi, .{ allocator, params.validators_count, params.core_count });
         defer pi_managed.deinit(allocator);
         const pi_value = try encodeAndOwnSlice(allocator, state_encoder.encodePi, .{pi_managed.ptr});
@@ -767,7 +596,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Theta (14)
-        const theta_key = constructSimpleByteKey(14);
+        const theta_key = state_keys.constructStateComponentKey(14);
         var theta_managed = try getOrInitManaged(allocator, &state.theta, .{allocator});
         defer theta_managed.deinit(allocator);
         const theta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTheta, .{theta_managed.ptr});
@@ -777,7 +606,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
 
         // Xi (15)
-        const xi_key = constructSimpleByteKey(15);
+        const xi_key = state_keys.constructStateComponentKey(15);
         var xi_managed = try getOrInitManaged(allocator, &state.xi, .{allocator});
         defer xi_managed.deinit(allocator);
         const xi_value = try encodeAndOwnSlice(allocator, state_encoder.encodeXi, .{ params.epoch_length, allocator, &xi_managed.ptr.entries });
@@ -798,7 +627,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                 const account = service_entry.value_ptr;
 
                 // Base account data
-                const base_key = constructByteServiceIndexKey(255, service_idx);
+                const base_key = state_keys.constructServiceBaseKey(service_idx);
                 var base_value = std.ArrayList(u8).init(allocator);
                 try state_encoder.delta.encodeServiceAccountBase(account, base_value.writer());
 
@@ -807,29 +636,41 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                     .value = try base_value.toOwnedSlice(),
                 });
 
-                // Storage entries
+                // Storage entries - use the StateKey directly as it's already in final format
                 var storage_iter = account.storage.iterator();
                 while (storage_iter.next()) |storage_entry| {
-                    const storage_key = constructServiceIndexHashKey(service_idx, buildStorageKey(storage_entry.key_ptr.*));
+                    const storage_key = storage_entry.key_ptr.*; // Already a properly formatted StateKey
                     try map.put(storage_key, .{
                         .key = storage_key,
                         .value = try allocator.dupe(u8, storage_entry.value_ptr.*),
                         .metadata = .{ .delta_storage = .{
-                            .storage_key = storage_entry.key_ptr.*,
+                            .storage_key = blk: {
+                                // Convert 31-byte StateKey to 32-byte hash for metadata compatibility
+                                // TODO: Update metadata structure to use StateKey directly
+                                var hash: [32]u8 = [_]u8{0} ** 32;
+                                @memcpy(hash[0..31], &storage_entry.key_ptr.*);
+                                break :blk hash;
+                            },
                         } },
                     });
                 }
 
                 if (config.include_preimages) {
-                    // Preimage lookups
+                    // Preimage entries - use the StateKey directly as it's already in final format
                     var preimage_iter = account.preimages.iterator();
                     while (preimage_iter.next()) |preimage_entry| {
-                        const preimage_key = constructServiceIndexHashKey(service_idx, buildPreimageKey(preimage_entry.key_ptr.*));
+                        const preimage_key = preimage_entry.key_ptr.*; // Already a properly formatted StateKey
                         try map.put(preimage_key, .{
                             .key = preimage_key,
                             .value = try allocator.dupe(u8, preimage_entry.value_ptr.*),
                             .metadata = .{ .delta_preimage = .{
-                                .hash = preimage_entry.key_ptr.*,
+                                .hash = blk: {
+                                    // Convert 31-byte StateKey to 32-byte hash for metadata compatibility
+                                    // TODO: Update metadata structure to use StateKey directly
+                                    var hash: [32]u8 = [_]u8{0} ** 32;
+                                    @memcpy(hash[0..31], &preimage_entry.key_ptr.*);
+                                    break :blk hash;
+                                },
                                 .preimage_length = @intCast(preimage_entry.value_ptr.*.len),
                             } },
                         });
@@ -840,19 +681,42 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                         var lookup_iter = account.preimage_lookups.iterator();
                         while (lookup_iter.next()) |lookup_entry| {
                             const delta_encoder = state_encoder.delta;
-                            const key: services.PreimageLookupKey = lookup_entry.key_ptr.*;
+                            const key: types.StateKey = lookup_entry.key_ptr.*;
 
                             var preimage_lookup = try std.ArrayList(u8).initCapacity(allocator, 24);
                             try delta_encoder.encodePreimageLookup(lookup_entry.value_ptr.*, preimage_lookup.writer());
 
-                            const lookup_key = constructServiceIndexHashKey(service_idx, buildPreimageLookupKey(key));
-                            try map.put(lookup_key, .{
-                                .key = lookup_key,
+                            // Use the StateKey directly as it's already properly formatted
+                            try map.put(key, .{
+                                .key = key,
                                 .value = try preimage_lookup.toOwnedSlice(),
                                 .metadata = .{
                                     .delta_preimage_lookup = .{
-                                        .hash = key.hash,
-                                        .preimage_length = key.length,
+                                        .hash = blk: {
+                                            // Extract hash from StateKey - reconstruct 32-byte hash from the structured key
+                                            // Based on constructServicePreimageLookupKey: C(s, ℰ₄(l) ⌢ ℋ(h)₂...₂₉)
+                                            var hash: [32]u8 = [_]u8{0} ** 32;
+                                            
+                                            // Length bytes are interleaved in positions 1,3,5,7 of the StateKey
+                                            // Hash bytes are in positions 8-30 (corresponding to ℋ(h)₂...₂₉)
+                                            // We need to reconstruct them at positions 2-29 of the 32-byte hash
+                                            // key[8..31] has length 23, hash[2..30] has length 28
+                                            // So we copy the available 23 bytes and leave the rest as zeros
+                                            @memcpy(hash[2..25], key[8..31]);
+                                            break :blk hash;
+                                        },
+                                        .preimage_length = blk: {
+                                            // Extract length from StateKey - it's interleaved in the data portion
+                                            // Based on C_variant3 with ℰ₄(l), the length is stored in data[0..4]
+                                            // which gets interleaved with service_id bytes in the StateKey
+                                            // Data bytes are at positions 1,3,5,7 of the StateKey (after service_id interleaving)
+                                            var length_bytes: [4]u8 = undefined;
+                                            length_bytes[0] = key[1]; // First data byte  
+                                            length_bytes[1] = key[3]; // Second data byte
+                                            length_bytes[2] = key[5]; // Third data byte
+                                            length_bytes[3] = key[7]; // Fourth data byte
+                                            break :blk std.mem.readInt(u32, &length_bytes, .little);
+                                        },
                                     },
                                 },
                             });
@@ -894,44 +758,5 @@ test "buildStateMerklizationDictionary" {
     defer map.deinit();
 }
 
-test "constructSimpleByteKey" {
-    const key = constructSimpleByteKey(42);
-    try testing.expectEqual(@as(u8, 42), key[0]);
-    for (key[1..]) |byte| {
-        try testing.expectEqual(@as(u8, 0), byte);
-    }
-}
-
-test "constructByteServiceIndexKey" {
-    const key = constructByteServiceIndexKey(0xFF, 0x12345678);
-    try testing.expectEqual(@as(u8, 0xFF), key[0]);
-
-    const dkey = deconstructByteServiceIndexKey(key);
-
-    try testing.expectEqual(@as(u32, 0x12345678), dkey.service_index);
-
-    for (key[8..]) |byte| {
-        try testing.expectEqual(@as(u8, 0), byte);
-    }
-}
-
-test "constructServiceIndexHashKey" {
-    const service_index: u32 = 0x12345678;
-    var hash: [32]u8 = [_]u8{0} ** 32;
-    for (&hash, 0..) |*byte, i| {
-        byte.* = @truncate(i);
-    }
-
-    const key = constructServiceIndexHashKey(service_index, hash);
-
-    try testing.expectEqual(@as(u8, 0x78), key[0]);
-    try testing.expectEqual(@as(u8, 0x00), key[1]);
-    try testing.expectEqual(@as(u8, 0x56), key[2]);
-    try testing.expectEqual(@as(u8, 0x01), key[3]);
-    try testing.expectEqual(@as(u8, 0x34), key[4]);
-    try testing.expectEqual(@as(u8, 0x02), key[5]);
-    try testing.expectEqual(@as(u8, 0x12), key[6]);
-    try testing.expectEqual(@as(u8, 0x03), key[7]);
-
-    try testing.expectEqualSlices(u8, hash[4..28], key[8..]);
-}
+// REFACTORED: Key construction tests moved to state_keys.zig
+// All key construction logic is now centralized in that module.

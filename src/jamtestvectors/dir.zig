@@ -65,8 +65,12 @@ pub fn scan(
     var vectors = TestVectorList(T).init(allocator);
     errdefer vectors.deinit();
 
+    std.debug.print("HELLO: {s}\n", .{dir_path});
+
     // Process each JSON file in order
     for (ordered_files.items()) |entry| {
+        std.debug.print("Loading test vector: {s}\n", .{entry.name});
+
         if (!std.mem.endsWith(u8, entry.name, ".bin")) {
             continue;
         }

@@ -9,8 +9,10 @@ pub const DictKeyType = enum {
     delta_preimage_lookup, // Service preimage lookup entries
 };
 
+const types = @import("../types.zig");
+
 /// Extracts service ID from an interleaved key format
-fn extractServiceId(key: [32]u8) u32 {
+fn extractServiceId(key: types.StateKey) u32 {
     var service_bytes: [4]u8 = undefined;
     service_bytes[0] = key[0];
     service_bytes[1] = key[2];
@@ -20,7 +22,7 @@ fn extractServiceId(key: [32]u8) u32 {
 }
 
 /// De-interleaves the first 8 bytes of a key to get the original 4-byte pattern
-fn deInterleavePrefix(key: [32]u8) u32 {
+fn deInterleavePrefix(key: types.StateKey) u32 {
     var prefix_bytes: [4]u8 = undefined;
     prefix_bytes[0] = key[1];
     prefix_bytes[1] = key[3];
@@ -32,7 +34,7 @@ fn deInterleavePrefix(key: [32]u8) u32 {
 const deInterleaveServiceId = deInterleavePrefix;
 
 /// Determines the type of a state dictionary key
-pub fn detectKeyType(key: [32]u8) DictKeyType {
+pub fn detectKeyType(key: types.StateKey) DictKeyType {
     // First check for simple state component keys (1-15 followed by zeros)
     if (key[0] >= 1 and key[0] <= 15) {
         var is_state_component = true;
@@ -93,7 +95,7 @@ test "detectKeyType simple state" {
     const testing = std.testing;
 
     // Test simple state key
-    var simple_key = [_]u8{0} ** 32;
+    var simple_key = [_]u8{0} ** 31;
     simple_key[0] = 5;
     try testing.expectEqual(detectKeyType(simple_key), .state_component);
 }
@@ -102,7 +104,7 @@ test "detectKeyType delta base" {
     const testing = std.testing;
 
     // Test delta base key
-    var base_key = [_]u8{0} ** 32;
+    var base_key = [_]u8{0} ** 31;
     base_key[0] = 255;
     base_key[1] = 42;
     base_key[3] = 42;
@@ -114,7 +116,7 @@ test "detectKeyType delta base" {
 test "detectKeyType service entries" {
     const testing = std.testing;
 
-    var key = [_]u8{0} ** 32;
+    var key = [_]u8{0} ** 31;
 
     // Test storage key
     key[1] = 0xFF;

@@ -124,7 +124,7 @@ pub const Fixtures = struct {
     }
 };
 
-const TEST_VECTOR_PREFIX = "src/jamtestvectors/data/safrole/";
+const TEST_VECTOR_PREFIX = "src/jamtestvectors/data/stf/safrole/";
 
 const Params = @import("../jam_params.zig").Params;
 pub fn buildFixtures(comptime params: Params, allocator: std.mem.Allocator, full_path: []const u8) !Fixtures {

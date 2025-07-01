@@ -41,7 +41,7 @@ pub const TestEnvironment = struct {
 
     pub fn init(allocator: std.mem.Allocator) !TestEnvironment {
         // Configure memory
-        var memory = try Memory.initEmpty(allocator);
+        var memory = try Memory.initEmpty(allocator, false);
         errdefer memory.deinit();
 
         // Allocate a single page at the specified address
@@ -125,6 +125,7 @@ pub const TestEnvironment = struct {
             0x100,
             0,
             self.gas_limit,
+            false,
         );
         defer execution_context.deinit(self.allocator);
 

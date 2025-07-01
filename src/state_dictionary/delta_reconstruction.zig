@@ -4,6 +4,7 @@ const types = @import("../types.zig");
 const state_decoding = @import("../state_decoding.zig");
 const state_dictionary = @import("../state_dictionary.zig");
 const services = @import("../services.zig");
+const state_recovery = @import("../state_recovery.zig");
 
 const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
 const trace = @import("../tracing.zig").scoped(.codec);
@@ -14,7 +15,7 @@ const log = std.log.scoped(.state_dictionary);
 pub fn reconstructServiceAccountBase(
     allocator: std.mem.Allocator,
     delta: *state.Delta,
-    key: [32]u8,
+    key: types.StateKey,
     value: []const u8,
 ) !void {
     const span = trace.span(.reconstruct_service_account_base);
@@ -25,7 +26,7 @@ pub fn reconstructServiceAccountBase(
     var stream = std.io.fixedBufferStream(value);
     const reader = stream.reader();
 
-    const dkey = state_dictionary.deconstructByteServiceIndexKey(key);
+    const dkey = state_recovery.deconstructByteServiceIndexKey(key);
     std.debug.assert(dkey.byte == 255);
     span.debug("Deconstructed key - service index: {d}, byte: {d}", .{ dkey.service_index, dkey.byte });
 
@@ -44,7 +45,7 @@ pub fn reconstructStorageEntry(
     span.debug("Starting storage entry reconstruction", .{});
     span.trace("Key: {any}, Value length: {d}", .{ std.fmt.fmtSliceHexLower(&dict_entry.key), dict_entry.value.len });
 
-    const dkey = state_dictionary.deconstructServiceIndexHashKey(dict_entry.key);
+    const dkey = state_recovery.deconstructServiceIndexHashKey(dict_entry.key);
     span.debug("Deconstructed service index: {d}", .{dkey.service_index});
 
     // Get or create the account
@@ -75,7 +76,7 @@ pub fn reconstructPreimageEntry(
         tau,
     });
 
-    const dkey = state_dictionary.deconstructServiceIndexHashKey(dict_entry.key);
+    const dkey = state_recovery.deconstructServiceIndexHashKey(dict_entry.key);
     span.debug("Deconstructed service index: {d}", .{dkey.service_index});
 
     // Get or create the account
@@ -119,7 +120,7 @@ pub fn reconstructPreimageLookupEntry(
     _ = allocator;
 
     // Deconstruct the dkey and the preimageLookupEntry
-    const dkey = state_dictionary.deconstructServiceIndexHashKey(dict_entry.key);
+    const dkey = state_recovery.deconstructServiceIndexHashKey(dict_entry.key);
     span.debug("Deconstructed service index: {d}", .{dkey.service_index});
 
     // Now walk the delta to see if we have on the service a preimage which matches our hash

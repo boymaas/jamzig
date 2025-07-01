@@ -83,7 +83,7 @@ pub const PVMFixture = struct {
 
     pub fn initMemory(self: *const PVMFixture, allocator: Allocator) !PVM.Memory {
         // Initialize a new memory instance with the required page maps
-        var memory = try PVM.Memory.initEmpty(allocator);
+        var memory = try PVM.Memory.initEmpty(allocator, false);
         errdefer memory.deinit();
 
         // Map all pages according to the initial page map configuration

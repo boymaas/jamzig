@@ -1,6 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const codec = @import("../codec.zig");
+
 const Program = @import("program.zig").Program;
 const Decoder = @import("decoder.zig").Decoder;
 const Memory = @import("memory.zig").Memory;
@@ -31,11 +33,38 @@ pub const ExecutionContext = struct {
         host_call: u32,
     };
 
+    pub fn initStandardProgramCodeFormatWithMetadata(
+        allocator: Allocator,
+        program_blob: []const u8,
+        input: []const u8,
+        max_gas: u32,
+        dynamic_allocation: bool,
+    ) !ExecutionContext {
+        const result = try codec.decoder.decodeInteger(program_blob);
+        if (result.value + result.bytes_read > program_blob.len) {
+            return error.MetadataSizeTooLarge;
+        }
+
+        // will be optimized out
+        _ = program_blob[result.bytes_read..result.value];
+        const standard_program_format = program_blob[result.bytes_read + result.value ..];
+
+        // TODO: in accumulate we are still doing CodeWithMetadata fix this
+        return initStandardProgramCodeFormat(
+            allocator,
+            standard_program_format,
+            input,
+            max_gas,
+            dynamic_allocation,
+        );
+    }
+
     pub fn initStandardProgramCodeFormat(
         allocator: Allocator,
         program_code: []const u8,
         input: []const u8,
         max_gas: u32,
+        dynamic_allocation: bool,
     ) !ExecutionContext {
         const span = trace.span(.init_standard_program);
         defer span.deinit();
@@ -119,10 +148,11 @@ pub const ExecutionContext = struct {
             code_data,
             read_only_data,
             read_write_data,
-            input, // FIXME: need to add input here
+            input,
             stack_size_in_bytes,
             heap_size_in_pages,
             max_gas,
+            dynamic_allocation,
         );
     }
 
@@ -132,6 +162,7 @@ pub const ExecutionContext = struct {
         stack_size_in_bytes: u24,
         heap_size_in_pages: u16,
         max_gas: u32,
+        dynamic_allocation: bool,
     ) !ExecutionContext {
         const span = trace.span(.init_simple);
         defer span.deinit();
@@ -151,6 +182,7 @@ pub const ExecutionContext = struct {
             stack_size_in_bytes,
             heap_size_in_pages,
             max_gas,
+            dynamic_allocation,
         );
     }
 
@@ -164,6 +196,7 @@ pub const ExecutionContext = struct {
         stack_size_in_bytes: u24,
         heap_size_in_pages: u16,
         max_gas: u32,
+        dynamic_allocation: bool,
     ) !ExecutionContext {
         const span = trace.span(.init_with_memory_segments);
         defer span.deinit();
@@ -174,6 +207,7 @@ pub const ExecutionContext = struct {
             read_write.len,
             input.len,
         });
+        span.debug("Dynamic allocation: {}", .{dynamic_allocation});
 
         // Configure memory layout with provided segments
         var memory = try Memory.initWithData(
@@ -183,6 +217,7 @@ pub const ExecutionContext = struct {
             input,
             stack_size_in_bytes,
             heap_size_in_pages,
+            dynamic_allocation,
         );
         errdefer {
             span.debug("Error occurred, cleaning up memory", .{});
@@ -311,6 +346,75 @@ pub const ExecutionContext = struct {
         self.host_calls = new_host_calls;
 
         span.debug("Host calls set successfully", .{});
+    }
+
+    /// Enable or disable dynamic memory allocation
+    pub fn setDynamicMemoryAllocation(self: *ExecutionContext, enable: bool) void {
+        const span = trace.span(.set_dynamic_memory);
+        defer span.deinit();
+        span.debug("Setting dynamic memory allocation: {}", .{enable});
+
+        self.memory.dynamic_allocation_enabled = enable;
+
+        span.debug("Dynamic memory allocation set successfully", .{});
+    }
+
+    /// Override the stack size by reallocating stack pages
+    pub fn overrideStackSize(self: *ExecutionContext, new_stack_size_bytes: u32) !void {
+        const span = trace.span(.override_stack_size);
+        defer span.deinit();
+        span.debug("Overriding stack size to {d} bytes", .{new_stack_size_bytes});
+
+        // Validate minimum size and alignment
+        const MIN_STACK_SIZE = 4096;
+        if (new_stack_size_bytes < MIN_STACK_SIZE) {
+            span.err("Stack size {d} is below minimum {d}", .{ new_stack_size_bytes, MIN_STACK_SIZE });
+            return error.InvalidStackSize;
+        }
+
+        if (new_stack_size_bytes % 4096 != 0) {
+            span.err("Stack size {d} is not page-aligned", .{new_stack_size_bytes});
+            return error.InvalidStackSize;
+        }
+
+        // Calculate new stack size in pages
+        const new_stack_size_pages = new_stack_size_bytes / 4096;
+        const current_stack_size_pages = self.memory.stack_size_in_pages;
+
+        span.debug("Current stack: {d} pages, new stack: {d} pages", .{ current_stack_size_pages, new_stack_size_pages });
+
+        // If the size is the same, no work needed
+        if (new_stack_size_pages == current_stack_size_pages) {
+            span.debug("Stack size unchanged, no reallocation needed", .{});
+            return;
+        }
+
+        // Find and remove existing stack pages
+        const current_stack_bottom = try Memory.STACK_BOTTOM_ADDRESS(@intCast(current_stack_size_pages));
+
+        self.memory.page_table.freePages(current_stack_bottom, current_stack_size_pages) catch |err| {
+            span.err("Failed to free existing stack pages: {s}", .{@errorName(err)});
+            return err;
+        };
+
+        span.debug("Removing {d} existing stack pages starting at 0x{X:0>8}", .{ current_stack_size_pages, current_stack_bottom });
+
+        // Remove existing stack pages from page table
+
+        // Allocate new stack pages
+        const new_stack_bottom = try Memory.STACK_BOTTOM_ADDRESS(@intCast(new_stack_size_pages));
+        span.debug("Allocating {d} new stack pages starting at 0x{X:0>8}", .{ new_stack_size_pages, new_stack_bottom });
+
+        try self.memory.page_table.allocatePages(
+            new_stack_bottom,
+            new_stack_size_pages,
+            Memory.Page.Flags.ReadWrite,
+        );
+
+        // Update memory system's stack size
+        self.memory.stack_size_in_pages = @intCast(new_stack_size_pages);
+
+        span.debug("Stack size override completed successfully", .{});
     }
 
     pub fn debugProgram(self: *const ExecutionContext, writer: anytype) !void {
