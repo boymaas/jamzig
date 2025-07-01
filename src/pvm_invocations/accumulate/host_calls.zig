@@ -64,17 +64,10 @@ pub fn HostCalls(params: Params) type {
             }
 
             pub fn toGeneralContext(self: *@This()) general.GeneralHostCalls(params).Context {
-                // Create accumulate-specific invocation context
+                // Create accumulate-specific invocation context with reference to accumulate context
                 const invocation_ctx = general.GeneralHostCalls(params).InvocationContext{
                     .accumulate = .{
-                        .validator_keys = self.context.validator_keys.getReadOnly(),
-                        .authorizer_queue = self.context.authorizer_queue.getReadOnly(),
-                        .privileges = self.context.privileges.getReadOnly(),
-                        .time = self.context.time,
-                        // Enhanced data for fetch selectors (JAM graypaper §1.7.2)
-                        .entropy = self.context.entropy, // η - entropy for current block (fetch selector 1)
-                        .authorizer_hash_output = self.context.authorizer_hash_output, // ω - authorizer execution output (fetch selector 2) 
-                        .outputs = if (self.context.outputs.items.len > 0) self.context.outputs.items else null, // accumulated outputs from services (fetch selector 17)
+                        .accumulate_context = &self.context,
                         .transfers = if (self.deferred_transfers.items.len > 0) self.deferred_transfers.items else null,
                     },
                 };

@@ -34,6 +34,7 @@ pub fn machineInvocation(
 
     // try to parse the code format. If we run into an error
     // here we should return a panic
+    // TODO: we have now initStandardProgramCodeFormatWithMetaData which we can use
     var exec_ctx = PVM.ExecutionContext.initStandardProgramCodeFormat(
         allocator,
         program_code,

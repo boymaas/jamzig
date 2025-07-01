@@ -17,11 +17,13 @@ pub fn AccumulationContext(params: Params) type {
         authorizer_queue: CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)), // q ∈ _C⟦H⟧^Q_H_C
         privileges: CopyOnWrite(state.Chi), // x ∈ (N_S, N_S, N_S, D⟨N_S → N_G⟩)
         time: *const params.Time(),
-        
+
         // Additional context for fetch selectors (JAM graypaper §1.7.2)
         entropy: types.Entropy, // η - entropy for current block (fetch selector 1)
         authorizer_hash_output: ?types.Hash, // ω - authorizer execution output (fetch selector 2)
         outputs: std.ArrayList(types.AccumulateOutput), // accumulated outputs from services (fetch selector 17)
+        operand_tuples: ?[]const @import("../accumulate.zig").AccumulationOperand, // operand tuples for fetch selectors 14-15
+        current_operand_index: ?usize, // Index of currently processing operand for context-aware authorizer hash
 
         const InitArgs = struct {
             service_accounts: *state.Delta,
@@ -29,8 +31,10 @@ pub fn AccumulationContext(params: Params) type {
             authorizer_queue: *state.Phi(params.core_count, params.max_authorizations_queue_items),
             privileges: *state.Chi,
             time: *const params.Time(),
-            entropy: types.Entropy = [_]u8{0} ** 32, // Default entropy if not provided
+            entropy: types.Entropy, // Default entropy if not provided
             authorizer_hash_output: ?types.Hash = null,
+            operand_tuples: ?[]const @import("../accumulate.zig").AccumulationOperand = null,
+            current_operand_index: ?usize = null,
         };
 
         pub fn build(allocator: std.mem.Allocator, args: InitArgs) @This() {
@@ -43,13 +47,35 @@ pub fn AccumulationContext(params: Params) type {
                 .entropy = args.entropy,
                 .authorizer_hash_output = args.authorizer_hash_output,
                 .outputs = std.ArrayList(types.AccumulateOutput).init(allocator),
+                .operand_tuples = args.operand_tuples,
+                .current_operand_index = args.current_operand_index,
             };
         }
 
-        /// Update entropy and authorizer hash output for a specific service invocation
-        pub fn updateFetchContext(self: *@This(), entropy: types.Entropy, authorizer_hash_output: ?types.Hash) void {
-            self.entropy = entropy;
-            self.authorizer_hash_output = authorizer_hash_output;
+        /// Set the current operand index for context-aware authorizer hash extraction
+        pub fn setCurrentOperand(self: *@This(), operand_index: usize) void {
+            self.current_operand_index = operand_index;
+        }
+
+        /// Clear the current operand index
+        pub fn clearCurrentOperand(self: *@This()) void {
+            self.current_operand_index = null;
+        }
+
+        /// Get the authorizer hash for the currently processing operand
+        /// Returns the authorizer hash from the current operand if available,
+        /// or the global authorizer_hash_output as fallback
+        pub fn getCurrentAuthorizerHash(self: @This()) ?types.Hash {
+            // If we have operand tuples and a current operand index
+            if (self.operand_tuples) |operands| {
+                if (self.current_operand_index) |index| {
+                    if (index < operands.len) {
+                        return operands[index].a; // Return authorizer hash from current operand
+                    }
+                }
+            }
+
+            return null;
         }
 
         pub fn commit(self: *@This()) !void {
@@ -77,6 +103,8 @@ pub fn AccumulationContext(params: Params) type {
                 .entropy = self.entropy,
                 .authorizer_hash_output = self.authorizer_hash_output,
                 .outputs = try self.outputs.clone(),
+                .operand_tuples = self.operand_tuples, // Slice reference, no deep clone needed
+                .current_operand_index = self.current_operand_index,
             };
         }
 

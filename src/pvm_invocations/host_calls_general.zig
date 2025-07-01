@@ -36,18 +36,10 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             ontransfer: OnTransferData,
 
             pub const AccumulateData = struct {
-                // Available in accumulation context
-                validator_keys: ?*const state.Iota = null,
-                authorizer_queue: ?*const state.Phi(params.core_count, params.max_authorizations_queue_items) = null,
-                privileges: ?*const state.Chi = null,
-                time: ?*const params.Time() = null,
-                // Enhanced data for fetch selectors
-                entropy: ?types.Entropy = null,
-                authorizer_hash_output: ?Hash256 = null,
-                outputs: ?[]const types.AccumulateOutput = null,
+                // Reference to accumulate context containing all accumulation data
+                accumulate_context: *@import("accumulate/context.zig").AccumulationContext(params),
+                // Additional data not in the context
                 transfers: ?[]const @import("accumulate/types.zig").DeferredTransfer = null,
-                // Operand tuples for selectors 14-15
-                operand_tuples: ?[]const @import("accumulate.zig").AccumulationOperand = null,
             };
 
             pub const OnTransferData = struct {
@@ -279,13 +271,10 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                     if (host_ctx.invocation_context) |ctx| {
                         switch (ctx) {
                             // REMOVED FOR REFINE: .refine case
-                            .accumulate => |acc_data| {
-                                if (acc_data.entropy) |entropy| {
-                                    span.debug("Entropy available from accumulate context", .{});
-                                    data_to_fetch = entropy[0..];
-                                } else {
-                                    span.debug("Entropy not set in accumulate context", .{});
-                                }
+                            .accumulate => |acc_data_| {
+                                const acc_data: InvocationContext.AccumulateData = acc_data_;
+                                span.debug("Entropy available from accumulate context", .{});
+                                data_to_fetch = acc_data.accumulate_context.entropy[0..];
                             },
                             else => {
                                 span.debug("Entropy not available in {s} context", .{@tagName(ctx)});
@@ -293,6 +282,36 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                         }
                     } else {
                         span.debug("Entropy fetch: no invocation context available", .{});
+                    }
+
+                    if (data_to_fetch == null) {
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    }
+                },
+
+                2 => {
+                    // Selector 2: Authorizer hash output (ω) - context-aware
+                    // Returns the 32-byte Blake2s hash of the authorization-output
+                    // of the authorizer for the current work package operand being processed
+                    if (host_ctx.invocation_context) |ctx| {
+                        switch (ctx) {
+                            .accumulate => |acc_data_| {
+                                const acc_data: InvocationContext.AccumulateData = acc_data_;
+                                // Use context-aware authorizer hash from accumulate context
+                                if (acc_data.accumulate_context.getCurrentAuthorizerHash()) |authorizer_hash| {
+                                    span.debug("Context-aware authorizer hash available from current operand", .{});
+                                    data_to_fetch = authorizer_hash[0..];
+                                } else {
+                                    span.debug("Context-aware authorizer hash not available", .{});
+                                }
+                            },
+                            else => {
+                                span.debug("Authorizer hash not available in {s} context", .{@tagName(ctx)});
+                            },
+                        }
+                    } else {
+                        span.debug("Authorizer hash fetch: no invocation context available", .{});
                     }
 
                     if (data_to_fetch == null) {
@@ -313,7 +332,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 // - Selector 11: Work items summary
                 // - Selector 12: Specific work item summary
                 // - Selector 13: Work item payload
-                2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 => {
+                3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 => {
                     span.debug("Selector {d} disabled (refine-only)", .{selector});
                     exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                     return .play;
@@ -324,8 +343,9 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                     // E(↕o) - All operand tuples for accumulation
                     if (host_ctx.invocation_context) |ctx| {
                         switch (ctx) {
-                            .accumulate => |acc_data| {
-                                if (acc_data.operand_tuples) |operand_tuples| {
+                            .accumulate => |acc_data_| {
+                                const acc_data: InvocationContext.AccumulateData = acc_data_;
+                                if (acc_data.accumulate_context.operand_tuples) |operand_tuples| {
                                     // Encode operand tuples array
                                     const operand_tuples_data = encodeOperandTuples(host_ctx.allocator, operand_tuples) catch {
                                         span.err("Failed to encode operand tuples", .{});
@@ -360,8 +380,9 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
                     if (host_ctx.invocation_context) |ctx| {
                         switch (ctx) {
-                            .accumulate => |acc_data| {
-                                if (acc_data.operand_tuples) |operand_tuples| {
+                            .accumulate => |acc_data_| {
+                                const acc_data: InvocationContext.AccumulateData = acc_data_;
+                                if (acc_data.accumulate_context.operand_tuples) |operand_tuples| {
                                     if (operand_index < operand_tuples.len) {
                                         const operand_tuple = &operand_tuples[operand_index];
                                         const operand_tuple_data = encodeOperandTuple(host_ctx.allocator, operand_tuple) catch {
@@ -398,7 +419,9 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                     // E(↕t) - All pending transfers
                     if (host_ctx.invocation_context) |ctx| {
                         switch (ctx) {
-                            .ontransfer => |transfer_data| {
+                            .ontransfer => |transfer_data_| {
+                                const transfer_data: InvocationContext.OnTransferData = transfer_data_;
+
                                 if (transfer_data.transfer_sequence) |transfer_sequence| {
                                     // Encode transfer sequence array
                                     const transfers_data = encodeTransfers(host_ctx.allocator, transfer_sequence) catch {
@@ -434,7 +457,8 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
                     if (host_ctx.invocation_context) |ctx| {
                         switch (ctx) {
-                            .ontransfer => |transfer_data| {
+                            .ontransfer => |transfer_data_| {
+                                const transfer_data: InvocationContext.OnTransferData = transfer_data_;
                                 if (transfer_data.transfer_sequence) |transfer_sequence| {
                                     if (transfer_index < transfer_sequence.len) {
                                         const transfer = &transfer_sequence[transfer_index];
