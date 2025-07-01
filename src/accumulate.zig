@@ -341,7 +341,7 @@ pub fn processAccumulateReports(
             .authorizer_queue = try stx.ensure(.phi_prime),
             .privileges = try stx.ensure(.chi_prime),
             .time = &stx.time,
-            .entropy = (try stx.ensure(.eta_prime))[0], // Use first entropy value
+            .entropy = (try stx.ensure(.eta_prime))[0], // Posterior entropy CHECKED
         },
     );
     defer accumulation_context.deinit();
