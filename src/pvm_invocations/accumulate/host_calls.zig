@@ -16,7 +16,10 @@ const PVM = @import("../../pvm.zig").PVM;
 // Add tracing import
 const trace = @import("../../tracing.zig").scoped(.host_calls);
 
-pub fn HostCalls(params: Params) type {
+// Import shared encoding utilities
+const encoding_utils = @import("../encoding_utils.zig");
+
+pub fn HostCalls(comptime params: Params) type {
     return struct {
         pub const Context = struct {
             regular: Dimension,
@@ -1160,18 +1163,141 @@ pub fn HostCalls(params: Params) type {
             return .play;
         }
 
-        /// Host call implementation for fetch (Ω_Y)
+        /// Host call implementation for fetch (Ω_Y) - Accumulate context
+        /// Simplified fetch for accumulate context supporting selectors:
+        /// 0: System constants
+        /// 1: Entropy
+        /// 2: Authorizer hash
+        /// 14: Encoded operand tuples
+        /// 15: Specific operand tuple
         pub fn fetch(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
         ) PVM.HostCallResult {
+            const span = trace.span(.host_call_fetch);
+            defer span.deinit();
+
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
+
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular = &host_ctx.regular;
 
-            return general.GeneralHostCalls(params).fetch(
-                exec_ctx,
-                ctx_regular.toGeneralContext(),
-            );
+            const output_ptr = exec_ctx.registers[7]; // Output pointer (o)
+            const offset = exec_ctx.registers[8]; // Offset (f)
+            const limit = exec_ctx.registers[9]; // Length limit (l)
+            const selector = exec_ctx.registers[10]; // Data selector
+
+            span.debug("Host call: fetch selector={d}", .{selector});
+            span.debug("Output ptr: 0x{x}, offset: {d}, limit: {d}", .{ output_ptr, offset, limit });
+
+            // Determine what data to fetch based on selector
+            var data_to_fetch: ?[]const u8 = null;
+            var needs_cleanup = false;
+
+            switch (selector) {
+                0 => {
+                    // Return JAM parameters as encoded bytes per graypaper
+                    span.debug("Encoding JAM chain constants", .{});
+                    const encoded_constants = encoding_utils.encodeJamParams(ctx_regular.allocator, params) catch {
+                        span.err("Failed to encode JAM chain constants", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    };
+                    data_to_fetch = encoded_constants;
+                    needs_cleanup = true;
+                },
+
+                1 => {
+                    // Selector 1: Entropy (η) - available in accumulate context
+                    span.debug("Entropy available from accumulate context", .{});
+                    data_to_fetch = ctx_regular.context.entropy[0..];
+                },
+
+                2 => {
+                    // Selector 2: Authorizer hash output (ω) - context-aware
+                    if (ctx_regular.context.getCurrentAuthorizerHash()) |authorizer_hash| {
+                        span.debug("Context-aware authorizer hash available from current operand", .{});
+                        data_to_fetch = authorizer_hash[0..];
+                    } else {
+                        span.debug("Context-aware authorizer hash not available", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    }
+                },
+
+                14 => {
+                    // Selector 14: Encoded operand tuples
+                    if (ctx_regular.context.operand_tuples) |operand_tuples| {
+                        const operand_tuples_data = encoding_utils.encodeOperandTuples(ctx_regular.allocator, operand_tuples) catch {
+                            span.err("Failed to encode operand tuples", .{});
+                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                            return .play;
+                        };
+                        span.debug("Operand tuples encoded successfully, count={d}", .{operand_tuples.len});
+                        data_to_fetch = operand_tuples_data;
+                        needs_cleanup = true;
+                    } else {
+                        span.debug("Operand tuples not available in accumulate context", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    }
+                },
+
+                15 => {
+                    // Selector 15: Specific operand tuple
+                    const operand_index = @as(u32, @intCast(exec_ctx.registers[11]));
+                    if (ctx_regular.context.operand_tuples) |operand_tuples| {
+                        if (operand_index < operand_tuples.len) {
+                            const operand_tuple = &operand_tuples[operand_index];
+                            const operand_tuple_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand_tuple) catch {
+                                span.err("Failed to encode operand tuple", .{});
+                                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                                return .play;
+                            };
+                            span.debug("Operand tuple encoded successfully: index={d}", .{operand_index});
+                            data_to_fetch = operand_tuple_data;
+                            needs_cleanup = true;
+                        } else {
+                            span.debug("Operand tuple index out of bounds: index={d}, count={d}", .{ operand_index, operand_tuples.len });
+                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                            return .play;
+                        }
+                    } else {
+                        span.debug("Operand tuples not available in accumulate context", .{});
+                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                        return .play;
+                    }
+                },
+
+                else => {
+                    // Invalid selector for accumulate context
+                    span.debug("Invalid fetch selector for accumulate: {d} (valid: 0,1,2,14,15)", .{selector});
+                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                    return .play;
+                },
+            }
+            defer if (needs_cleanup and data_to_fetch != null) ctx_regular.allocator.free(data_to_fetch.?);
+
+            if (data_to_fetch) |data| {
+                // Calculate what to return based on offset and limit
+                const f = @min(offset, data.len);
+                const l = @min(limit, data.len - f);
+
+                span.debug("Fetching {d} bytes from offset {d}", .{ l, f });
+
+                // Write data to memory
+                exec_ctx.memory.writeSlice(@truncate(output_ptr), data[f..][0..l]) catch {
+                    span.err("Memory access failed while writing fetch data", .{});
+                    return .{ .terminal = .panic };
+                };
+
+                // Return the total length of the data
+                exec_ctx.registers[7] = data.len;
+                span.debug("Fetch successful, total length: {d}", .{data.len});
+            }
+
+            return .play;
         }
 
         pub fn debugLog(
