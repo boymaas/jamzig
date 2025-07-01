@@ -38,7 +38,6 @@ pub fn invoke(
     tau: types.TimeSlot,
     service_id: types.ServiceId,
     transfers: []const DeferredTransfer,
-    entropy: types.Entropy, // η'₀ - random accumulator
 ) !OnTransferResult {
     const span = trace.span(.invoke);
     defer span.deinit();
@@ -102,8 +101,6 @@ pub fn invoke(
     // Initialize host call context
     span.debug("Initializing host call context", .{});
 
-    // Set transfer data and entropy for fetch access
-    context.setTransferData(transfers, entropy);
 
     // Apply transfer balance to service before execution (as per the graypaper)
     span.debug("Applying transfer balance to service", .{});

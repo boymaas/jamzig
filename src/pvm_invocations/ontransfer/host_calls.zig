@@ -26,9 +26,8 @@ pub fn HostCalls(comptime params: Params) type {
             service_id: types.ServiceId,
             service_accounts: DeltaSnapshot,
             allocator: std.mem.Allocator,
-            // Add transfer data and entropy for fetch access
-            transfers: ?[]const @import("../accumulate/types.zig").DeferredTransfer = null,
-            entropy: ?types.Entropy = null,
+            transfers: []const @import("../accumulate/types.zig").DeferredTransfer,
+            entropy: types.Entropy,
 
             const Self = @This();
 
@@ -41,6 +40,8 @@ pub fn HostCalls(comptime params: Params) type {
                     .service_accounts = try self.service_accounts.deepClone(),
                     .service_id = self.service_id,
                     .allocator = self.allocator,
+                    .transfers = self.transfers,
+                    .entropy = self.entropy,
                 };
             }
 
@@ -52,10 +53,6 @@ pub fn HostCalls(comptime params: Params) type {
                 );
             }
 
-            pub fn setTransferData(self: *Self, transfers: []const @import("../accumulate/types.zig").DeferredTransfer, entropy: types.Entropy) void {
-                self.transfers = transfers;
-                self.entropy = entropy;
-            }
 
             pub fn deinit(self: *Self) void {
                 self.service_accounts.deinit();
@@ -172,14 +169,8 @@ pub fn HostCalls(comptime params: Params) type {
 
                 1 => {
                     // Selector 1: Current random accumulator (η'₀)
-                    if (host_ctx.entropy) |entropy_data| {
-                        span.debug("Random accumulator available from ontransfer context", .{});
-                        data_to_fetch = entropy_data[0..];
-                    } else {
-                        span.debug("Random accumulator not available in ontransfer context", .{});
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
-                    }
+                    span.debug("Random accumulator available from ontransfer context", .{});
+                    data_to_fetch = host_ctx.entropy[0..];
                 },
 
                 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 => {
@@ -198,42 +189,30 @@ pub fn HostCalls(comptime params: Params) type {
 
                 16 => {
                     // Selector 16: Transfer list (from t)
-                    if (host_ctx.transfers) |transfer_list| {
-                        const transfers_data = encoding_utils.encodeTransfers(host_ctx.allocator, transfer_list) catch {
-                            span.err("Failed to encode transfer sequence", .{});
-                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                            return .play;
-                        };
-                        span.debug("Transfer sequence encoded successfully, count={d}", .{transfer_list.len});
-                        data_to_fetch = transfers_data;
-                        needs_cleanup = true;
-                    } else {
-                        span.debug("No transfers available in ontransfer context", .{});
+                    const transfers_data = encoding_utils.encodeTransfers(host_ctx.allocator, host_ctx.transfers) catch {
+                        span.err("Failed to encode transfer sequence", .{});
                         exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                         return .play;
-                    }
+                    };
+                    span.debug("Transfer sequence encoded successfully, count={d}", .{host_ctx.transfers.len});
+                    data_to_fetch = transfers_data;
+                    needs_cleanup = true;
                 },
 
                 17 => {
                     // Selector 17: Specific transfer by index (from t)
-                    if (host_ctx.transfers) |transfer_list| {
-                        if (index1 < transfer_list.len) {
-                            const transfer_item = &transfer_list[index1];
-                            const transfer_data = encoding_utils.encodeTransfer(host_ctx.allocator, transfer_item) catch {
-                                span.err("Failed to encode transfer", .{});
-                                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                                return .play;
-                            };
-                            span.debug("Transfer encoded successfully: index={d}", .{index1});
-                            data_to_fetch = transfer_data;
-                            needs_cleanup = true;
-                        } else {
-                            span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, transfer_list.len });
+                    if (index1 < host_ctx.transfers.len) {
+                        const transfer_item = &host_ctx.transfers[index1];
+                        const transfer_data = encoding_utils.encodeTransfer(host_ctx.allocator, transfer_item) catch {
+                            span.err("Failed to encode transfer", .{});
                             exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                             return .play;
-                        }
+                        };
+                        span.debug("Transfer encoded successfully: index={d}", .{index1});
+                        data_to_fetch = transfer_data;
+                        needs_cleanup = true;
                     } else {
-                        span.debug("No transfers available in ontransfer context", .{});
+                        span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, host_ctx.transfers.len });
                         exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                         return .play;
                     }
