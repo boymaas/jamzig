@@ -257,3 +257,123 @@ test "primary_verification_maximal_complexity" {
 
     try runPrimaryVerificationTest(allocator, TINY, .maximal, 54321);
 }
+
+// ========================================
+// STRESS TESTING
+// ========================================
+
+const StressTestFailure = struct {
+    iteration: usize,
+    complexity: StateComplexity,
+    seed: u64,
+    error_type: anyerror,
+};
+
+fn generateRandomSeed() u64 {
+    // Use nanosecond timestamp as entropy source
+    return @intCast(std.time.nanoTimestamp() & 0xFFFFFFFFFFFFFFFF);
+}
+
+test "stress_test_10k_iterations_all_complexities" {
+    const allocator = std.testing.allocator;
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
+    
+    // Generate truly random seed for this test run
+    const random_seed = generateRandomSeed();
+    std.debug.print("\nStarting 10,000 iteration stress test with base seed: {d}\n", .{random_seed});
+    
+    try runStressTest(allocator, TINY, random_seed, 10_000);
+}
+
+pub fn runStressTest(
+    allocator: std.mem.Allocator,
+    comptime params: Params,
+    base_seed: u64,
+    total_iterations: usize,
+) !void {
+    var failures = std.ArrayList(StressTestFailure).init(allocator);
+    defer failures.deinit();
+    
+    // Distribute iterations across complexity levels
+    const distributions = [_]struct { complexity: StateComplexity, count: usize }{
+        .{ .complexity = .minimal, .count = total_iterations / 2 },      // 50% - fastest, most coverage
+        .{ .complexity = .moderate, .count = total_iterations * 3 / 10 }, // 30% - balanced complexity  
+        .{ .complexity = .maximal, .count = total_iterations / 5 },       // 20% - highest complexity
+    };
+    
+    var iteration: usize = 0;
+    const start_time = std.time.milliTimestamp();
+    
+    std.debug.print("Distribution: Minimal={d}, Moderate={d}, Maximal={d}\n", .{
+        distributions[0].count, distributions[1].count, distributions[2].count
+    });
+    
+    for (distributions) |dist| {
+        std.debug.print("Starting {s} complexity phase ({d} iterations)...\n", .{
+            @tagName(dist.complexity), dist.count
+        });
+        
+        for (0..dist.count) |_| {
+            const seed = base_seed +% iteration; // Wrapping add to handle overflow
+            
+            // Use arena allocator for complete cleanup after each iteration
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            defer arena.deinit();
+            const iter_allocator = arena.allocator();
+            
+            // Run individual test with error capture
+            runRoundTripTest(iter_allocator, params, dist.complexity, seed) catch |err| {
+                try failures.append(.{
+                    .iteration = iteration,
+                    .complexity = dist.complexity,
+                    .seed = seed,
+                    .error_type = err,
+                });
+                
+                // Print immediate failure notice
+                std.debug.print("❌ Iteration {d} failed ({s}, seed={d}): {}\n", .{
+                    iteration, @tagName(dist.complexity), seed, err
+                });
+            };
+            
+            iteration += 1;
+            
+            // Progress reporting every 1000 iterations
+            if (iteration % 1000 == 0) {
+                const elapsed_ms = std.time.milliTimestamp() - start_time;
+                const avg_ms_per_iter = @as(f64, @floatFromInt(elapsed_ms)) / @as(f64, @floatFromInt(iteration));
+                std.debug.print("Progress: {d}/{d} iterations ({d:.1}ms avg)...\n", .{
+                    iteration, total_iterations, avg_ms_per_iter
+                });
+            }
+        }
+    }
+    
+    const end_time = std.time.milliTimestamp();
+    const total_time_ms = end_time - start_time;
+    
+    // Report final results
+    std.debug.print("\n" ++ "=" ** 50 ++ "\n", .{});
+    std.debug.print("STRESS TEST RESULTS\n", .{});
+    std.debug.print("=" ** 50 ++ "\n", .{});
+    std.debug.print("Total iterations: {d}\n", .{total_iterations});
+    std.debug.print("Total time: {d:.2}s\n", .{@as(f64, @floatFromInt(total_time_ms)) / 1000.0});
+    std.debug.print("Average per iteration: {d:.2}ms\n", .{@as(f64, @floatFromInt(total_time_ms)) / @as(f64, @floatFromInt(total_iterations))});
+    std.debug.print("Failures: {d}\n", .{failures.items.len});
+    
+    if (failures.items.len > 0) {
+        std.debug.print("\nFAILURE DETAILS:\n", .{});
+        for (failures.items, 0..) |failure, i| {
+            std.debug.print("{d}. Iteration {d} ({s}, seed={d}): {}\n", .{
+                i + 1, failure.iteration, @tagName(failure.complexity), failure.seed, failure.error_type
+            });
+        }
+        std.debug.print("\n", .{});
+        
+        // Fail the test if there were any failures
+        return std.testing.expect(false); // This will fail with "expected true, found false"
+    } else {
+        std.debug.print("✅ All {d} iterations passed successfully!\n", .{total_iterations});
+        std.debug.print("🎉 State merklization and reconstruction is robust!\n", .{});
+    }
+}
