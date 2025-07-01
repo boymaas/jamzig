@@ -57,8 +57,6 @@ pub fn performHandshake(
     const span = trace.span(.perform_handshake);
     defer span.deinit();
 
-    var handshake_complete = false;
-
     // Fuzzer sends PeerInfo
     const fuzzer_peer_info = messages.PeerInfo{
         .name = "fuzzer",
@@ -70,7 +68,7 @@ pub fn performHandshake(
     // Target reads and processes
     var request = try target.readMessage(target_sock);
     defer request.deinit();
-    const response = try target.processMessage(request.value, &handshake_complete);
+    const response = try target.processMessage(request.value);
 
     // Target sends response
     try target.sendMessage(target_sock, response.?);
@@ -89,7 +87,7 @@ pub fn performHandshake(
         else => return error.UnexpectedResponse,
     }
 
-    try testing.expect(handshake_complete);
-    return handshake_complete;
+    try testing.expect(target.server_state == .handshake_complete or target.server_state == .ready);
+    return target.server_state != .initial;
 }
 

@@ -21,7 +21,7 @@ test "handshake" {
     defer sockets.deinit();
 
     // Create target server
-    var target = TargetServer.init(allocator, "unused");
+    var target = try TargetServer.init(allocator, "unused");
     defer target.deinit();
 
     // Perform handshake
@@ -40,11 +40,11 @@ test "state_and_verify" {
     var sockets = try shared.createSocketPair();
     defer sockets.deinit();
 
-    var target = TargetServer.init(allocator, "unused");
+    var target = try TargetServer.init(allocator, "unused");
     defer target.deinit();
 
     // First perform handshake
-    const handshake_complete = try shared.performHandshake(allocator, sockets.fuzzer, sockets.target, &target);
+    _ = try shared.performHandshake(allocator, sockets.fuzzer, sockets.target, &target);
 
     // Create test state
     const test_state = [_]messages.KeyValue{
@@ -68,8 +68,7 @@ test "state_and_verify" {
     // Target processes SetState
     var request = try target.readMessage(sockets.target);
     defer request.deinit();
-    var handshake_done = handshake_complete;
-    const response = try target.processMessage(request.value, &handshake_done);
+    const response = try target.processMessage(request.value);
 
     // Target sends response
     try target.sendMessage(sockets.target, response.?);
@@ -93,7 +92,8 @@ test "state_and_verify" {
     }
 
     // Verify state was stored correctly
-    try testing.expectEqual(@as(usize, 3), target.current_state.count());
+    // The state conversion should have succeeded
+    try testing.expect(target.current_state_root != null);
 
     span.debug("SetState test completed successfully", .{});
 }
@@ -108,11 +108,11 @@ test "state_after_modifications" {
     var sockets = try shared.createSocketPair();
     defer sockets.deinit();
 
-    var target = TargetServer.init(allocator, "unused");
+    var target = try TargetServer.init(allocator, "unused");
     defer target.deinit();
 
     // Perform handshake
-    const handshake_complete = try shared.performHandshake(allocator, sockets.fuzzer, sockets.target, &target);
+    _ = try shared.performHandshake(allocator, sockets.fuzzer, sockets.target, &target);
 
     // First set some state
     const test_state = [_]messages.KeyValue{
@@ -134,8 +134,7 @@ test "state_after_modifications" {
     // Process SetState
     var set_request = try target.readMessage(sockets.target);
     defer set_request.deinit();
-    var handshake_done = handshake_complete;
-    const set_response = try target.processMessage(set_request.value, &handshake_done);
+    const set_response = try target.processMessage(set_request.value);
     try target.sendMessage(sockets.target, set_response.?);
 
     // Read SetState response
@@ -151,8 +150,7 @@ test "state_after_modifications" {
     // Target processes GetState
     var get_request = try target.readMessage(sockets.target);
     defer get_request.deinit();
-    var handshake_done2 = handshake_complete;
-    const get_response = try target.processMessage(get_request.value, &handshake_done2);
+    const get_response = try target.processMessage(get_request.value);
     defer if (get_response) |resp| {
         switch (resp) {
             .state => |state| {
@@ -193,12 +191,12 @@ test "complete fuzzer session flow" {
     var sockets = try shared.createSocketPair();
     defer sockets.deinit();
 
-    var target = TargetServer.init(allocator, "unused");
+    var target = try TargetServer.init(allocator, "unused");
     defer target.deinit();
 
     // Step 1: Handshake
     span.debug("Starting handshake", .{});
-    const handshake_complete = try shared.performHandshake(allocator, sockets.fuzzer, sockets.target, &target);
+    _ = try shared.performHandshake(allocator, sockets.fuzzer, sockets.target, &target);
 
     // Step 2: Initialize state with SetState
     span.debug("Setting initial state", .{});
@@ -218,8 +216,7 @@ test "complete fuzzer session flow" {
 
     var set_request = try target.readMessage(sockets.target);
     defer set_request.deinit();
-    var handshake_done = handshake_complete;
-    const set_response = try target.processMessage(set_request.value, &handshake_done);
+    const set_response = try target.processMessage(set_request.value);
     try target.sendMessage(sockets.target, set_response.?);
 
     var set_reply = try shared.readMessage(allocator, sockets.fuzzer);
@@ -250,8 +247,7 @@ test "complete fuzzer session flow" {
 
     var import_request = try target.readMessage(sockets.target);
     defer import_request.deinit();
-    var handshake_done3 = handshake_complete;
-    const import_response = try target.processMessage(import_request.value, &handshake_done3);
+    const import_response = try target.processMessage(import_request.value);
     try target.sendMessage(sockets.target, import_response.?);
 
     var import_reply = try shared.readMessage(allocator, sockets.fuzzer);

@@ -3,8 +3,25 @@ const net = std.net;
 const messages = @import("messages.zig");
 const frame = @import("frame.zig");
 const version = @import("version.zig");
+const state_converter = @import("state_converter.zig");
+const state_dictionary = @import("../state_dictionary.zig");
+const sequoia = @import("../sequoia.zig");
+const jamstate = @import("../state.zig");
+const state_merklization = @import("../state_merklization.zig");
+const stf = @import("../stf.zig");
+const types = @import("../types.zig");
 
 const trace = @import("../tracing.zig").scoped(.fuzz_protocol);
+
+/// Server state for the fuzz protocol target
+pub const ServerState = enum {
+    /// Initial state, no connection established
+    initial,
+    /// Handshake completed, ready to receive SetState
+    handshake_complete,
+    /// State initialized, ready for block operations
+    ready,
+};
 
 /// Target server that implements the JAM protocol conformance testing target
 pub const TargetServer = struct {
@@ -13,16 +30,30 @@ pub const TargetServer = struct {
     server_socket: ?net.Server = null,
 
     // State management
-    current_state: std.AutoHashMap(messages.TrieKey, []u8),
+    current_state: jamstate.JamState(messages.FUZZ_PARAMS),
     current_state_root: ?messages.StateRootHash = null,
+    rng: std.Random = undefined,
+    server_state: ServerState = .initial,
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, socket_path: []const u8) Self {
+    pub fn init(allocator: std.mem.Allocator, socket_path: []const u8) !Self {
+        // Initialize with random seed for genesis state
+        const seed: [32]u8 = [_]u8{42} ** 32;
+        var prng = std.Random.ChaCha.init(seed);
+        var rng = prng.random();
+
+        // Create genesis config and build JAM state
+        const config = try sequoia.GenesisConfig(messages.FUZZ_PARAMS).buildWithRng(allocator, &rng);
+        defer allocator.free(config.validator_keys);
+
+        const genesis_state = try config.buildJamState(allocator, &rng);
+
         return Self{
             .allocator = allocator,
             .socket_path = socket_path,
-            .current_state = std.AutoHashMap(messages.TrieKey, []u8).init(allocator),
+            .current_state = genesis_state,
+            .rng = rng,
         };
     }
 
@@ -31,12 +62,8 @@ pub const TargetServer = struct {
             server.deinit();
         }
 
-        // Free stored state values
-        var iterator = self.current_state.iterator();
-        while (iterator.next()) |entry| {
-            self.allocator.free(entry.value_ptr.*);
-        }
-        self.current_state.deinit();
+        // Deinit JAM state
+        self.current_state.deinit(self.allocator);
     }
 
     /// Start the server and bind to Unix domain socket
@@ -79,8 +106,6 @@ pub const TargetServer = struct {
         const span = trace.span(.handle_connection);
         defer span.deinit();
 
-        var handshake_complete = false;
-
         while (true) {
             // Read message from client
             var request_message = self.readMessage(stream) catch |err| {
@@ -95,7 +120,7 @@ pub const TargetServer = struct {
             span.debug("Received message: {s}", .{@tagName(request_message.value)});
 
             // Process message and generate response
-            const response_message = try self.processMessage(request_message.value, &handshake_complete);
+            const response_message = try self.processMessage(request_message.value);
             defer if (response_message) |msg| {
                 // Only deinit if we allocated memory for response
                 switch (msg) {
@@ -135,7 +160,7 @@ pub const TargetServer = struct {
     }
 
     /// Process an incoming message and generate appropriate response
-    pub fn processMessage(self: *Self, message: messages.Message, handshake_complete: *bool) !?messages.Message {
+    pub fn processMessage(self: *Self, message: messages.Message) !?messages.Message {
         const span = trace.span(.process_message);
         defer span.deinit();
 
@@ -150,53 +175,71 @@ pub const TargetServer = struct {
                     .protocol_version = version.PROTOCOL_VERSION,
                 };
 
-                handshake_complete.* = true;
+                self.server_state = .handshake_complete;
                 return messages.Message{ .peer_info = our_peer_info };
             },
 
             .set_state => |set_state| {
-                if (!handshake_complete.*) return error.HandshakeNotComplete;
+                if (self.server_state != .handshake_complete and self.server_state != .ready) return error.HandshakeNotComplete;
 
                 span.debug("Processing SetState with {d} key-value pairs", .{set_state.state.len});
 
                 // Clear current state
-                var iterator = self.current_state.iterator();
-                while (iterator.next()) |entry| {
-                    self.allocator.free(entry.value_ptr.*);
-                }
-                self.current_state.clearAndFree();
+                self.current_state.deinit(self.allocator);
 
-                for (set_state.state) |kv| {
-                    const value_copy = try self.allocator.dupe(u8, kv.value);
-                    try self.current_state.put(kv.key, value_copy);
-                }
+                // Reconstruct JAM state from fuzz protocol state
+                self.current_state = try state_converter.fuzzStateToJamState(
+                    messages.FUZZ_PARAMS,
+                    self.allocator,
+                    set_state.state,
+                );
 
+                self.current_state_root = try self.computeStateRoot();
+                self.server_state = .ready;
+
+                return messages.Message{ .state_root = self.current_state_root.? };
+            },
+
+            .import_block => |block| {
+                if (self.server_state != .ready) return error.StateNotReady;
+
+                span.debug("Processing ImportBlock", .{});
+
+                // Apply state transition using the STF
+                var state_transition = try stf.stateTransition(
+                    messages.FUZZ_PARAMS,
+                    self.allocator,
+                    &self.current_state,
+                    &block,
+                );
+                defer state_transition.deinitHeap();
+
+                // Merge the transition results into our current state
+                try state_transition.mergePrimeOntoBase();
+
+                // Update our cached state root
                 self.current_state_root = try self.computeStateRoot();
 
                 return messages.Message{ .state_root = self.current_state_root.? };
             },
 
-            .import_block => |_| {
-                if (!handshake_complete.*) return error.HandshakeNotComplete;
-
-                span.debug("Processing ImportBlock", .{});
-
-                // TODO: Implement actual block processing
-                // For now, just return current state root
-                if (self.current_state_root) |root| {
-                    return messages.Message{ .state_root = root };
-                } else {
-                    // Return zero state root if no state set
-                    return messages.Message{ .state_root = std.mem.zeroes(messages.StateRootHash) };
-                }
-            },
-
             .get_state => |header_hash| {
-                if (!handshake_complete.*) return error.HandshakeNotComplete;
+                if (self.server_state != .ready) return error.StateNotReady;
 
                 span.debug("Processing GetState for header: {s}", .{std.fmt.fmtSliceHexLower(&header_hash)});
 
-                return messages.Message{ .state = &[_]messages.KeyValue{} };
+                // Convert current JAM state to fuzz protocol state format
+                var result = try state_converter.jamStateToFuzzState(
+                    messages.FUZZ_PARAMS,
+                    self.allocator,
+                    &self.current_state,
+                );
+                // Transfer ownership to the message response
+                const state = result.state;
+                result.state = &[_]messages.KeyValue{}; // Clear to prevent double-free
+                result.deinit(); // Clean up the result struct
+
+                return messages.Message{ .state = state };
             },
 
             else => {
@@ -206,7 +249,7 @@ pub const TargetServer = struct {
         }
     }
 
-    fn computeStateRoot(_: *Self) !messages.StateRootHash {
-        return [_]u8{0x00} ** 32;
+    fn computeStateRoot(self: *Self) !messages.StateRootHash {
+        return try state_merklization.merklizeState(messages.FUZZ_PARAMS, self.allocator, &self.current_state);
     }
 };
