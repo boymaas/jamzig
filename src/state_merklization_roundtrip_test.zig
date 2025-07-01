@@ -92,7 +92,7 @@ fn runRoundTripTestWithMutation(
     // Optionally apply random mutations to test reconstruction robustness
     // This is controlled by the mutation_probability parameter (0.0 = no mutations, 1.0 = always mutate)
     if (mutation_probability > 0.0) {
-        try applyRandomMutations(&dict, prng.random(), mutation_probability);
+        try applyRandomMutations(allocator, &dict, prng.random(), mutation_probability, false);
     }
 
     var reconstructed_state = try state_reconstruction.reconstructState(params, allocator, &dict);
@@ -306,13 +306,25 @@ fn generateRandomSeed() u64 {
     return @intCast(std.time.nanoTimestamp() & 0xFFFFFFFFFFFFFFFF);
 }
 
-/// Test mutation robustness for a single iteration
+/// Test mutation robustness for a single iteration  
 fn testMutationRobustness(
     allocator: std.mem.Allocator,
     comptime params: Params,
     complexity: StateComplexity,
     seed: u64,
     mutation_probability: f32,
+) !MutationTestResult {
+    return testMutationRobustnessWithShortening(allocator, params, complexity, seed, mutation_probability, false);
+}
+
+/// Test mutation robustness for a single iteration with optional shortening
+fn testMutationRobustnessWithShortening(
+    allocator: std.mem.Allocator,
+    comptime params: Params,
+    complexity: StateComplexity,
+    seed: u64,
+    mutation_probability: f32,
+    enable_shortening: bool,
 ) !MutationTestResult {
     // 1. Generate random state
     var prng = std.Random.DefaultPrng.init(seed);
@@ -329,7 +341,7 @@ fn testMutationRobustness(
     defer dict.deinit();
 
     // 4. Apply mutations to test robustness
-    try applyRandomMutations(&dict, prng.random(), mutation_probability);
+    try applyRandomMutations(allocator, &dict, prng.random(), mutation_probability, enable_shortening);
 
     // 5. Attempt reconstruction (this should not panic even with corrupted data)
     var reconstructed_state = try state_reconstruction.reconstructState(params, allocator, &dict);
@@ -349,21 +361,42 @@ fn testMutationRobustness(
 /// Apply random mutations to the merklization dictionary to test reconstruction robustness
 /// This function mutates both keys and values with controlled probability to test error handling
 fn applyRandomMutations(
+    allocator: std.mem.Allocator,
     dict: *state_dictionary.MerklizationDictionary,
     rng: std.Random,
     mutation_probability: f32,
+    enable_shortening: bool,
 ) !void {
     // Mutate dictionary entries
     var entries_iter = dict.entries.iterator();
     while (entries_iter.next()) |entry| {
+        // Apply bit flip mutation to the value
         if (rng.float(f32) < mutation_probability) {
-            // Apply bit flip mutation to the value
             if (entry.value_ptr.value.len > 0) {
                 const byte_index = rng.uintLessThan(usize, entry.value_ptr.value.len);
                 const bit_index = rng.uintLessThan(u8, 8);
                 // Note: We need to cast away const to mutate the value for testing
                 const mutable_value = @constCast(entry.value_ptr.value);
                 mutable_value[byte_index] ^= (@as(u8, 1) << @as(u3, @intCast(bit_index)));
+            }
+        }
+        
+        // Apply value shortening mutation (test parser robustness against truncated data)
+        if (enable_shortening and rng.float(f32) < mutation_probability * 0.1) {
+            if (entry.value_ptr.value.len > 1) {
+                // Randomly reduce value length by 10-90% 
+                const reduction_percent = rng.intRangeAtMost(u8, 10, 90);
+                const bytes_to_remove = (entry.value_ptr.value.len * reduction_percent) / 100;
+                const new_length = entry.value_ptr.value.len - @min(bytes_to_remove, entry.value_ptr.value.len - 1);
+                
+                // Create a new shortened copy to replace the original value
+                // This avoids corrupting the slice metadata and memory management
+                const shortened_value = try allocator.alloc(u8, new_length);
+                @memcpy(shortened_value, entry.value_ptr.value[0..new_length]);
+                
+                // Free the old value and replace with shortened copy
+                allocator.free(entry.value_ptr.value);
+                entry.value_ptr.value = shortened_value;
             }
         }
         
@@ -393,6 +426,61 @@ test "mutation_robustness_medium_rate" {
     try runRoundTripTestWithMutation(allocator, TINY, .moderate, 123, 0.20);
 }
 
+test "mutation_robustness_with_shortening" {
+    const allocator = std.testing.allocator;
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
+
+    // Test with shortening enabled - should handle truncated values gracefully
+    // We expect this to often fail with EndOfStream, which is correct behavior
+    _ = testMutationRobustnessWithShortening(allocator, TINY, .moderate, 456, 0.15, true) catch |err| {
+        // Various reconstruction errors are expected when data is truncated or corrupted
+        switch (err) {
+            error.EndOfStream, 
+            error.InvalidData, 
+            error.OutOfMemory,
+            error.PreimageLookupEntryCannotBeReconstructedAccountMissing,
+            error.UnknownStateComponent => {
+                // These are expected failure modes for truncated/corrupted data - test passed
+                return;
+            },
+            else => {
+                // Unexpected error - propagate it
+                return err;
+            },
+        }
+    };
+    
+    // If we reach here, reconstruction succeeded despite shortening
+    // This is also valid - it means the mutation didn't affect critical parsing paths
+}
+
+test "shortening_stress_test_moderate" {
+    const allocator = std.testing.allocator;
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
+
+    // Test multiple iterations with shortening to verify parser robustness
+    for (0..10) |i| {
+        const seed = 1000 + i;
+        _ = testMutationRobustnessWithShortening(allocator, TINY, .moderate, seed, 0.20, true) catch |err| {
+            // Various reconstruction errors are expected when data is truncated or corrupted
+            switch (err) {
+                error.EndOfStream, 
+                error.InvalidData, 
+                error.OutOfMemory,
+                error.PreimageLookupEntryCannotBeReconstructedAccountMissing,
+                error.UnknownStateComponent => {
+                    // Expected failure modes for truncated/corrupted data - continue with next iteration
+                    continue;
+                },
+                else => {
+                    // Unexpected error - propagate it  
+                    return err;
+                },
+            }
+        };
+    }
+}
+
 test "mutation_stress_test_1k_iterations" {
     const allocator = std.testing.allocator;
     const TINY = @import("jam_params.zig").TINY_PARAMS;
@@ -401,6 +489,16 @@ test "mutation_stress_test_1k_iterations" {
     std.debug.print("\nStarting 1,000 iteration mutation stress test with base seed: {d}\n", .{random_seed});
 
     try runMutationStressTest(allocator, TINY, random_seed, 1_000, 0.10);
+}
+
+test "shortening_stress_test_500_iterations" {
+    const allocator = std.testing.allocator;
+    const TINY = @import("jam_params.zig").TINY_PARAMS;
+
+    const random_seed = generateRandomSeed();
+    std.debug.print("\nStarting 500 iteration shortening stress test with base seed: {d}\n", .{random_seed});
+
+    try runShorteningStressTest(allocator, TINY, random_seed, 500, 0.15);
 }
 
 test "stress_test_10k_iterations_all_complexities" {
@@ -508,6 +606,108 @@ pub fn runMutationStressTest(
     } else {
         std.debug.print("✅ No panics detected - reconstruction is robust!\n", .{});
         std.debug.print("🧬 Mutation detection rate: {d:.1}%\n", .{@as(f64, @floatFromInt(mutations_detected)) / @as(f64, @floatFromInt(total_iterations)) * 100.0});
+    }
+}
+
+/// Run shortening stress test to verify parser robustness under truncated values
+pub fn runShorteningStressTest(
+    allocator: std.mem.Allocator,
+    comptime params: Params,
+    base_seed: u64,
+    total_iterations: usize,
+    mutation_probability: f32,
+) !void {
+    var failures = std.ArrayList(StressTestFailure).init(allocator);
+    defer failures.deinit();
+    
+    var panics: usize = 0;
+    var mutations_detected: usize = 0;
+    var mutations_undetected: usize = 0;
+    var shortening_applied: usize = 0;
+
+    // Focus on moderate and maximal complexity for shortening tests
+    const distributions = [_]struct { complexity: StateComplexity, count: usize }{
+        .{ .complexity = .moderate, .count = total_iterations * 3 / 4 }, // 75% moderate
+        .{ .complexity = .maximal, .count = total_iterations / 4 },      // 25% maximal
+    };
+
+    var iteration: usize = 0;
+    const start_time = std.time.milliTimestamp();
+
+    std.debug.print("Shortening mutation probability: {d:.2}\n", .{mutation_probability});
+    std.debug.print("Distribution: Moderate={d}, Maximal={d}\n", .{ distributions[0].count, distributions[1].count });
+
+    for (distributions) |dist| {
+        std.debug.print("Starting {s} shortening testing ({d} iterations)...\n", .{ @tagName(dist.complexity), dist.count });
+
+        for (0..dist.count) |_| {
+            const seed = base_seed +% iteration;
+
+            // Use arena allocator for complete cleanup after each iteration
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            defer arena.deinit();
+            const iter_allocator = arena.allocator();
+
+            // Track shortening test results
+            const result = testMutationRobustnessWithShortening(iter_allocator, params, dist.complexity, seed, mutation_probability, true) catch |err| {
+                try failures.append(.{
+                    .iteration = iteration,
+                    .complexity = dist.complexity,
+                    .seed = seed,
+                    .error_type = err,
+                });
+
+                if (err == error.Panic or err == error.OutOfMemory) {
+                    panics += 1;
+                    std.debug.print("💥 Iteration {d} PANIC ({s}, seed={d}): {}\n", .{ iteration, @tagName(dist.complexity), seed, err });
+                }
+                
+                continue;
+            };
+
+            shortening_applied += 1;
+            if (result.mutation_detected) {
+                mutations_detected += 1;
+            } else {
+                mutations_undetected += 1;
+            }
+
+            iteration += 1;
+
+            // Progress reporting every 100 iterations for shortening tests
+            if (iteration % 100 == 0) {
+                const elapsed_ms = std.time.milliTimestamp() - start_time;
+                const avg_ms_per_iter = @as(f64, @floatFromInt(elapsed_ms)) / @as(f64, @floatFromInt(iteration));
+                std.debug.print("Progress: {d}/{d} iterations ({d:.1}ms avg, {d} detected, {d} undetected)...\n", .{ iteration, total_iterations, avg_ms_per_iter, mutations_detected, mutations_undetected });
+            }
+        }
+    }
+
+    const end_time = std.time.milliTimestamp();
+    const total_time_ms = end_time - start_time;
+
+    // Report final results
+    std.debug.print("\n" ++ "=" ** 65 ++ "\n", .{});
+    std.debug.print("SHORTENING STRESS TEST RESULTS\n", .{});
+    std.debug.print("=" ** 65 ++ "\n", .{});
+    std.debug.print("Total iterations: {d}\n", .{total_iterations});
+    std.debug.print("Shortening probability: {d:.2}\n", .{mutation_probability});
+    std.debug.print("Total time: {d:.2}s\n", .{@as(f64, @floatFromInt(total_time_ms)) / 1000.0});
+    std.debug.print("Average per iteration: {d:.2}ms\n", .{@as(f64, @floatFromInt(total_time_ms)) / @as(f64, @floatFromInt(total_iterations))});
+    std.debug.print("Failures: {d}\n", .{failures.items.len});
+    std.debug.print("Panics: {d}\n", .{panics});
+    std.debug.print("Successful shortenings: {d}\n", .{shortening_applied});
+    std.debug.print("Mutations detected: {d}\n", .{mutations_detected});
+    std.debug.print("Mutations undetected: {d}\n", .{mutations_undetected});
+
+    if (panics > 0) {
+        std.debug.print("⚠️  {d} panics detected - parsers are not robust against truncation!\n", .{panics});
+        return std.testing.expect(false);
+    } else {
+        std.debug.print("✅ No panics detected - parsers handle truncated values robustly!\n", .{});
+        if (shortening_applied > 0) {
+            std.debug.print("✂️  Shortening success rate: {d:.1}%\n", .{@as(f64, @floatFromInt(shortening_applied)) / @as(f64, @floatFromInt(total_iterations)) * 100.0});
+        }
     }
 }
 
