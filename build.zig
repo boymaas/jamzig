@@ -9,11 +9,13 @@ pub fn build(b: *std.Build) !void {
     const tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{};
     const tracing_mode = b.option(enum { disabled, compile_time, runtime }, "tracing-mode", "Tracing compilation mode (disabled/compile_time/runtime)") orelse .compile_time;
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
+    const conformance_params = b.option(enum { tiny, full }, "conformance-params", "JAM protocol parameters for conformance testing (tiny/full)") orelse .tiny;
 
     const build_options = b.addOptions();
     build_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
     build_options.addOption([]const u8, "enable_tracing_level", tracing_level);
     build_options.addOption(@TypeOf(tracing_mode), "tracing_mode", tracing_mode);
+    build_options.addOption(@TypeOf(conformance_params), "conformance_params", conformance_params);
 
     // Dependencies
     const dep_opts = .{ .target = target, .optimize = optimize };
@@ -88,26 +90,8 @@ pub fn build(b: *std.Build) !void {
     try rust_deps.staticallyLinkDepTo("polkavm_ffi", pvm_fuzzer);
     b.installArtifact(pvm_fuzzer);
 
-    const fuzz_protocol_target = b.addExecutable(.{
-        .name = "jamzig-fuzz-protocol-target",
-        .root_source_file = b.path("src/fuzz_protocol_target.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    fuzz_protocol_target.root_module.addOptions("build_options", build_options);
-    fuzz_protocol_target.linkLibCpp();
-    rust_deps.staticallyLinkTo(fuzz_protocol_target);
-    b.installArtifact(fuzz_protocol_target);
-
     // JAM Conformance Testing Executables
     // Create conformance-specific build options
-    const conformance_params = b.option(enum { tiny, full }, "conformance-params", "JAM protocol parameters for conformance testing (tiny/full)") orelse .full;
-
-    const conformance_fuzzer_options = b.addOptions();
-    conformance_fuzzer_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
-    conformance_fuzzer_options.addOption([]const u8, "enable_tracing_level", tracing_level);
-    conformance_fuzzer_options.addOption(@TypeOf(tracing_mode), "tracing_mode", .runtime);
-    conformance_fuzzer_options.addOption(@TypeOf(conformance_params), "conformance_params", conformance_params);
 
     const jam_conformance_fuzzer = b.addExecutable(.{
         .name = "jam_conformance_fuzzer",
@@ -115,7 +99,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    jam_conformance_fuzzer.root_module.addOptions("build_options", conformance_fuzzer_options);
+    jam_conformance_fuzzer.root_module.addOptions("build_options", build_options);
     jam_conformance_fuzzer.root_module.addImport("clap", clap_module);
     jam_conformance_fuzzer.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_fuzzer);
@@ -127,7 +111,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    jam_conformance_target.root_module.addOptions("build_options", conformance_fuzzer_options);
+    jam_conformance_target.root_module.addOptions("build_options", build_options);
     jam_conformance_target.root_module.addImport("clap", clap_module);
     jam_conformance_target.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_target);
@@ -160,15 +144,6 @@ pub fn build(b: *std.Build) !void {
     }
     const run_pvm_fuzzer_step = b.step("pvm_fuzz", "Run the pvm fuzzer");
     run_pvm_fuzzer_step.dependOn(&run_pvm_fuzzer.step);
-
-    // FUZZ PROTOCOL TARGET
-    const run_fuzz_protocol_target = b.addRunArtifact(fuzz_protocol_target);
-    run_fuzz_protocol_target.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_fuzz_protocol_target.addArgs(args);
-    }
-    const run_fuzz_protocol_target_step = b.step("fuzz_protocol_target", "Run the fuzz protocol target server");
-    run_fuzz_protocol_target_step.dependOn(&run_fuzz_protocol_target.step);
 
     // JAM CONFORMANCE FUZZER
     const run_jam_conformance_fuzzer = b.addRunArtifact(jam_conformance_fuzzer);
