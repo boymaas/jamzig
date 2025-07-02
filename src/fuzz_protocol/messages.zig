@@ -61,6 +61,7 @@ pub const Message = union(enum) {
     get_state: GetState,
     state: State,
     state_root: StateRoot,
+    kill: void,
 };
 
 /// Encode a message using JAM codec

@@ -21,49 +21,35 @@ pub const ServerState = enum {
     handshake_complete,
     /// State initialized, ready for block operations
     ready,
+    /// Shutting down
+    shutting_down,
 };
 
 /// Target server that implements the JAM protocol conformance testing target
 pub const TargetServer = struct {
     allocator: std.mem.Allocator,
     socket_path: []const u8,
-    server_socket: ?net.Server = null,
 
     // State management
-    current_state: jamstate.JamState(messages.FUZZ_PARAMS),
+    current_state: ?jamstate.JamState(messages.FUZZ_PARAMS) = null,
     current_state_root: ?messages.StateRootHash = null,
-    rng: std.Random = undefined,
     server_state: ServerState = .initial,
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator, socket_path: []const u8) !Self {
-        // Initialize with random seed for genesis state
-        const seed: [32]u8 = [_]u8{42} ** 32;
-        var prng = std.Random.ChaCha.init(seed);
-        var rng = prng.random();
-
-        // Create genesis config and build JAM state
-        const config = try sequoia.GenesisConfig(messages.FUZZ_PARAMS).buildWithRng(allocator, &rng);
-        defer allocator.free(config.validator_keys);
-
-        const genesis_state = try config.buildJamState(allocator, &rng);
-
         return Self{
             .allocator = allocator,
             .socket_path = socket_path,
-            .current_state = genesis_state,
-            .rng = rng,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        if (self.server_socket) |*server| {
-            server.deinit();
-        }
-
         // Deinit JAM state
-        self.current_state.deinit(self.allocator);
+        if (self.current_state) |*s| s.deinit(self.allocator);
+
+        // Remove existing socket file if it exists
+        self.* = undefined; // Clear the struct
     }
 
     /// Start the server and bind to Unix domain socket
@@ -79,12 +65,14 @@ pub const TargetServer = struct {
         const address = try net.Address.initUnix(self.socket_path);
 
         // Create and bind server socket
-        self.server_socket = try address.listen(.{});
+        var server_socket = try address.listen(.{});
+        defer server_socket.deinit();
+
         span.debug("Server bound and listening on Unix socket", .{});
 
         // Accept connections loop
         while (true) {
-            const connection = self.server_socket.?.accept() catch |err| {
+            const connection = server_socket.accept() catch |err| {
                 span.err("Failed to accept connection: {s}", .{@errorName(err)});
                 continue;
             };
@@ -93,6 +81,11 @@ pub const TargetServer = struct {
 
             // Handle connection (synchronous for now)
             self.handleConnection(connection.stream) catch |err| {
+                if (err == error.UnexpectedEndOfStream) {
+                    span.debug("Connection closed by server", .{});
+                    break; // Just skip this connection
+
+                }
                 span.err("Error handling connection: {s}", .{@errorName(err)});
             };
 
@@ -185,7 +178,7 @@ pub const TargetServer = struct {
                 span.debug("Processing SetState with {d} key-value pairs", .{set_state.state.len});
 
                 // Clear current state
-                self.current_state.deinit(self.allocator);
+                if (self.current_state) |*s| s.deinit(self.allocator);
 
                 // Reconstruct JAM state from fuzz protocol state
                 self.current_state = try state_converter.fuzzStateToJamState(
@@ -209,7 +202,7 @@ pub const TargetServer = struct {
                 var state_transition = try stf.stateTransition(
                     messages.FUZZ_PARAMS,
                     self.allocator,
-                    &self.current_state,
+                    &self.current_state.?,
                     &block,
                 );
                 defer state_transition.deinitHeap();
@@ -232,7 +225,7 @@ pub const TargetServer = struct {
                 var result = try state_converter.jamStateToFuzzState(
                     messages.FUZZ_PARAMS,
                     self.allocator,
-                    &self.current_state,
+                    &self.current_state.?,
                 );
                 // Transfer ownership to the message response
                 const state = result.state;
@@ -240,6 +233,12 @@ pub const TargetServer = struct {
                 result.deinit(); // Clean up the result struct
 
                 return messages.Message{ .state = state };
+            },
+
+            .kill => {
+                span.debug("Received Kill message, shutting down server", .{});
+                self.server_state = .shutting_down;
+                return null; // No response needed
             },
 
             else => {
@@ -250,6 +249,6 @@ pub const TargetServer = struct {
     }
 
     fn computeStateRoot(self: *Self) !messages.StateRootHash {
-        return try state_merklization.merklizeState(messages.FUZZ_PARAMS, self.allocator, &self.current_state);
+        return try state_merklization.merklizeState(messages.FUZZ_PARAMS, self.allocator, &self.current_state.?);
     }
 };

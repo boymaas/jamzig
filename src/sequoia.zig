@@ -201,7 +201,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
         /// Initialize the BlockBuilder with required state
         pub fn init(
             allocator: std.mem.Allocator,
-            config: GenesisConfig(params),
+            config: GenesisConfig(params), // Takes ownership of the config
             rng: *std.Random,
         ) !Self {
             // Initialize registry
@@ -223,6 +223,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
         }
 
         pub fn deinit(self: *Self) void {
+            // config is owned by calling scope
             self.config.deinit(self.allocator);
             self.state.deinit(self.allocator);
             self.ticket_registry_current.deinit();

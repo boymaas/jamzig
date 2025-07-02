@@ -72,7 +72,7 @@ pub fn main() !void {
     span.debug("Starting JAM protocol conformance testing target server", .{});
     span.debug("Socket path: {s}", .{config.socket_path});
     
-    var server = TargetServer.init(allocator, config.socket_path);
+    var server = try TargetServer.init(allocator, config.socket_path);
     defer server.deinit();
     
     // Setup signal handler for graceful shutdown
