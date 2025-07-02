@@ -7,11 +7,13 @@ pub fn build(b: *std.Build) !void {
     // Existing options
     const tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
     const tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{};
+    const tracing_mode = b.option(enum { disabled, compile_time, runtime }, "tracing-mode", "Tracing compilation mode (disabled/compile_time/runtime)") orelse .compile_time;
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
 
     const build_options = b.addOptions();
     build_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
     build_options.addOption([]const u8, "enable_tracing_level", tracing_level);
+    build_options.addOption(@TypeOf(tracing_mode), "tracing_mode", tracing_mode);
 
     // Dependencies
     const dep_opts = .{ .target = target, .optimize = optimize };
@@ -110,13 +112,16 @@ pub fn build(b: *std.Build) !void {
     rust_deps.staticallyLinkTo(jam_conformance_fuzzer);
     b.installArtifact(jam_conformance_fuzzer);
 
+    // Enable runtime tracing mode for JRPL with all major scopes available
+    const jam_conformance_build_options = b.addOptions();
+    jam_conformance_build_options.addOption(@TypeOf(tracing_mode), "tracing_mode", .runtime);
     const jam_conformance_target = b.addExecutable(.{
         .name = "jam_conformance_target",
         .root_source_file = b.path("src/jam_conformance_target.zig"),
         .target = target,
         .optimize = optimize,
     });
-    jam_conformance_target.root_module.addOptions("build_options", build_options);
+    jam_conformance_target.root_module.addOptions("build_options", jam_conformance_build_options);
     jam_conformance_target.root_module.addImport("clap", clap_module);
     jam_conformance_target.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_target);

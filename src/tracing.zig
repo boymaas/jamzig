@@ -2,8 +2,20 @@
 /// This module enables structured logging with support for nested operations, configurable scopes,
 /// and different log levels.
 ///
+/// Supports three tracing modes:
+/// - disabled: No tracing compiled in (dead code elimination)
+/// - compile_time: Fixed scopes at compile time (current behavior)
+/// - runtime: Dynamic scope control at runtime
+///
 const std = @import("std");
 const build_options = @import("build_options");
+
+// Tracing mode from build options
+pub const TracingMode = enum { disabled, compile_time, runtime };
+pub const tracing_mode: TracingMode = if (@hasDecl(build_options, "tracing_mode"))
+    @enumFromInt(@intFromEnum(build_options.tracing_mode))
+else
+    .compile_time;
 
 pub const ScopeConfig = struct {
     name: []const u8,
@@ -74,6 +86,84 @@ pub fn findScope(name: []const u8) ?*const ScopeConfig {
     return null;
 }
 
+// Runtime tracing configuration (only compiled in runtime mode)
+const RuntimeTracingConfig = if (tracing_mode == .runtime) struct {
+    config: std.StringHashMap(?LogLevel),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) RuntimeTracingConfig {
+        return .{
+            .config = std.StringHashMap(?LogLevel).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *RuntimeTracingConfig) void {
+        var iterator = self.config.iterator();
+        while (iterator.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.config.deinit();
+    }
+
+    pub fn setScope(self: *RuntimeTracingConfig, scope_name: []const u8, level: ?LogLevel) !void {
+        // Check if scope already exists and free old key if so
+        if (self.config.fetchRemove(scope_name)) |existing| {
+            self.allocator.free(existing.key);
+        }
+        
+        const owned_name = try self.allocator.dupe(u8, scope_name);
+        try self.config.put(owned_name, level);
+    }
+
+    pub fn getScope(self: *const RuntimeTracingConfig, scope_name: []const u8) ?LogLevel {
+        return self.config.get(scope_name) orelse null;
+    }
+
+    pub fn removeScope(self: *RuntimeTracingConfig, scope_name: []const u8) void {
+        if (self.config.fetchRemove(scope_name)) |kv| {
+            self.allocator.free(kv.key);
+        }
+    }
+} else void;
+
+// Global runtime configuration (only exists in runtime mode)
+var runtime_config: RuntimeTracingConfig = if (tracing_mode == .runtime) 
+    undefined // Will be initialized in runtime.init()
+else {};
+
+// Runtime tracing API (only available in runtime mode)
+pub const runtime = if (tracing_mode == .runtime) struct {
+    pub fn init(allocator: std.mem.Allocator) void {
+        runtime_config = RuntimeTracingConfig.init(allocator);
+    }
+
+    pub fn deinit() void {
+        runtime_config.deinit();
+    }
+
+    pub fn setScope(scope_name: []const u8, level: LogLevel) !void {
+        try runtime_config.setScope(scope_name, level);
+    }
+
+    pub fn disableScope(scope_name: []const u8) !void {
+        try runtime_config.setScope(scope_name, null);
+    }
+
+    pub fn getConfig() std.StringHashMap(?LogLevel) {
+        return runtime_config.config;
+    }
+
+    pub fn listAvailableScopes() []const ScopeConfig {
+        return boption_scope_configs;
+    }
+} else struct {
+    pub fn init(_: std.mem.Allocator) void {}
+    pub fn deinit() void {}
+    pub fn setScope(_: []const u8, _: LogLevel) void {}
+    pub fn disableScope(_: []const u8) void {}
+};
+
 threadlocal var current_depth: usize = 0;
 threadlocal var current_span: ?*Span = null;
 
@@ -116,9 +206,17 @@ pub const TracingScope = struct {
     }
 
     pub fn span(comptime self: *const Self, operation: @Type(.enum_literal)) SpanUnion {
-        // First check if scope is enabled and get its configured level
-        const scope_config: ScopeConfig = comptime blk: {
+        // Handle different tracing modes
+        return switch (comptime tracing_mode) {
+            .disabled => SpanUnion{ .Disabled = DisabledSpan{} },
+            .compile_time => self.spanCompileTime(operation),
+            .runtime => self.spanRuntime(operation),
+        };
+    }
 
+    fn spanCompileTime(comptime self: *const Self, operation: @Type(.enum_literal)) SpanUnion {
+        // Original compile-time behavior
+        const scope_config: ScopeConfig = comptime blk: {
             // Look for matching scope config
             for (boption_scope_configs) |config| {
                 if (std.mem.eql(u8, config.name, self.name)) {
@@ -140,6 +238,24 @@ pub const TracingScope = struct {
 
         // Create enabled span with proper level
         return SpanUnion{ .Enabled = Span.init(self, operation, current_span, true, scope_config.level.?) };
+    }
+
+    fn spanRuntime(comptime self: *const Self, operation: @Type(.enum_literal)) SpanUnion {
+        // Runtime behavior - check runtime config first, then build config
+        if (comptime tracing_mode == .runtime) {
+            // Check runtime configuration first
+            if (runtime_config.config.get(self.name)) |runtime_level| {
+                if (runtime_level == null) {
+                    // Explicitly disabled at runtime
+                    return SpanUnion{ .Disabled = DisabledSpan{} };
+                }
+                // Enabled with specific level at runtime
+                return SpanUnion{ .Enabled = Span.init(self, operation, current_span, true, runtime_level.?) };
+            }
+        }
+
+        // Fall back to compile-time configuration
+        return self.spanCompileTime(operation);
     }
 };
 

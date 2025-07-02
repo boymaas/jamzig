@@ -98,7 +98,7 @@ trap cleanup EXIT INT TERM
 
 # Start the target server in background
 echo "Starting target server..."
-./zig-out/bin/jam_conformance_target --socket "$SOCKET_PATH" $VERBOSE &
+./zig-out/bin/jam_conformance_target --trace "stf=trace,fuzz_protocol=trace,pvm=trace,accumulate=trace" --socket "$SOCKET_PATH" $VERBOSE &
 TARGET_PID=$!
 
 # Wait for target to be ready

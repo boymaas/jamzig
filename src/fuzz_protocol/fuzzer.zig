@@ -42,7 +42,7 @@ pub const Fuzzer = struct {
 
     // JAM components
     block_builder: sequoia.BlockBuilder(messages.FUZZ_PARAMS),
-    current_jam_state: JamState(messages.FUZZ_PARAMS),
+    current_jam_state: *const JamState(messages.FUZZ_PARAMS),
     latest_block: ?types.Block = null,
 
     // Target communication
@@ -74,11 +74,10 @@ pub const Fuzzer = struct {
         var config = try sequoia.GenesisConfig(messages.FUZZ_PARAMS).buildWithRng(allocator, &fuzzer.rng);
         errdefer config.deinit(allocator);
 
-        fuzzer.current_jam_state = try config.buildJamState(allocator, &fuzzer.rng);
-        errdefer fuzzer.current_jam_state.deinit(allocator);
-
         fuzzer.block_builder = try sequoia.BlockBuilder(messages.FUZZ_PARAMS).init(allocator, config, &fuzzer.rng);
         errdefer fuzzer.block_builder.deinit();
+
+        fuzzer.current_jam_state = &fuzzer.block_builder.state;
 
         // // Process the first (genesis) block to get proper state
         var first_block = try fuzzer.block_builder.buildNextBlock();
@@ -90,7 +89,7 @@ pub const Fuzzer = struct {
         var state_transition = try stf.stateTransition(
             messages.FUZZ_PARAMS,
             allocator,
-            &fuzzer.current_jam_state,
+            fuzzer.current_jam_state,
             &first_block,
         );
         defer state_transition.deinitHeap();
@@ -108,7 +107,6 @@ pub const Fuzzer = struct {
         defer span.deinit();
 
         // // Clean up JAM components
-        self.current_jam_state.deinit(self.allocator);
         self.block_builder.deinit();
         //
         if (self.latest_block) |*b| b.deinit(self.allocator);
@@ -266,7 +264,7 @@ pub const Fuzzer = struct {
         var state_transition = try stf.stateTransition(
             messages.FUZZ_PARAMS,
             self.allocator,
-            &self.current_jam_state,
+            self.current_jam_state,
             &block,
         );
         defer state_transition.deinitHeap();
@@ -278,7 +276,7 @@ pub const Fuzzer = struct {
         const state_root = try state_merklization.merklizeState(
             messages.FUZZ_PARAMS,
             self.allocator,
-            &self.current_jam_state,
+            self.current_jam_state,
         );
 
         span.debug("Local state root: {s}", .{std.fmt.fmtSliceHexLower(&state_root)});
@@ -300,7 +298,7 @@ pub const Fuzzer = struct {
         var initial_state_result = try state_converter.jamStateToFuzzState(
             messages.FUZZ_PARAMS,
             self.allocator,
-            &self.current_jam_state,
+            self.current_jam_state,
         );
         defer initial_state_result.deinit();
 
@@ -326,6 +324,8 @@ pub const Fuzzer = struct {
             // Update latest block
             self.latest_block.?.deinit(self.allocator);
             self.latest_block = block;
+
+            sequoia.logging.printBlockEntropyDebug(jam_params.TINY_PARAMS, &block, self.current_jam_state);
 
             // Send to target
             const target_root = try self.sendBlock(block);
