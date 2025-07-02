@@ -142,25 +142,39 @@ var runtime_config: RuntimeTracingConfig = if (tracing_mode == .runtime)
     undefined // Will be initialized in runtime.init()
 else {};
 
+// Track whether runtime tracing has been initialized
+var runtime_initialized: bool = false;
+
 // Runtime tracing API (only available in runtime mode)
 pub const runtime = if (tracing_mode == .runtime) struct {
     pub fn init(allocator: std.mem.Allocator) void {
         runtime_config = RuntimeTracingConfig.init(allocator);
+        runtime_initialized = true;
     }
 
     pub fn deinit() void {
         runtime_config.deinit();
+        runtime_initialized = false;
     }
 
     pub fn setScope(scope_name: []const u8, level: LogLevel) !void {
+        if (std.debug.runtime_safety and !runtime_initialized) {
+            std.debug.panic("Runtime tracing used before initialization. Call tracing.runtime.init() first!", .{});
+        }
         try runtime_config.setScope(scope_name, level);
     }
 
     pub fn disableScope(scope_name: []const u8) !void {
+        if (std.debug.runtime_safety and !runtime_initialized) {
+            std.debug.panic("Runtime tracing used before initialization. Call tracing.runtime.init() first!", .{});
+        }
         try runtime_config.setScope(scope_name, null);
     }
 
     pub fn getConfig() std.StringHashMap(?LogLevel) {
+        if (std.debug.runtime_safety and !runtime_initialized) {
+            std.debug.panic("Runtime tracing used before initialization. Call tracing.runtime.init() first!", .{});
+        }
         return runtime_config.config;
     }
 
@@ -169,10 +183,16 @@ pub const runtime = if (tracing_mode == .runtime) struct {
     }
 
     pub fn setDefaultLevel(level: ?LogLevel) void {
+        if (std.debug.runtime_safety and !runtime_initialized) {
+            std.debug.panic("Runtime tracing used before initialization. Call tracing.runtime.init() first!", .{});
+        }
         runtime_config.setDefaultLevel(level);
     }
 
     pub fn getDefaultLevel() ?LogLevel {
+        if (std.debug.runtime_safety and !runtime_initialized) {
+            std.debug.panic("Runtime tracing used before initialization. Call tracing.runtime.init() first!", .{});
+        }
         return runtime_config.getDefaultLevel();
     }
 } else struct {
@@ -263,6 +283,11 @@ pub const TracingScope = struct {
     fn spanRuntime(comptime self: *const Self, operation: @Type(.enum_literal)) SpanUnion {
         // Runtime behavior - check runtime config first, then build config
         if (comptime tracing_mode == .runtime) {
+            // Check if runtime tracing has been initialized (only in debug builds)
+            if (std.debug.runtime_safety and !runtime_initialized) {
+                std.debug.panic("Runtime tracing used before initialization. Call tracing.runtime.init() first!", .{});
+            }
+            
             // Check runtime configuration first
             if (runtime_config.config.get(self.name)) |runtime_level| {
                 if (runtime_level == null) {
