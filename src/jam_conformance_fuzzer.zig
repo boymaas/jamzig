@@ -3,11 +3,12 @@ const clap = @import("clap");
 
 const Fuzzer = @import("fuzz_protocol/fuzzer.zig").Fuzzer;
 const report = @import("fuzz_protocol/report.zig");
-const trace = @import("tracing.zig").scoped(.jam_conformance_fuzzer);
 const jam_params = @import("jam_params.zig");
 const jam_params_format = @import("jam_params_format.zig");
 const build_options = @import("build_options");
 const messages = @import("fuzz_protocol/messages.zig");
+
+const trace = @import("tracing.zig").scoped(.jam_conformance_fuzzer);
 
 fn showHelp(params: anytype) !void {
     std.debug.print(
@@ -22,9 +23,6 @@ fn showHelp(params: anytype) !void {
 }
 
 pub fn main() !void {
-    const span = trace.span(.main);
-    defer span.deinit();
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -62,9 +60,9 @@ pub fn main() !void {
     if (res.args.@"dump-params" != 0) {
         const format = res.args.format orelse "text";
         const params_type = if (@hasDecl(build_options, "conformance_params") and build_options.conformance_params == .tiny) "TINY" else "FULL";
-        
+
         const stdout = std.io.getStdOut().writer();
-        
+
         if (std.mem.eql(u8, format, "json")) {
             jam_params_format.formatParamsJson(messages.FUZZ_PARAMS, params_type, stdout) catch |err| {
                 // Handle BrokenPipe error gracefully (e.g., when piping to head)
@@ -171,4 +169,3 @@ pub fn main() !void {
         std.process.exit(1);
     }
 }
-

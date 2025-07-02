@@ -70,39 +70,17 @@ build_platform() {
     # Create unique output directory for this build
     mkdir -p "${platform_build_dir}"
     
-    # Build conformance fuzzer with unique output directory
-    # Use systemd-run to limit memory if available
-    if command -v systemd-run &> /dev/null 2>&1; then
-        systemd-run --user --scope -p MemoryMax=2G -- \
-            zig build conformance_fuzzer \
-            -Doptimize=ReleaseFast \
-            -Dconformance-params=${params} \
-            -Dtarget=${target} \
-            --prefix "${platform_build_dir}"
-    else
-        zig build conformance_fuzzer \
-            -Doptimize=ReleaseFast \
-            -Dconformance-params=${params} \
-            -Dtarget=${target} \
-            --prefix "${platform_build_dir}"
-    fi
-    
-    # Build conformance target with unique output directory
-    # Use systemd-run to limit memory if available
-    if command -v systemd-run &> /dev/null 2>&1; then
-        systemd-run --user --scope -p MemoryMax=2G -- \
-            zig build conformance_target \
-            -Doptimize=ReleaseFast \
-            -Dconformance-params=${params} \
-            -Dtarget=${target} \
-            --prefix "${platform_build_dir}"
-    else
-        zig build conformance_target \
-            -Doptimize=ReleaseFast \
-            -Dconformance-params=${params} \
-            -Dtarget=${target} \
-            --prefix "${platform_build_dir}"
-    fi
+    zig build conformance_fuzzer \
+        -Doptimize=ReleaseFast \
+        -Dconformance-params=${params} \
+        -Dtarget=${target} \
+        --prefix "${platform_build_dir}"
+
+    zig build conformance_target \
+        -Doptimize=ReleaseFast \
+        -Dconformance-params=${params} \
+        -Dtarget=${target} \
+        --prefix "${platform_build_dir}"
     
     # Determine OS and arch from target
     local os arch
@@ -146,6 +124,8 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 echo "Starting parallel builds for ${#build_jobs[@]} configurations..."
+echo -e "${YELLOW}Build logs will be saved to: ${BUILD_DIR}${NC}"
+echo ""
 
 # Run all builds in parallel using GNU parallel
 # --will-cite suppresses the citation notice
@@ -157,10 +137,37 @@ echo "Starting parallel builds for ${#build_jobs[@]} configurations..."
 # --colsep ' ' tells parallel to split on spaces
 printf '%s\n' "${build_jobs[@]}" | \
     parallel --will-cite --jobs 50% --delay 0.5 --nice 19 --load 80% --memfree 2G --halt soon,fail=1 --line-buffer --colsep ' ' \
+    --joblog "${BUILD_DIR}/parallel_jobs.log" \
+    --results "${BUILD_DIR}/parallel_results" \
     build_platform {1} {2} {3}
 
-if [ $? -ne 0 ]; then
-    echo -e "${RED}One or more builds failed. Exiting.${NC}"
+PARALLEL_EXIT_CODE=$?
+if [ $PARALLEL_EXIT_CODE -ne 0 ]; then
+    echo -e "${RED}One or more builds failed.${NC}"
+    echo ""
+    echo "Failed jobs:"
+    # Parse joblog to find failed jobs (exit value != 0)
+    if [ -f "${BUILD_DIR}/parallel_jobs.log" ]; then
+        # Skip header line and find failed jobs (column 7 is exit value)
+        tail -n +2 "${BUILD_DIR}/parallel_jobs.log" | while IFS=$'\t' read -r seq host start runtime send recv exitval signal command; do
+            if [ "$exitval" != "0" ] && [ -n "$exitval" ]; then
+                echo -e "${RED}  Job #$seq: $command (exit code: $exitval)${NC}"
+                # Extract parameters from command for results path
+                job_args=($command)
+                target="${job_args[1]}"
+                params="${job_args[2]}"
+                # Results are stored in a structured directory
+                stderr_file="${BUILD_DIR}/parallel_results/1/${target}/2/${params}/3/*/stderr"
+                stdout_file="${BUILD_DIR}/parallel_results/1/${target}/2/${params}/3/*/stdout"
+                echo "    Logs available at:"
+                echo "      stderr: ${stderr_file}"
+                echo "      stdout: ${stdout_file}"
+            fi
+        done
+    fi
+    echo ""
+    echo -e "${YELLOW}Full job log: ${BUILD_DIR}/parallel_jobs.log${NC}"
+    echo -e "${YELLOW}All results: ${BUILD_DIR}/parallel_results/${NC}"
     exit 1
 fi
 
@@ -270,8 +277,10 @@ cd "${RELEASE_REPO_DIR}/releases"
 ln -sfn "${RELEASE_NAME}" latest
 
 # Clean up build directories (optional)
-echo "Cleaning up temporary build directories..."
-rm -rf "${BUILD_DIR}"
+# Commented out to preserve logs for debugging
+# echo "Cleaning up temporary build directories..."
+# rm -rf "${BUILD_DIR}"
+echo -e "${YELLOW}Build logs preserved in: ${BUILD_DIR}${NC}"
 
 echo -e "${GREEN}Release created successfully at: ${RELEASE_DIR}${NC}"
 echo ""
