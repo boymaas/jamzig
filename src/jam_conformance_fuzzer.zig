@@ -1,5 +1,6 @@
 const std = @import("std");
 const clap = @import("clap");
+const tracing = @import("tracing.zig");
 
 const Fuzzer = @import("fuzz_protocol/fuzzer.zig").Fuzzer;
 const report = @import("fuzz_protocol/report.zig");
@@ -26,6 +27,8 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
+    tracing.runtime.init(allocator);
 
     // Parse command line arguments
     const params = comptime clap.parseParamsComptime(

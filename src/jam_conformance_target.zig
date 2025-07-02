@@ -49,6 +49,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    tracing.runtime.init(allocator);
+
     // Parse command line arguments
     const params = comptime clap.parseParamsComptime(
         \\-h, --help             Display this help and exit.
@@ -115,7 +117,6 @@ pub fn main() !void {
 
     // Initialize runtime tracing if any trace options are provided
     if (res.args.@"trace-all" != null or res.args.trace != null or res.args.@"trace-quiet" != null) {
-        tracing.runtime.init(allocator);
 
         // Apply default level first if specified
         if (res.args.@"trace-all") |default_level_str| {
