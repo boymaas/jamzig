@@ -133,12 +133,12 @@ echo ""
 # --nice 19 runs at lowest priority
 # --load 80% pauses if system load is above 80%
 # --retries 3 retry failed jobs up to 3 times
-# --halt now,fail=50% stops if more than 50% of jobs fail
+# --halt now,fail=10% stops if more than 50% of jobs fail
 # --line-buffer ensures clean output per job
 # --colsep ' ' tells parallel to split on spaces
 printf '%s\n' "${build_jobs[@]}" | \
-    parallel --will-cite --jobs 50% --delay 0.5 --nice 19 --load 20% --memfree 8G \
-    --retries 3 --halt now,fail=50% --line-buffer --colsep ' ' \
+    parallel --will-cite --jobs 50% --delay 0.5 --nice 19 --load 20% --memfree 30% \
+    --retries 3 --halt now,fail=10% --line-buffer --colsep ' ' \
     --joblog "${BUILD_DIR}/parallel_jobs.log" \
     --results "${BUILD_DIR}/parallel_results" \
     build_platform {1} {2} {3}
