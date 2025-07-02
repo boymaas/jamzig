@@ -325,7 +325,7 @@ pub const Fuzzer = struct {
             self.latest_block.?.deinit(self.allocator);
             self.latest_block = block;
 
-            sequoia.logging.printBlockEntropyDebug(jam_params.TINY_PARAMS, &block, self.current_jam_state);
+            sequoia.logging.printBlockEntropyDebug(messages.FUZZ_PARAMS, &block, self.current_jam_state);
 
             // Send to target
             const target_root = try self.sendBlock(block);

@@ -112,16 +112,72 @@ echo "Socket: $SOCKET_PATH"
 echo "Blocks: $NUM_BLOCKS"
 echo ""
 
-# Check if executables exist
-if [ ! -f "./zig-out/bin/jam_conformance_target" ]; then
-    echo -e "${RED}Error: jam_conformance_target not found${NC}"
-    echo "Please build the project first: zig build"
-    exit 1
-fi
+# Detect host architecture and OS
+HOST_ARCH=$(uname -m)
+HOST_OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 
-if [ ! -f "./zig-out/bin/jam_conformance_fuzzer" ]; then
-    echo -e "${RED}Error: jam_conformance_fuzzer not found${NC}"
-    echo "Please build the project first: zig build"
+# Normalize architecture names
+case "${HOST_ARCH}" in
+    x86_64) ARCH_NAME="x86_64" ;;
+    arm64|aarch64) ARCH_NAME="aarch64" ;;
+    *) ARCH_NAME="${HOST_ARCH}" ;;
+esac
+
+# Normalize OS names
+case "${HOST_OS}" in
+    linux) OS_NAME="linux" ;;
+    darwin) OS_NAME="macos" ;;
+    *) OS_NAME="${HOST_OS}" ;;
+esac
+
+EXPECTED_DIR="${OS_NAME}/${ARCH_NAME}"
+
+# Function to find executables
+find_executables() {
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Search paths in order
+    local search_paths=(
+        "$script_dir"                    # Same directory as script
+        "./zig-out/bin"                  # Development build directory
+        "."                              # Current directory
+    )
+    
+    for path in "${search_paths[@]}"; do
+        if [ -f "$path/jam_conformance_target" ] && [ -f "$path/jam_conformance_fuzzer" ]; then
+            TARGET_BIN="$path/jam_conformance_target"
+            FUZZER_BIN="$path/jam_conformance_fuzzer"
+            echo "Found executables in: $path"
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
+# Try to find executables
+if ! find_executables; then
+    echo -e "${RED}Error: Could not find jam_conformance_target and jam_conformance_fuzzer${NC}"
+    
+    # Check if we're in a release directory
+    if [[ "$PWD" =~ releases ]]; then
+        echo ""
+        echo -e "${YELLOW}You appear to be in a release directory.${NC}"
+        echo ""
+        echo "This script is used to test the conformance executables and should be"
+        echo "run from the architecture-specific directory matching your host system."
+        echo ""
+        echo -e "${GREEN}Your host architecture: ${OS_NAME}/${ARCH_NAME}${NC}"
+        echo ""
+        echo "Please navigate to the correct directory:"
+        echo "  cd tiny/${EXPECTED_DIR}"  
+        echo "  cd full/${EXPECTED_DIR}"
+    else
+        echo ""
+        echo "Please ensure the executables are built:"
+        echo "  - For development: zig build conformance_fuzzer conformance_target"
+        echo "  - For releases: Run from the ${EXPECTED_DIR} directory"
+    fi
     exit 1
 fi
 
@@ -144,7 +200,8 @@ trap cleanup EXIT INT TERM
 
 # Start the target server in background
 echo "Starting target server..."
-./zig-out/bin/jam_conformance_target $TRACE_LEVEL --socket "$SOCKET_PATH" &
+ 
+$TARGET_BIN $TRACE_LEVEL --socket "$SOCKET_PATH" &
 TARGET_PID=$!
 
 # Wait for target to be ready
@@ -174,7 +231,7 @@ echo ""
 echo "Running conformance fuzzer..."
 echo "----------------------------"
 
-./zig-out/bin/jam_conformance_fuzzer \
+$FUZZER_BIN \
     --socket "$SOCKET_PATH" \
     --blocks "$NUM_BLOCKS" \
     $SEED \

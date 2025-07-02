@@ -4,6 +4,10 @@ const clap = @import("clap");
 const Fuzzer = @import("fuzz_protocol/fuzzer.zig").Fuzzer;
 const report = @import("fuzz_protocol/report.zig");
 const trace = @import("tracing.zig").scoped(.jam_conformance_fuzzer);
+const jam_params = @import("jam_params.zig");
+const jam_params_format = @import("jam_params_format.zig");
+const build_options = @import("build_options");
+const messages = @import("fuzz_protocol/messages.zig");
 
 fn showHelp(params: anytype) !void {
     std.debug.print(
@@ -33,6 +37,8 @@ pub fn main() !void {
         \\-S, --seed <u64>       Random seed for deterministic execution (default: timestamp)
         \\-b, --blocks <u32>     Number of blocks to process (default: 100)
         \\-o, --output <str>     Output report file (optional, prints to stdout if not specified)
+        \\--dump-params          Dump JAM protocol parameters and exit
+        \\--format <str>         Output format for parameter dump: json or text (default: text)
     );
 
     var diag = clap.Diagnostic{};
@@ -49,6 +55,36 @@ pub fn main() !void {
 
     if (res.args.help != 0) {
         try showHelp(params);
+        return;
+    }
+
+    // Handle parameter dumping
+    if (res.args.@"dump-params" != 0) {
+        const format = res.args.format orelse "text";
+        const params_type = if (@hasDecl(build_options, "conformance_params") and build_options.conformance_params == .tiny) "TINY" else "FULL";
+        
+        const stdout = std.io.getStdOut().writer();
+        
+        if (std.mem.eql(u8, format, "json")) {
+            jam_params_format.formatParamsJson(messages.FUZZ_PARAMS, params_type, stdout) catch |err| {
+                // Handle BrokenPipe error gracefully (e.g., when piping to head)
+                if (err == error.BrokenPipe) {
+                    std.process.exit(0);
+                }
+                return err;
+            };
+        } else if (std.mem.eql(u8, format, "text")) {
+            jam_params_format.formatParamsText(messages.FUZZ_PARAMS, params_type, stdout) catch |err| {
+                // Handle BrokenPipe error gracefully (e.g., when piping to head)
+                if (err == error.BrokenPipe) {
+                    std.process.exit(0);
+                }
+                return err;
+            };
+        } else {
+            std.debug.print("Error: Invalid format '{s}'. Use 'json' or 'text'.\n", .{format});
+            std.process.exit(1);
+        }
         return;
     }
 
@@ -135,3 +171,4 @@ pub fn main() !void {
         std.process.exit(1);
     }
 }
+

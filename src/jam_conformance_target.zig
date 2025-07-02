@@ -4,6 +4,10 @@ const tracing = @import("tracing.zig");
 
 const TargetServer = @import("fuzz_protocol/target.zig").TargetServer;
 const trace = @import("tracing.zig").scoped(.jam_conformance_target);
+const jam_params = @import("jam_params.zig");
+const jam_params_format = @import("jam_params_format.zig");
+const build_options = @import("build_options");
+const messages = @import("fuzz_protocol/messages.zig");
 
 fn showHelp(params: anytype) !void {
     std.debug.print(
@@ -53,6 +57,9 @@ pub fn main() !void {
         \\--trace-all <str>      Set default trace level for all scopes (trace/debug/info/warn/err)
         \\--trace-quiet <str>    Comma-separated scopes to keep at info level (e.g., codec,network)
         \\--trace <str>          Tracing configuration for specific scopes (e.g., stf=trace,accumulate=debug,pvm=trace,fuzz_protocol=debug)
+        \\ 
+        \\--dump-params          Dump JAM protocol parameters and exit
+        \\--format <str>         Output format for parameter dump: json or text (default: text)
     );
 
     var diag = clap.Diagnostic{};
@@ -72,6 +79,36 @@ pub fn main() !void {
         return;
     }
 
+    // Handle parameter dumping
+    if (res.args.@"dump-params" != 0) {
+        const format = res.args.format orelse "text";
+        const params_type = if (@hasDecl(build_options, "conformance_params") and build_options.conformance_params == .tiny) "TINY" else "FULL";
+
+        const stdout = std.io.getStdOut().writer();
+
+        if (std.mem.eql(u8, format, "json")) {
+            jam_params_format.formatParamsJson(messages.FUZZ_PARAMS, params_type, stdout) catch |err| {
+                // Handle BrokenPipe error gracefully (e.g., when piping to head)
+                if (err == error.BrokenPipe) {
+                    std.process.exit(0);
+                }
+                return err;
+            };
+        } else if (std.mem.eql(u8, format, "text")) {
+            jam_params_format.formatParamsText(messages.FUZZ_PARAMS, params_type, stdout) catch |err| {
+                // Handle BrokenPipe error gracefully (e.g., when piping to head)
+                if (err == error.BrokenPipe) {
+                    std.process.exit(0);
+                }
+                return err;
+            };
+        } else {
+            std.debug.print("Error: Invalid format '{s}'. Use 'json' or 'text'.\n", .{format});
+            std.process.exit(1);
+        }
+        return;
+    }
+
     // Extract configuration
     const socket_path = res.args.socket orelse "/tmp/jam_conformance.sock";
     const verbose = res.args.verbose != 0;
@@ -79,7 +116,7 @@ pub fn main() !void {
     // Initialize runtime tracing if any trace options are provided
     if (res.args.@"trace-all" != null or res.args.trace != null or res.args.@"trace-quiet" != null) {
         tracing.runtime.init(allocator);
-        
+
         // Apply default level first if specified
         if (res.args.@"trace-all") |default_level_str| {
             const default_level = tracing.LogLevel.fromString(default_level_str) catch {
@@ -90,12 +127,12 @@ pub fn main() !void {
             tracing.runtime.setDefaultLevel(default_level);
             std.debug.print("Set default trace level to: {s}\n", .{default_level_str});
         }
-        
+
         // Apply quiet scopes (set them to info level)
         if (res.args.@"trace-quiet") |quiet_scopes| {
             try applyQuietScopes(quiet_scopes);
         }
-        
+
         // Then apply specific overrides if provided (these can override quiet scopes)
         if (res.args.trace) |trace_config| {
             try applyTraceConfig(trace_config);
@@ -140,17 +177,17 @@ pub fn main() !void {
 fn applyQuietScopes(quiet_scopes_str: []const u8) !void {
     var iter = std.mem.splitSequence(u8, quiet_scopes_str, ",");
     var count: usize = 0;
-    
+
     while (iter.next()) |scope_name| {
         const trimmed = std.mem.trim(u8, scope_name, " \t");
         if (trimmed.len == 0) continue;
-        
+
         tracing.runtime.setScope(trimmed, .info) catch {
             std.debug.print("Warning: Failed to set quiet scope '{s}' to info level\n", .{trimmed});
         };
         count += 1;
     }
-    
+
     if (count > 0) {
         std.debug.print("Set {d} scope(s) to info level: {s}\n", .{ count, quiet_scopes_str });
     }
@@ -185,4 +222,3 @@ fn applyTraceConfig(config_str: []const u8) !void {
         }
     }
 }
-

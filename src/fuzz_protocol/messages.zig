@@ -3,9 +3,14 @@ pub const codec = @import("../codec.zig");
 const types = @import("../types.zig");
 const constants = @import("constants.zig");
 const jam_params = @import("../jam_params.zig");
+const build_options = @import("build_options");
 
-/// JAM parameters for fuzz protocol - using TINY_PARAMS for simpler testing
-pub const FUZZ_PARAMS = jam_params.TINY_PARAMS;
+/// JAM parameters for fuzz protocol - configurable via build options
+pub const FUZZ_PARAMS = if (@hasDecl(build_options, "conformance_params") and build_options.conformance_params == .tiny)
+    jam_params.TINY_PARAMS
+else
+    jam_params.FULL_PARAMS;
+
 pub const MAX_MESSAGE_SIZE: u32 = constants.MAX_MESSAGE_SIZE;
 
 /// 31-byte trie key as specified in the protocol

@@ -100,28 +100,34 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(fuzz_protocol_target);
 
     // JAM Conformance Testing Executables
+    // Create conformance-specific build options
+    const conformance_params = b.option(enum { tiny, full }, "conformance-params", "JAM protocol parameters for conformance testing (tiny/full)") orelse .full;
+
+    const conformance_fuzzer_options = b.addOptions();
+    conformance_fuzzer_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
+    conformance_fuzzer_options.addOption([]const u8, "enable_tracing_level", tracing_level);
+    conformance_fuzzer_options.addOption(@TypeOf(tracing_mode), "tracing_mode", .runtime);
+    conformance_fuzzer_options.addOption(@TypeOf(conformance_params), "conformance_params", conformance_params);
+
     const jam_conformance_fuzzer = b.addExecutable(.{
         .name = "jam_conformance_fuzzer",
         .root_source_file = b.path("src/jam_conformance_fuzzer.zig"),
         .target = target,
         .optimize = optimize,
     });
-    jam_conformance_fuzzer.root_module.addOptions("build_options", build_options);
+    jam_conformance_fuzzer.root_module.addOptions("build_options", conformance_fuzzer_options);
     jam_conformance_fuzzer.root_module.addImport("clap", clap_module);
     jam_conformance_fuzzer.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_fuzzer);
     b.installArtifact(jam_conformance_fuzzer);
 
-    // Enable runtime tracing mode for JRPL with all major scopes available
-    const jam_conformance_build_options = b.addOptions();
-    jam_conformance_build_options.addOption(@TypeOf(tracing_mode), "tracing_mode", .runtime);
     const jam_conformance_target = b.addExecutable(.{
         .name = "jam_conformance_target",
         .root_source_file = b.path("src/jam_conformance_target.zig"),
         .target = target,
         .optimize = optimize,
     });
-    jam_conformance_target.root_module.addOptions("build_options", jam_conformance_build_options);
+    jam_conformance_target.root_module.addOptions("build_options", conformance_fuzzer_options);
     jam_conformance_target.root_module.addImport("clap", clap_module);
     jam_conformance_target.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_target);
@@ -181,6 +187,13 @@ pub fn build(b: *std.Build) !void {
     }
     const run_jam_conformance_target_step = b.step("jam_conformance_target", "Run the JAM conformance target server");
     run_jam_conformance_target_step.dependOn(&run_jam_conformance_target.step);
+
+    // Add individual build steps for conformance tools
+    const build_jam_conformance_fuzzer_step = b.step("conformance_fuzzer", "Build JAM conformance fuzzer");
+    build_jam_conformance_fuzzer_step.dependOn(b.getInstallStep());
+
+    const build_jam_conformance_target_step = b.step("conformance_target", "Build JAM conformance target");
+    build_jam_conformance_target_step.dependOn(b.getInstallStep());
 
     // This creates the test step
     const unit_tests = b.addTest(.{
