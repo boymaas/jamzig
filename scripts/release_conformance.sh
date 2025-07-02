@@ -70,13 +70,13 @@ build_platform() {
     # Create unique output directory for this build
     mkdir -p "${platform_build_dir}"
     
-    zig build conformance_fuzzer \
+    timeout 10m zig build conformance_fuzzer \
         -Doptimize=ReleaseFast \
         -Dconformance-params=${params} \
         -Dtarget=${target} \
         --prefix "${platform_build_dir}"
 
-    zig build conformance_target \
+    timeout 10m zig build conformance_target \
         -Doptimize=ReleaseFast \
         -Dconformance-params=${params} \
         -Dtarget=${target} \
@@ -132,11 +132,13 @@ echo ""
 # --jobs -2 uses all CPUs minus 2 (leaves 2 cores free)
 # --nice 19 runs at lowest priority
 # --load 80% pauses if system load is above 80%
-# --halt soon,fail=1 stops on first failure
+# --retries 3 retry failed jobs up to 3 times
+# --halt now,fail=50% stops if more than 50% of jobs fail
 # --line-buffer ensures clean output per job
 # --colsep ' ' tells parallel to split on spaces
 printf '%s\n' "${build_jobs[@]}" | \
-    parallel --will-cite --jobs 50% --delay 0.5 --nice 19 --load 80% --memfree 2G --halt soon,fail=1 --line-buffer --colsep ' ' \
+    parallel --will-cite --jobs 50% --delay 0.5 --nice 19 --load 20% --memfree 8G \
+    --retries 3 --halt now,fail=50% --line-buffer --colsep ' ' \
     --joblog "${BUILD_DIR}/parallel_jobs.log" \
     --results "${BUILD_DIR}/parallel_results" \
     build_platform {1} {2} {3}
