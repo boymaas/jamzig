@@ -10,7 +10,10 @@ SOCKET_PATH="/tmp/jam_conformance.sock"
 NUM_BLOCKS=100
 SEED=""
 OUTPUT_FILE=""
-VERBOSE=""
+VERBOSE_LEVEL=0
+TRACE_LEVEL=""
+DEBUG_CODEC=false
+DEFAULT_QUIET_SCOPES="codec"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -32,7 +35,15 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -v|--verbose)
-            VERBOSE="--verbose"
+            VERBOSE_LEVEL=$((VERBOSE_LEVEL + 1))
+            shift
+            ;;
+        -vv)
+            VERBOSE_LEVEL=2
+            shift
+            ;;
+        --debug-codec)
+            DEBUG_CODEC=true
             shift
             ;;
         -h|--help)
@@ -43,8 +54,17 @@ while [[ $# -gt 0 ]]; do
             echo "  -b, --blocks N       Number of blocks to process (default: 100)"
             echo "  -S, --seed N         Random seed for deterministic execution"
             echo "  -o, --output FILE    Output report file"
-            echo "  -v, --verbose        Enable verbose output"
+            echo "  -v, --verbose        Enable verbose output (use -vv for trace level)"
+            echo "  --debug-codec        Include codec in debug output (normally suppressed)"
             echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Verbose Levels:"
+            echo "  (no -v)    Normal output"
+            echo "  -v         Debug level tracing (moderate output, codec at info)"
+            echo "  -vv        Trace level tracing (WARNING: very large output, codec at info)"
+            echo ""
+            echo "Note: By default, codec logging is kept at info level to reduce noise."
+            echo "      Use --debug-codec to include full codec debugging."
             exit 0
             ;;
         *)
@@ -53,6 +73,32 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Set trace level based on verbose level
+if [ $VERBOSE_LEVEL -eq 0 ]; then
+    TRACE_LEVEL=""
+elif [ $VERBOSE_LEVEL -eq 1 ]; then
+    TRACE_LEVEL="--trace-all debug"
+    if [ "$DEBUG_CODEC" = false ]; then
+        TRACE_LEVEL="$TRACE_LEVEL --trace-quiet $DEFAULT_QUIET_SCOPES"
+        echo "Verbose mode: DEBUG level (moderate output, codec at info)"
+    else
+        echo "Verbose mode: DEBUG level (including codec)"
+    fi
+elif [ $VERBOSE_LEVEL -ge 2 ]; then
+    TRACE_LEVEL="--trace-all trace"
+    if [ "$DEBUG_CODEC" = false ]; then
+        TRACE_LEVEL="$TRACE_LEVEL --trace-quiet $DEFAULT_QUIET_SCOPES"
+        echo "Verbose mode: TRACE level (WARNING: very large output, codec at info)"
+    else
+        echo "Verbose mode: TRACE level (WARNING: EXTREMELY large output, including codec)"
+    fi
+fi
+
+# Set verbose flag for fuzzer
+if [ $VERBOSE_LEVEL -gt 0 ]; then
+    VERBOSE="--verbose"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -98,7 +144,7 @@ trap cleanup EXIT INT TERM
 
 # Start the target server in background
 echo "Starting target server..."
-./zig-out/bin/jam_conformance_target --trace "stf=trace,fuzz_protocol=trace,pvm=trace,accumulate=trace" --socket "$SOCKET_PATH" $VERBOSE &
+./zig-out/bin/jam_conformance_target $TRACE_LEVEL --socket "$SOCKET_PATH" &
 TARGET_PID=$!
 
 # Wait for target to be ready

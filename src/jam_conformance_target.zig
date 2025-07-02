@@ -16,6 +16,25 @@ fn showHelp(params: anytype) !void {
         \\
     , .{});
     try clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{ .spacing_between_parameters = 0 });
+    std.debug.print(
+        \\
+        \\Tracing Examples:
+        \\  # Set all scopes to debug level
+        \\  jam_conformance_target --trace-all debug
+        \\
+        \\  # Set all to debug, but keep codec at info level
+        \\  jam_conformance_target --trace-all debug --trace-quiet codec
+        \\
+        \\  # Set all to debug, keep codec quiet, but trace STF
+        \\  jam_conformance_target --trace-all debug --trace-quiet codec --trace "stf=trace"
+        \\
+        \\  # Debug everything including codec (override quiet)
+        \\  jam_conformance_target --trace-all debug --trace-quiet codec --trace "codec=debug"
+        \\
+        \\  # Maximum verbosity for everything
+        \\  jam_conformance_target --trace-all trace
+        \\
+    , .{});
 }
 
 pub fn main() !void {
@@ -31,8 +50,9 @@ pub fn main() !void {
         \\-h, --help             Display this help and exit.
         \\-s, --socket <str>     Unix socket path to listen on (default: /tmp/jam_conformance.sock)
         \\-v, --verbose          Enable verbose output
-        \\ 
-        \\--trace <str>          Tracing configuration (e.g., stf=trace,accumulate=debug,pvm=trace,fuzz_protocol=debug)
+        \\--trace-all <str>      Set default trace level for all scopes (trace/debug/info/warn/err)
+        \\--trace-quiet <str>    Comma-separated scopes to keep at info level (e.g., codec,network)
+        \\--trace <str>          Tracing configuration for specific scopes (e.g., stf=trace,accumulate=debug,pvm=trace,fuzz_protocol=debug)
     );
 
     var diag = clap.Diagnostic{};
@@ -56,9 +76,30 @@ pub fn main() !void {
     const socket_path = res.args.socket orelse "/tmp/jam_conformance.sock";
     const verbose = res.args.verbose != 0;
 
-    if (res.args.trace) |trace_config| {
+    // Initialize runtime tracing if any trace options are provided
+    if (res.args.@"trace-all" != null or res.args.trace != null or res.args.@"trace-quiet" != null) {
         tracing.runtime.init(allocator);
-        try applyTraceConfig(trace_config);
+        
+        // Apply default level first if specified
+        if (res.args.@"trace-all") |default_level_str| {
+            const default_level = tracing.LogLevel.fromString(default_level_str) catch {
+                std.debug.print("Error: Invalid log level '{s}'\n", .{default_level_str});
+                std.debug.print("Valid levels: trace, debug, info, warn, err\n", .{});
+                return error.InvalidLogLevel;
+            };
+            tracing.runtime.setDefaultLevel(default_level);
+            std.debug.print("Set default trace level to: {s}\n", .{default_level_str});
+        }
+        
+        // Apply quiet scopes (set them to info level)
+        if (res.args.@"trace-quiet") |quiet_scopes| {
+            try applyQuietScopes(quiet_scopes);
+        }
+        
+        // Then apply specific overrides if provided (these can override quiet scopes)
+        if (res.args.trace) |trace_config| {
+            try applyTraceConfig(trace_config);
+        }
     }
 
     std.debug.print("JAM Conformance Target Server\n", .{});
@@ -93,6 +134,26 @@ pub fn main() !void {
 
     // Start the server (this will block until interrupted)
     try server.start();
+}
+
+/// Apply quiet scopes by setting them to info level
+fn applyQuietScopes(quiet_scopes_str: []const u8) !void {
+    var iter = std.mem.splitSequence(u8, quiet_scopes_str, ",");
+    var count: usize = 0;
+    
+    while (iter.next()) |scope_name| {
+        const trimmed = std.mem.trim(u8, scope_name, " \t");
+        if (trimmed.len == 0) continue;
+        
+        tracing.runtime.setScope(trimmed, .info) catch {
+            std.debug.print("Warning: Failed to set quiet scope '{s}' to info level\n", .{trimmed});
+        };
+        count += 1;
+    }
+    
+    if (count > 0) {
+        std.debug.print("Set {d} scope(s) to info level: {s}\n", .{ count, quiet_scopes_str });
+    }
 }
 
 /// Parse and apply trace configuration string

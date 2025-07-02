@@ -90,11 +90,13 @@ pub fn findScope(name: []const u8) ?*const ScopeConfig {
 const RuntimeTracingConfig = if (tracing_mode == .runtime) struct {
     config: std.StringHashMap(?LogLevel),
     allocator: std.mem.Allocator,
+    default_level: ?LogLevel,
 
     pub fn init(allocator: std.mem.Allocator) RuntimeTracingConfig {
         return .{
             .config = std.StringHashMap(?LogLevel).init(allocator),
             .allocator = allocator,
+            .default_level = null,
         };
     }
 
@@ -124,6 +126,14 @@ const RuntimeTracingConfig = if (tracing_mode == .runtime) struct {
         if (self.config.fetchRemove(scope_name)) |kv| {
             self.allocator.free(kv.key);
         }
+    }
+
+    pub fn setDefaultLevel(self: *RuntimeTracingConfig, level: ?LogLevel) void {
+        self.default_level = level;
+    }
+
+    pub fn getDefaultLevel(self: *const RuntimeTracingConfig) ?LogLevel {
+        return self.default_level;
     }
 } else void;
 
@@ -157,11 +167,21 @@ pub const runtime = if (tracing_mode == .runtime) struct {
     pub fn listAvailableScopes() []const ScopeConfig {
         return boption_scope_configs;
     }
+
+    pub fn setDefaultLevel(level: ?LogLevel) void {
+        runtime_config.setDefaultLevel(level);
+    }
+
+    pub fn getDefaultLevel() ?LogLevel {
+        return runtime_config.getDefaultLevel();
+    }
 } else struct {
     pub fn init(_: std.mem.Allocator) void {}
     pub fn deinit() void {}
     pub fn setScope(_: []const u8, _: LogLevel) void {}
     pub fn disableScope(_: []const u8) void {}
+    pub fn setDefaultLevel(_: ?LogLevel) void {}
+    pub fn getDefaultLevel() ?LogLevel { return null; }
 };
 
 threadlocal var current_depth: usize = 0;
@@ -251,6 +271,11 @@ pub const TracingScope = struct {
                 }
                 // Enabled with specific level at runtime
                 return SpanUnion{ .Enabled = Span.init(self, operation, current_span, true, runtime_level.?) };
+            }
+
+            // Check runtime default level before falling back to compile-time
+            if (runtime_config.default_level) |default_level| {
+                return SpanUnion{ .Enabled = Span.init(self, operation, current_span, true, default_level) };
             }
         }
 
