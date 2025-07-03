@@ -163,6 +163,13 @@ pub const RecentHistory = struct {
         return null;
     }
 
+    /// Updates the state root of the most recent block with the parent state root
+    pub fn updateParentBlockStateRoot(self: *Self, parent_state_root: types.Hash) void {
+        if (self.blocks.items.len > 0) {
+            self.blocks.items[self.blocks.items.len - 1].state_root = parent_state_root;
+        }
+    }
+
     /// Performs a deep clone of the RecentHistory as efficiently as possible
     pub fn deepClone(self: *const Self, allocator: Allocator) !Self {
         var clone = try Self.init(allocator, self.max_blocks);

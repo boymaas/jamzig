@@ -246,7 +246,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             const anchor_span = span.child(.validate_anchor);
             defer anchor_span.deinit();
 
-            const beta: *const state.Beta = try stx.ensure(.beta);
+            const beta: *const state.Beta = try stx.ensure(.beta_prime);
             if (beta.getBlockInfoByHash(guarantee.report.context.anchor)) |binfo| {
                 anchor_span.debug("Found anchor block, validating roots", .{});
                 anchor_span.trace("Block info - hash: {s}, state root: {s}", .{

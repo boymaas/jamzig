@@ -84,6 +84,14 @@ pub fn stateTransition(
     );
     defer available_assignments.deinit(allocator);
 
+    // Update parent block's state root before processing reports
+    // This ensures guarantees can validate against the correct state root
+    try recent_history.updateParentBlockStateRoot(
+        params,
+        state_transition,
+        new_block.header.parent_state_root,
+    );
+
     // => rho_prime
     try reports.transition(
         params,
