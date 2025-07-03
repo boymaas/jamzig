@@ -13,6 +13,9 @@ pub const jamduna =
 pub const jamzig =
     @import("parsers/jamzig.zig");
 
+pub const w3f =
+    @import("parsers/w3f.zig");
+
 pub const Loader = struct {
     const Context = @This();
 

@@ -34,6 +34,26 @@ pub const JAMDUNA_PARAMS = jam_params.Params{
     .max_authorizations_pool_items = 8, // O
     .preimage_expungement_period = 6, // D
 };
+
+// Official W3F parameters for tiny configuration traces
+pub const W3F_PARAMS = jam_params.Params{
+    .validators_count = 6,
+    .validators_super_majority = 5, // 2/3 + 1 of 6 validators
+    .core_count = 2,
+    .avail_bitfield_bytes = 1, // (2 cores + 7) / 8
+    .slot_period = 6,
+    .epoch_length = 12,
+    .ticket_submission_end_epoch_slot = 10, // contest_duration
+    .max_ticket_entries_per_validator = 3, // tickets_per_validator
+    .max_tickets_per_extrinsic = 3,
+    .validator_rotation_period = 4, // rotation_period
+    // W3F traces specify 1026 pieces, but with piece size 684 and segment size 4104
+    // we actually need: 4104 / 684 = 6 pieces per segment
+    .erasure_coded_pieces_per_segment = 6, // num_ec_pieces_per_segment
+    // Override D from default 28_800 to 32 as specified in traces README
+    .preimage_expungement_period = 32, // D
+    // Keep other defaults from jam_params.zig
+};
 // TODO: add these
 // {
 //     "tiny": {
@@ -111,6 +131,51 @@ pub const JAMDUNA_PARAMS = jam_params.Params{
 //         "src/jamtestnet/teams/jamzig/safrole/state_transitions",
 //     );
 // }
+
+// W3F Traces Tests
+test "w3f:traces:fallback" {
+    const allocator = std.testing.allocator;
+    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
+    try runStateTransitionTests(
+        W3F_PARAMS,
+        loader.loader(),
+        allocator,
+        "src/jamtestvectors/data/traces/fallback",
+    );
+}
+
+test "w3f:traces:safrole" {
+    const allocator = std.testing.allocator;
+    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
+    try runStateTransitionTests(
+        W3F_PARAMS,
+        loader.loader(),
+        allocator,
+        "src/jamtestvectors/data/traces/safrole",
+    );
+}
+
+test "w3f:traces:reports-l0" {
+    const allocator = std.testing.allocator;
+    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
+    try runStateTransitionTests(
+        W3F_PARAMS,
+        loader.loader(),
+        allocator,
+        "src/jamtestvectors/data/traces/reports-l0",
+    );
+}
+
+test "w3f:traces:reports-l1" {
+    const allocator = std.testing.allocator;
+    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
+    try runStateTransitionTests(
+        W3F_PARAMS,
+        loader.loader(),
+        allocator,
+        "src/jamtestvectors/data/traces/reports-l1",
+    );
+}
 
 /// Run state transition tests using vectors from the specified directory
 pub fn runStateTransitionTests(
@@ -201,7 +266,7 @@ pub fn runStateTransitionTests(
 
         // Log block information for debugging
         @import("sequoia.zig").logging.printBlockEntropyDebug(
-            JAMDUNA_PARAMS,
+            params,
             &state_transition.block(),
             &current_state.?,
         );

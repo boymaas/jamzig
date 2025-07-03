@@ -51,7 +51,7 @@ fn constructServiceIndexHashKey(s: u32, h: [32]u8) types.StateKey {
 }
 
 /// Temporary compatibility function for preimage lookup keys
-/// Will be removed when ServiceAccount uses structured 31-byte keys  
+/// Will be removed when ServiceAccount uses structured 31-byte keys
 // buildPreimageLookupKey function removed - we now use StateKey directly
 
 //  _   _ _   _ _
@@ -232,51 +232,15 @@ pub const MerklizationDictionaryDiff = struct {
 // |_|  |_|\___|_|  |_|\_\_|\___|____/|_|\___|\__|
 //
 
-// Metadata for state components
-pub const StateComponentMetadata = struct {
-    component_index: u8, // 1-15 for state components
-};
-
-// Metadata for service base info
-pub const DeltaBaseMetadata = struct {
-    service_index: u32,
-};
-
-// Metadata for storage entries
-pub const DeltaStorageMetadata = struct {
-    storage_key: types.StateKey, // [31]u8 to match ServiceAccount.storage
-};
-
-// Metadata for preimage entries
-pub const DeltaPreimageMetadata = struct {
-    hash: [32]u8,
-    preimage_length: u32,
-};
-
-// Metadata for preimage lookup entries
-pub const DeltaPreimageLookupMetadata = struct {
-    hash: [32]u8,
-    preimage_length: u32,
-};
-
-// Union of all possible metadata types
-pub const DictMetadata = union(DictKeyType) {
-    delta_storage: DeltaStorageMetadata,
-    delta_preimage: DeltaPreimageMetadata,
-    delta_preimage_lookup: DeltaPreimageLookupMetadata,
-};
-
 // Enhanced dictionary entry with metadata
 pub const DictEntry = struct {
     key: types.StateKey,
     value: []const u8,
-    metadata: ?DictMetadata = null,
 
     pub fn deepClone(self: *const DictEntry, allocator: std.mem.Allocator) !DictEntry {
         return DictEntry{
             .key = self.key,
             .value = try allocator.dupe(u8, self.value),
-            .metadata = self.metadata,
         };
     }
 
@@ -332,7 +296,7 @@ pub const MerklizationDictionary = struct {
     /// Returns a new owned slice that should be freed by the caller.
     /// The values remain owned by the dictionary.
     pub const FuzzKeyValue = struct { key: [31]u8, value: []const u8 };
-    
+
     pub fn toKeyValueArray(self: *const MerklizationDictionary) ![]FuzzKeyValue {
         var buffer = std.ArrayList(FuzzKeyValue).init(self.entries.allocator);
         var it = self.entries.iterator();
@@ -660,9 +624,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                     try map.put(storage_key, .{
                         .key = storage_key,
                         .value = try allocator.dupe(u8, storage_entry.value_ptr.*),
-                        .metadata = .{ .delta_storage = .{
-                            .storage_key = storage_entry.key_ptr.*,
-                        } },
                     });
                 }
 
@@ -674,16 +635,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                         try map.put(preimage_key, .{
                             .key = preimage_key,
                             .value = try allocator.dupe(u8, preimage_entry.value_ptr.*),
-                            .metadata = .{ .delta_preimage = .{
-                                .hash = blk: {
-                                    // Convert 31-byte StateKey to 32-byte hash for metadata compatibility
-                                    // TODO: Update metadata structure to use StateKey directly
-                                    var hash: [32]u8 = [_]u8{0} ** 32;
-                                    @memcpy(hash[0..31], &preimage_entry.key_ptr.*);
-                                    break :blk hash;
-                                },
-                                .preimage_length = @intCast(preimage_entry.value_ptr.*.len),
-                            } },
                         });
                     }
 
@@ -701,35 +652,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                             try map.put(key, .{
                                 .key = key,
                                 .value = try preimage_lookup.toOwnedSlice(),
-                                .metadata = .{
-                                    .delta_preimage_lookup = .{
-                                        .hash = blk: {
-                                            // Extract hash from StateKey - reconstruct 32-byte hash from the structured key
-                                            // Based on constructServicePreimageLookupKey: C(s, ℰ₄(l) ⌢ ℋ(h)₂...₂₉)
-                                            var hash: [32]u8 = [_]u8{0} ** 32;
-                                            
-                                            // Length bytes are interleaved in positions 1,3,5,7 of the StateKey
-                                            // Hash bytes are in positions 8-30 (corresponding to ℋ(h)₂...₂₉)
-                                            // We need to reconstruct them at positions 2-29 of the 32-byte hash
-                                            // key[8..31] has length 23, hash[2..30] has length 28
-                                            // So we copy the available 23 bytes and leave the rest as zeros
-                                            @memcpy(hash[2..25], key[8..31]);
-                                            break :blk hash;
-                                        },
-                                        .preimage_length = blk: {
-                                            // Extract length from StateKey - it's interleaved in the data portion
-                                            // Based on C_variant3 with ℰ₄(l), the length is stored in data[0..4]
-                                            // which gets interleaved with service_id bytes in the StateKey
-                                            // Data bytes are at positions 1,3,5,7 of the StateKey (after service_id interleaving)
-                                            var length_bytes: [4]u8 = undefined;
-                                            length_bytes[0] = key[1]; // First data byte  
-                                            length_bytes[1] = key[3]; // Second data byte
-                                            length_bytes[2] = key[5]; // Third data byte
-                                            length_bytes[3] = key[7]; // Fourth data byte
-                                            break :blk std.mem.readInt(u32, &length_bytes, .little);
-                                        },
-                                    },
-                                },
                             });
                         }
                     }

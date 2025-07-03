@@ -55,7 +55,7 @@ pub fn reconstructStorageEntry(
     const owned_value = try allocator.dupe(u8, dict_entry.value);
     errdefer allocator.free(owned_value);
 
-    const storage_key = dict_entry.metadata.?.delta_storage.storage_key;
+    const storage_key = dict_entry.key;
     try account.storage.put(storage_key, owned_value);
     span.debug("Successfully stored entry in account storage", .{});
 }
