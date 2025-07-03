@@ -340,7 +340,7 @@ pub const PVMFuzzer = struct {
             1024, // Stack size
             4, // Heap size
             self.config.max_gas,
-            false,
+            false, // dynamic_allocation
         ) catch |err| {
             span.err("ExecutionContext initialization failed: {s}", .{@errorName(err)});
             return FuzzResult{
@@ -507,12 +507,12 @@ pub const PVMFuzzer = struct {
                 .host_call => |host| {
                     const handler = exec_ctx.host_calls.?.get(host.idx) orelse
                         return FuzzResult{
-                        .seed = seed,
-                        .status = .{ .terminal = .panic },
-                        .gas_used = initial_gas - exec_ctx.gas,
-                        .was_mutated = will_mutate,
-                        .init_failed = false,
-                    };
+                            .seed = seed,
+                            .status = .{ .terminal = .panic },
+                            .gas_used = initial_gas - exec_ctx.gas,
+                            .was_mutated = will_mutate,
+                            .init_failed = false,
+                        };
 
                     // Execute host call
                     const dummy_ctx = struct {};

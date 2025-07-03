@@ -328,6 +328,23 @@ pub const MerklizationDictionary = struct {
         return slice;
     }
 
+    /// Converts the dictionary to an array of KeyValue pairs for the fuzz protocol.
+    /// Returns a new owned slice that should be freed by the caller.
+    /// The values remain owned by the dictionary.
+    pub const FuzzKeyValue = struct { key: [31]u8, value: []const u8 };
+    
+    pub fn toKeyValueArray(self: *const MerklizationDictionary) ![]FuzzKeyValue {
+        var buffer = std.ArrayList(FuzzKeyValue).init(self.entries.allocator);
+        var it = self.entries.iterator();
+        while (it.next()) |entry| {
+            try buffer.append(.{
+                .key = entry.key_ptr.*, // StateKey is same as TrieKey ([31]u8)
+                .value = entry.value_ptr.value,
+            });
+        }
+        return buffer.toOwnedSlice();
+    }
+
     /// Puts an DictEntry in the dictionary, deallocates an existing one
     /// takes ownership of the entry
     pub fn put(self: *MerklizationDictionary, entry: DictEntry) !void {

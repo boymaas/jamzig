@@ -1,17 +1,54 @@
 const std = @import("std");
 
+// Define enum types that can be shared
+const TracingMode = enum { disabled, compile_time, runtime };
+const ConformanceParams = enum { tiny, full };
+
+// Configuration struct to hold all build parameters
+const BuildConfig = struct {
+    tracing_scopes: []const []const u8,
+    tracing_level: []const u8,
+    tracing_mode: TracingMode,
+    conformance_params: ConformanceParams,
+};
+
+// Helper function to apply build configuration to options
+fn applyBuildConfig(options: *std.Build.Step.Options, config: BuildConfig) void {
+    options.addOption([]const []const u8, "enable_tracing_scopes", config.tracing_scopes);
+    options.addOption([]const u8, "enable_tracing_level", config.tracing_level);
+    options.addOption(@TypeOf(config.tracing_mode), "tracing_mode", config.tracing_mode);
+    options.addOption(@TypeOf(config.conformance_params), "conformance_params", config.conformance_params);
+}
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Existing options
-    const tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
-    const tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{};
+    // Parse command-line options
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
+    
+    // Create base configuration from command-line options
+    const base_config = BuildConfig{
+        .tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{},
+        .tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{},
+        .tracing_mode = b.option(TracingMode, "tracing-mode", "Tracing compilation mode (disabled/compile_time/runtime)") orelse .compile_time,
+        .conformance_params = b.option(ConformanceParams, "conformance-params", "JAM protocol parameters for conformance testing (tiny/full)") orelse .tiny,
+    };
 
+    // Create conformance configuration with runtime tracing
+    const conformance_config = BuildConfig{
+        .tracing_scopes = base_config.tracing_scopes,
+        .tracing_level = base_config.tracing_level,
+        .tracing_mode = .runtime, // Force runtime tracing for conformance tools
+        .conformance_params = base_config.conformance_params,
+    };
+
+    // Create build options objects
     const build_options = b.addOptions();
-    build_options.addOption([]const []const u8, "enable_tracing_scopes", tracing_scopes);
-    build_options.addOption([]const u8, "enable_tracing_level", tracing_level);
+    applyBuildConfig(build_options, base_config);
+
+    const conformance_build_options = b.addOptions();
+    applyBuildConfig(conformance_build_options, conformance_config);
 
     // Dependencies
     const dep_opts = .{ .target = target, .optimize = optimize };
@@ -49,7 +86,7 @@ pub fn build(b: *std.Build) !void {
     });
     jamzig_exe.linkLibCpp();
     // jamzig_exe.linkLibC();
-    jamzig_exe.root_module.addOptions("build-options", build_options);
+    jamzig_exe.root_module.addOptions("build_options", build_options);
     rust_deps.staticallyLinkTo(jamzig_exe);
 
     jamzig_exe.root_module.addImport("uuid", uuid_module);
@@ -86,6 +123,33 @@ pub fn build(b: *std.Build) !void {
     try rust_deps.staticallyLinkDepTo("polkavm_ffi", pvm_fuzzer);
     b.installArtifact(pvm_fuzzer);
 
+    // JAM Conformance Testing Executables
+    // Create conformance-specific build options
+
+    const jam_conformance_fuzzer = b.addExecutable(.{
+        .name = "jam_conformance_fuzzer",
+        .root_source_file = b.path("src/jam_conformance_fuzzer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    jam_conformance_fuzzer.root_module.addOptions("build_options", conformance_build_options);
+    jam_conformance_fuzzer.root_module.addImport("clap", clap_module);
+    jam_conformance_fuzzer.linkLibCpp();
+    rust_deps.staticallyLinkTo(jam_conformance_fuzzer);
+    b.installArtifact(jam_conformance_fuzzer);
+
+    const jam_conformance_target = b.addExecutable(.{
+        .name = "jam_conformance_target",
+        .root_source_file = b.path("src/jam_conformance_target.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    jam_conformance_target.root_module.addOptions("build_options", conformance_build_options);
+    jam_conformance_target.root_module.addImport("clap", clap_module);
+    jam_conformance_target.linkLibCpp();
+    rust_deps.staticallyLinkTo(jam_conformance_target);
+    b.installArtifact(jam_conformance_target);
+
     // Run Steps
     // NODE
     const run_cmd = b.addRunArtifact(jamzig_exe);
@@ -113,6 +177,31 @@ pub fn build(b: *std.Build) !void {
     }
     const run_pvm_fuzzer_step = b.step("pvm_fuzz", "Run the pvm fuzzer");
     run_pvm_fuzzer_step.dependOn(&run_pvm_fuzzer.step);
+
+    // JAM CONFORMANCE FUZZER
+    const run_jam_conformance_fuzzer = b.addRunArtifact(jam_conformance_fuzzer);
+    run_jam_conformance_fuzzer.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_jam_conformance_fuzzer.addArgs(args);
+    }
+    const run_jam_conformance_fuzzer_step = b.step("jam_conformance_fuzzer", "Run the JAM conformance fuzzer");
+    run_jam_conformance_fuzzer_step.dependOn(&run_jam_conformance_fuzzer.step);
+
+    // JAM CONFORMANCE TARGET
+    const run_jam_conformance_target = b.addRunArtifact(jam_conformance_target);
+    run_jam_conformance_target.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_jam_conformance_target.addArgs(args);
+    }
+    const run_jam_conformance_target_step = b.step("jam_conformance_target", "Run the JAM conformance target server");
+    run_jam_conformance_target_step.dependOn(&run_jam_conformance_target.step);
+
+    // Add individual build steps for conformance tools
+    const build_jam_conformance_fuzzer_step = b.step("conformance_fuzzer", "Build JAM conformance fuzzer");
+    build_jam_conformance_fuzzer_step.dependOn(b.getInstallStep());
+
+    const build_jam_conformance_target_step = b.step("conformance_target", "Build JAM conformance target");
+    build_jam_conformance_target_step.dependOn(b.getInstallStep());
 
     // This creates the test step
     const unit_tests = b.addTest(.{

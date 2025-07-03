@@ -2,3 +2,4 @@ zig-out
 zig-cache
 .zig-cache
 ffi/rust/crypto/target
+build-outputs
