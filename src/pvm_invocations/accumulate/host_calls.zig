@@ -47,6 +47,7 @@ pub fn HostCalls(comptime params: Params) type {
             new_service_id: types.ServiceId,
             deferred_transfers: std.ArrayList(DeferredTransfer),
             accumulation_output: ?types.AccumulateRoot,
+            operands: []const @import("../accumulate.zig").AccumulationOperand,
 
             pub fn commit(self: *@This()) !void {
                 try self.context.commit();
@@ -61,6 +62,7 @@ pub fn HostCalls(comptime params: Params) type {
                     .new_service_id = self.new_service_id,
                     .deferred_transfers = try self.deferred_transfers.clone(),
                     .accumulation_output = self.accumulation_output,
+                    .operands = self.operands,
                 };
 
                 return new_context;
@@ -1210,42 +1212,30 @@ pub fn HostCalls(comptime params: Params) type {
 
                 14 => {
                     // Selector 14: Encoded operand tuples
-                    if (ctx_regular.context.operand_tuples) |operand_tuples| {
-                        const operand_tuples_data = encoding_utils.encodeOperandTuples(ctx_regular.allocator, operand_tuples) catch {
-                            span.err("Failed to encode operand tuples", .{});
-                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                            return .play;
-                        };
-                        span.debug("Operand tuples encoded successfully, count={d}", .{operand_tuples.len});
-                        data_to_fetch = operand_tuples_data;
-                        needs_cleanup = true;
-                    } else {
-                        span.debug("Operand tuples not available in accumulate context", .{});
+                    const operand_tuples_data = encoding_utils.encodeOperandTuples(ctx_regular.allocator, ctx_regular.operands) catch {
+                        span.err("Failed to encode operand tuples", .{});
                         exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                         return .play;
-                    }
+                    };
+                    span.debug("Operand tuples encoded successfully, count={d}", .{ctx_regular.operands.len});
+                    data_to_fetch = operand_tuples_data;
+                    needs_cleanup = true;
                 },
 
                 15 => {
                     // Selector 15: Specific operand tuple
-                    if (ctx_regular.context.operand_tuples) |operand_tuples| {
-                        if (index1 < operand_tuples.len) {
-                            const operand_tuple = &operand_tuples[index1];
-                            const operand_tuple_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand_tuple) catch {
-                                span.err("Failed to encode operand tuple", .{});
-                                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                                return .play;
-                            };
-                            span.debug("Operand tuple encoded successfully: index={d}", .{index1});
-                            data_to_fetch = operand_tuple_data;
-                            needs_cleanup = true;
-                        } else {
-                            span.debug("Operand tuple index out of bounds: index={d}, count={d}", .{ index1, operand_tuples.len });
+                    if (index1 < ctx_regular.operands.len) {
+                        const operand_tuple = &ctx_regular.operands[index1];
+                        const operand_tuple_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand_tuple) catch {
+                            span.err("Failed to encode operand tuple", .{});
                             exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                             return .play;
-                        }
+                        };
+                        span.debug("Operand tuple encoded successfully: index={d}", .{index1});
+                        data_to_fetch = operand_tuple_data;
+                        needs_cleanup = true;
                     } else {
-                        span.debug("Operand tuples not available in accumulate context", .{});
+                        span.debug("Operand tuple index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.operands.len });
                         exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                         return .play;
                     }

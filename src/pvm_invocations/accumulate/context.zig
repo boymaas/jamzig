@@ -21,7 +21,6 @@ pub fn AccumulationContext(params: Params) type {
         // Additional context for fetch selectors (JAM graypaper §1.7.2)
         entropy: types.Entropy, // η - entropy for current block (fetch selector 1)
         outputs: std.ArrayList(types.AccumulateOutput), // accumulated outputs from services
-        operand_tuples: ?[]const @import("../accumulate.zig").AccumulationOperand, // operand tuples for fetch selectors 14-15
 
         const InitArgs = struct {
             service_accounts: *state.Delta,
@@ -30,7 +29,6 @@ pub fn AccumulationContext(params: Params) type {
             privileges: *state.Chi,
             time: *const params.Time(),
             entropy: types.Entropy,
-            operand_tuples: ?[]const @import("../accumulate.zig").AccumulationOperand = null,
         };
 
         pub fn build(allocator: std.mem.Allocator, args: InitArgs) @This() {
@@ -42,7 +40,6 @@ pub fn AccumulationContext(params: Params) type {
                 .time = args.time,
                 .entropy = args.entropy,
                 .outputs = std.ArrayList(types.AccumulateOutput).init(allocator),
-                .operand_tuples = args.operand_tuples,
             };
         }
 
@@ -72,7 +69,6 @@ pub fn AccumulationContext(params: Params) type {
                 .time = self.time,
                 .entropy = self.entropy,
                 .outputs = try self.outputs.clone(),
-                .operand_tuples = self.operand_tuples, // Slice reference, no deep clone needed
             };
         }
 
