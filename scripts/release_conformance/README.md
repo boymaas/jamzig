@@ -20,8 +20,13 @@ Each parameter set includes binaries for:
 - Linux aarch64
 - macOS aarch64
 
-## Running Conformance Tests
+## Fuzzer
 
+The "fuzzer" has been added as a simple test to verify that the "target" is
+functional. This fuzzer cannot be used to verify compliance with any standards
+or requirements.
+
+## Running Conformance Tests
 ### Quick Start
 
 From this directory, run:
@@ -83,53 +88,6 @@ The protocol parameters for each set are available in:
 - `full/params.json` - Parameters used for full builds
 
 These files contain all JAM protocol constants with their graypaper symbols (e.g., "E" for epoch_length, "C" for core_count).
-
-## Platform Detection
-
-The `run_conformance_test.sh` script automatically detects your platform. If you're in a platform-specific directory (e.g., `linux/x86_64/`), it will use the binaries in that directory.
-
-## Troubleshooting
-
-1. **Permission Denied:**
-   ```bash
-   chmod +x jam_conformance_fuzzer jam_conformance_target run_conformance_test.sh
-   ```
-
-2. **Socket Already in Use:**
-   ```bash
-   rm -f /tmp/jam_conformance.sock
-   ```
-
-3. **Trace Output:**
-   Enable detailed tracing with:
-   ```bash
-   JAM_CONFORMANCE_TARGET_TRACE=fuzz_protocol=debug ./jam_conformance_target --socket /tmp/jam_conformance.sock
-   ```
-
-## Conformance Report
-
-The fuzzer generates a JSON report containing:
-- Test configuration (seed, blocks processed)
-- State root comparisons at each block
-- Any protocol violations detected
-- Performance metrics
-
-Example report structure:
-```json
-{
-  "version": "1.0",
-  "test_config": {
-    "seed": 12345,
-    "blocks": 100,
-    "params_type": "tiny"
-  },
-  "results": {
-    "blocks_processed": 100,
-    "state_mismatches": 0,
-    "protocol_violations": []
-  }
-}
-```
 
 ## Support
 
