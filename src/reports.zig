@@ -231,7 +231,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             });
 
             // Report must be from current  rotation
-            if (report_rotation < current_rotation - 1) {
+            if (report_rotation < current_rotation -| 1) {
                 rotation_span.err(
                     "Report from rotation {d} is too old (current: {d})",
                     .{
