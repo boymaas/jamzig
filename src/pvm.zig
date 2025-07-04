@@ -93,29 +93,27 @@ pub const PVM = struct {
         const span = trace.span(.execute_step);
         defer span.deinit();
 
+        // Check if we're at the start of a new basic block
+        if (isNewBasicBlock(context)) {
+            // Calculate the total gas cost for this block
+            const block_gas_cost = try calculateBlockGasCost(context);
+            span.debug("New basic block at PC {d}, gas cost: {d}", .{ context.pc, block_gas_cost });
+
+            // Charge gas for the entire block upfront
+            if (context.gas < block_gas_cost) {
+                span.debug("Out of gas - remaining: {d}, required: {d} for block", .{ context.gas, block_gas_cost });
+                return .{ .terminal = .out_of_gas };
+            }
+            context.gas -= block_gas_cost;
+            span.debug("Charged {d} gas for block, remaining: {d}", .{ block_gas_cost, context.gas });
+        }
+
         // Decode instruction
         const instruction = try context.decoder.decodeInstruction(context.pc);
-        const pc_before = context.pc;
-        defer span.trace("JAMDUNA PC {d} {s} g={d} reg={any}", .{ pc_before, instruction, context.gas, context.registers });
-        defer {
-            const memvalue = context.memory.readInt(i32, 0xFEFF000B) catch 42;
-            defer span.trace("JAMDUNA MEM {d} ", .{memvalue});
-        }
-        //  PC 2512 STORE_IMM_IND_U8            g=9071 pvmHash=b4dc..84ac reg="[8 4278056032 0 256 0 2953942612 4278058975 9071 1 4278056408 8 4278056408 0]"
+
         span.debug("Executing instruction at PC: 0x{d:0>8}: {}", .{ context.pc, instruction });
 
-        // Check gas
-        const gas_cost = getInstructionGasCost(instruction);
-        span.trace("Instruction gas cost: {d}", .{gas_cost});
-
-        if (context.gas < gas_cost) {
-            span.debug("Out of gas - remaining: {d}, required: {d}", .{ context.gas, gas_cost });
-            return .{ .terminal = .out_of_gas };
-        }
-        context.gas -= gas_cost;
-        span.trace("Remaining gas: {d}", .{context.gas});
-
-        // Execute instruction
+        // Execute instruction (no per-instruction gas charge)
         return executeInstruction(context, instruction);
     }
 
@@ -247,6 +245,45 @@ pub const PVM = struct {
         //     else => 1,
         // };
         return 1;
+    }
+
+    /// Check if we're at the start of a new basic block
+    fn isNewBasicBlock(context: *ExecutionContext) bool {
+        // Check if current PC is a basic block start
+        for (context.program.basic_blocks) |block_start| {
+            if (context.pc == block_start) return true;
+        }
+        return false;
+    }
+
+    /// Calculate the total gas cost for the current basic block
+    fn calculateBlockGasCost(context: *ExecutionContext) !u32 {
+        var total_gas: u32 = 0;
+        var pc = context.pc;
+
+        while (pc < context.program.code.len) {
+            const instruction = try context.decoder.decodeInstruction(pc);
+
+            // Add the gas cost for this instruction
+            total_gas += getInstructionGasCost(instruction);
+
+            // Check if this instruction ends the block
+            if (instruction.isTerminationInstruction()) {
+                break;
+            }
+
+            // Check if next PC is a basic block start
+            const next_pc = pc + 1 + instruction.args.skip_l();
+            for (context.program.basic_blocks) |block_start| {
+                if (next_pc == block_start and next_pc != context.pc) {
+                    return total_gas;
+                }
+            }
+
+            pc = next_pc;
+        }
+
+        return total_gas;
     }
 
     const PcOffset = i32;
