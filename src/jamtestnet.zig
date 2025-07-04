@@ -287,7 +287,8 @@ pub fn runStateTransitionTests(
 
         // Check for differences from expected state
         if (expected_state_diff.has_changes()) {
-            std.debug.print("{}", .{expected_state_diff});
+            std.debug.print("\x1b[31m=== Expected State Difference Detected ===\x1b[0m\n", .{});
+            std.debug.print("{}\n\n", .{expected_state_diff});
 
             var expected_state = try state_dict.reconstruct.reconstructState(params, allocator, &expected_state_mdict);
             defer expected_state.deinit(allocator);
