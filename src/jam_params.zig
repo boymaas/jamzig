@@ -146,9 +146,11 @@ pub const TINY_PARAMS = Params{
     .ticket_submission_end_epoch_slot = 10, // contest_duration
     .max_ticket_entries_per_validator = 3, // tickets_per_validator
     .max_tickets_per_extrinsic = 3,
+
     // W3F traces specify 1026 pieces, but with piece size 684 and segment size 4104
     // we actually need: 4104 / 684 = 6 pieces per segment
-    .erasure_coded_pieces_per_segment = 6, // num_ec_pieces_per_segment
+    // .erasure_coded_pieces_per_segment = 6, // num_ec_pieces_per_segment
+    //
     // Override D from default 28_800 to 32 as specified in traces README
     .preimage_expungement_period = 32, // D
     // Keep other defaults from jam_params.zig
