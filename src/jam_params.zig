@@ -122,16 +122,36 @@ pub const Params = struct {
     }
 };
 
+// pub const TINY_PARAMS = Params{
+//     .epoch_length = 12,
+//     .validator_rotation_period = 4, // R
+//     .ticket_submission_end_epoch_slot = 10,
+//     .max_ticket_entries_per_validator = 3, // NOTE: updated
+//     .recent_history_size = 8, // NOTE: explicitly set in testvectors
+//     .validators_count = 6,
+//     .validators_super_majority = 5,
+//     .core_count = 2,
+//     .avail_bitfield_bytes = (2 + 7) / 8,
+// };
+
 pub const TINY_PARAMS = Params{
     .epoch_length = 12,
-    .validator_rotation_period = 4, // R
-    .ticket_submission_end_epoch_slot = 10,
-    .max_ticket_entries_per_validator = 3, // NOTE: updated
-    .recent_history_size = 8, // NOTE: explicitly set in testvectors
     .validators_count = 6,
-    .validators_super_majority = 5,
+    .validator_rotation_period = 4, // rotation_period
+    .validators_super_majority = 5, // 2/3 + 1 of 6 validators
+    .recent_history_size = 8,
     .core_count = 2,
-    .avail_bitfield_bytes = (2 + 7) / 8,
+    .avail_bitfield_bytes = 1, // (2 cores + 7) / 8
+    .slot_period = 6,
+    .ticket_submission_end_epoch_slot = 10, // contest_duration
+    .max_ticket_entries_per_validator = 3, // tickets_per_validator
+    .max_tickets_per_extrinsic = 3,
+    // W3F traces specify 1026 pieces, but with piece size 684 and segment size 4104
+    // we actually need: 4104 / 684 = 6 pieces per segment
+    .erasure_coded_pieces_per_segment = 6, // num_ec_pieces_per_segment
+    // Override D from default 28_800 to 32 as specified in traces README
+    .preimage_expungement_period = 32, // D
+    // Keep other defaults from jam_params.zig
 };
 
 pub const FULL_PARAMS = Params{};

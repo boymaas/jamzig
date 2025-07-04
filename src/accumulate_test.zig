@@ -153,11 +153,25 @@ test "all.tiny.vectors" {
     var tiny_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "tiny");
     defer tiny_test_files.deinit();
 
+    var errors_occurred = std.ArrayList(struct { path: []const u8, err: []const u8 }).init(allocator);
+    defer errors_occurred.deinit();
     for (tiny_test_files.items()) |test_file| {
         if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
             continue;
         }
-        try runTest(TINY_PARAMS, allocator, test_file.path);
+        runTest(TINY_PARAMS, allocator, test_file.path) catch |err| {
+            try errors_occurred.append(.{ .path = test_file.path, .err = @errorName(err) });
+        };
+    }
+
+    if (errors_occurred.items.len > 0) {
+        std.debug.print("Tiny tests failed:\n", .{});
+        for (errors_occurred.items) |err| {
+            std.debug.print("  - {s} ({s})\n", .{ err.path, err.err });
+        }
+        return error.TestFailed;
+    } else {
+        std.debug.print("All tiny tests passed successfully.\n", .{});
     }
 }
 
@@ -173,10 +187,24 @@ test "all.full.vectors" {
     var full_test_files = try @import("tests/ordered_files.zig").getOrderedFiles(allocator, BASE_PATH ++ "full");
     defer full_test_files.deinit();
 
+    var errors_occurred = std.ArrayList(struct { path: []const u8, err: []const u8 }).init(allocator);
+    defer errors_occurred.deinit();
     for (full_test_files.items()) |test_file| {
         if (!std.mem.endsWith(u8, test_file.path, ".bin")) {
             continue;
         }
-        try runTest(FULL_PARAMS, allocator, test_file.path);
+        runTest(FULL_PARAMS, allocator, test_file.path) catch |err| {
+            try errors_occurred.append(.{ .path = test_file.path, .err = @errorName(err) });
+        };
+    }
+
+    if (errors_occurred.items.len > 0) {
+        std.debug.print("Full tests failed:\n", .{});
+        for (errors_occurred.items) |err| {
+            std.debug.print("  - {s} ({s})\n", .{ err.path, err.err });
+        }
+        return error.TestFailed;
+    } else {
+        std.debug.print("All full tests passed successfully.\n", .{});
     }
 }
