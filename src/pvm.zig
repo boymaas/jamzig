@@ -246,7 +246,7 @@ pub const PVM = struct {
         //     // .jump => 3,
         //     else => 1,
         // };
-        return 0;
+        return 1;
     }
 
     const PcOffset = i32;
