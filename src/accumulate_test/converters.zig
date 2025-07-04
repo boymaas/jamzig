@@ -90,9 +90,14 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
     for (account.data.storage) |storage_entry| {
         var storage_key: types.StateKey = undefined;
 
+        // Prepare data to hash: service_id (4 bytes little-endian) + key_data
+        var service_id_bytes: [4]u8 = undefined;
+        std.mem.writeInt(u32, &service_id_bytes, account.id, .little);
+
         // The test vector provides raw key data that needs to be hashed
         // This matches how PVM host calls work: hash the key data first
         var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
+        hasher.update(&service_id_bytes);
         hasher.update(storage_entry.key);
         var key_hash: [32]u8 = undefined;
         hasher.final(&key_hash);

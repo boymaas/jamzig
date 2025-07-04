@@ -351,12 +351,15 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             // Hash the key_data first before constructing storage key
             // According to graypaper, we might need to hash ℰ₄(s) ⌢ k
             span.debug("Hashing key data", .{});
-            span.info("Raw key data to hash (len={d}): {s}", .{ key_data.buffer.len, std.fmt.fmtSliceHexLower(key_data.buffer) });
+            span.info("Raw key data to hash (len={d}): {s}", .{ key_data.buffer.len, key_data.buffer });
 
             // Prepare data to hash: service_id (4 bytes little-endian) + key_data
-            var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
-            hasher.update(key_data.buffer);
+            var service_id_bytes: [4]u8 = undefined;
+            std.mem.writeInt(u32, &service_id_bytes, host_ctx.service_id, .little);
 
+            var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
+            hasher.update(&service_id_bytes);
+            hasher.update(key_data.buffer);
             var key_hash: [32]u8 = undefined;
             hasher.final(&key_hash);
 
