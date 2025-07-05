@@ -55,16 +55,16 @@ pub fn encodeJamParams(allocator: std.mem.Allocator, params_val: Params) ![]u8 {
         .H = params_val.recent_history_size,
         .I = params_val.max_work_items_per_package,
         .J = params_val.max_number_of_dependencies_for_work_reports,
-        .K = @truncate(params_val.max_tickets_per_extrinsic),
+        .K = @as(u16, @intCast(params_val.max_tickets_per_extrinsic)),
         .L = params_val.max_lookup_anchor_age,
         .N = params_val.max_ticket_entries_per_validator,
         .O = params_val.max_authorizations_pool_items,
         .P = params_val.slot_period,
         .Q = params_val.max_authorizations_queue_items,
-        .R = @truncate(params_val.validator_rotation_period),
+        .R = @as(u16, @intCast(params_val.validator_rotation_period)),
         .T = params_val.max_extrinsics_per_work_package,
         .U = params_val.work_replacement_period,
-        .V = @truncate(params_val.validators_count),
+        .V = @as(u16, @intCast(params_val.validators_count)),
         .WA = params_val.max_authorization_code_size,
         .WB = params_val.max_work_package_size_with_extrinsics,
         .WC = params_val.max_service_code_size,
@@ -104,4 +104,3 @@ pub fn encodeTransfer(allocator: std.mem.Allocator, transfer: *const @import("ac
     const codec = @import("../codec.zig");
     return try codec.serializeAlloc(@import("accumulate/types.zig").DeferredTransfer, .{}, allocator, transfer.*);
 }
-
