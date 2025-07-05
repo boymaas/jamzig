@@ -69,8 +69,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const span = trace.span(.host_call_debug_log);
             defer span.deinit();
 
-            // GAS FREE
-
             // https://hackmd.io/@polkadot/jip1
             const level = switch (exec_ctx.registers[7]) {
                 0 => "FATAL_ERROR",
