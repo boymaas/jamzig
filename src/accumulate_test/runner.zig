@@ -62,7 +62,7 @@ pub fn runAccumulateTest(comptime params: Params, allocator: std.mem.Allocator, 
     var expected_state = try converters.convertTestStateIntoJamState(params, allocator, test_case.post_state);
     defer expected_state.deinit(allocator);
 
-    std.debug.print("State: {s}\n", .{expected_state});
+    // std.debug.print("State: {s}\n", .{expected_state});
 
     // Process the work reports using StateTransition
     const process_result = processAccumulateReports(
