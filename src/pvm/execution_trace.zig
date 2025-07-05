@@ -49,6 +49,37 @@ pub const ExecutionTrace = struct {
         });
     }
 
+    /// Log an execution step with compact format
+    pub fn logStepCompact(
+        self: *Self,
+        pc: u32,
+        gas_after: i64,
+        instruction: *const InstructionWithArgs,
+        registers: *const [13]u64,
+    ) void {
+        if (!self.enabled) return;
+
+        self.step_counter += 1;
+
+        // Get instruction name only
+        const inst_name = @tagName(instruction.instruction);
+
+        // Format: step_num: PC pc_value INSTRUCTION g=gas reg=[r0 r1 r2...]
+        std.debug.print("{d:>5}: PC {d:>5} {s:<20} g={d} reg=[", .{
+            self.step_counter,
+            pc,
+            inst_name,
+            gas_after,
+        });
+
+        // Print registers
+        for (registers, 0..) |reg, i| {
+            if (i > 0) std.debug.print(" ", .{});
+            std.debug.print("{d}", .{reg});
+        }
+        std.debug.print("]\n", .{});
+    }
+
     /// Log a memory write operation
     pub fn logMemoryWrite(
         self: *const Self,

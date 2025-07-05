@@ -98,7 +98,6 @@ pub const PVM = struct {
         const span = trace.span(.execute_step);
         defer span.deinit();
 
-        const gas_before = context.gas;
         const pc_before = context.pc;
 
         // Decode instruction
@@ -121,7 +120,7 @@ pub const PVM = struct {
         }
 
         // Log execution step for trace
-        context.exec_trace.logStep(pc_before, gas_before, context.gas, &instruction);
+        context.exec_trace.logStepCompact(pc_before, context.gas, &instruction, &context.registers);
 
         return result;
     }
