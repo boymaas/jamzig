@@ -1,5 +1,6 @@
 const std = @import("std");
 const InstructionWithArgs = @import("decoder.zig").InstructionWithArgs;
+const HostCallId = @import("../pvm_invocations/host_calls.zig").Id;
 
 /// Execution trace state for detailed VM execution logging
 pub const ExecutionTrace = struct {
@@ -96,21 +97,62 @@ pub const ExecutionTrace = struct {
         }
     }
 
-    /// Log a host call
+    /// Log a host call with comprehensive information
     pub fn logHostCall(
         self: *const Self,
-        call_type: []const u8,
-        selector: u32,
-        gas_charged: i64,
+        host_call_id: u32,
+        gas_before: i64,
+        gas_after: i64,
+        registers_before: *const [13]u64,
+        registers_after: *const [13]u64,
+        pc_before: u32,
+        pc_after: u32,
     ) void {
         if (!self.enabled) return;
 
-        std.debug.print("HOST_CALL: {s} selector={} gas_charged={}\n", .{ call_type, selector, gas_charged });
+        const gas_charged = gas_before - gas_after;
+        const host_call_name = getHostCallName(host_call_id);
+
+        std.debug.print("HOST_CALL: {s} (id={}) pc=0x{x:0>8}->0x{x:0>8} gas_charged={}\n", .{
+            host_call_name,
+            host_call_id,
+            pc_before,
+            pc_after,
+            gas_charged,
+        });
+
+        // Log register changes
+        for (0..13) |i| {
+            if (registers_before[i] != registers_after[i]) {
+                std.debug.print("  REG_CHANGE: r{}=0x{x} -> 0x{x}\n", .{
+                    i,
+                    registers_before[i],
+                    registers_after[i],
+                });
+            }
+        }
+
+        // Log return code if r7 changed (common pattern for host call returns)
+        if (registers_before[7] != registers_after[7]) {
+            const return_code = registers_after[7];
+            std.debug.print("  RETURN_CODE: {} (0x{x})\n", .{ return_code, return_code });
+        }
     }
 
     /// Initialize register tracking with current values
     pub fn initRegisterTracking(self: *Self, registers: *const [13]u64) void {
         self.previous_registers = registers.*;
+    }
+
+    /// Get human-readable name for a host call ID using the enum
+    pub fn getHostCallName(id: u32) []const u8 {
+        // Try to convert the id to the enum
+        inline for (std.meta.fields(HostCallId)) |field| {
+            if (field.value == id) {
+                return field.name;
+            }
+        }
+        return "unknown";
     }
 };
 
@@ -170,4 +212,3 @@ fn formatInstructionSimple(
         .TwoRegTwoImm => |args| try writer.print(" r{}, r{}, {}, {}", .{ args.first_register_index, args.second_register_index, args.first_immediate, args.second_immediate }),
     }
 }
-

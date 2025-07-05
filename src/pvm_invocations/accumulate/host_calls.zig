@@ -1186,7 +1186,7 @@ pub fn HostCalls(comptime params: Params) type {
             const selector = exec_ctx.registers[10]; // Data selector
             const index1 = @as(u32, @intCast(exec_ctx.registers[11])); // Index 1
 
-            span.debug("Host call: fetch selector={d}", .{selector});
+            span.debug("Host call: fetch selector={d} index1={d}", .{ selector, index1 });
             span.debug("Output ptr: 0x{x}, offset: {d}, limit: {d}", .{ output_ptr, offset, limit });
 
             // Determine what data to fetch based on selector

@@ -99,6 +99,7 @@ pub const PVM = struct {
         defer span.deinit();
 
         const gas_before = context.gas;
+        const pc_before = context.pc;
 
         // Decode instruction
         const instruction = try context.decoder.decodeInstruction(context.pc);
@@ -106,23 +107,21 @@ pub const PVM = struct {
 
         // Check gas
         const gas_cost = getInstructionGasCost(instruction);
-        span.trace("Instruction gas cost: {d}", .{gas_cost});
-
-        if (context.gas < gas_cost) {
-            span.debug("Out of gas - remaining: {d}, required: {d}", .{ context.gas, gas_cost });
-            return .{ .terminal = .out_of_gas };
-        }
         context.gas -= gas_cost;
-        span.trace("Remaining gas: {d}", .{context.gas});
 
-        // Log execution step for trace
-        context.exec_trace.logStep(context.pc, gas_before, context.gas, &instruction);
+        span.trace("Instruction gas cost: {d}", .{gas_cost});
 
         // Execute instruction (no per-instruction gas charge)
         const result = executeInstruction(context, instruction);
 
-        // Check for register changes after execution
-        context.exec_trace.checkRegisterChanges(&context.registers);
+        // After execute instruction, as instructions also deduct gas
+        if (context.gas < gas_cost) {
+            span.debug("Out of gas - remaining: {d}, required: {d}", .{ context.gas, gas_cost });
+            return .{ .terminal = .out_of_gas };
+        }
+
+        // Log execution step for trace
+        context.exec_trace.logStep(pc_before, gas_before, context.gas, &instruction);
 
         return result;
     }
@@ -154,8 +153,6 @@ pub const PVM = struct {
                 },
                 .terminal => |result| switch (result) {
                     .page_fault => |addr| {
-                        // FIXME: this to make gas accounting work against test vectors
-                        // context.gas -= 1;
                         return .{ .terminal = .{ .page_fault = addr } };
                     },
                     else => {
@@ -175,14 +172,30 @@ pub const PVM = struct {
     };
 
     // Host call invocation invocation
-    // Calls basicInvocation until we against
     pub fn hostcallInvocation(context: *ExecutionContext, call_ctx: *anyopaque) Error!HostCallInvocationResult {
         switch (try basicInvocation(context)) {
             .host_call => |params| {
                 if (context.host_calls) |host_calls| {
                     if (host_calls.get(params.idx)) |host_call_fn| {
+                        const gas_before = context.gas;
+                        const pc_before = context.pc;
+                        const registers_before = context.registers;
+                        
                         switch (host_call_fn(context, call_ctx)) {
                             .play => {
+                                // Log the host call with comprehensive information
+                                context.exec_trace.logHostCall(
+                                    params.idx,
+                                    gas_before,
+                                    context.gas,
+                                    &registers_before,
+                                    &context.registers,
+                                    pc_before,
+                                    params.next_pc,
+                                );
+                                
+                                // Update total gas used
+                                context.exec_trace.total_gas_used += gas_before - context.gas;
                                 context.pc = params.next_pc;
                                 return try hostcallInvocation(context, call_ctx);
                             },
