@@ -257,12 +257,21 @@ pub const ExecutionContext = struct {
 
         span.debug("Program decoded successfully, creating execution context", .{});
         // Initialize registers according to specification
-        // Check if execution tracing is enabled via tracing scope
-        const exec_trace_enabled = if (@hasDecl(@import("../tracing.zig"), "boption_scope_configs"))
-            @import("../tracing.zig").findScope("pvm_exec") != null
-        else
-            false;
-        
+        // Determine trace mode from tracing scope
+        const trace_mode = blk: {
+            if (@hasDecl(@import("../tracing.zig"), "boption_scope_configs")) {
+                // Check for pvm_exec=compact
+                if (@import("../tracing.zig").findScope("pvm_exec_compact") != null) {
+                    break :blk ExecutionTrace.TraceMode.compact;
+                }
+                // Check for pvm_exec (verbose)
+                if (@import("../tracing.zig").findScope("pvm_exec") != null) {
+                    break :blk ExecutionTrace.TraceMode.verbose;
+                }
+            }
+            break :blk ExecutionTrace.TraceMode.disabled;
+        };
+
         return ExecutionContext{
             .memory = memory,
             .decoder = Decoder.init(program.code, program.mask),
@@ -272,7 +281,7 @@ pub const ExecutionContext = struct {
             .pc = 0,
             .error_data = null,
             .gas = max_gas,
-            .exec_trace = ExecutionTrace.init(max_gas, exec_trace_enabled),
+            .exec_trace = ExecutionTrace.initWithMode(max_gas, trace_mode),
         };
     }
 
@@ -293,7 +302,7 @@ pub const ExecutionContext = struct {
             self.registers[7],
             self.registers[8],
         });
-        
+
         // Initialize register tracking for execution trace
         self.exec_trace.initRegisterTracking(&self.registers);
     }

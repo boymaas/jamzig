@@ -9,14 +9,30 @@ pub const ExecutionTrace = struct {
     total_gas_used: i64 = 0,
     previous_registers: [13]u64 = [_]u64{0} ** 13,
     enabled: bool = false,
+    mode: TraceMode = .disabled,
 
     const Self = @This();
+
+    pub const TraceMode = enum {
+        disabled,
+        compact,
+        verbose,
+    };
 
     /// Initialize the execution trace with starting gas
     pub fn init(initial_gas: i64, enabled: bool) Self {
         return .{
             .initial_gas = initial_gas,
             .enabled = enabled,
+        };
+    }
+
+    /// Initialize with specific trace mode
+    pub fn initWithMode(initial_gas: i64, mode: TraceMode) Self {
+        return .{
+            .initial_gas = initial_gas,
+            .enabled = mode != .disabled,
+            .mode = mode,
         };
     }
 
@@ -80,6 +96,66 @@ pub const ExecutionTrace = struct {
         std.debug.print("]\n", .{});
     }
 
+    /// Log an execution step based on the configured mode
+    pub fn logStepAuto(
+        self: *Self,
+        pc: u32,
+        gas_before: i64,
+        gas_after: i64,
+        instruction: *const InstructionWithArgs,
+        registers: *const [13]u64,
+    ) void {
+        switch (self.mode) {
+            .disabled => {},
+            .compact => self.logStepCompact(pc, gas_after, instruction, registers),
+            .verbose => self.logStepVerbose(pc, gas_before, gas_after, instruction, registers),
+        }
+    }
+
+    /// Log an execution step with verbose format
+    pub fn logStepVerbose(
+        self: *Self,
+        pc: u32,
+        gas_before: i64,
+        gas_after: i64,
+        instruction: *const InstructionWithArgs,
+        registers: *const [13]u64,
+    ) void {
+        if (!self.enabled) return;
+
+        self.step_counter += 1;
+        const gas_cost = gas_before - gas_after;
+        self.total_gas_used += @intCast(gas_cost);
+
+        // Print initial registers if this is the first step
+        if (self.step_counter == 1) {
+            std.debug.print("\n=== Initial Registers ===\n", .{});
+            for (registers, 0..) |reg, i| {
+                if (reg != 0) {
+                    std.debug.print("r{d}=0x{x} ({d})\n", .{ i, reg, reg });
+                }
+            }
+            std.debug.print("\n", .{});
+            self.previous_registers = registers.*;
+        }
+
+        // Use custom formatter for instruction
+        var buf: [256]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buf);
+        formatInstructionSimple(instruction, stream.writer()) catch return;
+
+        std.debug.print("STEP:{d:0>3} PC:0x{x:0>8} GAS_COST:{d} REMAINING:{d} | {s}\n", .{
+            self.step_counter,
+            pc,
+            gas_cost,
+            gas_after,
+            stream.getWritten(),
+        });
+
+        // Check and log register changes
+        self.checkRegisterChanges(registers);
+    }
+
     /// Log a memory write operation
     pub fn logMemoryWrite(
         self: *const Self,
@@ -140,6 +216,9 @@ pub const ExecutionTrace = struct {
         pc_after: u32,
     ) void {
         if (!self.enabled) return;
+        
+        // Only log host calls in verbose mode
+        if (self.mode != .verbose) return;
 
         const gas_charged = gas_before - gas_after;
         const host_call_name = getHostCallName(host_call_id);
