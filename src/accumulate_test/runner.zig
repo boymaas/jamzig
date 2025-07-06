@@ -26,6 +26,12 @@ pub fn processAccumulateReports(
     // Transition time, with input slot
     try @import("../stf/time.zig").transition(params, &stx, test_case.input.slot);
 
+    // Transition validator stats
+    try @import("../stf/validator_stats.zig").transition_epoch(
+        params,
+        &stx,
+    );
+
     // Process the newly available reports using STF function
     var results = try @import("../stf/accumulate.zig").transition(
         params,

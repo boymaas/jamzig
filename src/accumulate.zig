@@ -41,26 +41,25 @@ fn queueEditingFunction(
                 // is now at the current index after removal
                 continue :outer;
             }
+        }
 
-            // when dependencies are 0 we are done with this one
-            if (wradeps.dependencies.count() == 0) {
-                span.trace("No dependencies, continuing", .{});
-                break;
-            }
+        // Only process dependencies if this report has any
+        if (wradeps.dependencies.count() > 0) {
+            for (resolved_reports) |work_package_hash| {
+                span.trace("Checking dependency: {s}", .{std.fmt.fmtSliceHexLower(&work_package_hash)});
+                // else try to remove and resolve
+                if (wradeps.dependencies.swapRemove(work_package_hash)) {
+                    span.debug("Resolved dependency: {s}", .{std.fmt.fmtSliceHexLower(&work_package_hash)});
+                } else {
+                    span.debug("Dependency does not match: {s}", .{std.fmt.fmtSliceHexLower(&work_package_hash)});
+                    span.trace("Current report dependencies: {any}", .{types.fmt.format(wradeps.dependencies.keys())});
+                }
 
-            span.trace("Checking dependency: {s}", .{std.fmt.fmtSliceHexLower(&work_package_hash)});
-            // else try to remove and resolve
-            if (wradeps.dependencies.swapRemove(work_package_hash)) {
-                span.debug("Resolved dependency: {s}", .{std.fmt.fmtSliceHexLower(&work_package_hash)});
-            } else {
-                span.debug("Dependency does not match: {s}", .{std.fmt.fmtSliceHexLower(&work_package_hash)});
-                span.trace("Current report dependencies: {any}", .{types.fmt.format(wradeps.dependencies.keys())});
-            }
-
-            // resolved?
-            if (wradeps.dependencies.count() == 0) {
-                span.debug("All dependencies resolved for report at index {d}", .{idx});
-                break; // Exit inner loop since we've resolved this report
+                // resolved?
+                if (wradeps.dependencies.count() == 0) {
+                    span.debug("All dependencies resolved for report at index {d}", .{idx});
+                    break; // Exit inner loop since we've resolved this report
+                }
             }
         }
         idx += 1;
@@ -289,11 +288,13 @@ pub fn processAccumulateReports(
 
     // 12.11 Process reports that are ready from the queue and add to accumulatable
     pending_span.debug("Processing accumulation queue to find accumulatable reports", .{});
+    pending_span.debug("Accumulatable buffer before processAccumulationQueue: {d} items", .{accumulatable_buffer.items.len});
     try processAccumulationQueue(
         allocator,
         &pending_reports_queue,
         &accumulatable_buffer,
     );
+    pending_span.debug("Accumulatable buffer after processAccumulationQueue: {d} items", .{accumulatable_buffer.items.len});
 
     const execute_span = span.child(.execute_accumulatable);
     defer execute_span.deinit();
@@ -552,10 +553,16 @@ pub fn processAccumulateReports(
         // Count how many reports were processed for *this* service
         var count: u32 = 0;
         for (accumulated) |report| {
+            // Check if this report contains any work result for this service
+            var has_service = false;
             for (report.results) |work_result| {
                 if (work_result.service_id == service_id) {
-                    count += 1;
+                    has_service = true;
+                    break;
                 }
+            }
+            if (has_service) {
+                count += 1;
             }
         }
         try accumulation_stats.put(service_id, .{
