@@ -144,7 +144,7 @@ pub const ExecutionTrace = struct {
         var stream = std.io.fixedBufferStream(&buf);
         formatInstructionSimple(instruction, stream.writer()) catch return;
 
-        std.debug.print("STEP:{d:0>3} PC:0x{x:0>8} GAS_COST:{d} REMAINING:{d} | {s}\n", .{
+        std.debug.print("STEP:{d:0>3} PC:0x{d:0>8} GAS_COST:{d} REMAINING:{d} | {s}\n", .{
             self.step_counter,
             pc,
             gas_cost,
@@ -198,7 +198,7 @@ pub const ExecutionTrace = struct {
 
         for (current_registers, 0..) |reg_value, i| {
             if (reg_value != self.previous_registers[i]) {
-                std.debug.print("REG_CHANGE: r{}=0x{x}\n", .{ i, reg_value });
+                std.debug.print("REG_CHANGE: r{}=0x{x} ({d})\n", .{ i, reg_value, reg_value });
                 self.previous_registers[i] = reg_value;
             }
         }
@@ -216,7 +216,7 @@ pub const ExecutionTrace = struct {
         pc_after: u32,
     ) void {
         if (!self.enabled) return;
-        
+
         // Only log host calls in verbose mode
         if (self.mode != .verbose) return;
 

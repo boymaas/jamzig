@@ -79,8 +79,6 @@ pub const Params = struct {
     erasure_coded_pieces_per_segment: u32 = 6, // WP
     // WR: The maximum size of an encoded work-report in octets
     max_work_report_size: u32 = 48 * (1 << 10), // WR
-    // WS: The size of an exported segment in erasure-coded pieces (same as WP)
-    exported_segment_size: u32 = 6, // WS
     // WT: The size of a transfer memo in octets
     transfer_memo_size: u32 = 128, // WT
     // WX: The maximum number of exports in a work-package
@@ -135,21 +133,24 @@ pub const Params = struct {
 // };
 
 pub const TINY_PARAMS = Params{
-    .epoch_length = 12,
     .validators_count = 6,
-    .validator_rotation_period = 4, // rotation_period
-    .validators_super_majority = 5, // 2/3 + 1 of 6 validators
-    .recent_history_size = 8,
     .core_count = 2,
-    .avail_bitfield_bytes = 1, // (2 cores + 7) / 8
     .slot_period = 6,
+    .epoch_length = 12,
     .ticket_submission_end_epoch_slot = 10, // contest_duration
+    //
     .max_ticket_entries_per_validator = 3, // tickets_per_validator
     .max_tickets_per_extrinsic = 3,
+    //
+    .validator_rotation_period = 4, // rotation_period
+    //
+    .validators_super_majority = 5, // 2/3 + 1 of 6 validators
 
-    // W3F traces specify 1026 pieces, but with piece size 684 and segment size 4104
-    // we actually need: 4104 / 684 = 6 pieces per segment
-    // .erasure_coded_pieces_per_segment = 6, // num_ec_pieces_per_segment
+    .recent_history_size = 8,
+    .avail_bitfield_bytes = 1, // (2 cores + 7) / 8
+
+    // See: https://docs.jamcha.in/basics/chain-spec/tiny
+    .erasure_coded_pieces_per_segment = 1026, // num_ec_pieces_per_segment
     //
     // Override D from default 28_800 to 32 as specified in traces README
     .preimage_expungement_period = 32, // D

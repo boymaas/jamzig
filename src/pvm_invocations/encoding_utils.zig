@@ -70,17 +70,14 @@ pub fn encodeJamParams(allocator: std.mem.Allocator, params_val: Params) ![]u8 {
         .WC = params_val.max_service_code_size,
         .WE = params_val.erasure_coded_piece_size,
         .WM = params_val.max_imports_per_work_package,
-        .WP = params_val.exported_segment_size,
+        .WP = params_val.erasure_coded_pieces_per_segment,
         .WR = params_val.max_work_report_size,
         .WT = params_val.transfer_memo_size,
         .WX = params_val.max_exports_per_work_package,
         .Y = params_val.ticket_submission_end_epoch_slot,
     };
 
-    // std.debug.print("Encoding JAM Params: {s}\n", .{types.fmt.format(constants)});
-
-    const codec = @import("../codec.zig");
-    return try codec.serializeAlloc(EncodeMap, .{}, allocator, constants);
+    return try @import("../codec.zig").serializeAlloc(EncodeMap, .{}, allocator, constants);
 }
 
 /// Encode operand tuples array for accumulate context
