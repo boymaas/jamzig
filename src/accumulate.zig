@@ -554,15 +554,10 @@ pub fn processAccumulateReports(
         var count: u32 = 0;
         for (accumulated) |report| {
             // Check if this report contains any work result for this service
-            var has_service = false;
             for (report.results) |work_result| {
                 if (work_result.service_id == service_id) {
-                    has_service = true;
-                    break;
+                    count += 1;
                 }
-            }
-            if (has_service) {
-                count += 1;
             }
         }
         try accumulation_stats.put(service_id, .{

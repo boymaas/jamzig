@@ -153,7 +153,7 @@ pub const TINY_PARAMS = Params{
     .erasure_coded_pieces_per_segment = 1026, // num_ec_pieces_per_segment
     //
     // Override D from default 28_800 to 32 as specified in traces README
-    .preimage_expungement_period = 28_800, // D
+    .preimage_expungement_period = 32, // D
     // Keep other defaults from jam_params.zig
 };
 
