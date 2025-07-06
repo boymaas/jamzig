@@ -145,8 +145,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                     total_size += result_size;
                 }
 
-                // TODO: use a constant here
-                const max_size = comptime 48 * std.math.pow(usize, 2, 10);
+                const max_size = params.max_work_report_size;
                 size_span.debug("Total size: {d} bytes, limit: {d} bytes", .{ total_size, max_size });
 
                 if (total_size > max_size) {

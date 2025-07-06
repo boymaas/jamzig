@@ -174,12 +174,24 @@ pub const WorkPackage = struct {
     }
 };
 
+/// Work execution result as defined in JAM graypaper
+/// Corresponds to the error set J ∈ {∞, ⌊, ⊙, ⊖, BAD, BIG}
+/// See graypaper sections:
+/// - Definition: reporting_assurance.tex equation 98
+/// - Serialization: serialization.tex equation 37 (function O)
+/// - Usage: work_packages_and_reports.tex (countupexports function)
 pub const WorkExecResult = union(enum(u8)) {
+    /// Success with output data (corresponds to Y in graypaper)
     ok: []const u8 = 0,
+    /// Out of gas error (∞)
     out_of_gas: void = 1,
+    /// Panic error (⌊)
     panic: void = 2,
+    /// Bad exports error (⊙)
     bad_exports: void = 3,
+    /// Bad code error (BAD)
     bad_code: void = 4,
+    /// Code oversize error (BIG)
     code_oversize: void = 5,
 
     /// length of result
