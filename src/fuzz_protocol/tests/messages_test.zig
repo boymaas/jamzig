@@ -74,8 +74,9 @@ test "key-value state message" {
         .value = "test_value_2",
     };
 
-    const state = [_]messages.KeyValue{ kv1, kv2 };
-    const message = messages.Message{ .state = &state };
+    const state_items = [_]messages.KeyValue{ kv1, kv2 };
+    const state = messages.State{ .items = &state_items };
+    const message = messages.Message{ .state = state };
 
     // Encode and decode
     const encoded = try messages.encodeMessage(allocator, message);
@@ -87,11 +88,11 @@ test "key-value state message" {
     // Verify decoded message
     switch (decoded.value) {
         .state => |decoded_state| {
-            try testing.expectEqual(@as(usize, 2), decoded_state.len);
-            try testing.expectEqualSlices(u8, &kv1.key, &decoded_state[0].key);
-            try testing.expectEqualStrings(kv1.value, decoded_state[0].value);
-            try testing.expectEqualSlices(u8, &kv2.key, &decoded_state[1].key);
-            try testing.expectEqualStrings(kv2.value, decoded_state[1].value);
+            try testing.expectEqual(@as(usize, 2), decoded_state.items.len);
+            try testing.expectEqualSlices(u8, &kv1.key, &decoded_state.items[0].key);
+            try testing.expectEqualStrings(kv1.value, decoded_state.items[0].value);
+            try testing.expectEqualSlices(u8, &kv2.key, &decoded_state.items[1].key);
+            try testing.expectEqualStrings(kv2.value, decoded_state.items[1].value);
         },
         else => try testing.expect(false),
     }

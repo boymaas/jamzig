@@ -168,7 +168,7 @@ pub const TargetServer = struct {
             .set_state => |set_state| {
                 if (self.server_state != .handshake_complete and self.server_state != .ready) return error.HandshakeNotComplete;
 
-                span.debug("Processing SetState with {d} key-value pairs", .{set_state.state.len});
+                span.debug("Processing SetState with {d} key-value pairs", .{set_state.state.items.len});
 
                 // Clear current state
                 if (self.current_state) |*s| s.deinit(self.allocator);
@@ -222,7 +222,7 @@ pub const TargetServer = struct {
                 );
                 // Transfer ownership to the message response
                 const state = result.state;
-                result.state = &[_]messages.KeyValue{}; // Clear to prevent double-free
+                result.state = messages.State.Empty; // Clear to prevent double-free
                 result.deinit(); // Clean up the result struct
 
                 return messages.Message{ .state = state };

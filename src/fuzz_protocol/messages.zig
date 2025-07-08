@@ -41,7 +41,19 @@ pub const KeyValue = struct {
 };
 
 /// State as a sequence of key-value pairs
-pub const State = []const KeyValue;
+pub const State = struct {
+    items: []const KeyValue,
+
+    pub const Empty = State{ .items = &[_]KeyValue{} };
+
+    /// Free all allocated memory for the state
+    pub fn deinit(self: *State, allocator: std.mem.Allocator) void {
+        for (self.items) |kv| {
+            allocator.free(kv.value);
+        }
+        allocator.free(self.items);
+    }
+};
 
 /// Block import message using complex JAM types
 pub const ImportBlock = types.Block;
@@ -71,12 +83,8 @@ pub const Message = union(enum) {
     /// Free any allocated memory for this message
     pub fn deinit(self: *Message, allocator: std.mem.Allocator) void {
         switch (self.*) {
-            .state => |state| {
-                // Free all key-value pairs
-                for (state) |kv| {
-                    allocator.free(kv.value);
-                }
-                allocator.free(state);
+            .state => |*state| {
+                state.deinit(allocator);
             },
             // Other message types don't allocate memory
             .peer_info,

@@ -15,6 +15,7 @@ const stf = @import("../stf.zig");
 const jam_params = @import("../jam_params.zig");
 const JamState = @import("../state.zig").JamState;
 const state_merklization = @import("../state_merklization.zig");
+const state_dictionary = @import("../state_dictionary.zig");
 
 const trace = @import("../tracing.zig").scoped(.fuzz_protocol);
 
@@ -177,7 +178,7 @@ pub const Fuzzer = struct {
     pub fn setState(self: *Fuzzer, header: types.Header, state: messages.State) !messages.StateRootHash {
         const span = trace.span(.fuzzer_set_state);
         defer span.deinit();
-        span.debug("Setting state on target with {d} key-value pairs", .{state.len});
+        span.debug("Setting state on target with {d} key-value pairs", .{state.items.len});
 
         if (self.state != .handshake_complete) {
             return error.HandshakeNotComplete;
@@ -244,10 +245,10 @@ pub const Fuzzer = struct {
 
         switch (response.value) {
             .state => |state| {
-                span.debug("Received state with {d} key-value pairs", .{state.len});
+                span.debug("Received state with {d} key-value pairs", .{state.items.len});
                 // Transfer ownership to caller - clear response to prevent double-free
                 const result = state;
-                response.value = .{ .state = &[_]messages.KeyValue{} };
+                response.value = .{ .state = messages.State.Empty };
                 return result;
             },
             else => return error.UnexpectedGetStateResponse,
@@ -333,9 +334,9 @@ pub const Fuzzer = struct {
             sequoia.logging.printBlockEntropyDebug(messages.FUZZ_PARAMS, &self.latest_block.?, self.current_jam_state);
 
             // Send to target
-            const target_root = self.sendBlock(self.latest_block.?) catch |err| {
+            const reported_target_root = self.sendBlock(self.latest_block.?) catch |err| {
                 block_span.err("Error sending block to target: {s}", .{@errorName(err)});
-                
+
                 // Return partial result with the error
                 return report.FuzzResult{
                     .seed = self.seed,
@@ -347,23 +348,48 @@ pub const Fuzzer = struct {
             };
 
             // Compare state roots
-            if (!compareStateRoots(local_root, target_root)) {
+            if (!compareStateRoots(local_root, reported_target_root)) {
                 block_span.debug("State root mismatch detected!", .{});
+
+                // Build local dictionary
+                var local_dict = try state_dictionary.buildStateMerklizationDictionary(
+                    messages.FUZZ_PARAMS,
+                    self.allocator,
+                    self.current_jam_state,
+                );
+                errdefer local_dict.deinit();
 
                 // Retrieve full target state for analysis
                 const block_header_hash = try self.latest_block.?.header.header_hash(messages.FUZZ_PARAMS, self.allocator);
-                const target_state = self.getState(block_header_hash) catch |err| blk: {
+                var target_state: ?messages.State = self.getState(block_header_hash) catch |err| blk: {
                     block_span.err("Failed to retrieve target state: {s}", .{@errorName(err)});
                     break :blk null;
                 };
+                defer if (target_state) |*ts| {
+                    ts.deinit(self.allocator);
+                };
+
+                // Build target dictionary and validate if we got state
+                var target_dict: ?state_dictionary.MerklizationDictionary = null;
+                var target_computed_root: ?messages.StateRootHash = null;
+                if (target_state) |ts| {
+                    // Convert to MerklizationDictionary
+                    target_dict = try state_converter.fuzzStateToMerklizationDictionary(self.allocator, ts);
+                    errdefer if (target_dict) |*td| td.deinit();
+
+                    // Verify state root
+                    const computed_root = try target_dict.?.buildStateRoot(self.allocator);
+                    target_computed_root = computed_root;
+                }
 
                 // Create mismatch entry
                 const mismatch = report.Mismatch{
                     .block_number = block_num,
                     .block = try self.latest_block.?.deepClone(self.allocator),
-                    .local_state_root = local_root,
-                    .target_state_root = target_root,
-                    .target_state = target_state,
+                    .reported_state_root = reported_target_root,
+                    .local_dict = local_dict,
+                    .target_dict = target_dict,
+                    .target_computed_root = target_computed_root,
                 };
 
                 // Create result

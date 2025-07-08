@@ -36,9 +36,9 @@ pub const FuzzStateResult = struct {
 
         fn finalize(self: *Builder, root: messages.StateRootHash) !FuzzStateResult {
             self.root = root;
-            const state = try self.list.toOwnedSlice();
+            const items = try self.list.toOwnedSlice();
             return FuzzStateResult{
-                .state = state,
+                .state = messages.State{ .items = items },
                 .root = root,
                 .allocator = self.allocator,
             };
@@ -57,12 +57,7 @@ pub const FuzzStateResult = struct {
 
     /// Free all allocated memory
     pub fn deinit(self: *FuzzStateResult) void {
-        // Free all the copied values
-        for (self.state) |kv| {
-            self.allocator.free(kv.value);
-        }
-        // Free the array itself
-        self.allocator.free(self.state);
+        self.state.deinit(self.allocator);
     }
 };
 
@@ -124,7 +119,7 @@ pub fn dictionaryToFuzzState(
         };
     }
 
-    return state_array;
+    return messages.State{ .items = state_array };
 }
 
 /// Builds a MerklizationDictionary from fuzz protocol State format
@@ -136,7 +131,7 @@ pub fn fuzzStateToMerklizationDictionary(
     var dict = state_dictionary.MerklizationDictionary.init(allocator);
     errdefer dict.deinit();
 
-    for (state) |kv| {
+    for (state.items) |kv| {
         // Create a copy of the value since the dictionary takes ownership
         const value_copy = try allocator.dupe(u8, kv.value);
         errdefer allocator.free(value_copy);
