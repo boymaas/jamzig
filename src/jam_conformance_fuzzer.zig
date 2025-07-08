@@ -142,7 +142,7 @@ pub fn main() !void {
     // Run fuzzing cycle
     std.debug.print("Starting conformance testing with {d} blocks...\n", .{num_blocks});
     var result = try fuzzer.runFuzzCycle(num_blocks);
-    defer result.deinit();
+    defer result.deinit(allocator);
 
     // End session
     fuzzer.endSession();

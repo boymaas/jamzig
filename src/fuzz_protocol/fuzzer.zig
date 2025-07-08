@@ -333,7 +333,18 @@ pub const Fuzzer = struct {
             sequoia.logging.printBlockEntropyDebug(messages.FUZZ_PARAMS, &self.latest_block.?, self.current_jam_state);
 
             // Send to target
-            const target_root = try self.sendBlock(self.latest_block.?);
+            const target_root = self.sendBlock(self.latest_block.?) catch |err| {
+                block_span.err("Error sending block to target: {s}", .{@errorName(err)});
+                
+                // Return partial result with the error
+                return report.FuzzResult{
+                    .seed = self.seed,
+                    .blocks_processed = block_num,
+                    .mismatch = null,
+                    .success = false,
+                    .err = err,
+                };
+            };
 
             // Compare state roots
             if (!compareStateRoots(local_root, target_root)) {
@@ -361,7 +372,6 @@ pub const Fuzzer = struct {
                     .blocks_processed = block_num,
                     .mismatch = mismatch,
                     .success = false,
-                    .allocator = self.allocator,
                 };
             } else {
                 block_span.debug("State roots match: {s}", .{std.fmt.fmtSliceHexLower(&local_root)});
@@ -376,7 +386,6 @@ pub const Fuzzer = struct {
             .blocks_processed = num_blocks,
             .mismatch = null,
             .success = true,
-            .allocator = self.allocator,
         };
     }
 

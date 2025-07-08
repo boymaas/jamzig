@@ -56,7 +56,7 @@ test "fuzzer_basic_cycle" {
 
     // Run a short fuzzing cycle (this is an integration test with background target)
     var result = try fuzzer.runFuzzCycle(3);
-    defer result.deinit();
+    defer result.deinit(allocator);
 
     // This will also stop the target manager
     fuzzer.endSession();

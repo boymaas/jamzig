@@ -28,12 +28,12 @@ pub const FuzzResult = struct {
     blocks_processed: usize,
     mismatch: ?Mismatch,
     success: bool,
-    allocator: std.mem.Allocator,
+    err: ?anyerror = null,
 
     /// Clean up all allocated data
-    pub fn deinit(self: *FuzzResult) void {
+    pub fn deinit(self: *FuzzResult, allocator: std.mem.Allocator) void {
         if (self.mismatch) |*mismatch| {
-            mismatch.deinit(self.allocator);
+            mismatch.deinit(allocator);
         }
     }
 
@@ -56,7 +56,16 @@ pub fn generateReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
     try writer.print("Seed: {d}\n", .{result.seed});
     try writer.print("Blocks Processed: {d}\n", .{result.blocks_processed});
     try writer.print("Success: {}\n", .{result.isSuccess()});
-    try writer.print("Mismatches Found: {d}\n\n", .{if (result.mismatch != null) @as(usize, 1) else @as(usize, 0)});
+    try writer.print("Mismatches Found: {d}\n", .{if (result.mismatch != null) @as(usize, 1) else @as(usize, 0)});
+    
+    // Show error if present
+    if (result.err) |err| {
+        try writer.print("Error: {s}\n", .{@errorName(err)});
+        if (err == error.BrokenPipe or err == error.UnexpectedEndOfStream) {
+            try writer.print("(Target appears to have disconnected)\n", .{});
+        }
+    }
+    try writer.print("\n", .{});
 
     // Reproduction instructions
     try writer.print("Reproduction Instructions:\n", .{});
@@ -112,14 +121,28 @@ pub fn generateReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
         try writer.print("✓ All state roots matched between local and target\n", .{});
         try writer.print("✓ Target implementation appears to be conformant for this test\n", .{});
     } else {
-        try writer.print("✗ 1 mismatch detected during fuzzing\n", .{});
-        try writer.print("✗ Target implementation may have conformance issues\n", .{});
-        try writer.print("✗ Manual inspection required to determine root cause\n", .{});
+        if (result.err) |err| {
+            try writer.print("✗ Error occurred during testing: {s}\n", .{@errorName(err)});
+            try writer.print("✗ Testing stopped at block {d}\n", .{result.blocks_processed});
+            if (err == error.BrokenPipe or err == error.UnexpectedEndOfStream) {
+                try writer.print("✗ Target connection was lost\n", .{});
+            }
+        } else if (result.mismatch != null) {
+            try writer.print("✗ 1 mismatch detected during fuzzing\n", .{});
+            try writer.print("✗ Target implementation may have conformance issues\n", .{});
+            try writer.print("✗ Manual inspection required to determine root cause\n", .{});
+        }
         try writer.print("\nRecommendations:\n", .{});
-        try writer.print("1. Examine the mismatched blocks against the JAM specification\n", .{});
-        try writer.print("2. Compare target state with expected local state\n", .{});
-        try writer.print("3. Verify target implementation of state transition logic\n", .{});
-        try writer.print("4. Re-run with same seed to confirm reproducibility\n", .{});
+        if (result.err) |_| {
+            try writer.print("1. Check that the target is still running\n", .{});
+            try writer.print("2. Verify network connectivity\n", .{});
+            try writer.print("3. Re-run the test to see if error persists\n", .{});
+        } else {
+            try writer.print("1. Examine the mismatched blocks against the JAM specification\n", .{});
+            try writer.print("2. Compare target state with expected local state\n", .{});
+            try writer.print("3. Verify target implementation of state transition logic\n", .{});
+            try writer.print("4. Re-run with same seed to confirm reproducibility\n", .{});
+        }
     }
 
     return allocator.dupe(u8, report.items);
@@ -136,12 +159,13 @@ pub fn generateJsonReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u
     try writer.print("\"seed\": {d},", .{result.seed});
     try writer.print("\"blocks_processed\": {d},", .{result.blocks_processed});
     try writer.print("\"success\": {},", .{result.isSuccess()});
-    try writer.print("\"mismatch_count\": {d},", .{result.mismatches.len});
-    try writer.print("\"mismatches\": [", .{});
-
-    for (result.mismatches, 0..) |mismatch, i| {
-        if (i > 0) try writer.print(",", .{});
-        try writer.print("{{", .{});
+    
+    if (result.err) |err| {
+        try writer.print("\"error\": \"{s}\",", .{@errorName(err)});
+    }
+    
+    if (result.mismatch) |mismatch| {
+        try writer.print("\"mismatch\": {{", .{});
         try writer.print("\"block_number\": {d},", .{mismatch.block_number});
         try writer.print("\"local_state_root\": \"{s}\",", .{std.fmt.fmtSliceHexLower(&mismatch.local_state_root)});
         try writer.print("\"target_state_root\": \"{s}\",", .{std.fmt.fmtSliceHexLower(&mismatch.target_state_root)});
@@ -154,9 +178,10 @@ pub fn generateJsonReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u
         }
 
         try writer.print("}}", .{});
+    } else {
+        try writer.print("\"mismatch\": null", .{});
     }
-
-    try writer.print("]", .{});
+    
     try writer.print("}}", .{});
 
     return allocator.dupe(u8, json.items);
