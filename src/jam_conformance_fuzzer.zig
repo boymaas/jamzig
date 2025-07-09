@@ -13,10 +13,9 @@ const trace = @import("tracing.zig").scoped(.jam_conformance_fuzzer);
 
 fn showHelp(params: anytype) !void {
     std.debug.print(
-        \\JAM Conformance Fuzzer: Protocol conformance testing tool for JAM implementations
+        \\JamZig⚡ Conformance Fuzzer: Protocol conformance testing tool for JAM implementations
         \\
-        \\This tool connects to a JAM protocol target server and performs conformance testing
-        \\by generating deterministic blocks and comparing state transitions.
+        \\This tool connects to a JAM protocol target server and performs conformance testing according to the JAM fuzz protocol specification by generating deterministic blocks and comparing state transitions.
         \\
         \\
     , .{});
