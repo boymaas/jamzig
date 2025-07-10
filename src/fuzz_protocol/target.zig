@@ -34,7 +34,7 @@ pub const TargetServer = struct {
     current_state: ?jamstate.JamState(messages.FUZZ_PARAMS) = null,
     current_state_root: ?messages.StateRootHash = null,
     server_state: ServerState = .initial,
-    
+
     // Block importer
     block_importer: block_import.BlockImporter(messages.FUZZ_PARAMS),
 
@@ -119,7 +119,10 @@ pub const TargetServer = struct {
             span.debug("Received message: {s}", .{@tagName(request_message)});
 
             // Process message and generate response
-            var response_message = try self.processMessage(request_message);
+            var response_message = self.processMessage(request_message) catch |err| {
+                std.debug.print("Error processing message {s}: {s}. Stopping processing after this message.\n", .{ @tagName(request_message), @errorName(err) });
+                return err;
+            };
             defer if (response_message) |*msg| {
                 msg.deinit(self.allocator);
             };
@@ -198,12 +201,15 @@ pub const TargetServer = struct {
                 span.debug("Processing ImportBlock", .{});
 
                 // Use unified block importer with validation
-                const result = try self.block_importer.importBlock(
+                const result = self.block_importer.importBlock(
                     &self.current_state.?,
                     &block,
-                );
+                ) catch |err| {
+                    std.debug.print("Failed to import block: {s}. State remains unchanged.\n", .{@errorName(err)});
+                    return messages.Message{ .state_root = self.current_state_root.? };
+                };
                 defer result.state_transition.deinitHeap();
-                
+
                 span.debug("Block imported successfully, sealed with tickets: {}", .{result.sealed_with_tickets});
 
                 // SET TO TRUE to simulate a failing state transition
