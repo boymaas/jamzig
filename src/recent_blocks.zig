@@ -170,6 +170,14 @@ pub const RecentHistory = struct {
         }
     }
 
+    /// Gets the hash of the most recent block, or returns zero hash if no blocks
+    pub fn getLastBlockHash(self: *const Self) types.Hash {
+        if (self.blocks.getLastOrNull()) |last_block| {
+            return last_block.header_hash;
+        }
+        return std.mem.zeroes(types.Hash);
+    }
+
     /// Performs a deep clone of the RecentHistory as efficiently as possible
     pub fn deepClone(self: *const Self, allocator: Allocator) !Self {
         var clone = try Self.init(allocator, self.max_blocks);

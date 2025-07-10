@@ -219,6 +219,15 @@ pub fn JamState(comptime params: Params) type {
             return true;
         }
 
+        // will be optimized out
+        pub fn debugCheckIfFullyInitialized(self: *const JamState(params)) !void {
+            if (@import("builtin").mode == .Debug) {
+                if (!try self.checkIfFullyInitialized()) {
+                    return error.StateNotFullyInitialized;
+                }
+            }
+        }
+
         pub fn deepClone(self: *const JamState(params), allocator: std.mem.Allocator) !JamState(params) {
             var clone = JamState(params){};
             inline for (std.meta.fields(JamState(params))) |field| {
