@@ -439,10 +439,8 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             }
 
             var tickets_mark: ?types.TicketsMark = null;
-            if (!self.block_time.isNewEpoch() // Same epoch
-            and !self.block_time.isInTicketSubmissionPeriod() // Current slot after submission end
-            and self.block_time.isConsecutiveEpoch() // We did not skip an epoch
-            and self.state.gamma.?.a.len == params.epoch_length //
+            if (self.block_time.didCrossTicketSubmissionEnd() // Same epoch
+            and self.state.gamma.?.a.len == params.epoch_length // TODO: make a method out of this
             ) {
 
                 // TODO: untested, need ticket submission first
@@ -465,16 +463,16 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             };
             eta_prime[0] = @import("entropy.zig").update(self.state.eta.?[0], try entropy_source.outputHash());
 
-            const tickets = types.TicketsExtrinsic{ .data = &[_]types.TicketEnvelope{} };
-            // {
-            //     const span_gen_tickets = span.child(.generate_tickets);
-            //     if (self.block_time.slotsUntilTicketSubmissionEnds()) |remaining_slots| {
-            //         span_gen_tickets.debug("Generating ticket submissions submission - {d} slots remaining", .{remaining_slots});
-            //         tickets = .{ .data = try self.generateTickets(&eta_prime) };
-            //     } else {
-            //         span_gen_tickets.debug("Outside ticket submission period", .{});
-            //     }
-            // }
+            var tickets = types.TicketsExtrinsic{ .data = &[_]types.TicketEnvelope{} };
+            {
+                const span_gen_tickets = span.child(.generate_tickets);
+                if (self.block_time.slotsUntilTicketSubmissionEnds()) |remaining_slots| {
+                    span_gen_tickets.debug("Generating ticket submissions submission - {d} slots remaining", .{remaining_slots});
+                    tickets = .{ .data = try self.generateTickets(&eta_prime) };
+                } else {
+                    span_gen_tickets.debug("Outside ticket submission period", .{});
+                }
+            }
 
             // Ticket counts are now reset in the epoch transition logic above</REPLACE>
 
@@ -564,7 +562,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 }
 
                 // ~20% chance to submit a ticket per block if eligible
-                if (self.rng.intRangeAtMost(u8, 0, 10) < 2) {
+                if (self.rng.intRangeAtMost(u8, 0, 10) < 3) {
                     span.debug("Generating ticket for validator {d}", .{idx});
 
                     // Create prover for this validator

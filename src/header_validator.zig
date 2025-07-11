@@ -285,14 +285,10 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
             }
 
             // Check tickets marker timing
-            if (transition_time.isSameEpoch() and transition_time.didCrossTicketSubmissionEnd()) {
+            if (transition_time.didCrossTicketSubmissionEnd()) {
                 // Tickets marker validation would go here if needed
             } else if (header.tickets_mark != null) {
-                if (!transition_time.isSameEpoch()) {
-                    span.err("Tickets marker present but we're in a new epoch", .{});
-                } else {
-                    span.err("Tickets marker present but submission period not ended", .{});
-                }
+                span.err("Tickets marker present but we did not cross didCrossTicketSubmissionEnd", .{});
                 return HeaderValidationError.InvalidTicketsMarkerTiming;
             }
         }
