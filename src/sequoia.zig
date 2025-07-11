@@ -245,7 +245,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             span.debug("Signing with Bandersnatch keypair", .{});
             span.trace("Using public key: {any}", .{std.fmt.fmtSliceHexLower(&author_keys.bandersnatch_keypair.public_key.toBytes())});
             const signature = try author_keys.bandersnatch_keypair
-                .sign(&[_]u8{}, context);
+                .sign(context, &[_]u8{});
             span.trace("Generated signature: {s}", .{std.fmt.fmtSliceHexLower(&signature.toBytes())});
 
             const output = try signature.outputHash();
@@ -274,7 +274,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
 
             span.debug("Generating Bandersnatch signature", .{});
             const entropy_source = try author_keys.bandersnatch_keypair
-                .sign(&[_]u8{}, context);
+                .sign(context, &[_]u8{});
 
             span.debug("Generated entropy source signature", .{});
             span.trace("Entropy source bytes: {any}", .{std.fmt.fmtSliceHexLower(&entropy_source.toBytes())});
