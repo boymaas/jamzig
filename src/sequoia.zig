@@ -399,15 +399,25 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 self.block_time.current_slot_in_epoch,
             });
 
-            // Select block producer for this slot, there is an interesting
-            // detail here. As on the first block of a new epoch there could be a state
-            // change from fallback ==> tickets. Or transitions from one set of tickets
-            // to the other set of ticktets tickets ==> tickets.
+            // We do not have the tickets integrated in the state yet, so we need a condition here where
             //
-            // Now for building blocks, the first block produced in the new epoch will use the old
-            // fallback keys or old tickets.
-            const author_index = try self.selectBlockAuthor();
-            span.debug("Selected block author index: {d}", .{author_index});
+            var needs_cleanup = false;
+            var gamma_s_prime: types.GammaS =
+                // When we are on the boundary
+                if (self.block_time.priorWasInTicketSubmissionTail() and
+                self.block_time.isConsecutiveEpoch()) brl: {
+                    needs_cleanup = false; // FIXME:
+                    if (self.state.gamma.?.a.len == params.epoch_length) {
+                        break :brl .{ .tickets = try @import("safrole/ordering.zig").outsideInOrdering(types.TicketBody, self.allocator, self.state.gamma.?.a) };
+                    } else {
+                        break :brl .{ .keys = try self.state.gamma.?.k.getBandersnatchPublicKeys(self.allocator) };
+                    }
+                    // Else we have settled
+                } else self.state.gamma.?.s;
+
+            if (needs_cleanup) {
+                gamma_s_prime.deinit(self.allocator);
+            }
 
             // If the block we are producing will initiate the new epoch, selectBlockAuthor will
             // need to old keys, that is the current ones
@@ -422,6 +432,16 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 // Reset ticket counts for next epoch
                 self.tickets_submitted = std.mem.zeroes([params.validators_count]u8);
             }
+
+            // Select block producer for this slot, there is an interesting
+            // detail here. As on the first block of a new epoch there could be a state
+            // change from fallback ==> tickets. Or transitions from one set of tickets
+            // to the other set of ticktets tickets ==> tickets.
+            //
+            // Now for building blocks, the first block produced in the new epoch will use the old
+            // fallback keys or old tickets.
+            const author_index = try self.selectBlockAuthor(gamma_s_prime);
+            span.debug("Selected block author index: {d}", .{author_index});
 
             const author_keys = self.config.validator_keys[author_index];
 
@@ -457,7 +477,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 eta_prime[1] = eta_current[0];
             }
 
-            const entropy_source = switch (self.state.gamma.?.s) {
+            const entropy_source = switch (gamma_s_prime) {
                 .tickets => |tickets| try generateEntropySourceTicket(author_keys, tickets[self.block_time.current_slot_in_epoch]),
                 .keys => try generateEntropySourceFallback(author_keys, &eta_prime),
             };
@@ -503,7 +523,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             };
 
             // Generate block seal
-            const block_seal = switch (self.state.gamma.?.s) {
+            const block_seal = switch (gamma_s_prime) {
                 .keys => try generateBlockSealFallback(
                     self.allocator,
                     &header,
@@ -550,6 +570,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             var generated = std.ArrayList(GeneratedTicket).init(self.allocator);
             defer generated.deinit();
 
+            // The ring
             const gamma_k_keys = try self.state.gamma.?.k.getBandersnatchPublicKeys(self.allocator);
             defer self.allocator.free(gamma_k_keys);
 
@@ -720,23 +741,20 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             return found_index;
         }
 
-        fn selectBlockAuthor(self: *Self) !types.ValidatorIndex {
+        fn selectBlockAuthor(self: *Self, gamma_s_prime: types.GammaS) !types.ValidatorIndex {
             const span = trace.span(.select_block_author);
             defer span.deinit();
             span.debug("Selecting block author for slot {d}", .{self.block_time.current_slot});
 
-            if (self.state.gamma) |gamma| {
-                // Get index into gamma_s using current slot
-                const slot_in_epoch = self.block_time.current_slot_in_epoch;
-                span.debug("Slot in epoch: {d}", .{slot_in_epoch});
+            // Get index into gamma_s using current slot
+            const slot_in_epoch = self.block_time.current_slot_in_epoch;
+            span.debug("Slot in epoch: {d}", .{slot_in_epoch});
 
-                // Select based on gamma_s mode
-                return switch (gamma.s) {
-                    .tickets => |tickets| try self.selectBlockAuthorFromTickets(tickets, slot_in_epoch),
-                    .keys => |keys| try self.selectBlockAuthorFromKeys(keys, slot_in_epoch),
-                };
-            }
-            return error.NoValidatorSet;
+            // Select based on gamma_s mode
+            return switch (gamma_s_prime) {
+                .tickets => |tickets| try self.selectBlockAuthorFromTickets(tickets, slot_in_epoch),
+                .keys => |keys| try self.selectBlockAuthorFromKeys(keys, slot_in_epoch),
+            };
         }
     };
 }
