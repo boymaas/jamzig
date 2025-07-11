@@ -149,8 +149,6 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
                 .author_key = author_key,
                 .entropy = entropy,
                 .tickets = tickets.tickets,
-                // REFACTOR: since this is done based on the if we have tickets or not this can be pulled into
-                // the validateSeal function. Or give me a reason why you like it outside.
                 .context_prefix = if (tickets.tickets != null) SEAL_CONTEXT_TICKET else SEAL_CONTEXT_FALLBACK,
             };
 

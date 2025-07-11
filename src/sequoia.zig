@@ -312,7 +312,7 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             // Generate and return the seal signature
             span.debug("Generating Bandersnatch signature", .{});
             const signature = try author_keys.bandersnatch_keypair
-                .sign(header_unsigned, context);
+                .sign(context, header_unsigned);
 
             span.debug("Generated block seal signature", .{});
             span.trace("Seal signature bytes: {any}", .{std.fmt.fmtSliceHexLower(&signature.toBytes())});
@@ -464,11 +464,36 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             }
             eta_prime[0] = @import("entropy.zig").update(self.state.eta.?[0], try entropy_source.outputHash());
 
+            const tickets = types.TicketsExtrinsic{ .data = &[_]types.TicketEnvelope{} };
+            // {
+            //     const span_gen_tickets = span.child(.generate_tickets);
+            //     if (self.block_time.slotsUntilTicketSubmissionEnds()) |remaining_slots| {
+            //         span_gen_tickets.debug("Generating ticket submissions submission - {d} slots remaining", .{remaining_slots});
+            //         tickets = .{ .data = try self.generateTickets(&eta_prime) };
+            //     } else {
+            //         span_gen_tickets.debug("Outside ticket submission period", .{});
+            //     }
+            // }
+
+            // Ticket counts are now reset in the epoch transition logic above</REPLACE>
+
+            const extrinsic = types.Extrinsic{
+                .tickets = tickets,
+                .preimages = .{ .data = &[_]types.Preimage{} },
+                .guarantees = .{ .data = &[_]types.ReportGuarantee{} },
+                .assurances = .{ .data = &[_]types.AvailAssurance{} },
+                .disputes = .{
+                    .verdicts = &[_]types.Verdict{},
+                    .culprits = &[_]types.Culprit{},
+                    .faults = &[_]types.Fault{},
+                },
+            };
+
             // Create initial header without signatures
             var header = types.Header{
                 .parent = if (self.last_header_hash) |hash| hash else std.mem.zeroes(types.Hash),
                 .parent_state_root = if (self.last_state_root) |root| root else std.mem.zeroes(types.Hash),
-                .extrinsic_hash = std.mem.zeroes(types.Hash),
+                .extrinsic_hash = try extrinsic.calculateHash(params, self.allocator),
                 .slot = self.block_time.current_slot,
                 .author_index = author_index,
                 .epoch_mark = epoch_mark,
@@ -486,43 +511,15 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                     author_keys,
                     &eta_prime,
                 ),
-                .tickets => |tickets| try generateBlockSealTickets(
+                .tickets => |t| try generateBlockSealTickets(
                     self.allocator,
                     &header,
                     author_keys,
                     &eta_prime,
-                    tickets[self.block_time.current_slot_in_epoch],
+                    t[self.block_time.current_slot_in_epoch],
                 ),
             };
             header.seal = block_seal.toBytes();
-
-            var tickets = types.TicketsExtrinsic{ .data = &[_]types.TicketEnvelope{} };
-            {
-                const span_gen_tickets = span.child(.generate_tickets);
-                if (self.block_time.slotsUntilTicketSubmissionEnds()) |remaining_slots| {
-                    span_gen_tickets.debug("Generating ticket submissions submission - {d} slots remaining", .{remaining_slots});
-                    tickets = .{ .data = try self.generateTickets(&eta_prime) };
-                } else {
-                    span_gen_tickets.debug("Outside ticket submission period", .{});
-                }
-            }
-
-            // Ticket counts are now reset in the epoch transition logic above</REPLACE>
-
-            const extrinsic = types.Extrinsic{
-                .tickets = tickets,
-                .preimages = .{ .data = &[_]types.Preimage{} },
-                .guarantees = .{ .data = &[_]types.ReportGuarantee{} },
-                .assurances = .{ .data = &[_]types.AvailAssurance{} },
-                .disputes = .{
-                    .verdicts = &[_]types.Verdict{},
-                    .culprits = &[_]types.Culprit{},
-                    .faults = &[_]types.Fault{},
-                },
-            };
-
-            // Now we set the ticket extrinsic hash in the header
-            header.extrinsic_hash = try extrinsic.calculateHash(params, self.allocator);
 
             // Assemble complete block
             const block = types.Block{
