@@ -29,6 +29,11 @@ pub fn BlockImporter(comptime params: jam_params.Params) type {
             state_transition: *StateTransition(params),
             /// Whether the block was sealed with tickets
             sealed_with_tickets: bool,
+
+            pub fn commit(self: *ImportResult) !void {
+                // Commit the state transition to the heap
+                try self.state_transition.mergePrimeOntoBase();
+            }
         };
 
         pub fn init(allocator: std.mem.Allocator) Self {
@@ -80,6 +85,5 @@ pub fn BlockImporter(comptime params: jam_params.Params) type {
                 .sealed_with_tickets = validation_result.sealed_with_tickets,
             };
         }
-
     };
 }

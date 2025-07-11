@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
+const block_import = @import("block_import.zig");
 const stf = @import("stf.zig");
 const sequoia = @import("sequoia.zig");
 const state = @import("state.zig");
@@ -38,6 +39,8 @@ test "sequoia: State transition with sequoia-generated blocks" {
     //     try sequoia.logging.allocPrintStateDebug(jam_params.TINY_PARAMS, allocator, current_state);
     // defer allocator.free(debug_last_state);
 
+    var block_importer = block_import.BlockImporter(jam_params.TINY_PARAMS).init(allocator);
+
     // Generate and process multiple blocks
     for (0..num_blocks) |_| {
         // Build next block
@@ -48,10 +51,14 @@ test "sequoia: State transition with sequoia-generated blocks" {
         sequoia.logging.printBlockEntropyDebug(jam_params.TINY_PARAMS, &block, current_state);
 
         // Perform state transition
-        var state_transition = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, current_state, &block);
-        defer state_transition.deinitHeap();
+        var result = try block_importer.importBlock(current_state, &block);
+        try result.commit();
 
-        try state_transition.mergePrimeOntoBase();
+        // OLD WAY
+        // var state_transition = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, current_state, &block);
+        // defer state_transition.deinitHeap();
+        //
+        // try state_transition.mergePrimeOntoBase();
 
         // Log block information for debugging after state transition
         // const debug_current_state = try sequoia.logging.allocPrintStateDebug(jam_params.TINY_PARAMS, allocator, current_state);
