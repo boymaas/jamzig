@@ -208,13 +208,15 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             const registry_current = std.AutoHashMap(types.OpaqueHash, TicketRegistryEntry).init(allocator);
             const registry_previous = std.AutoHashMap(types.OpaqueHash, TicketRegistryEntry).init(allocator);
 
+            const state = try config.buildJamState(allocator, rng);
+
             return Self{
                 .allocator = allocator,
                 .config = config,
-                .state = try config.buildJamState(allocator, rng),
+                .state = state,
                 .block_time = params.Time().init(config.initial_slot, config.initial_slot),
                 .last_header_hash = null,
-                .last_state_root = null,
+                .last_state_root = try state.buildStateRoot(allocator),
                 .rng = rng,
                 .tickets_submitted = std.mem.zeroes([params.validators_count]u8),
                 .ticket_registry_current = registry_current,
