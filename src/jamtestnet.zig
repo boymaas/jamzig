@@ -272,24 +272,6 @@ pub fn runBlockImportTests(
         std.log.err("Expected extrinsic hash: {s}", .{std.fmt.fmtSliceHexLower(&block.header.extrinsic_hash)});
         std.log.err("Calculated extrinsic hash: {s}", .{std.fmt.fmtSliceHexLower(&calculated_hash)});
 
-        // Test: what if we just double-hash empty bytes?
-        const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
-        var test_hash1: [32]u8 = undefined;
-        Blake2b256.hash(&[_]u8{}, &test_hash1, .{});
-        var test_hash2: [32]u8 = undefined;
-        Blake2b256.hash(&test_hash1, &test_hash2, .{});
-        std.log.err("Double hash of empty bytes: {s}", .{std.fmt.fmtSliceHexLower(&test_hash2)});
-
-        // Temporarily skip block import if hashes don't match to see the values
-        if (!std.mem.eql(u8, &block.header.extrinsic_hash, &calculated_hash)) {
-            std.log.err("Extrinsic hash mismatch detected, skipping block import for debugging", .{});
-            // Just do the state transition directly
-            var transition = try stf.stateTransition(params, allocator, &current_state.?, &block);
-            defer transition.deinitHeap();
-            try transition.mergePrimeOntoBase();
-            continue;
-        }
-
         var import_result = importer.importBlock(
             &current_state.?,
             &state_transition.block(),
