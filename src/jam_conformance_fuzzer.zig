@@ -61,9 +61,11 @@ pub fn main() !void {
     if (res.args.verbose == 1) {
         try tracing.runtime.setScope("fuzz_protocol", .debug);
         try tracing.runtime.setScope("jam_conformance_fuzzer", .debug);
+        try tracing.runtime.setScope("header_validator", .debug);
     } else if (res.args.verbose == 2) {
         try tracing.runtime.setScope("fuzz_protocol", .trace);
         try tracing.runtime.setScope("jam_conformance_fuzzer", .trace);
+        try tracing.runtime.setScope("header_validator", .trace);
     } else if (res.args.verbose == 3) {
         tracing.runtime.setDefaultLevel(.debug);
     } else if (res.args.verbose == 4) {
