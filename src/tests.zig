@@ -113,6 +113,8 @@ comptime {
     _ = @import("accumulate.zig");
     _ = @import("accumulate_test.zig");
 
+    _ = @import("header_validator.zig");
+
     _ = @import("preimages.zig");
     _ = @import("preimages_test.zig");
 

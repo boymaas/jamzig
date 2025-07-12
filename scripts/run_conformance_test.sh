@@ -14,10 +14,15 @@ VERBOSE_LEVEL=0
 TRACE_LEVEL=""
 DEBUG_CODEC=false
 DEFAULT_QUIET_SCOPES="codec"
+PARAM_SET="tiny"  # Default to tiny
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        -p|--params)
+            PARAM_SET="$2"
+            shift 2
+            ;;
         -s|--socket)
             SOCKET_PATH="$2"
             shift 2
@@ -50,6 +55,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
+            echo "  -p, --params SET     Parameter set: tiny or full (default: tiny)"
             echo "  -s, --socket PATH    Unix socket path (default: /tmp/jam_conformance.sock)"
             echo "  -b, --blocks N       Number of blocks to process (default: 100)"
             echo "  -S, --seed N         Random seed for deterministic execution"
@@ -108,6 +114,7 @@ NC='\033[0m' # No Color
 
 echo -e "${YELLOW}JAM Conformance Test Runner${NC}"
 echo "============================"
+echo "Parameter Set: $PARAM_SET"
 echo "Socket: $SOCKET_PATH"
 echo "Blocks: $NUM_BLOCKS"
 echo ""
@@ -137,10 +144,44 @@ find_executables() {
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local current_dir="$(pwd)"
     
-    # Check if we're in a full or tiny subdirectory of a release
-    if [[ "$current_dir" =~ /releases/[^/]+/(full|tiny)$ ]]; then
-        local param_set=$(basename "$current_dir")
-        echo -e "${YELLOW}Detected parameter set: $param_set${NC}"
+    # Check if we're in the repository root
+    if [ -d "tiny" ] && [ -d "full" ]; then
+        echo -e "${YELLOW}Detected repository root${NC}"
+        echo -e "${YELLOW}Using parameter set: $PARAM_SET${NC}"
+        echo -e "${YELLOW}Auto-navigating to: ${PARAM_SET}/${OS_NAME}/${ARCH_NAME}${NC}"
+        
+        # Check if the architecture directory exists
+        if [ -d "${PARAM_SET}/${OS_NAME}/${ARCH_NAME}" ]; then
+            TARGET_BIN="${PARAM_SET}/${OS_NAME}/${ARCH_NAME}/jam_conformance_target"
+            FUZZER_BIN="${PARAM_SET}/${OS_NAME}/${ARCH_NAME}/jam_conformance_fuzzer"
+            
+            if [ -f "$TARGET_BIN" ] && [ -f "$FUZZER_BIN" ]; then
+                echo -e "${GREEN}Found executables for ${PARAM_SET} params${NC}"
+                return 0
+            else
+                echo -e "${RED}Error: Executables not found in ${PARAM_SET}/${OS_NAME}/${ARCH_NAME}${NC}"
+                return 1
+            fi
+        else
+            echo -e "${RED}Error: Architecture directory '${PARAM_SET}/${OS_NAME}/${ARCH_NAME}' not found${NC}"
+            echo ""
+            echo "This release does not include binaries for your platform."
+            echo "Available architectures:"
+            if [ -d "${PARAM_SET}/linux" ]; then
+                echo "  - linux/$(ls ${PARAM_SET}/linux 2>/dev/null | tr '\n' ' ')"
+            fi
+            if [ -d "${PARAM_SET}/macos" ]; then
+                echo "  - macos/$(ls ${PARAM_SET}/macos 2>/dev/null | tr '\n' ' ')"
+            fi
+            exit 1
+        fi
+    fi
+    
+    # Check if we're in a param set subdirectory (tiny/ or full/)
+    if [[ "$current_dir" =~ /(tiny|full)$ ]]; then
+        local detected_param_set=$(basename "$current_dir")
+        echo -e "${YELLOW}Detected parameter set directory: $detected_param_set${NC}"
+        PARAM_SET="$detected_param_set"
         echo -e "${YELLOW}Auto-navigating to architecture: ${OS_NAME}/${ARCH_NAME}${NC}"
         
         # Check if the architecture directory exists
@@ -185,24 +226,22 @@ find_executables() {
 if ! find_executables; then
     echo -e "${RED}Error: Could not find jam_conformance_target and jam_conformance_fuzzer${NC}"
     
-    # Check if we're in a release directory
-    if [[ "$PWD" =~ releases ]]; then
+    # Check if we're in a repository with tiny/full directories
+    if [ -d "tiny" ] || [ -d "full" ]; then
         echo ""
-        echo -e "${YELLOW}You appear to be in a release directory.${NC}"
-        echo ""
-        echo "This script is used to test the conformance executables and should be"
-        echo "run from the architecture-specific directory matching your host system."
+        echo -e "${YELLOW}Available parameter sets:${NC}"
+        [ -d "tiny" ] && echo "  - tiny"
+        [ -d "full" ] && echo "  - full"
         echo ""
         echo -e "${GREEN}Your host architecture: ${OS_NAME}/${ARCH_NAME}${NC}"
         echo ""
-        echo "Please navigate to the correct directory:"
-        echo "  cd tiny/${EXPECTED_DIR}"  
-        echo "  cd full/${EXPECTED_DIR}"
+        echo "The binaries for your architecture were not found."
+        echo "Please check that the release includes binaries for your platform."
     else
         echo ""
         echo "Please ensure the executables are built:"
         echo "  - For development: zig build conformance_fuzzer conformance_target"
-        echo "  - For releases: Run from the ${EXPECTED_DIR} directory"
+        echo "  - For releases: Run from the repository root"
     fi
     exit 1
 fi

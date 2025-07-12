@@ -72,7 +72,8 @@ pub fn Time(comptime epoch_length: u32, comptime slot_period: u32, comptime tick
 
         pub fn didCrossTicketSubmissionEnd(self: Self) bool {
             return self.prior_slot_in_epoch < self.ticket_submission_end_epoch_slot and
-                self.ticket_submission_end_epoch_slot <= self.current_slot_in_epoch;
+                self.current_slot_in_epoch >= self.ticket_submission_end_epoch_slot and
+                self.isSameEpoch();
         }
 
         // Calculate expected time for next epoch in seconds

@@ -8,8 +8,8 @@ const state_dictionary = @import("../state_dictionary.zig");
 const sequoia = @import("../sequoia.zig");
 const jamstate = @import("../state.zig");
 const state_merklization = @import("../state_merklization.zig");
-const stf = @import("../stf.zig");
 const types = @import("../types.zig");
+const block_import = @import("../block_import.zig");
 
 const trace = @import("../tracing.zig").scoped(.fuzz_protocol);
 
@@ -35,12 +35,16 @@ pub const TargetServer = struct {
     current_state_root: ?messages.StateRootHash = null,
     server_state: ServerState = .initial,
 
+    // Block importer
+    block_importer: block_import.BlockImporter(messages.FUZZ_PARAMS),
+
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator, socket_path: []const u8) !Self {
         return Self{
             .allocator = allocator,
             .socket_path = socket_path,
+            .block_importer = block_import.BlockImporter(messages.FUZZ_PARAMS).init(allocator),
         };
     }
 
@@ -115,7 +119,10 @@ pub const TargetServer = struct {
             span.debug("Received message: {s}", .{@tagName(request_message)});
 
             // Process message and generate response
-            var response_message = try self.processMessage(request_message);
+            var response_message = self.processMessage(request_message) catch |err| {
+                std.debug.print("Error processing message {s}: {s}. Stopping processing after this message.\n", .{ @tagName(request_message), @errorName(err) });
+                return err;
+            };
             defer if (response_message) |*msg| {
                 msg.deinit(self.allocator);
             };
@@ -193,18 +200,21 @@ pub const TargetServer = struct {
 
                 span.debug("Processing ImportBlock", .{});
 
-                // Apply state transition using the STF
-                var state_transition = try stf.stateTransition(
-                    messages.FUZZ_PARAMS,
-                    self.allocator,
+                // Use unified block importer with validation
+                var result = self.block_importer.importBlock(
                     &self.current_state.?,
                     &block,
-                );
-                defer state_transition.deinitHeap();
+                ) catch |err| {
+                    std.debug.print("Failed to import block: {s}. State remains unchanged.\n", .{@errorName(err)});
+                    return messages.Message{ .state_root = self.current_state_root.? };
+                };
+                defer result.deinit();
+
+                span.debug("Block imported successfully, sealed with tickets: {}", .{result.sealed_with_tickets});
 
                 // SET TO TRUE to simulate a failing state transition
                 if (false) {
-                    var pi_prime: *@import("../state.zig").Pi = state_transition.get(.pi_prime) catch |err| {
+                    var pi_prime: *@import("../state.zig").Pi = result.state_transition.get(.pi_prime) catch |err| {
                         span.err("State transition failed: {s}", .{@errorName(err)});
                         return err;
                     };
@@ -212,7 +222,7 @@ pub const TargetServer = struct {
                 }
 
                 // Merge the transition results into our current state
-                try state_transition.mergePrimeOntoBase();
+                try result.state_transition.mergePrimeOntoBase();
 
                 // Update our cached state root
                 self.current_state_root = try self.computeStateRoot();

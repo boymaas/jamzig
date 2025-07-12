@@ -1177,6 +1177,100 @@ pub const Extrinsic = struct {
         self.disputes.deinit(allocator);
         self.* = undefined;
     }
+
+    /// Calculate the Blake2b256 hash of this extrinsic
+    /// Formula: Hx = H(E(H^#(a))) where a is the array of extrinsic components
+    /// and H^# means hash each element individually
+    pub fn calculateHash(
+        self: @This(),
+        comptime params: jam_params.Params,
+        allocator: std.mem.Allocator,
+    ) !OpaqueHash {
+        const codec = @import("codec.zig");
+        const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
+        
+        // According to graypaper, a = [E_T(tickets), E_P(preimages), g, E_A(assurances), E_D(disputes)]
+        // where g = E([{H(w), E_4(t), a} for each guarantee])
+        
+        // Step 1: Encode each component
+        const tickets_encoded = try codec.serializeAlloc(TicketsExtrinsic, params, allocator, self.tickets);
+        defer allocator.free(tickets_encoded);
+        
+        const preimages_encoded = try codec.serializeAlloc(PreimagesExtrinsic, params, allocator, self.preimages);
+        defer allocator.free(preimages_encoded);
+        
+        const assurances_encoded = try codec.serializeAlloc(AssurancesExtrinsic, params, allocator, self.assurances);
+        defer allocator.free(assurances_encoded);
+        
+        const disputes_encoded = try codec.serializeAlloc(DisputesExtrinsic, params, allocator, self.disputes);
+        defer allocator.free(disputes_encoded);
+        
+        // For guarantees, we need special encoding: [{H(w), E_4(t), a} for each guarantee]
+        // where w is work report, t is slot, and a is signatures (assurances)
+        var guarantees_items = try allocator.alloc([]const u8, self.guarantees.data.len);
+        defer {
+            for (guarantees_items) |item| {
+                allocator.free(item);
+            }
+            allocator.free(guarantees_items);
+        }
+        
+        for (self.guarantees.data, 0..) |guarantee, i| {
+            // Create tuple of (report_hash, slot, signatures)
+            const report_bytes = try codec.serializeAlloc(WorkReport, params, allocator, guarantee.report);
+            defer allocator.free(report_bytes);
+            
+            var report_hash: OpaqueHash = undefined;
+            Blake2b256.hash(report_bytes, &report_hash, .{});
+            
+            // Encode slot as 4 bytes (E_4)
+            var slot_bytes: [4]u8 = undefined;
+            std.mem.writeInt(u32, &slot_bytes, guarantee.slot, .little);
+            
+            // Encode signatures array
+            const signatures_encoded = try codec.serializeAlloc(
+                []ValidatorSignature,
+                params,
+                allocator,
+                guarantee.signatures,
+            );
+            defer allocator.free(signatures_encoded);
+            
+            // Create the tuple item: (hash, slot, signatures)
+            var tuple_item = std.ArrayList(u8).init(allocator);
+            defer tuple_item.deinit();
+            
+            // The tuple should be properly encoded
+            // For now, we'll concatenate the components
+            try tuple_item.appendSlice(&report_hash);
+            try tuple_item.appendSlice(&slot_bytes);
+            try tuple_item.appendSlice(signatures_encoded);
+            
+            guarantees_items[i] = try tuple_item.toOwnedSlice();
+        }
+        
+        // Encode the guarantees array
+        const guarantees_encoded = try codec.serializeAlloc([]const []const u8, params, allocator, guarantees_items);
+        defer allocator.free(guarantees_encoded);
+        
+        // Step 2: Hash each encoded component (H^#)
+        var hashes: [5]OpaqueHash = undefined;
+        Blake2b256.hash(tickets_encoded, &hashes[0], .{});
+        Blake2b256.hash(preimages_encoded, &hashes[1], .{});
+        Blake2b256.hash(guarantees_encoded, &hashes[2], .{});
+        Blake2b256.hash(assurances_encoded, &hashes[3], .{});
+        Blake2b256.hash(disputes_encoded, &hashes[4], .{});
+        
+        // Step 3: Encode the array of hashes
+        const hashes_encoded = try codec.serializeAlloc([5]OpaqueHash, params, allocator, hashes);
+        defer allocator.free(hashes_encoded);
+        
+        // Step 4: Final hash
+        var final_hash: OpaqueHash = undefined;
+        Blake2b256.hash(hashes_encoded, &final_hash, .{});
+        
+        return final_hash;
+    }
 };
 
 pub const Block = struct {

@@ -1,16 +1,15 @@
-# JAM Conformance Test Release
+# JamZig⚡ Conformance Test Binaries
 
-This release contains the JAM conformance testing binaries for validating protocol implementations.
+This repository contains the latest JamZig⚡ conformance testing binaries for validating protocol implementations.
 
-## Release Information
+## Build Information
 
-- **Release:** `${RELEASE_NAME}`
-- **Git SHA:** `${GIT_SHA}`
+- **JamZig⚡ Code GIT_SHA:** `${GIT_SHA}`
 - **Build Date:** `${BUILD_DATE}`
 
 ## Contents
 
-This release includes binaries for two parameter sets:
+This repository includes binaries for two parameter sets:
 
 - **`tiny/`** - Built with TINY_PARAMS for quick testing and development
 - **`full/`** - Built with FULL_PARAMS for production conformance testing
@@ -29,7 +28,7 @@ or requirements.
 ## Running Conformance Tests
 ### Quick Start
 
-From this directory, run:
+From the root directory, run:
 
 ```bash
 ./run_conformance_test.sh
@@ -89,6 +88,28 @@ The protocol parameters for each set are available in:
 
 These files contain all JAM protocol constants with their graypaper symbols (e.g., "E" for epoch_length, "C" for core_count).
 
+## Repository Structure
+
+```
+├── README.md               # This file
+├── RELEASE_INFO.json       # Build metadata
+├── run_conformance_test.sh # Main test runner script
+├── tiny/                   # Binaries built with TINY_PARAMS
+│   ├── params.json         # Protocol parameters
+│   ├── linux/
+│   │   ├── x86_64/
+│   │   └── aarch64/
+│   └── macos/
+│       └── aarch64/
+└── full/                   # Binaries built with FULL_PARAMS
+    ├── params.json         # Protocol parameters
+    ├── linux/
+    │   ├── x86_64/
+    │   └── aarch64/
+    └── macos/
+        └── aarch64/
+```
+
 ## Support
 
-For issues or questions about the conformance test suite, please contact the JAM team or file an issue in the repository.
+For issues or questions about the conformance test suite, please contact the JamZig⚡ team or file an issue in the repository.

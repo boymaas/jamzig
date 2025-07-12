@@ -56,6 +56,21 @@ pub fn main() !void {
         return;
     }
 
+    if (res.args.verbose != 0) {
+        try tracing.runtime.setScope("fuzz_protocol", .debug);
+        try tracing.runtime.setScope("jam_conformance_fuzzer", .debug);
+
+        if (res.args.verbose > 1) {
+            try tracing.runtime.setScope("codec", .debug);
+        }
+        if (res.args.verbose > 2) {
+            tracing.runtime.setDefaultLevel(.debug);
+        }
+        if (res.args.verbose > 2) {
+            tracing.runtime.setDefaultLevel(.trace);
+        }
+    }
+
     // Handle parameter dumping
     if (res.args.@"dump-params" != 0) {
         const format = res.args.format orelse "text";

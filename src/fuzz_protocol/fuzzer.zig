@@ -12,10 +12,9 @@ const version = @import("version.zig");
 
 const sequoia = @import("../sequoia.zig");
 const types = @import("../types.zig");
-const stf = @import("../stf.zig");
+const block_import = @import("../block_import.zig");
 const jam_params = @import("../jam_params.zig");
 const JamState = @import("../state.zig").JamState;
-const state_merklization = @import("../state_merklization.zig");
 const state_dictionary = @import("../state_dictionary.zig");
 
 const trace = @import("../tracing.zig").scoped(.fuzz_protocol);
@@ -44,6 +43,7 @@ pub const Fuzzer = struct {
 
     // JAM components
     block_builder: sequoia.BlockBuilder(messages.FUZZ_PARAMS),
+    block_importer: block_import.BlockImporter(messages.FUZZ_PARAMS),
     current_jam_state: *const JamState(messages.FUZZ_PARAMS),
     latest_block: ?types.Block = null,
 
@@ -79,6 +79,8 @@ pub const Fuzzer = struct {
         fuzzer.block_builder = try sequoia.BlockBuilder(messages.FUZZ_PARAMS).init(allocator, config, &fuzzer.rng);
         errdefer fuzzer.block_builder.deinit();
 
+        fuzzer.block_importer = block_import.BlockImporter(messages.FUZZ_PARAMS).init(allocator);
+
         fuzzer.current_jam_state = &fuzzer.block_builder.state;
 
         // // Process the first (genesis) block to get proper state
@@ -87,17 +89,15 @@ pub const Fuzzer = struct {
 
         fuzzer.latest_block = first_block;
 
-        // Process the genesis block with sequoia STF to get proper header and state
-        var state_transition = try stf.stateTransition(
-            messages.FUZZ_PARAMS,
-            allocator,
+        // Process the genesis block with block importer to get proper header and state
+        var import_result = try fuzzer.block_importer.importBlock(
             fuzzer.current_jam_state,
             &first_block,
         );
-        defer state_transition.deinitHeap();
+        defer import_result.deinit();
 
-        // Merge the transition results into the current state
-        try state_transition.mergePrimeOntoBase();
+        // Commit the state transition
+        try import_result.commit();
 
         span.debug("Fuzzer initialized successfully", .{});
         return fuzzer;
@@ -262,24 +262,18 @@ pub const Fuzzer = struct {
         defer span.deinit();
         span.debug("Processing block locally", .{});
 
-        // Apply state transition using the STF
-        var state_transition = try stf.stateTransition(
-            messages.FUZZ_PARAMS,
-            self.allocator,
+        // Use block importer to process the block
+        var import_result = try self.block_importer.importBlock(
             self.current_jam_state,
             &block,
         );
-        defer state_transition.deinitHeap();
+        defer import_result.deinit();
 
-        // Merge the transition results into our current state
-        try state_transition.mergePrimeOntoBase();
+        // Commit the state transition
+        try import_result.commit();
 
-        // Compute and return state root
-        const state_root = try state_merklization.merklizeState(
-            messages.FUZZ_PARAMS,
-            self.allocator,
-            self.current_jam_state,
-        );
+        // Calculate and return the new state root
+        const state_root = try self.current_jam_state.buildStateRoot(self.allocator);
 
         span.debug("Local state root: {s}", .{std.fmt.fmtSliceHexLower(&state_root)});
         return state_root;
@@ -304,11 +298,23 @@ pub const Fuzzer = struct {
         );
         defer initial_state_result.deinit();
 
-        // Set initial state on target
-        const header = self.latest_block.?.header;
-        _ = try self.setState(header, initial_state_result.state);
+        // Calculate local state root
+        const local_state_root = try self.current_jam_state.buildStateRoot(self.allocator);
 
-        span.debug("Initial state set, starting block processing", .{});
+        // Set initial state on target and get target's state root
+        const header = self.latest_block.?.header;
+        const target_state_root = try self.setState(header, initial_state_result.state);
+
+        // Verify state roots match
+        if (!std.mem.eql(u8, &local_state_root, &target_state_root)) {
+            std.debug.print("State root mismatch! Local: {s}, Target: {s}\n", .{
+                std.fmt.fmtSliceHexLower(&local_state_root),
+                std.fmt.fmtSliceHexLower(&target_state_root),
+            });
+            return error.InitialStateRootMismatch;
+        }
+
+        std.debug.print("Initial state roots match: {s}\n", .{std.fmt.fmtSliceHexLower(&local_state_root)});
 
         // Process blocks
         for (0..num_blocks) |block_num| {
@@ -353,11 +359,7 @@ pub const Fuzzer = struct {
                 block_span.debug("State root mismatch detected!", .{});
 
                 // Build local dictionary
-                var local_dict = try state_dictionary.buildStateMerklizationDictionary(
-                    messages.FUZZ_PARAMS,
-                    self.allocator,
-                    self.current_jam_state,
-                );
+                var local_dict = try self.current_jam_state.buildStateMerklizationDictionary(self.allocator);
                 errdefer local_dict.deinit();
 
                 // Retrieve full target state for analysis

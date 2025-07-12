@@ -30,15 +30,25 @@ fi
 # Get git SHA
 GIT_SHA=$(git rev-parse --short HEAD)
 DATE=$(date +%Y%m%d%H%M) # Format: YYYYMMDDHHMM for better release granularity
-RELEASE_NAME="${DATE}_${GIT_SHA}"
 
 # Base directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RELEASE_REPO_DIR="${PROJECT_ROOT}/../jamzig-conformance-releases"
-RELEASE_DIR="${RELEASE_REPO_DIR}/releases/${RELEASE_NAME}"
+RELEASE_DIR="${RELEASE_REPO_DIR}"
 
-echo -e "${GREEN}Creating JAM Conformance Release: ${RELEASE_NAME}${NC}"
+echo -e "${GREEN}Creating JAM Conformance Release${NC}"
+echo -e "${YELLOW}Git SHA: ${GIT_SHA}${NC}"
+echo -e "${YELLOW}Build Date: ${DATE}${NC}"
+
+# Clean previous release files (but keep .git and base README if exists)
+echo "Cleaning previous release files..."
+cd "${RELEASE_REPO_DIR}"
+# Remove old release directories and files, but preserve .git
+find . -maxdepth 1 -type d -name 'tiny' -o -name 'full' | xargs -r rm -rf
+find . -maxdepth 1 -type f -name 'RELEASE_INFO.json' -o -name 'run_conformance_test.sh' | xargs -r rm -f
+# Remove old releases directory if it exists
+rm -rf releases
 
 # Create release directory structure
 echo "Creating release directory structure..."
@@ -247,7 +257,7 @@ ln -sf ../run_conformance_test.sh "${RELEASE_DIR}/full/run_conformance_test.sh"
 echo "Creating release info..."
 cat > "${RELEASE_DIR}/RELEASE_INFO.json" <<EOF
 {
-    "release_name": "${RELEASE_NAME}",
+    "type": "jam-conformance-release",
     "date": "${DATE}",
     "git_sha": "${GIT_SHA}",
     "git_branch": "$(git rev-parse --abbrev-ref HEAD)",
@@ -269,15 +279,11 @@ EOF
 
 # Copy and process README
 echo "Processing README..."
-sed -e "s/\${RELEASE_NAME}/${RELEASE_NAME}/g" \
-    -e "s/\${GIT_SHA}/${GIT_SHA}/g" \
+sed -e "s/\${GIT_SHA}/${GIT_SHA}/g" \
     -e "s/\${BUILD_DATE}/$(date -u +%Y-%m-%dT%H:%M:%SZ)/g" \
     "${SCRIPT_DIR}/release_conformance/README.md" > "${RELEASE_DIR}/README.md"
 
-# Create latest symlink
-echo "Creating latest symlink..."
-cd "${RELEASE_REPO_DIR}/releases"
-ln -sfn "${RELEASE_NAME}" latest
+# No symlink needed - we're publishing directly to root
 
 # Clean up build directories (optional)
 # Commented out to preserve logs for debugging
@@ -286,11 +292,30 @@ ln -sfn "${RELEASE_NAME}" latest
 echo -e "${YELLOW}Build logs preserved in: ${BUILD_DIR}${NC}"
 
 echo -e "${GREEN}Release created successfully at: ${RELEASE_DIR}${NC}"
+
+# Automatically add and commit changes
 echo ""
-echo "Next steps:"
-echo "1. cd ${RELEASE_REPO_DIR}"
-echo "2. git add releases/${RELEASE_NAME}"
-echo "3. git commit -m \"Add conformance release ${RELEASE_NAME}\""
-echo "4. git push origin main"
+echo "Committing changes..."
+cd "${RELEASE_REPO_DIR}"
+
+# Add all changes
+git add .
+
+# Create commit message
+COMMIT_MSG="Update conformance release - ${GIT_SHA}
+
+Built from JamZig⚡ commit: ${GIT_SHA}
+Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Platforms: ${#PLATFORMS[@]} × Param sets: 2 = ${#build_jobs[@]} total configurations"
+
+# Commit the changes
+git commit -m "${COMMIT_MSG}"
+
+echo ""
+echo -e "${GREEN}Changes committed successfully!${NC}"
+echo ""
+echo "To push the release:"
+echo "  cd ${RELEASE_REPO_DIR}"
+echo "  git push origin main"
 echo ""
 echo -e "${GREEN}Built ${#PLATFORMS[@]} platforms × 2 param sets = ${#build_jobs[@]} total configurations using GNU parallel${NC}"
