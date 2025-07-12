@@ -211,6 +211,7 @@ pub const Fuzzer = struct {
         const span = trace.span(.fuzzer_send_block);
         defer span.deinit();
         span.debug("Sending block to target", .{});
+        span.trace("{s}", .{types.fmt.format(block)});
 
         if (self.state != .state_initialized) {
             return error.StateNotInitialized;
@@ -324,7 +325,29 @@ pub const Fuzzer = struct {
         for (0..num_blocks) |block_num| {
             const block_span = span.child(.process_block);
             defer block_span.deinit();
+
             block_span.debug("Processing block {d}/{d}", .{ block_num + 1, num_blocks });
+
+            // Send to target
+            const reported_target_root = self.sendBlock(self.latest_block.?) catch |err| {
+                block_span.err("Error sending block to target: {s}", .{@errorName(err)});
+
+                // Return partial result with the error
+                return report.FuzzResult{
+                    .seed = self.seed,
+                    .blocks_processed = block_num,
+                    .mismatch = null,
+                    .success = false,
+                    .err = err,
+                };
+            };
+
+            // If the reported target root is the same the local root we can end the
+            // fuzz cycle early. As we know the target could not or would not process the block.
+            if (compareStateRoots(reported_target_root, try self.current_jam_state.buildStateRoot(self.allocator))) {
+                block_span.warn("Target reported same state root as local: {s}", .{std.fmt.fmtSliceHexLower(&reported_target_root)});
+                return error.SameRootReturned; // Skip further processing for this block
+            }
 
             var local_root: messages.StateRootHash = undefined;
 
@@ -343,20 +366,6 @@ pub const Fuzzer = struct {
             }
 
             sequoia.logging.printBlockEntropyDebug(messages.FUZZ_PARAMS, &self.latest_block.?, self.current_jam_state);
-
-            // Send to target
-            const reported_target_root = self.sendBlock(self.latest_block.?) catch |err| {
-                block_span.err("Error sending block to target: {s}", .{@errorName(err)});
-
-                // Return partial result with the error
-                return report.FuzzResult{
-                    .seed = self.seed,
-                    .blocks_processed = block_num,
-                    .mismatch = null,
-                    .success = false,
-                    .err = err,
-                };
-            };
 
             // Compare state roots
             if (!compareStateRoots(local_root, reported_target_root)) {
@@ -477,7 +486,7 @@ pub const Fuzzer = struct {
         errdefer result.deinit(self.allocator);
 
         // Process first transition with SetState
-        {
+        const pre_state_root = blk: {
             const first_transition = valid_transitions.items[0];
             span.debug("Processing first transition for SetState: {s}", .{first_transition.bin.name});
 
@@ -514,9 +523,11 @@ pub const Fuzzer = struct {
             }
 
             span.debug("Initial state set successfully and confirmed on target", .{});
-        }
+            break :blk pre_state_root;
+        };
 
         // Process remaining transitions by sending blocks
+        var previous_state_root: messages.StateRootHash = pre_state_root;
         for (valid_transitions.items, 0..) |transition, i| {
             span.debug("Processing block {d}: {s}", .{ i, transition.bin.name });
 
@@ -533,6 +544,13 @@ pub const Fuzzer = struct {
             // Send block to target
             const target_state_root_after = try self.sendBlock(block);
 
+            // If the reported target root is the same the local root we can end the
+            // fuzz cycle early. As we know the target could not or would not process the block.
+            if (compareStateRoots(previous_state_root, target_state_root_after)) {
+                span.warn("Target reported same state root as previous: {s}", .{std.fmt.fmtSliceHexLower(&target_state_root_after)});
+                return error.SameRootReturned; // Skip further processing for this block
+            }
+
             // Compare results
             if (!std.mem.eql(u8, &expected_state_root, &target_state_root_after)) {
                 span.err("Post-state root mismatch at trace {s}", .{transition.bin.name});
@@ -544,6 +562,9 @@ pub const Fuzzer = struct {
                 result.success = false;
                 break;
             }
+
+            // Update previous state root
+            previous_state_root = expected_state_root;
 
             span.debug("Trace {s} passed", .{transition.bin.name});
             result.blocks_processed += 1;
