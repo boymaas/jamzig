@@ -1188,87 +1188,105 @@ pub const Extrinsic = struct {
     ) !OpaqueHash {
         const codec = @import("codec.zig");
         const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
-        
-        // According to graypaper, a = [E_T(tickets), E_P(preimages), g, E_A(assurances), E_D(disputes)]
-        // where g = E([{H(w), E_4(t), a} for each guarantee])
-        
-        // Step 1: Encode each component
+
+        // According to graypaper equations 5.4-5.6:
+        // Hx ≡ H(E(H#(a)))
+        // where a = [ET(ET), EP(EP), g, EA(EA), ED(ED)]
+        // and g = E(↕[(H(w), E4(t), ↕a) | (w, t, a) −< EG])
+
+        // Step 1: Encode each component using their specific encoding functions
+
+        // ET(ET) - tickets encoding
         const tickets_encoded = try codec.serializeAlloc(TicketsExtrinsic, params, allocator, self.tickets);
         defer allocator.free(tickets_encoded);
-        
+
+        // EP(EP) - preimages encoding
         const preimages_encoded = try codec.serializeAlloc(PreimagesExtrinsic, params, allocator, self.preimages);
         defer allocator.free(preimages_encoded);
-        
+
+        // g = E(↕[(H(w), E4(t), ↕a) | (w, t, a) −< EG]) - guarantees special encoding
+        const guarantees_encoded = blk: {
+            // Create the list of tuples (H(w), E4(t), ↕a) for each guarantee
+            var guarantee_tuples = try allocator.alloc([]const u8, self.guarantees.data.len);
+            defer {
+                for (guarantee_tuples) |tuple_bytes| {
+                    allocator.free(tuple_bytes);
+                }
+                allocator.free(guarantee_tuples);
+            }
+
+            for (self.guarantees.data, 0..) |guarantee, i| {
+                // Create tuple (H(w), E4(t), ↕a)
+                var tuple_buffer = std.ArrayList(u8).init(allocator);
+                defer tuple_buffer.deinit();
+
+                // H(w) - hash of the work report
+                const work_report_encoded = try codec.serializeAlloc(WorkReport, params, allocator, guarantee.report);
+                defer allocator.free(work_report_encoded);
+
+                var work_report_hash: OpaqueHash = undefined;
+                Blake2b256.hash(work_report_encoded, &work_report_hash, .{});
+
+                // E4(t) - slot encoded as 4 bytes little-endian
+                var slot_bytes: [4]u8 = undefined;
+                std.mem.writeInt(u32, &slot_bytes, guarantee.slot, .little);
+
+                // ↕a - signatures with length prefix
+                const signatures_encoded = try codec.serializeAlloc([]ValidatorSignature, params, allocator, guarantee.signatures);
+                defer allocator.free(signatures_encoded);
+
+                // Build the tuple by encoding (hash, slot_bytes, signatures)
+                // This should be encoded as a proper tuple, not just concatenated
+                const tuple_writer = tuple_buffer.writer();
+                try codec.serialize([32]u8, params, tuple_writer, work_report_hash);
+                try tuple_writer.writeAll(&slot_bytes);
+                try tuple_writer.writeAll(signatures_encoded);
+
+                guarantee_tuples[i] = try tuple_buffer.toOwnedSlice();
+            }
+
+            // Now encode the list of tuples with length prefix: E(↕[...])
+            var guarantees_list_buffer = std.ArrayList(u8).init(allocator);
+            defer guarantees_list_buffer.deinit();
+
+            const guarantees_writer = guarantees_list_buffer.writer();
+
+            // Write length prefix
+            try codec.writeInteger(guarantee_tuples.len, guarantees_writer);
+
+            // Write each tuple
+            for (guarantee_tuples) |tuple_bytes| {
+                try guarantees_writer.writeAll(tuple_bytes);
+            }
+
+            break :blk try guarantees_list_buffer.toOwnedSlice();
+        };
+        defer allocator.free(guarantees_encoded);
+
+        // EA(EA) - assurances encoding
         const assurances_encoded = try codec.serializeAlloc(AssurancesExtrinsic, params, allocator, self.assurances);
         defer allocator.free(assurances_encoded);
-        
+
+        // ED(ED) - disputes encoding
         const disputes_encoded = try codec.serializeAlloc(DisputesExtrinsic, params, allocator, self.disputes);
         defer allocator.free(disputes_encoded);
-        
-        // For guarantees, we need special encoding: [{H(w), E_4(t), a} for each guarantee]
-        // where w is work report, t is slot, and a is signatures (assurances)
-        var guarantees_items = try allocator.alloc([]const u8, self.guarantees.data.len);
-        defer {
-            for (guarantees_items) |item| {
-                allocator.free(item);
-            }
-            allocator.free(guarantees_items);
-        }
-        
-        for (self.guarantees.data, 0..) |guarantee, i| {
-            // Create tuple of (report_hash, slot, signatures)
-            const report_bytes = try codec.serializeAlloc(WorkReport, params, allocator, guarantee.report);
-            defer allocator.free(report_bytes);
-            
-            var report_hash: OpaqueHash = undefined;
-            Blake2b256.hash(report_bytes, &report_hash, .{});
-            
-            // Encode slot as 4 bytes (E_4)
-            var slot_bytes: [4]u8 = undefined;
-            std.mem.writeInt(u32, &slot_bytes, guarantee.slot, .little);
-            
-            // Encode signatures array
-            const signatures_encoded = try codec.serializeAlloc(
-                []ValidatorSignature,
-                params,
-                allocator,
-                guarantee.signatures,
-            );
-            defer allocator.free(signatures_encoded);
-            
-            // Create the tuple item: (hash, slot, signatures)
-            var tuple_item = std.ArrayList(u8).init(allocator);
-            defer tuple_item.deinit();
-            
-            // The tuple should be properly encoded
-            // For now, we'll concatenate the components
-            try tuple_item.appendSlice(&report_hash);
-            try tuple_item.appendSlice(&slot_bytes);
-            try tuple_item.appendSlice(signatures_encoded);
-            
-            guarantees_items[i] = try tuple_item.toOwnedSlice();
-        }
-        
-        // Encode the guarantees array
-        const guarantees_encoded = try codec.serializeAlloc([]const []const u8, params, allocator, guarantees_items);
-        defer allocator.free(guarantees_encoded);
-        
-        // Step 2: Hash each encoded component (H^#)
-        var hashes: [5]OpaqueHash = undefined;
-        Blake2b256.hash(tickets_encoded, &hashes[0], .{});
-        Blake2b256.hash(preimages_encoded, &hashes[1], .{});
-        Blake2b256.hash(guarantees_encoded, &hashes[2], .{});
-        Blake2b256.hash(assurances_encoded, &hashes[3], .{});
-        Blake2b256.hash(disputes_encoded, &hashes[4], .{});
-        
-        // Step 3: Encode the array of hashes
-        const hashes_encoded = try codec.serializeAlloc([5]OpaqueHash, params, allocator, hashes);
+
+        // Step 2: Hash each encoded component (H#(a))
+        var component_hashes: [5]OpaqueHash = undefined;
+        Blake2b256.hash(tickets_encoded, &component_hashes[0], .{});
+        Blake2b256.hash(preimages_encoded, &component_hashes[1], .{});
+        Blake2b256.hash(guarantees_encoded, &component_hashes[2], .{});
+        Blake2b256.hash(assurances_encoded, &component_hashes[3], .{});
+        Blake2b256.hash(disputes_encoded, &component_hashes[4], .{});
+
+        // Step 3: Encode the array of hashes E(H#(a))
+        const hashes_encoded = try codec.serializeAlloc([5]OpaqueHash, params, allocator, component_hashes);
         defer allocator.free(hashes_encoded);
-        
-        // Step 4: Final hash
+
+        // Step 4: Final hash H(E(H#(a)))
         var final_hash: OpaqueHash = undefined;
         Blake2b256.hash(hashes_encoded, &final_hash, .{});
-        
+
         return final_hash;
     }
 };
