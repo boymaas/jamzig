@@ -180,7 +180,7 @@ pub const PVM = struct {
                         const gas_before = context.gas;
                         const pc_before = context.pc;
                         const registers_before = context.registers;
-                        
+
                         switch (host_call_fn(context, call_ctx)) {
                             .play => {
                                 // Log the host call with comprehensive information
@@ -193,7 +193,7 @@ pub const PVM = struct {
                                     pc_before,
                                     params.next_pc,
                                 );
-                                
+
                                 // Update total gas used
                                 context.exec_trace.total_gas_used += gas_before - context.gas;
                                 context.pc = params.next_pc;
@@ -248,7 +248,13 @@ pub const PVM = struct {
                     .halt => {
                         // if memory range in valid memory
                         // read the memory range and return it
-                        const return_value = exec_ctx.readSliceBetweenRegister7AndRegister8();
+                        var return_value = exec_ctx.readSliceBetweenRegister7AndRegister8();
+                        defer return_value.deinit();
+
+                        // TODO: this return value could be referencing memory in a page
+                        // or could already be copied as it would be on a memory boundary
+                        // so we could add a takeOwned which would only dupe if necessary.
+
                         return .{ .halt = try allocator.dupe(u8, return_value.buffer) };
                     },
                     .out_of_gas => {

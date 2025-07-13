@@ -49,7 +49,7 @@ pub const FuzzResult = struct {
 /// Generate a detailed report of fuzzing results
 pub fn generateReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
     var report = std.ArrayList(u8).init(allocator);
-    defer report.deinit();
+    errdefer report.deinit();
 
     const writer = report.writer();
 
@@ -196,13 +196,13 @@ pub fn generateReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
         }
     }
 
-    return allocator.dupe(u8, report.items);
+    return report.items;
 }
 
 /// Generate a JSON report for programmatic consumption
 pub fn generateJsonReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
     var json = std.ArrayList(u8).init(allocator);
-    defer json.deinit();
+    errdefer json.deinit();
 
     const writer = json.writer();
 
@@ -243,5 +243,5 @@ pub fn generateJsonReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u
 
     try writer.print("}}", .{});
 
-    return allocator.dupe(u8, json.items);
+    return json.items;
 }

@@ -96,7 +96,7 @@ pub fn processPreimagesExtrinsic(
 
         // Add the preimage to the service account using structured key
         const preimage_key = state_keys.constructServicePreimageKey(service_id, preimage_hash);
-        try service_account.addPreimage(preimage_key, preimage.blob);
+        try service_account.dupeAndAddPreimage(preimage_key, preimage.blob);
         preimage_span.debug("Added preimage to service {d}", .{service_id});
 
         // Update the lookup metadata

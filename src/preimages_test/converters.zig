@@ -51,7 +51,7 @@ pub fn convertAccount(allocator: std.mem.Allocator, service_id: u32, account: tv
     // Add preimages - need to construct proper structured keys
     for (account.preimages) |preimage_entry| {
         const preimage_key = state_keys.constructServicePreimageKey(service_id, preimage_entry.hash);
-        try service_account.addPreimage(preimage_key, preimage_entry.blob);
+        try service_account.dupeAndAddPreimage(preimage_key, preimage_entry.blob);
     }
 
     // Add lookup metadata
