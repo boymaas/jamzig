@@ -106,7 +106,7 @@ pub fn main() !void {
     }
     std.debug.print("\n", .{});
 
-    var server = try TargetServer.init(allocator, socket_path, .exit_on_disconnect);
+    var server = try TargetServer.init(allocator, socket_path, .restart_on_disconnect);
     defer server.deinit();
 
     // Setup signal handler for graceful shutdown
@@ -115,16 +115,18 @@ pub fn main() !void {
         var server_ref: ?*TargetServer = null;
     };
     shutdown_requested.server_ref = &server;
-    
+
     var sigaction = std.posix.Sigaction{
-        .handler = .{ .handler = struct {
-            fn handler(_: c_int) callconv(.C) void {
-                // Signal handlers must be async-signal-safe
-                if (shutdown_requested.server_ref) |srv| {
-                    srv.shutdown();
+        .handler = .{
+            .handler = struct {
+                fn handler(_: c_int) callconv(.C) void {
+                    // Signal handlers must be async-signal-safe
+                    if (shutdown_requested.server_ref) |srv| {
+                        srv.shutdown();
+                    }
                 }
-            }
-        }.handler },
+            }.handler,
+        },
         .mask = std.posix.empty_sigset,
         .flags = 0,
     };
@@ -139,4 +141,3 @@ pub fn main() !void {
     // Start the server (this will block until interrupted)
     try server.start();
 }
-
