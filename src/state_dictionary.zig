@@ -309,6 +309,18 @@ pub const MerklizationDictionary = struct {
         return buffer.toOwnedSlice();
     }
 
+    pub fn toKeyValueArrayOwned(self: *const MerklizationDictionary) ![]FuzzKeyValue {
+        var buffer = std.ArrayList(FuzzKeyValue).init(self.entries.allocator);
+        var it = self.entries.iterator();
+        while (it.next()) |entry| {
+            try buffer.append(.{
+                .key = entry.key_ptr.*, // StateKey is same as TrieKey ([31]u8)
+                .value = try self.entries.allocator.dupe(u8, entry.value_ptr.value),
+            });
+        }
+        return buffer.toOwnedSlice();
+    }
+
     /// Puts an DictEntry in the dictionary, deallocates an existing one
     /// takes ownership of the entry
     pub fn put(self: *MerklizationDictionary, entry: DictEntry) !void {

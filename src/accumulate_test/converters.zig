@@ -92,7 +92,7 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
     // Add all preimages
     for (account.data.preimages) |preimage| {
         const preimage_key = state_keys.constructServicePreimageKey(account.id, preimage.hash);
-        try service_account.addPreimage(preimage_key, preimage.blob);
+        try service_account.dupeAndAddPreimage(preimage_key, preimage.blob);
         try service_account.registerPreimageAvailable(account.id, preimage.hash, @intCast(preimage.blob.len), null);
     }
 
@@ -204,16 +204,16 @@ pub fn convertServiceStatistics(
     for (statistics.stats) |stat_entry| {
         const service_id = stat_entry.id;
         const record = stat_entry.record;
-        
+
         // Get or create the service stats entry
         const service_stats = try pi.getOrCreateServiceStats(service_id);
-        
+
         // Map all the statistics fields from test vector to internal representation
         service_stats.accumulate_count = record.accumulate_count;
         service_stats.accumulate_gas_used = record.accumulate_gas_used;
         service_stats.on_transfers_count = record.on_transfers_count;
         service_stats.on_transfers_gas_used = record.on_transfers_gas_used;
-        
+
         // Also map the other fields that exist in ServiceActivityRecord
         service_stats.provided_count = record.provided_count;
         service_stats.provided_size = record.provided_size;

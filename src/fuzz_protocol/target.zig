@@ -13,6 +13,14 @@ const block_import = @import("../block_import.zig");
 
 const trace = @import("../tracing.zig").scoped(.fuzz_protocol);
 
+/// Server restart behavior after client disconnect
+pub const RestartBehavior = enum {
+    /// Exit the server after client disconnects
+    exit_on_disconnect,
+    /// Restart and wait for new connection after client disconnects
+    restart_on_disconnect,
+};
+
 /// Server state for the fuzz protocol target
 pub const ServerState = enum {
     /// Initial state, no connection established
@@ -38,13 +46,17 @@ pub const TargetServer = struct {
     // Block importer
     block_importer: block_import.BlockImporter(messages.FUZZ_PARAMS),
 
+    // Server management
+    restart_behavior: RestartBehavior = .restart_on_disconnect,
+
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, socket_path: []const u8) !Self {
+    pub fn init(allocator: std.mem.Allocator, socket_path: []const u8, restart_behavior: RestartBehavior) !Self {
         return Self{
             .allocator = allocator,
             .socket_path = socket_path,
             .block_importer = block_import.BlockImporter(messages.FUZZ_PARAMS).init(allocator),
+            .restart_behavior = restart_behavior,
         };
     }
 
@@ -52,8 +64,20 @@ pub const TargetServer = struct {
         // Deinit JAM state
         if (self.current_state) |*s| s.deinit(self.allocator);
 
-        // Remove existing socket file if it exists
+        // Clean up socket file if it exists
+        std.fs.deleteFileAbsolute(self.socket_path) catch |err| {
+            // Log but don't fail on cleanup error
+            const inner_span = trace.span(.cleanup_error);
+            defer inner_span.deinit();
+            inner_span.err("Failed to delete socket file: {s}", .{@errorName(err)});
+        };
+
         self.* = undefined; // Clear the struct
+    }
+
+    /// Request server shutdown
+    pub fn shutdown(self: *Self) void {
+        self.server_state = .shutting_down;
     }
 
     /// Start the server and bind to Unix domain socket
@@ -74,11 +98,17 @@ pub const TargetServer = struct {
         var server_socket = try address.listen(.{});
         defer server_socket.deinit();
 
-        span.debug("Server bound and listening on Unix socket", .{});
-
         // Accept connections loop
         while (true) {
+            span.debug("Server bound and listening on Unix socket", .{});
+
+            // TODO: Set a timeout for accept to allow periodic shutdown checks
+            // Note: Unix sockets don't support timeouts directly, so we'll accept this limitation
             const connection = server_socket.accept() catch |err| {
+                if (self.server_state == .shutting_down) {
+                    span.debug("Server shutting down", .{});
+                    break;
+                }
                 span.err("Failed to accept connection: {s}", .{@errorName(err)});
                 continue;
             };
@@ -87,16 +117,31 @@ pub const TargetServer = struct {
 
             // Handle connection (synchronous for now)
             self.handleConnection(connection.stream) catch |err| {
-                if (err == error.UnexpectedEndOfStream) {
-                    span.debug("Connection closed by server", .{});
-                    break; // Just skip this connection
+                const inner_span = trace.span(.handle_error);
+                defer inner_span.deinit();
 
+                switch (err) {
+                    error.EndOfStream, error.UnexpectedEndOfStream => {
+                        inner_span.debug("Connection closed by client", .{});
+                    },
+                    error.BrokenPipe => {
+                        inner_span.debug("Client disconnected unexpectedly", .{});
+                    },
+                    else => {
+                        inner_span.err("Error handling connection: {s}", .{@errorName(err)});
+                    },
                 }
-                span.err("Error handling connection: {s}", .{@errorName(err)});
             };
 
+            // Ensure connection is closed properly
             connection.stream.close();
             span.debug("Connection closed", .{});
+
+            // Check if we should restart or exit after disconnect
+            if (self.restart_behavior == .exit_on_disconnect) {
+                span.debug("restart_behavior is exit_on_disconnect, exiting server loop", .{});
+                break;
+            }
         }
     }
 
@@ -199,6 +244,7 @@ pub const TargetServer = struct {
                 if (self.server_state != .ready) return error.StateNotReady;
 
                 span.debug("Processing ImportBlock", .{});
+                span.trace("{}", .{types.fmt.format(block)});
 
                 // Use unified block importer with validation
                 var result = self.block_importer.importBlock(

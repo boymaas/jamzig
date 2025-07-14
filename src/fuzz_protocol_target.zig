@@ -1,5 +1,7 @@
 const std = @import("std");
-const TargetServer = @import("fuzz_protocol/target.zig").TargetServer;
+const target = @import("fuzz_protocol/target.zig");
+const TargetServer = target.TargetServer;
+const RestartBehavior = target.RestartBehavior;
 
 const trace = @import("tracing.zig").scoped(.fuzz_target_main);
 
@@ -72,7 +74,7 @@ pub fn main() !void {
     span.debug("Starting JAM protocol conformance testing target server", .{});
     span.debug("Socket path: {s}", .{config.socket_path});
     
-    var server = try TargetServer.init(allocator, config.socket_path);
+    var server = try TargetServer.init(allocator, config.socket_path, .exit_on_disconnect);
     defer server.deinit();
     
     // Setup signal handler for graceful shutdown

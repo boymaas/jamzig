@@ -206,7 +206,7 @@ pub const ServiceAccount = struct {
     }
 
     // Functions to add and manage preimages correspond to the discussion in Section 4.9.2 and Appendix D.
-    pub fn addPreimage(self: *ServiceAccount, key: types.StateKey, preimage: []const u8) !void {
+    pub fn dupeAndAddPreimage(self: *ServiceAccount, key: types.StateKey, preimage: []const u8) !void {
         const new_preimage = try self.preimages.allocator.dupe(u8, preimage);
         try self.preimages.put(key, new_preimage);
     }
@@ -554,7 +554,7 @@ pub const Delta = struct {
             if (self.getAccount(item.index)) |account| {
                 // Create structured preimage key using the service ID and hash
                 const preimage_key = state_keys.constructServicePreimageKey(item.index, item.hash);
-                try account.addPreimage(preimage_key, item.preimage);
+                try account.dupeAndAddPreimage(preimage_key, item.preimage);
                 try account.registerPreimageAvailable(item.index, item.hash, @intCast(item.preimage.len), t);
             } else {
                 return error.AccountNotFound;
@@ -626,7 +626,7 @@ test "ServiceAccount historicalLookup" {
 
     // Create a structured preimage key for testing (use service ID 42)
     const preimage_key = state_keys.constructServicePreimageKey(42, hash);
-    try account.addPreimage(preimage_key, preimage);
+    try account.dupeAndAddPreimage(preimage_key, preimage);
 
     const key = state_keys.constructServicePreimageLookupKey(42, @intCast(preimage.len), hash);
 

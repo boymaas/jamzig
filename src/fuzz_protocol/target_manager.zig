@@ -5,11 +5,13 @@ const messages = @import("messages.zig");
 const frame = @import("frame.zig");
 
 const trace = @import("../tracing.zig").scoped(.fuzz_protocol);
+const RestartBehavior = target.RestartBehavior;
 
 /// Thread context for target server
 const ThreadContext = struct {
     allocator: std.mem.Allocator,
     socket_path: []const u8,
+    restart_behavior: RestartBehavior,
 };
 
 /// Manages the lifecycle of target server instances for fuzzing
@@ -17,14 +19,16 @@ pub const FuzzTargetInThread = struct {
     allocator: std.mem.Allocator,
     socket_path: []const u8,
     target_thread: ?std.Thread = null,
+    restart_behavior: RestartBehavior = .restart_on_disconnect,
 
     const Self = @This();
 
     /// Initialize target manager with socket path
-    pub fn init(allocator: std.mem.Allocator, socket_path: []const u8) Self {
+    pub fn init(allocator: std.mem.Allocator, socket_path: []const u8, restart_behavior: RestartBehavior) Self {
         return Self{
             .allocator = allocator,
             .socket_path = socket_path,
+            .restart_behavior = restart_behavior,
         };
     }
 
@@ -33,7 +37,7 @@ pub const FuzzTargetInThread = struct {
         if (self.target_thread) |thread| {
             const span = trace.span(.target_manager_stop);
             defer span.deinit();
-
+            
             thread.join();
             self.target_thread = null;
 
@@ -56,6 +60,7 @@ pub const FuzzTargetInThread = struct {
         context.* = .{
             .allocator = self.allocator,
             .socket_path = self.socket_path,
+            .restart_behavior = self.restart_behavior,
         };
 
         // Start target thread
@@ -72,7 +77,7 @@ pub const FuzzTargetInThread = struct {
     fn targetThreadMain(context: *const ThreadContext) void {
         defer context.allocator.destroy(context);
 
-        var target_server = target.TargetServer.init(context.allocator, context.socket_path) catch |err| {
+        var target_server = target.TargetServer.init(context.allocator, context.socket_path, context.restart_behavior) catch |err| {
             std.log.err("Failed to initialize target server: {s}", .{@errorName(err)});
             return;
         };

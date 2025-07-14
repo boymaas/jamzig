@@ -8,6 +8,8 @@ const jam_params = @import("jam_params.zig");
 const jam_params_format = @import("jam_params_format.zig");
 const build_options = @import("build_options");
 const messages = @import("fuzz_protocol/messages.zig");
+const param_formatter = @import("fuzz_protocol/param_formatter.zig");
+const trace_config = @import("fuzz_protocol/trace_config.zig");
 
 const trace = @import("tracing.zig").scoped(.jam_conformance_fuzzer);
 
@@ -20,6 +22,24 @@ fn showHelp(params: anytype) !void {
         \\
     , .{});
     try clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{ .spacing_between_parameters = 0 });
+    std.debug.print(
+        \\
+        \\Verbose Levels:
+        \\  (no -v)    Normal output
+        \\  -v         Debug level for key scopes (fuzz_protocol, conformance components)
+        \\  -vv        Trace level for key scopes
+        \\  -vvv       Debug level for all scopes
+        \\  -vvvv      Trace level for all scopes (WARNING: very large output)
+        \\  -vvvvv     Trace level with codec debugging (WARNING: extremely large output)
+        \\
+        \\Examples:
+        \\  # Run with debug output for key components
+        \\  jam_conformance_fuzzer -v --blocks 100
+        \\
+        \\  # Run with specific seed and verbose output
+        \\  jam_conformance_fuzzer -vv --seed 12345 --blocks 500
+        \\
+    , .{});
 }
 
 pub fn main() !void {
@@ -30,13 +50,14 @@ pub fn main() !void {
     // Parse command line arguments
     const params = comptime clap.parseParamsComptime(
         \\-h, --help             Display this help and exit.
-        \\-v, --verbose          Enable verbose output
+        \\-v, --verbose          Enable verbose output (can be repeated up to 5 times)
         \\-s, --socket <str>     Unix socket path to connect to (default: /tmp/jam_conformance.sock)
         \\-S, --seed <u64>       Random seed for deterministic execution (default: timestamp)
         \\-b, --blocks <u32>     Number of blocks to process (default: 100)
         \\-o, --output <str>     Output report file (optional, prints to stdout if not specified)
         \\--dump-params          Dump JAM protocol parameters and exit
         \\--format <str>         Output format for parameter dump: json or text (default: text)
+        \\--trace-dir <str>      Directory containing W3F format traces to replay
     );
 
     var diag = clap.Diagnostic{};
@@ -56,48 +77,16 @@ pub fn main() !void {
         return;
     }
 
-    if (res.args.verbose != 0) {
-        try tracing.runtime.setScope("fuzz_protocol", .debug);
-        try tracing.runtime.setScope("jam_conformance_fuzzer", .debug);
-
-        if (res.args.verbose > 1) {
-            try tracing.runtime.setScope("codec", .debug);
-        }
-        if (res.args.verbose > 2) {
-            tracing.runtime.setDefaultLevel(.debug);
-        }
-        if (res.args.verbose > 2) {
-            tracing.runtime.setDefaultLevel(.trace);
-        }
-    }
+    // Configure tracing
+    try trace_config.configureTracing(.{
+        .verbose = res.args.verbose,
+        .trace_all = null,
+        .trace = null,
+        .trace_quiet = null,
+    });
 
     // Handle parameter dumping
-    if (res.args.@"dump-params" != 0) {
-        const format = res.args.format orelse "text";
-        const params_type = if (@hasDecl(build_options, "conformance_params") and build_options.conformance_params == .tiny) "TINY" else "FULL";
-
-        const stdout = std.io.getStdOut().writer();
-
-        if (std.mem.eql(u8, format, "json")) {
-            jam_params_format.formatParamsJson(messages.FUZZ_PARAMS, params_type, stdout) catch |err| {
-                // Handle BrokenPipe error gracefully (e.g., when piping to head)
-                if (err == error.BrokenPipe) {
-                    std.process.exit(0);
-                }
-                return err;
-            };
-        } else if (std.mem.eql(u8, format, "text")) {
-            jam_params_format.formatParamsText(messages.FUZZ_PARAMS, params_type, stdout) catch |err| {
-                // Handle BrokenPipe error gracefully (e.g., when piping to head)
-                if (err == error.BrokenPipe) {
-                    std.process.exit(0);
-                }
-                return err;
-            };
-        } else {
-            std.debug.print("Error: Invalid format '{s}'. Use 'json' or 'text'.\n", .{format});
-            std.process.exit(1);
-        }
+    if (try param_formatter.handleParamDump(res.args.@"dump-params" != 0, res.args.format)) {
         return;
     }
 
@@ -106,13 +95,19 @@ pub fn main() !void {
     const seed = res.args.seed orelse @as(u64, @intCast(std.time.timestamp()));
     const num_blocks = res.args.blocks orelse 100;
     const output_file = res.args.output;
+    const trace_dir = res.args.@"trace-dir";
 
     // Print configuration
     std.debug.print("JAM Conformance Fuzzer\n", .{});
     std.debug.print("======================\n", .{});
     std.debug.print("Socket path: {s}\n", .{socket_path});
-    std.debug.print("Seed: {d}\n", .{seed});
-    std.debug.print("Blocks to process: {d}\n", .{num_blocks});
+    if (trace_dir) |dir| {
+        std.debug.print("Trace directory: {s}\n", .{dir});
+        std.debug.print("Trace format: W3F\n", .{});
+    } else {
+        std.debug.print("Seed: {d}\n", .{seed});
+        std.debug.print("Blocks to process: {d}\n", .{num_blocks});
+    }
     if (output_file) |f| {
         std.debug.print("Output file: {s}\n", .{f});
     } else {
@@ -121,11 +116,17 @@ pub fn main() !void {
     std.debug.print("\n", .{});
 
     // Setup signal handler for graceful shutdown
+    // Note: Using a global atomic is necessary for signal handlers which can't capture context
+    const shutdown_requested = struct {
+        var atomic: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
+    };
+    
     var sigaction = std.posix.Sigaction{
         .handler = .{ .handler = struct {
             fn handler(_: c_int) callconv(.C) void {
-                std.debug.print("\nReceived signal, shutting down...\n", .{});
-                std.process.exit(0);
+                // Signal handlers must be async-signal-safe
+                // Only set atomic flag, don't do I/O or complex operations
+                shutdown_requested.atomic.store(true, .monotonic);
             }
         }.handler },
         .mask = std.posix.empty_sigset,
@@ -143,9 +144,7 @@ pub fn main() !void {
 
     // Connect to target
     fuzzer.connectToTarget() catch |err| {
-        std.debug.print("Error: Failed to connect to target: {s}\n", .{@errorName(err)});
-        std.debug.print("\nMake sure the target server is running:\n", .{});
-        std.debug.print("  ./zig-out/bin/jam_conformance_target --socket {s}\n", .{socket_path});
+        std.debug.print("Error: Failed to connect to target at {s}: {s}\n", .{ socket_path, @errorName(err) });
         return err;
     };
 
@@ -153,10 +152,26 @@ pub fn main() !void {
     try fuzzer.performHandshake();
     std.debug.print("Handshake completed successfully\n\n", .{});
 
-    // Run fuzzing cycle
-    std.debug.print("Starting conformance testing with {d} blocks...\n", .{num_blocks});
-    var result = try fuzzer.runFuzzCycle(num_blocks);
+    // Run fuzzing cycle or trace mode
+    var result = if (trace_dir) |dir| blk: {
+        std.debug.print("Starting trace-based conformance testing from: {s}\n", .{dir});
+        break :blk try fuzzer.runTraceMode(dir);
+    } else blk: {
+        std.debug.print("Starting conformance testing with {d} blocks...\n", .{num_blocks});
+        // Pass shutdown check function
+        const check_shutdown = struct {
+            fn check() bool {
+                return shutdown_requested.atomic.load(.monotonic);
+            }
+        }.check;
+        break :blk try fuzzer.runFuzzCycleWithShutdown(num_blocks, check_shutdown);
+    };
     defer result.deinit(allocator);
+    
+    // Check if we were interrupted
+    if (shutdown_requested.atomic.load(.monotonic)) {
+        std.debug.print("\nReceived signal, shutting down gracefully...\n", .{});
+    }
 
     // End session
     fuzzer.endSession();
@@ -177,7 +192,11 @@ pub fn main() !void {
 
     // Print summary
     if (result.isSuccess()) {
-        std.debug.print("\n✓ Conformance test PASSED - All {d} blocks processed successfully\n", .{num_blocks});
+        if (trace_dir) |_| {
+            std.debug.print("\n✓ Conformance test PASSED - All traces processed successfully\n", .{});
+        } else {
+            std.debug.print("\n✓ Conformance test PASSED - All {d} blocks processed successfully\n", .{num_blocks});
+        }
         std.process.exit(0);
     } else {
         std.debug.print("\n✗ Conformance test FAILED - State mismatch detected\n", .{});

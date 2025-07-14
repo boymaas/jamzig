@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const FuzzTargetServerInThread = @import("../target_manager.zig").FuzzTargetInThread;
+const RestartBehavior = @import("../target.zig").RestartBehavior;
 
 const trace = @import("../../tracing.zig").scoped(.fuzz_protocol);
 
@@ -11,7 +12,7 @@ test "target_manager_initialization" {
     const allocator = testing.allocator;
     const socket_path = "/tmp/test_target_manager_init.sock";
 
-    var manager = FuzzTargetServerInThread.init(allocator, socket_path);
+    var manager = FuzzTargetServerInThread.init(allocator, socket_path, .exit_on_disconnect);
     defer manager.join();
 
     // Verify initialization

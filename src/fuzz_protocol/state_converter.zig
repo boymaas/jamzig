@@ -26,11 +26,9 @@ pub const FuzzStateResult = struct {
 
         /// Append a key-value pair, copying the value
         fn append(self: *Builder, key: messages.TrieKey, value: []const u8) !void {
-            // Make a copy of the value since the original may be freed
-            const value_copy = try self.allocator.dupe(u8, value);
             self.list.appendAssumeCapacity(.{
                 .key = key,
-                .value = value_copy,
+                .value = value,
             });
         }
 
@@ -82,7 +80,7 @@ pub fn jamStateToFuzzState(
     const root = try dict.buildStateRoot(allocator);
 
     // Convert to KeyValue array
-    const kv_array = try dict.toKeyValueArray();
+    const kv_array = try dict.toKeyValueArrayOwned();
     defer allocator.free(kv_array);
 
     // Convert to messages.State format using capacity-hinted builder
@@ -105,7 +103,7 @@ pub fn dictionaryToFuzzState(
     dict: *const state_dictionary.MerklizationDictionary,
 ) !messages.State {
     // Convert to KeyValue array
-    const kv_array = try dict.toKeyValueArray();
+    const kv_array = try dict.toKeyValueArrayOwned();
     defer allocator.free(kv_array);
 
     // Convert to messages.State format
