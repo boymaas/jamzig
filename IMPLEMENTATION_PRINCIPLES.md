@@ -69,6 +69,24 @@ collection.addItem(try allocator.dupe(u8, borrowed_string)); // Explicit copy
 
 ## Memory Management Patterns
 
+### Mandatory Cleanup Methods
+**Every struct that holds owned memory MUST implement an appropriate `deinit` or `destroy` method.** This is non-negotiable for memory safety.
+
+```zig
+pub const MyStruct = struct {
+    allocator: Allocator,
+    owned_data: []u8,        // Owned memory
+    owned_list: ArrayList(Item), // Contains owned memory
+    
+    // REQUIRED: deinit method to free all owned memory
+    pub fn deinit(self: *MyStruct) void {
+        self.allocator.free(self.owned_data);
+        self.owned_list.deinit();
+        self.* = undefined; // Catch use-after-free
+    }
+};
+```
+
 ### Create/Destroy Pattern
 For heap-allocated objects, prefer `create`/`destroy` over `init`/`deinit`:
 
@@ -264,8 +282,17 @@ const result = optional orelse return error.NotFound;
 ## Testing Principles
 
 ### Test Naming
+Test names should use lowercase with underscores (snake_case) for better readability:
 ```zig
-test "subsystem: component: specific behavior" {
+test "decode_work_report_with_invalid_signature" {
+    // Test implementation
+}
+
+test "state_transition_empty_block" {
+    // Test implementation
+}
+
+test "pvm_fuzzer_memory_allocation" {
     // Test implementation
 }
 ```
