@@ -1,5 +1,7 @@
 # TigerStyle
 
+EDIT: Some things are changed to match JamZig's style.
+
 ## The Essence Of Style
 
 > “There are three things extremely hard: steel, a diamond, and to know one's self.” — Benjamin
@@ -276,7 +278,7 @@ Beyond these rules:
   understand the domain. Take time to find the perfect name, to find nouns and verbs that work
   together, so that the whole is greater than the sum of its parts.
 
-- Use `snake_case` for function, variable, and file names. The underscore is the closest thing we
+- Use `snake_case` for variable, and file names. The underscore is the closest thing we
   have as programmers to a space, and helps to separate words and encourage descriptive names. We
   don't use Zig's `CamelCase.zig` style for "struct" files to keep the convention simple and
   consistent.
