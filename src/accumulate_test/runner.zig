@@ -9,7 +9,7 @@ const diff = @import("../tests/diff.zig");
 const state_diff = @import("../tests/state_diff.zig");
 const Params = @import("../jam_params.zig").Params;
 
-pub fn processAccumulateReports(
+pub fn processAccumulationReports(
     comptime params: Params,
     allocator: std.mem.Allocator,
     test_case: *const tvector.TestCase,
@@ -71,7 +71,7 @@ pub fn runAccumulateTest(comptime params: Params, allocator: std.mem.Allocator, 
     // std.debug.print("State: {s}\n", .{expected_state});
 
     // Process the work reports using StateTransition
-    const process_result = processAccumulateReports(
+    const process_result = processAccumulationReports(
         params,
         allocator,
         &test_case,

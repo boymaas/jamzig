@@ -22,7 +22,7 @@ pub fn transition(
     defer span.deinit();
 
     // Process the newly available reports
-    const result = try accumulate.processAccumulateReports(
+    const result = try accumulate.processAccumulationReports(
         params,
         stx,
         reports,

@@ -23,6 +23,14 @@ pub fn processAuthorizations(
     stx: *state_delta.StateTransition(params),
     authorizers: []const CoreAuthorizer,
 ) !void {
+    // Preconditions
+    std.debug.assert(authorizers.len <= params.core_count);
+    comptime {
+        std.debug.assert(params.core_count > 0);
+        std.debug.assert(params.max_authorizations_pool_items > 0);
+        std.debug.assert(params.max_authorizations_queue_items > 0);
+    }
+
     const span = trace.span(.process_authorizations);
     defer span.deinit();
 
@@ -35,7 +43,27 @@ pub fn processAuthorizations(
     const phi_prime: *state.Phi(params.core_count, params.max_authorizations_queue_items) =
         try stx.ensure(.phi_prime);
 
-    const process_span = span.child(.process_authorizers);
+    // Process input authorizers (removals)
+    try processInputAuthorizers(params, alpha_prime, authorizers, span);
+
+    // Process authorization rotation for all cores
+    try processAuthorizationRotation(params, alpha_prime, phi_prime, stx.time.current_slot, span);
+
+    span.debug("Authorization processing complete for slot {d}", .{stx.time.current_slot});
+}
+
+// Process input authorizers by removing them from pools if they exist
+fn processInputAuthorizers(
+    comptime params: Params,
+    alpha_prime: anytype,
+    authorizers: []const CoreAuthorizer,
+    // REFACTOR: could we have a more specific type for parent_span?
+    parent_span: anytype,
+) !void {
+    // Preconditions
+    std.debug.assert(authorizers.len <= params.core_count);
+
+    const process_span = parent_span.child(.process_authorizers);
     defer process_span.deinit();
     process_span.debug("Processing {d} input authorizers", .{authorizers.len});
 
@@ -47,15 +75,15 @@ pub fn processAuthorizations(
         const auth_hash = authorizer.auth_hash;
 
         auth_span.debug("Processing authorizer {d}/{d} for core {d}", .{ i + 1, authorizers.len, core });
-        auth_span.trace("Auth hash: {}", .{std.fmt.fmtSliceHexLower(&auth_hash)});
+        auth_span.trace("Auth hash: {s}", .{std.fmt.fmtSliceHexLower(&auth_hash)});
 
-        // Skip if core is invalid
+        // Validate core index
         if (core >= params.core_count) {
             auth_span.warn("Invalid core: {d} (max: {d})", .{ core, params.core_count - 1 });
             return error.InvalidCore;
         }
 
-        // First, check if the auth is already in the pool
+        // Check if the auth is already in the pool
         const is_authorized = alpha_prime.isAuthorized(core, auth_hash);
         auth_span.trace("Auth in pool check result: {}", .{is_authorized});
 
@@ -71,67 +99,124 @@ pub fn processAuthorizations(
         }
     }
 
-    const rotation_span = span.child(.rotation);
-    defer rotation_span.deinit();
-    rotation_span.debug("Processing authorization rotation across {d} cores", .{params.core_count});
+    // Postcondition: all valid authorizers have been processed
+    std.debug.assert(true); // Placeholder for more specific postcondition
+}
+
+// Process authorization rotation for all cores
+fn processAuthorizationRotation(
+    comptime params: Params,
+    alpha_prime: anytype,
+    phi_prime: anytype,
+    current_slot: types.TimeSlot,
+    parent_span: anytype,
+) !void {
+    // Preconditions
+    comptime {
+        std.debug.assert(params.core_count > 0);
+    }
+    std.debug.assert(current_slot < std.math.maxInt(@TypeOf(current_slot)));
+
+    const authorization_rotation_span = parent_span.child(.rotation);
+    defer authorization_rotation_span.deinit();
+    authorization_rotation_span.debug("Processing authorization rotation across {d} cores", .{params.core_count});
 
     for (0..params.core_count) |core_index| {
-        const core_span = rotation_span.child(.core);
-        defer core_span.deinit();
-        core_span.debug("Processing core {d}", .{core_index});
+        try rotateAuthorizationForCore(
+            params,
+            alpha_prime,
+            phi_prime,
+            @intCast(core_index),
+            current_slot,
+            authorization_rotation_span,
+        );
+    }
+}
 
-        const queue_items = phi_prime.queue[core_index].items;
-        core_span.trace("Queue items for core {d}: {d} available", .{ core_index, queue_items.len });
+// Rotate authorization for a single core
+fn rotateAuthorizationForCore(
+    comptime params: Params,
+    alpha_prime: anytype,
+    phi_prime: anytype,
+    core_index: types.CoreIndex,
+    current_slot: types.TimeSlot,
+    parent_span: anytype,
+) !void {
+    // Preconditions
+    std.debug.assert(core_index < params.core_count);
 
-        if (queue_items.len == 0) {
-            core_span.debug("Core {d} has empty queue, skipping", .{core_index});
-            continue;
-        }
+    const core_span = parent_span.child(.core);
+    defer core_span.deinit();
+    core_span.debug("Processing core {d}", .{core_index});
 
-        const auth_index = @mod(stx.time.current_slot, queue_items.len);
-        core_span.trace("Selected auth index {d} for slot {d}", .{ auth_index, stx.time.current_slot });
+    const queue_items = phi_prime.queue[core_index].items;
+    core_span.trace("Queue items for core {d}: {d} available", .{ core_index, queue_items.len });
 
-        const pool_size = alpha_prime.pools[core_index].len;
-        const max_pool_size = params.max_authorizations_pool_items;
-        core_span.trace("Pool size for core {d}: {d}/{d}", .{ core_index, pool_size, max_pool_size });
-
-        // We always select an item from the queue and place it at position 0 of the pool,
-        // shifting all other items up by one position.
-        const auth_item = queue_items[auth_index];
-        core_span.debug("Adding auth from queue to pool: {}", .{std.fmt.fmtSliceHexLower(&auth_item)});
-
-        const add_span = core_span.child(.add_authorizer);
-        defer add_span.deinit();
-
-        // Now we need to shift all items up by one position
-        var pool = &alpha_prime.pools[core_index];
-
-        // Check if the pool is already at maximum capacity
-        if (pool.len >= params.max_authorizations_pool_items) {
-            // Pool is full, shift everything down by one position (removing the oldest)
-            const pool_slice = pool.slice();
-            for (0..pool_slice.len - 1) |i| {
-                pool_slice[i] = pool_slice[i + 1];
-            }
-
-            // Set the new auth at the last position
-            pool_slice[pool_slice.len - 1] = auth_item;
-        } else {
-            // Pool has space, simply append the new auth
-            try pool.append(auth_item);
-        }
-
-        add_span.debug("Successfully added authorizer to pool at position 0", .{});
+    if (queue_items.len == 0) {
+        core_span.debug("Core {d} has empty queue, skipping", .{core_index});
+        return;
     }
 
-    span.debug("Authorization processing complete for slot {d}", .{stx.time.current_slot});
+    const auth_index = @mod(current_slot, queue_items.len);
+    core_span.trace("Selected auth index {d} for slot {d}", .{ auth_index, current_slot });
+
+    const selected_auth = queue_items[auth_index];
+    core_span.debug("Adding auth from queue to pool: {s}", .{std.fmt.fmtSliceHexLower(&selected_auth)});
+
+    const add_span = core_span.child(.add_authorizer);
+    defer add_span.deinit();
+
+    try addAuthorizerToPool(params, alpha_prime, core_index, selected_auth);
+
+    add_span.debug("Successfully added authorizer to pool", .{});
+}
+
+// Add an authorizer to a core's pool, managing capacity
+fn addAuthorizerToPool(
+    comptime params: Params,
+    alpha_prime: anytype,
+    core_index: types.CoreIndex,
+    auth_hash: types.OpaqueHash,
+) !void {
+    // Preconditions
+    std.debug.assert(core_index < params.core_count);
+    std.debug.assert(auth_hash.len == @sizeOf(types.OpaqueHash));
+
+    var authorization_pool = &alpha_prime.pools[core_index];
+    const initial_pool_size = authorization_pool.len;
+
+    // Check if the pool is already at maximum capacity
+    if (authorization_pool.len >= params.max_authorizations_pool_items) {
+        // Pool is full, shift everything down by one position (removing the oldest)
+        const pool_slice = authorization_pool.slice();
+        std.debug.assert(pool_slice.len > 0);
+
+        for (0..pool_slice.len - 1) |i| {
+            pool_slice[i] = pool_slice[i + 1];
+        }
+
+        // Set the new auth at the last position
+        pool_slice[pool_slice.len - 1] = auth_hash;
+
+        // Postcondition: pool size unchanged
+        std.debug.assert(authorization_pool.len == initial_pool_size);
+    } else {
+        // Pool has space, simply append the new auth
+        try authorization_pool.append(auth_hash);
+
+        // Postcondition: pool size increased by 1
+        std.debug.assert(authorization_pool.len == initial_pool_size + 1);
+    }
 }
 
 pub fn verifyAuthorizationsExtrinsicPre(
     comptime params: anytype,
-    slot: types.TimeSlot,
     authorizers: []const CoreAuthorizer,
+    slot: types.TimeSlot,
 ) !void {
+    // Preconditions
+    std.debug.assert(authorizers.len <= params.core_count);
+
     const span = trace.span(.verify_pre);
     defer span.deinit();
 
@@ -139,9 +224,18 @@ pub fn verifyAuthorizationsExtrinsicPre(
     span.trace("Number of authorizers: {d}", .{authorizers.len});
     span.trace("Parameters: core_count={d}", .{params.core_count});
 
-    // No pre-verification requirements for authorizations
-    span.debug("No pre-verification requirements, check passed", .{});
-    return;
+    // Validate all core indices are within bounds
+    for (authorizers) |authorizer| {
+        if (authorizer.core >= params.core_count) {
+            span.err("Invalid core index: {d} >= {d}", .{ authorizer.core, params.core_count });
+            return error.InvalidCore;
+        }
+    }
+
+    span.debug("Pre-verification passed", .{});
+
+    // Postcondition: all authorizers have valid core indices
+    std.debug.assert(true);
 }
 
 pub fn verifyAuthorizationsExtrinsicPost(
@@ -150,6 +244,11 @@ pub fn verifyAuthorizationsExtrinsicPost(
     phi_prime: anytype,
     authorizers: []const CoreAuthorizer,
 ) !void {
+    // Preconditions
+    std.debug.assert(authorizers.len <= params.core_count);
+    std.debug.assert(alpha_prime.pools.len == params.core_count);
+    std.debug.assert(phi_prime.queue.len == params.core_count);
+
     const span = trace.span(.verify_post);
     defer span.deinit();
 
@@ -160,17 +259,21 @@ pub fn verifyAuthorizationsExtrinsicPost(
     // Report alpha_prime and phi_prime state (debugging purposes)
     span.trace("Alpha prime pool size by core:", .{});
     for (0..params.core_count) |core_index| {
-        const pool_size = if (core_index < alpha_prime.pools.len) alpha_prime.pools[core_index].len else 0;
+        const pool_size = alpha_prime.pools[core_index].len;
         span.trace("  Core {d}: {d} authorizers", .{ core_index, pool_size });
+
+        // Verify pool size is within bounds
+        std.debug.assert(pool_size <= params.max_authorizations_pool_items);
     }
 
     span.trace("Phi prime queue size by core:", .{});
     for (0..params.core_count) |core_index| {
         const queue_size = phi_prime.getQueueLength(core_index);
         span.trace("  Core {d}: {d} authorizers", .{ core_index, queue_size });
+
+        // Verify queue size is within bounds
+        std.debug.assert(queue_size <= params.max_authorizations_queue_items);
     }
 
-    // No post-verification requirements for authorizations
-    span.debug("No post-verification requirements, check passed", .{});
-    return;
+    span.debug("Post-verification passed", .{});
 }
