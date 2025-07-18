@@ -313,6 +313,9 @@ To maintain consistency and predictability across the codebase, follow this para
 1. **Self parameter** (`self`, `*self`, `*const self`)
 2. **Compile-time parameters** (`comptime` params)
 3. **Allocator** (if needed)
+   - Only include if the function needs an allocator for its own allocations
+   - Do NOT include if the struct already has an allocator member
+   - Do NOT include if using types that manage their own allocation (e.g., std.AutoArrayHashMap)
 4. **State components** (in canonical order):
    - Alpha (α) - Authorizations
    - Beta (β) - Recent blocks

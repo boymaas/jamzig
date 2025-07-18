@@ -103,6 +103,10 @@ pub fn processDisputesExtrinsic(
     extrinsic: DisputesExtrinsic,
     validator_count: usize,
 ) !void {
+    // Safety assertions
+    std.debug.assert(core_count > 0);
+    std.debug.assert(validator_count > 0);
+
     const span = trace.span(.process_disputes);
     defer span.deinit();
     span.debug("Processing disputes extrinsic with {d} validators", .{validator_count});
@@ -117,7 +121,7 @@ pub fn processDisputesExtrinsic(
         const verdict_span = span.child(.process_verdict);
         defer verdict_span.deinit();
         verdict_span.debug("Processing verdict {d} of {d}", .{ i + 1, extrinsic.verdicts.len });
-        verdict_span.trace("Target hash: {any}", .{std.fmt.fmtSliceHexLower(&verdict.target)});
+        verdict_span.trace("Target hash: {s}", .{std.fmt.fmtSliceHexLower(&verdict.target)});
 
         const positive_judgments = countPositiveJudgments(verdict);
         verdict_span.debug("Positive judgments: {d}", .{positive_judgments});
@@ -150,7 +154,7 @@ pub fn processDisputesExtrinsic(
         const culprit_span = culprits_span.child(.culprit);
         defer culprit_span.deinit();
         culprit_span.debug("Processing culprit {d} of {d}", .{ i + 1, extrinsic.culprits.len });
-        culprit_span.trace("Public key: {any}", .{std.fmt.fmtSliceHexLower(&culprit.key)});
+        culprit_span.trace("Public key: {s}", .{std.fmt.fmtSliceHexLower(&culprit.key)});
         try psi_prime.punish_set.put(culprit.key, {});
     }
 
@@ -163,7 +167,7 @@ pub fn processDisputesExtrinsic(
         const fault_span = faults_span.child(.fault);
         defer fault_span.deinit();
         fault_span.debug("Processing fault {d} of {d}", .{ i + 1, extrinsic.faults.len });
-        fault_span.trace("Public key: {any}", .{std.fmt.fmtSliceHexLower(&fault.key)});
+        fault_span.trace("Public key: {s}", .{std.fmt.fmtSliceHexLower(&fault.key)});
         try psi_prime.punish_set.put(fault.key, {});
     }
 }
@@ -213,6 +217,94 @@ fn judgmentValidatorIndex(judgment: *const Judgment) u16 {
     return judgment.index;
 }
 
+fn verifyVerdictSignatures(
+    verdict: Verdict,
+    kappa: []const PublicKey,
+    lambda: []const PublicKey,
+    validator_count: usize,
+    current_epoch: u32,
+) VerificationError!void {
+    for (verdict.votes) |judgment| {
+        if (judgment.index >= validator_count) {
+            return VerificationError.BadValidatorIndex;
+        }
+
+        const validator_key = if (verdict.age == current_epoch)
+            kappa[judgment.index]
+        else if (verdict.age == current_epoch - 1)
+            lambda[judgment.index]
+        else
+            return VerificationError.BadJudgementAge;
+
+        const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(validator_key) catch {
+            return VerificationError.BadValidatorPubKey;
+        };
+
+        const message = if (judgment.vote)
+            "jam_valid" ++ verdict.target
+        else
+            "jam_invalid" ++ verdict.target;
+
+        const signature = crypto.sign.Ed25519.Signature.fromBytes(judgment.signature);
+
+        signature.verify(message, public_key) catch {
+            return VerificationError.BadSignature;
+        };
+    }
+}
+
+fn verifyCulpritSignatures(culprits: []const Culprit) VerificationError!void {
+    for (culprits) |culprit| {
+        const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(culprit.key) catch {
+            return VerificationError.BadValidatorPubKey;
+        };
+
+        const message = "jam_guarantee" ++ culprit.target;
+
+        const signature = crypto.sign.Ed25519.Signature.fromBytes(culprit.signature);
+
+        signature.verify(message, public_key) catch {
+            return VerificationError.BadSignature;
+        };
+    }
+}
+
+fn verifyFaultSignatures(faults: []const Fault) VerificationError!void {
+    for (faults) |fault| {
+        const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(fault.key) catch {
+            return VerificationError.BadValidatorPubKey;
+        };
+
+        const message = if (fault.vote)
+            "jam_valid" ++ fault.target
+        else
+            "jam_invalid" ++ fault.target;
+
+        const signature = crypto.sign.Ed25519.Signature.fromBytes(fault.signature);
+
+        signature.verify(message, public_key) catch {
+            return VerificationError.BadSignature;
+        };
+    }
+}
+
+fn verifyVerdictRequirements(
+    verdicts: []const Verdict,
+    culprits: []const Culprit,
+    faults: []const Fault,
+    validator_count: usize,
+) VerificationError!void {
+    for (verdicts) |verdict| {
+        const positive_votes = countPositiveJudgments(verdict);
+        if (positive_votes == 0 and culprits.len < 2) {
+            return VerificationError.NotEnoughCulprits;
+        }
+        if (positive_votes == validator_count * 2 / 3 + 1 and faults.len == 0) {
+            return VerificationError.NotEnoughFaults;
+        }
+    }
+}
+
 pub fn verifyDisputesExtrinsicPre(
     extrinsic: DisputesExtrinsic,
     current_state: *const Psi,
@@ -221,6 +313,12 @@ pub fn verifyDisputesExtrinsicPre(
     validator_count: usize,
     current_epoch: u32,
 ) VerificationError!void {
+    // Safety assertions
+    std.debug.assert(validator_count > 0);
+    std.debug.assert(kappa.len == validator_count);
+    std.debug.assert(lambda.len == validator_count);
+    std.debug.assert(current_epoch >= 0);
+
     const span = trace.span(.verify_pre);
     defer span.deinit();
     span.debug("Starting pre-verification of disputes extrinsic", .{});
@@ -241,68 +339,15 @@ pub fn verifyDisputesExtrinsicPre(
         VerificationError.VerdictsNotSortedUnique,
     );
 
+    // Verify all signatures
     for (extrinsic.verdicts) |verdict| {
-        // Verify signatures
-        for (verdict.votes) |judgment| {
-            if (judgment.index >= validator_count) {
-                return VerificationError.BadValidatorIndex;
-            }
+        try verifyVerdictSignatures(verdict, kappa, lambda, validator_count, current_epoch);
+    }
 
-            const validator_key = if (verdict.age == current_epoch)
-                kappa[judgment.index]
-            else if (verdict.age == current_epoch - 1)
-                lambda[judgment.index]
-            else
-                return VerificationError.BadJudgementAge;
+    try verifyCulpritSignatures(extrinsic.culprits);
+    try verifyFaultSignatures(extrinsic.faults);
 
-            const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(validator_key) catch {
-                return VerificationError.BadValidatorPubKey;
-            };
-
-            const message = if (judgment.vote)
-                "jam_valid" ++ verdict.target
-            else
-                "jam_invalid" ++ verdict.target;
-
-            const signature = crypto.sign.Ed25519.Signature.fromBytes(judgment.signature);
-
-            signature.verify(message, public_key) catch {
-                return VerificationError.BadSignature;
-            };
-        }
-
-        // Check culprit signatures
-        for (extrinsic.culprits) |culprit| {
-            const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(culprit.key) catch {
-                return VerificationError.BadValidatorPubKey;
-            };
-
-            const message = "jam_guarantee" ++ culprit.target;
-
-            const signature = crypto.sign.Ed25519.Signature.fromBytes(culprit.signature);
-
-            signature.verify(message, public_key) catch {
-                return VerificationError.BadSignature;
-            };
-        }
-
-        // Check fault signatures
-        for (extrinsic.faults) |fault| {
-            const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(fault.key) catch {
-                return VerificationError.BadValidatorPubKey;
-            };
-
-            const message = if (fault.vote)
-                "jam_valid" ++ fault.target
-            else
-                "jam_invalid" ++ fault.target;
-
-            const signature = crypto.sign.Ed25519.Signature.fromBytes(fault.signature);
-
-            signature.verify(message, public_key) catch {
-                return VerificationError.BadSignature;
-            };
-        }
+    for (extrinsic.verdicts) |verdict| {
 
         // Check if the verdict has already been judged
         if (current_state.good_set.contains(verdict.target) or
@@ -353,15 +398,7 @@ pub fn verifyDisputesExtrinsicPre(
     );
 
     // Check for enough culprits and faults
-    for (extrinsic.verdicts) |verdict| {
-        const positive_votes = countPositiveJudgments(verdict);
-        if (positive_votes == 0 and extrinsic.culprits.len < 2) {
-            return VerificationError.NotEnoughCulprits;
-        }
-        if (positive_votes == validator_count * 2 / 3 + 1 and extrinsic.faults.len == 0) {
-            return VerificationError.NotEnoughFaults;
-        }
-    }
+    try verifyVerdictRequirements(extrinsic.verdicts, extrinsic.culprits, extrinsic.faults, validator_count);
 
     // Verify culprits
     for (extrinsic.culprits) |culprit| {
