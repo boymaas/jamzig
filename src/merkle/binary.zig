@@ -258,9 +258,6 @@ pub fn binaryMerkleRoot(blobs: Blobs, comptime hasher: type) Hash {
     }
 }
 
-// Alias for backward compatibility
-pub const M_b = binaryMerkleRoot;
-
 /// Hashes the given data using the provided hasher.
 fn hashUsingHasher(hasher: type, data: []const u8) Hash {
     var hash_buffer: [32]u8 = undefined;
@@ -320,27 +317,27 @@ test "computeTrace multiple blobs" {
     try testing.expectEqualSlices(u8, expected, &result[0].Hash);
 }
 
-test "M_b_function_empty_input" {
+test "binaryMerkleRoot empty input" {
     const blobs = [_][]const u8{};
-    const result = M_b(&blobs, testHasher);
+    const result = binaryMerkleRoot(&blobs, testHasher);
 
     // The result should be the same as N function for empty input
     const expected = [_]u8{0} ** 32;
     try testing.expectEqualSlices(u8, &expected, &result);
 }
 
-test "M_b_function_single_blob" {
+test "binaryMerkleRoot single blob" {
     const blob = [_][]const u8{"hello"};
-    const result = M_b(&blob, testHasher);
+    const result = binaryMerkleRoot(&blob, testHasher);
 
     var buffer: [32]u8 = undefined;
     const expected = try std.fmt.hexToBytes(&buffer, "324dcf027dd4a30a932c441f365a25e86b173defa4b8e58948253471b81b72cf");
     try testing.expectEqualSlices(u8, expected, &result);
 }
 
-test "M_b_function_multiple_blobs" {
+test "binaryMerkleRoot multiple blobs" {
     const blobs = [_][]const u8{ "hello", "world", "zig  " };
-    const result = M_b(&blobs, testHasher);
+    const result = binaryMerkleRoot(&blobs, testHasher);
 
     var buffer: [32]u8 = undefined;
     const expected = try std.fmt.hexToBytes(&buffer, "41505441F20EE9AEE79098A48A868C77F625DF1AFFD4F66A84A58158B8CF026F");

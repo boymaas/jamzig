@@ -80,9 +80,6 @@ pub fn superPeak(mrange: []const Entry, hasher: anytype) Hash {
     return superPeakInner(filtered, hasher);
 }
 
-// Alias for backward compatibility
-pub const super_peak = superPeak;
-
 fn superPeakInner(h: []Hash, hasher: anytype) Hash {
     // Base case: empty sequence returns zero hash
     if (h.len == 0) {

@@ -110,6 +110,3 @@ fn merkle(kvs: []Entry, i: usize) Hash {
 pub fn jamMerkleRoot(kvs: []Entry) Hash {
     return merkle(kvs, 0);
 }
-
-/// Alias for backward compatibility - will be deprecated
-pub const M_sigma = jamMerkleRoot;
