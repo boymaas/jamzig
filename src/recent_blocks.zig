@@ -6,8 +6,8 @@ const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
 const types = @import("types.zig");
-const merkle = @import("merkle_binary.zig");
-const mmr = @import("merkle_mountain_ranges.zig");
+const merkle = @import("merkle/binary.zig");
+const mmr = @import("merkle/mmr.zig");
 
 const jam_params = @import("jam_params.zig");
 
@@ -116,7 +116,7 @@ pub const RecentHistory = struct {
             self.blocks.items[self.blocks.items.len - 1].state_root = input.parent_state_root;
         }
 
-        // Append the accumlate root Beefy MMR
+        // Create or update Beefy MMR
         const last_beefy_mmr = if (self.blocks.getLastOrNull()) |last_block|
             try self.allocator.dupe(?types.Hash, last_block.beefy_mmr)
         else
@@ -128,7 +128,7 @@ pub const RecentHistory = struct {
         // Append the accumulate root to the Beefy MMR
         try mmr.append(&beefy_mmr, input.accumulate_root, Keccak256);
 
-        // Update the new block's Beefy MMR
+        // Update the new block's Beefy MMR (transfer ownership)
         block_info.beefy_mmr = try beefy_mmr.toOwnedSlice();
 
         // Add the new block to the recent history

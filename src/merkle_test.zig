@@ -21,7 +21,7 @@ const merkle = @import("merkle.zig");
 //             try e.append(merkle.Entry{ .k = entry.key_ptr.*, .v = entry.value_ptr.* });
 //         }
 //
-//         const commitment = try merkle.M_sigma(allocator, e.items);
+//         const commitment = merkle.jamMerkleRoot(e.items);
 //
 //         try std.testing.expectEqual(trie_test.output, commitment);
 //     }

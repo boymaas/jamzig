@@ -9,7 +9,7 @@ const recent_blocks = @import("../recent_blocks.zig");
 const RecentHistory = recent_blocks.RecentHistory;
 
 const decoder = @import("../codec/decoder.zig");
-const mmr = @import("../merkle_mountain_ranges.zig");
+const mmr = @import("../merkle/mmr.zig");
 const codec = @import("../codec.zig");
 
 const trace = @import("../tracing.zig").scoped(.decode_beta);

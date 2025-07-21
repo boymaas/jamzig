@@ -32,7 +32,7 @@ pub fn encode(self: *const RecentHistory, writer: anytype) !void {
         block_span.debug("Encoded header hash", .{});
 
         // Encode beefy MMR
-        const mmr_encoder = @import("../merkle_mountain_ranges.zig").encode;
+        const mmr_encoder = @import("../merkle/mmr.zig").encodePeaks;
         block_span.debug("Encoding beefy MMR", .{});
         try mmr_encoder(block.beefy_mmr, writer);
         block_span.debug("Encoded beefy MMR", .{});

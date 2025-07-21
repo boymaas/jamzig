@@ -47,6 +47,9 @@ fn bit(k: Key, i: usize) bool {
     return (k[i >> 3] & (@as(u8, 0x80) >> @intCast(i & 7))) != 0;
 }
 
+/// Partitions entries in-place based on bit at position i.
+/// Returns the index of the first entry with bit i set to 1.
+/// Caller owns the kvs slice and this function modifies it in-place.
 fn partition(kvs: []Entry, i: usize) usize {
     if (kvs.len <= 1) return 0;
 
@@ -73,6 +76,8 @@ fn partition(kvs: []Entry, i: usize) usize {
     return left;
 }
 
+/// Computes merkle root recursively. The kvs slice is modified in-place
+/// during partitioning. Caller must own the kvs slice.
 fn merkle(kvs: []Entry, i: usize) Hash {
     if (kvs.len == 0) {
         return [_]u8{0} ** 32;
@@ -84,7 +89,7 @@ fn merkle(kvs: []Entry, i: usize) Hash {
         return result;
     }
 
-    // Find the division point
+    // Find the division point - modifies kvs in-place
     const split = partition(kvs, i);
 
     // Recursively process left and right partitions
@@ -98,6 +103,10 @@ fn merkle(kvs: []Entry, i: usize) Hash {
     return result;
 }
 
-pub fn M_sigma(kvs: []Entry) Hash {
+/// Computes the JAM merkle root for the given key-value entries.
+/// IMPORTANT: This function modifies the kvs slice in-place during computation.
+/// The caller must own the kvs slice and it should be a mutable copy if the
+/// original order needs to be preserved.
+pub fn jamMerkleRoot(kvs: []Entry) Hash {
     return merkle(kvs, 0);
 }

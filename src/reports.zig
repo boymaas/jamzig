@@ -253,9 +253,9 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                     std.fmt.fmtSliceHexLower(&binfo.state_root),
                 });
 
-                if (!std.mem.eql(u8, &guarantee.report.context.beefy_root, &binfo.beefy_mmr_root())) {
+                if (!std.mem.eql(u8, &guarantee.report.context.beefy_root, &binfo.beefyMmrRoot())) {
                     anchor_span.err("Beefy MMR root mismatch - expected: {s}, got: {s}", .{
-                        std.fmt.fmtSliceHexLower(&binfo.beefy_mmr_root()),
+                        std.fmt.fmtSliceHexLower(&binfo.beefyMmrRoot()),
                         std.fmt.fmtSliceHexLower(&guarantee.report.context.beefy_root),
                     });
                     return Error.BadBeefyMmrRoot;

@@ -44,8 +44,8 @@ comptime {
     _ = @import("merkle.zig");
     _ = @import("merkle_test.zig");
 
-    _ = @import("merkle_binary.zig");
-    _ = @import("merkle_mountain_ranges.zig");
+    _ = @import("merkle/binary.zig");
+    _ = @import("merkle/mmr.zig");
 
     _ = @import("state.zig");
     _ = @import("state_dictionary.zig");
