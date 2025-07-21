@@ -113,7 +113,7 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             }
 
             span.debug("Computing Merkle root from {d} blobs", .{blobs.items.len});
-            const accumulate_root = @import("../merkle_binary.zig").M_b(blobs.items, std.crypto.hash.sha3.Keccak256);
+            const accumulate_root = @import("../merkle/binary.zig").binaryMerkleRoot(blobs.items, std.crypto.hash.sha3.Keccak256);
             span.debug("AccumulateRoot calculated: {s}", .{std.fmt.fmtSliceHexLower(&accumulate_root)});
 
             return accumulate_root;
@@ -132,13 +132,13 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             errdefer accumulation_stats.deinit();
 
             span.debug("Calculating I (Accumulation) statistics for {d} accumulated reports", .{accumulated.len});
-            
+
             // Use the per-service gas usage returned by outerAccumulation
             var service_gas_iter = service_gas_used.iterator();
             while (service_gas_iter.next()) |entry| {
                 const service_id = entry.key_ptr.*;
                 const gas_used = entry.value_ptr.*;
-                
+
                 // Count how many reports were processed for this service
                 var count: u32 = 0;
                 for (accumulated) |report| {
@@ -149,7 +149,7 @@ pub fn StatisticsCalculator(comptime params: Params) type {
                         }
                     }
                 }
-                
+
                 try accumulation_stats.put(service_id, .{
                     .gas_used = gas_used,
                     .accumulated_count = count,
@@ -161,3 +161,4 @@ pub fn StatisticsCalculator(comptime params: Params) type {
         }
     };
 }
+

@@ -1,5 +1,5 @@
 const std = @import("std");
-const crypto = @import("crypto");
+const crypto = @import("../crypto");
 
 // Define a constant zero hash used for padding
 const ZERO_HASH: [32]u8 = [_]u8{0} ** 32;
@@ -10,7 +10,7 @@ const LEAF_PREFIX: [4]u8 = [_]u8{ 'l', 'e', 'a', 'f' };
 /// Prefix used for Node hashes.
 const NODE_PREFIX = [_]u8{ 'n', 'o', 'd', 'e' };
 
-const types = @import("merkle/types.zig");
+const types = @import("types.zig");
 
 const Blob = types.Blob;
 const Blobs = types.Blobs;
@@ -111,52 +111,61 @@ pub fn N_hash(hashes: []const Hash, comptime hasher: type) Hash {
     }
 }
 
-const TraceResult = struct {
+/// Trace result that doesn't own its memory - caller provides buffer
+pub const TraceView = struct {
     results: []Result,
-
-    pub fn empty() TraceResult {
-        return .{ .results = &[_]Result{} };
-    }
-    pub fn len(self: *const TraceResult) usize {
+    
+    pub fn len(self: *const TraceView) usize {
         return self.results.len;
-    }
-
-    pub fn deinit(self: *TraceResult, allocator: std.mem.Allocator) void {
-        for (self.results) |*result| {
-            result.deinit(allocator);
-        }
-        allocator.free(self.results);
-        self.* = undefined;
     }
 };
 
-// (297)
-// We also define the trace function T , which returns each opposite node
-// from top to bottom as the tree is navigated toarrive at some leaf
-// corresponding to the item of a given index into the sequence. It is
-// useful in creating justifications of data inclusion
+/// Computes the trace path for verification. Caller must provide a buffer
+/// large enough to hold the complete trace (at most ceil(log2(blobs.len)) entries).
+/// Returns a slice into the provided buffer containing the actual trace.
+pub fn computeTrace(
+    blobs: Blobs,
+    index: usize,
+    trace_buffer: []Result,
+    comptime hasher: type,
+) []Result {
+    std.debug.assert(all_blobs_same_size(blobs));
+    
+    if (blobs.len == 0 or blobs.len == 1) {
+        return trace_buffer[0..0];
+    }
+    
+    var depth: usize = 0;
+    var current_blobs = blobs;
+    var current_index = index;
+    
+    // Build trace iteratively to avoid recursion and allocations
+    while (current_blobs.len > 1) {
+        const a = N(P_s(false, current_blobs, current_index), hasher);
+        trace_buffer[depth] = a;
+        depth += 1;
+        
+        // Move to next level
+        current_blobs = P_s(true, current_blobs, current_index);
+        const next_blobs = P_s(true, current_blobs, current_index);
+        current_index = current_index - P_i(current_blobs, current_index);
+        current_blobs = next_blobs;
+    }
+    
+    return trace_buffer[0..depth];
+}
+
+// Deprecated - for backward compatibility
 pub fn T(
     allocator: std.mem.Allocator,
     blobs: Blobs,
     index: usize,
     comptime hasher: type,
-) !TraceResult {
-    std.debug.assert(all_blobs_same_size(blobs));
-
-    if (blobs.len == 0 or blobs.len == 1) {
-        return TraceResult.empty();
-    }
-    const a = N(P_s(false, blobs, index), hasher);
-    var b = try T(allocator, P_s(true, blobs, index), index - P_i(blobs, index), hasher);
-    defer b.deinit(allocator);
-
-    // Allocate a new slice with results which can hold both a and b
-    // TODO: optimize this
-    var results = try allocator.alloc(Result, b.len() + 1);
-    results[0] = a;
-    @memcpy(results[1..], b.results);
-
-    return .{ .results = results };
+) !TraceView {
+    const max_depth = std.math.log2_int_ceil(usize, @max(1, blobs.len));
+    const buffer = try allocator.alloc(Result, max_depth);
+    const trace = computeTrace(blobs, index, buffer, hasher);
+    return TraceView{ .results = trace };
 }
 
 pub fn P_i(blobs: Blobs, index: usize) usize {
@@ -177,27 +186,46 @@ pub fn P_s(s: bool, blobs: Blobs, index: usize) Blobs {
     }
 }
 
-/// Hash based variant of T where we can make the assumption the only return value
-/// will be hashes
+/// Computes trace for hash-only trees. Caller provides buffer.
+/// Returns slice of buffer containing the actual trace.
+pub fn computeTraceHashes(
+    hashes: []const Hash,
+    index: usize,
+    trace_buffer: []Hash,
+    comptime hasher: type,
+) []Hash {
+    if (hashes.len == 0 or hashes.len == 1) {
+        return trace_buffer[0..0];
+    }
+    
+    var depth: usize = 0;
+    var current_hashes = hashes;
+    var current_index = index;
+    
+    while (current_hashes.len > 1) {
+        const a = N_hash(P_s_hash(false, current_hashes, current_index), hasher);
+        trace_buffer[depth] = a;
+        depth += 1;
+        
+        const next_hashes = P_s_hash(true, current_hashes, current_index);
+        current_index = current_index - P_i_hash(current_hashes, current_index);
+        current_hashes = next_hashes;
+    }
+    
+    return trace_buffer[0..depth];
+}
+
+// Deprecated - for backward compatibility
 pub fn T_hash(
     allocator: std.mem.Allocator,
     hashes: []const Hash,
     index: usize,
     comptime hasher: type,
 ) ![]Hash {
-    if (hashes.len == 0 or hashes.len == 1) {
-        return &[_]Hash{};
-    }
-    const a = N_hash(P_s_hash(false, hashes, index), hasher);
-    const b = try T_hash(allocator, P_s_hash(true, hashes, index), index - P_i_hash(hashes, index), hasher);
-    defer allocator.free(b);
-
-    // TODO: optimize this
-    var results = try allocator.alloc(Hash, b.len + 1);
-    results[0] = a;
-    @memcpy(results[1..], b);
-
-    return results;
+    const max_depth = std.math.log2_int_ceil(usize, @max(1, hashes.len));
+    const buffer = try allocator.alloc(Hash, max_depth);
+    const trace = computeTraceHashes(hashes, index, buffer, hasher);
+    return buffer[0..trace.len];
 }
 
 fn P_i_hash(hashes: []const Hash, index: usize) usize {
@@ -218,12 +246,9 @@ fn P_s_hash(s: bool, hashes: []const Hash, index: usize) []const Hash {
     }
 }
 
-/// This is suitable for creating proofs on data which is not much greater than
-/// 32 octets in length since it avoids hashingeach item in the sequence. For
-/// sequences with larger data items, it is better to hash them beforehand to
-/// ensure proof-sizeis minimal since each proof will generally contain a data
-/// item
-pub fn M_b(blobs: Blobs, comptime hasher: type) Hash {
+/// Computes binary merkle root without preprocessing.
+/// Suitable for data items close to hash size.
+pub fn binaryMerkleRoot(blobs: Blobs, comptime hasher: type) Hash {
     std.debug.assert(all_blobs_same_size(blobs));
 
     if (blobs.len == 1) {
@@ -232,6 +257,9 @@ pub fn M_b(blobs: Blobs, comptime hasher: type) Hash {
         return N(blobs, hasher).Hash;
     }
 }
+
+// Alias for backward compatibility
+pub const M_b = binaryMerkleRoot;
 
 /// Hashes the given data using the provided hasher.
 fn hashUsingHasher(hasher: type, data: []const u8) Hash {
@@ -268,33 +296,28 @@ test "N_function_multiple_blobs" {
     // The actual hash value will depend on the hashFn implementation
 }
 
-test "T_function_empty_input" {
-    const allocator = std.testing.allocator;
+test "computeTrace empty input" {
     const blobs = [_][]const u8{};
-    var result = try T(allocator, &blobs, 0, testHasher);
-    defer result.deinit(allocator);
-
-    try testing.expectEqualSlices(Result, result.results, &[_]Result{});
+    var trace_buffer: [10]Result = undefined;
+    const result = computeTrace(&blobs, 0, &trace_buffer, testHasher);
+    try testing.expectEqual(@as(usize, 0), result.len);
 }
 
-test "T_function_single_blob" {
-    const allocator = std.testing.allocator;
+test "computeTrace single blob" {
     const blobs = [_][]const u8{"hello"};
-    var result = try T(allocator, &blobs, 0, testHasher);
-    defer result.deinit(allocator);
-
-    try testing.expect(result.results.len == 0);
+    var trace_buffer: [10]Result = undefined;
+    const result = computeTrace(&blobs, 0, &trace_buffer, testHasher);
+    try testing.expectEqual(@as(usize, 0), result.len);
 }
 
-test "T_function_multiple_blobs" {
-    const allocator = std.testing.allocator;
+test "computeTrace multiple blobs" {
     const blobs = [_][]const u8{ "hello", "world", "zig  " };
-    var result = try T(allocator, &blobs, 2, testHasher);
-    defer result.deinit(allocator);
-
+    var trace_buffer: [10]Result = undefined;
+    const result = computeTrace(&blobs, 2, &trace_buffer, testHasher);
+    
     var buffer: [32]u8 = undefined;
     const expected = try std.fmt.hexToBytes(&buffer, "addcbd7aee4b1baab8fc648daece466d8801fb0ffb8f03ed3f055dd206e7a5ce");
-    try testing.expectEqualSlices(u8, expected, &result.results[0].Hash);
+    try testing.expectEqualSlices(u8, expected, &result[0].Hash);
 }
 
 test "M_b_function_empty_input" {
@@ -324,113 +347,103 @@ test "M_b_function_multiple_blobs" {
     try testing.expectEqualSlices(u8, expected, &result);
 }
 
-/// Applies the constancy preprocessor `C` on a given sequence of items `v`.
-/// This function hashes all data items with a fixed prefix, and then pads
-/// the resulting hashes to the next power of two with a zero hash.
-///
-/// \param v: Array of data items to preprocess.
-/// \return Array of hashed and padded data items of length equal to the next power of two.
-fn constancyPreprocessor(allocator: std.mem.Allocator, v: []const Blob, hasher: type) ![]Hash {
+/// Preprocesses items for constant-depth merkle tree. Caller provides output buffer
+/// which must be at least nextPowerOfTwo(v.len) in size.
+/// Returns the slice of the buffer that was filled.
+pub fn preprocessConstantDepth(
+    v: []const Blob,
+    output_buffer: []Hash,
+    hasher: type,
+) []Hash {
     const len = v.len;
-    const nextPowerOfTwo =
-        try std.math.ceilPowerOfTwo(usize, @max(1, len));
-
-    // Allocate the resulting array with the required length
-    var v_prime = try allocator.alloc(Hash, nextPowerOfTwo);
-
-    // Hash each item in the input sequence with the leaf prefix
+    const next_power = std.math.ceilPowerOfTwoAssert(usize, @max(1, len));
+    std.debug.assert(output_buffer.len >= next_power);
+    
+    // Hash each item with leaf prefix
     var i: usize = 0;
     while (i < len) : (i += 1) {
         var h = hasher.init(.{});
         h.update(&LEAF_PREFIX);
         h.update(v[i]);
-        h.final(&v_prime[i]);
+        h.final(&output_buffer[i]);
     }
-
-    // Fill the remaining items in the sequence with the zero hash value
-    while (i < nextPowerOfTwo) : (i += 1) {
-        v_prime[i] = ZERO_HASH;
+    
+    // Pad with zero hashes
+    while (i < next_power) : (i += 1) {
+        output_buffer[i] = ZERO_HASH;
     }
-
-    return v_prime;
+    
+    return output_buffer[0..next_power];
 }
 
-// Example usage of constancyPreprocessor in a Merkle tree function
-test "constancyPreprocessor" {
-    const allocator = std.testing.allocator;
-
+test "preprocessConstantDepth" {
     const original_data = [_][]const u8{
         "data1",
         "data2",
         "data3",
     };
-
-    // Apply the constancy preprocessor to ensure a consistent input format.
-    const processed_data = try constancyPreprocessor(
-        allocator,
-        &original_data,
-        testHasher,
-    );
-    defer allocator.free(processed_data);
-
+    
+    var workspace: [4]Hash = undefined;
+    const processed = preprocessConstantDepth(&original_data, &workspace, testHasher);
+    
     // Check if the length is 4 (nearest power of two)
-    try testing.expectEqual(@as(usize, 4), processed_data.len);
-
+    try testing.expectEqual(@as(usize, 4), processed.len);
+    
     // Expected hashes for each input, we are prepending leaf
     const expected_hashes = [_][32]u8{
         hashUsingHasher(testHasher, "leafdata1"),
         hashUsingHasher(testHasher, "leafdata2"),
         hashUsingHasher(testHasher, "leafdata3"),
     };
-
+    
     // Check if the first three hashes are correct
     for (original_data, 0..) |_, i| {
-        try testing.expectEqualSlices(u8, &expected_hashes[i], &processed_data[i]);
+        try testing.expectEqualSlices(u8, &expected_hashes[i], &processed[i]);
     }
-
+    
     // Check if the last hash is the zero hash
-    try testing.expectEqualSlices(u8, &ZERO_HASH, &processed_data[3]);
+    try testing.expectEqualSlices(u8, &ZERO_HASH, &processed[3]);
 }
 
-/// Computes the Merkle root of a constant-depth binary Merkle tree.
-///
-/// This function applies the constancy preprocessor to the input data
-/// and then computes the root hash of the resulting tree.
-///
-/// Parameters:
-///   allocator: Memory allocator for dynamic allocations
-///   v: Slice of data items to be included in the Merkle tree
-///   H: Hash function to be used (must output 32 bytes)
-///
-/// Returns:
-///   The 32-byte Merkle root hash
-///
-/// Error: Returns any allocation errors that may occur
-pub fn M(allocator: std.mem.Allocator, v: []const Blob, H: type) !Hash {
-    const preprocessed = try constancyPreprocessor(allocator, v, H);
-    defer allocator.free(preprocessed);
+/// Computes constant-depth merkle root. Caller must provide workspace buffer
+/// of size at least nextPowerOfTwo(v.len) for preprocessing.
+pub fn constantDepthMerkleRoot(
+    v: []const Blob,
+    workspace: []Hash,
+    H: type,
+) Hash {
+    const preprocessed = preprocessConstantDepth(v, workspace, H);
     return N_hash(preprocessed, H);
 }
 
-/// Generates a Merkle proof (justification) for a specific item in the tree.
-///
-/// This function creates a proof that can be used to verify the inclusion
-/// of the item at index 'i' in the Merkle tree without having the entire tree.
-///
-/// Parameters:
-///   allocator: Memory allocator for dynamic allocations
-///   v: Slice of data items in the Merkle tree
-///   i: Index of the item for which to generate the proof
-///   H: Hash function to be used (must output 32 bytes)
-///
-/// Returns:
-///   A slice of 32-byte hashes forming the Merkle proof
-///
-/// Error: Returns any allocation errors that may occur
-///
+// Deprecated - for backward compatibility
+pub fn M(allocator: std.mem.Allocator, v: []const Blob, H: type) !Hash {
+    const size = std.math.ceilPowerOfTwoAssert(usize, @max(1, v.len));
+    const workspace = try allocator.alloc(Hash, size);
+    defer allocator.free(workspace);
+    return constantDepthMerkleRoot(v, workspace, H);
+}
+
+/// Generates merkle proof. Caller provides workspace for preprocessing
+/// and trace_buffer for the proof path.
+pub fn generateProof(
+    v: []const Blob,
+    i: usize,
+    workspace: []Hash,
+    trace_buffer: []Hash,
+    H: type,
+) []Hash {
+    const preprocessed = preprocessConstantDepth(v, workspace, H);
+    return computeTraceHashes(preprocessed, i, trace_buffer, H);
+}
+
+// Deprecated - for backward compatibility
 pub fn J(allocator: std.mem.Allocator, v: []const Blob, i: usize, H: type) ![]Hash {
-    const preprocessed = try constancyPreprocessor(allocator, v, H);
-    defer allocator.free(preprocessed);
+    const size = std.math.ceilPowerOfTwoAssert(usize, @max(1, v.len));
+    const workspace = try allocator.alloc(Hash, size);
+    defer allocator.free(workspace);
+    
+    const preprocessed = preprocessConstantDepth(v, workspace, H);
     return try T_hash(allocator, preprocessed, i, H);
 }
 
@@ -474,27 +487,27 @@ pub fn J_x(allocator: std.mem.Allocator, v: []const Blob, i: usize, x: usize, H:
 }
 
 // Tests
-test "M_function" {
-    const allocator = std.testing.allocator;
+test "constantDepthMerkleRoot" {
     const data = [_][]const u8{ "data1", "data2", "data3", "data4" };
-
-    const root = try M(allocator, &data, testHasher);
-
+    var workspace: [4]Hash = undefined;
+    
+    const root = constantDepthMerkleRoot(&data, &workspace, testHasher);
+    
     // The actual hash value will depend on the testHasher implementation
     // Here we're just checking that we get a result of the correct length
     try testing.expectEqual(@as(usize, 32), root.len);
 }
 
-test "J_function" {
-    const allocator = std.testing.allocator;
+test "generateProof" {
     const data = [_][]const u8{ "data1", "data2", "data3", "data4" };
-
-    const proof = try J(allocator, &data, 2, testHasher);
-    defer allocator.free(proof);
-
+    var workspace: [4]Hash = undefined;
+    var trace_buffer: [10]Hash = undefined;
+    
+    const proof = generateProof(&data, 2, &workspace, &trace_buffer, testHasher);
+    
     // The proof should contain log2(n) hashes, where n is the next power of 2 >= data.len
     try testing.expectEqual(@as(usize, 2), proof.len);
-
+    
     // Each hash in the proof should be 32 bytes long
     for (proof) |hash| {
         try testing.expectEqual(@as(usize, 32), hash.len);

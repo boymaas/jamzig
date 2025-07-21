@@ -535,8 +535,9 @@ pub const BlockInfo = struct {
     /// The hashes of work reports included in this block
     work_reports: []ReportedWorkPackage,
 
+    // CHANGE: beefyMmrRoot
     pub fn beefy_mmr_root(self: *const @This()) Hash {
-        return @import("merkle_mountain_ranges.zig").super_peak(self.beefy_mmr, std.crypto.hash.sha3.Keccak256);
+        return @import("merkle/mmr.zig").superPeak(self.beefy_mmr, std.crypto.hash.sha3.Keccak256);
     }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {

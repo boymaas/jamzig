@@ -1,6 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
-const merkle = @import("merkle_binary.zig");
+const merkle = @import("merkle/binary.zig");
 
 const ServiceId = types.ServiceId;
 const Hash = types.Hash;
@@ -57,7 +57,7 @@ pub fn calculateAccumulateRoot(
         }
     }.lessThan);
 
-    return merkle.M_b(entries, std.crypto.hash.sha3.Keccak256);
+    return merkle.binaryMerkleRoot(entries, std.crypto.hash.sha3.Keccak256);
 }
 
 test "calculateAccumulateRoot empty" {
