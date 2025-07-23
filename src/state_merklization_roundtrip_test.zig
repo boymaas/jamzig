@@ -461,7 +461,6 @@ test "shortening_stress_test_moderate" {
             // Various reconstruction errors are expected when data is truncated or corrupted
             switch (err) {
                 error.EndOfStream,
-                error.UnexpectedEndOfStream,
                 error.InvalidData,
                 error.OutOfMemory,
                 error.PreimageLookupEntryCannotBeReconstructedAccountMissing,

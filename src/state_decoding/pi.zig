@@ -2,6 +2,9 @@ const std = @import("std");
 const testing = std.testing;
 const validator_statistics = @import("../validator_stats.zig");
 const codec = @import("../codec.zig");
+const state_decoding = @import("../state_decoding.zig");
+const DecodingError = state_decoding.DecodingError;
+const DecodingContext = state_decoding.DecodingContext;
 
 const Pi = validator_statistics.Pi;
 
@@ -13,134 +16,180 @@ const ServiceId = @import("../types.zig").ServiceId;
 
 const trace = @import("../tracing.zig").scoped(.pi_decoding);
 
-pub fn decode(validators_count: u32, core_count: u32, reader: anytype, allocator: std.mem.Allocator) !Pi {
-    const span = trace.span(.decode);
-    defer span.deinit();
-    span.debug("Starting Pi decoding - validators: {d}, cores: {d}", .{ validators_count, core_count });
+pub const DecoderParams = struct {
+    validators_count: u32,
+    core_count: u32,
 
-    var pi = try Pi.init(allocator, validators_count, core_count);
-    errdefer {
-        span.debug("Error during decoding, cleaning up Pi structure", .{});
-        pi.deinit();
+    pub fn fromJamParams(comptime params: anytype) DecoderParams {
+        return .{
+            .validators_count = params.validators_count,
+            .core_count = params.core_count,
+        };
     }
+};
 
-    span.debug("Decoding current epoch stats", .{});
-    try decodeEpochStats(validators_count, reader, &pi.current_epoch_stats);
+pub fn decode(
+    comptime params: DecoderParams,
+    allocator: std.mem.Allocator,
+    context: *DecodingContext,
+    reader: anytype,
+) !Pi {
+    try context.push(.{ .component = "pi" });
+    defer context.pop();
 
-    span.debug("Decoding previous epoch stats", .{});
-    try decodeEpochStats(validators_count, reader, &pi.previous_epoch_stats);
+    var pi = try Pi.init(allocator, params.validators_count, params.core_count);
+    errdefer pi.deinit();
 
-    span.debug("Decoding core stats", .{});
-    try decodeCoreStats(core_count, reader, &pi.core_stats);
+    try context.push(.{ .field = "current_epoch_stats" });
+    try decodeEpochStats(params.validators_count, context, reader, &pi.current_epoch_stats);
+    context.pop();
 
-    span.debug("Decoding service stats", .{});
-    try decodeServiceStats(reader, &pi.service_stats);
+    try context.push(.{ .field = "previous_epoch_stats" });
+    try decodeEpochStats(params.validators_count, context, reader, &pi.previous_epoch_stats);
+    context.pop();
 
-    span.debug("Successfully decoded Pi structure", .{});
+    try context.push(.{ .field = "core_stats" });
+    try decodeCoreStats(params.core_count, context, reader, &pi.core_stats);
+    context.pop();
+
+    try context.push(.{ .field = "service_stats" });
+    try decodeServiceStats(context, reader, &pi.service_stats);
+    context.pop();
+
     return pi;
 }
 
-fn decodeEpochStats(validators_count: u32, reader: anytype, stats: *std.ArrayList(ValidatorStats)) !void {
-    const span = trace.span(.decode_epoch_stats);
-    defer span.deinit();
-    span.debug("Decoding stats for {d} validators", .{validators_count});
+// Runtime version for when parameters aren't known at compile time
+pub fn decodeRuntime(
+    allocator: std.mem.Allocator,
+    context: *DecodingContext,
+    validators_count: u32,
+    core_count: u32,
+    reader: anytype,
+) !Pi {
+    const params = DecoderParams{
+        .validators_count = validators_count,
+        .core_count = core_count,
+    };
+    return decode(params, allocator, context, reader);
+}
 
+fn decodeEpochStats(validators_count: u32, context: *DecodingContext, reader: anytype, stats: *std.ArrayList(ValidatorStats)) !void {
     // We are building our core stats from scratch
     stats.clearRetainingCapacity();
 
     for (0..validators_count) |i| {
-        const validator_span = span.child(.validator);
-        defer validator_span.deinit();
-        validator_span.debug("Decoding validator {d}/{d}", .{ i + 1, validators_count });
+        try context.push(.{ .array_index = i });
 
-        const blocks_produced = try reader.readInt(u32, .little);
-        const tickets_introduced = try reader.readInt(u32, .little);
-        const preimages_introduced = try reader.readInt(u32, .little);
-        const octets_across_preimages = try reader.readInt(u32, .little);
-        const reports_guaranteed = try reader.readInt(u32, .little);
-        const availability_assurances = try reader.readInt(u32, .little);
+        const blocks_produced = reader.readInt(u32, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read blocks_produced: {s}", .{@errorName(err)});
+        };
+        const tickets_introduced = reader.readInt(u32, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read tickets_introduced: {s}", .{@errorName(err)});
+        };
+        const preimages_introduced = reader.readInt(u32, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read preimages_introduced: {s}", .{@errorName(err)});
+        };
+        const octets_across_preimages = reader.readInt(u32, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read octets_across_preimages: {s}", .{@errorName(err)});
+        };
+        const reports_guaranteed = reader.readInt(u32, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read reports_guaranteed: {s}", .{@errorName(err)});
+        };
+        const availability_assurances = reader.readInt(u32, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read availability_assurances: {s}", .{@errorName(err)});
+        };
 
-        validator_span.trace("Stats: blocks={d}, tickets={d}, preimages={d}, octets={d}, reports={d}, assurances={d}", .{
-            blocks_produced,
-            tickets_introduced,
-            preimages_introduced,
-            octets_across_preimages,
-            reports_guaranteed,
-            availability_assurances,
-        });
-
-        try stats.append(ValidatorStats{
+        stats.append(ValidatorStats{
             .blocks_produced = blocks_produced,
             .tickets_introduced = tickets_introduced,
             .preimages_introduced = preimages_introduced,
             .octets_across_preimages = octets_across_preimages,
             .reports_guaranteed = reports_guaranteed,
             .availability_assurances = availability_assurances,
-        });
-    }
+        }) catch |err| {
+            return context.makeError(error.OutOfMemory, "failed to append validator stats: {s}", .{@errorName(err)});
+        };
 
-    span.debug("Successfully decoded stats for {d} validators", .{validators_count});
+        context.pop();
+    }
 }
 
-fn decodeCoreStats(core_count: u32, reader: anytype, stats: *std.ArrayList(CoreActivityRecord)) !void {
-    const span = trace.span(.decode_core_stats);
-    defer span.deinit();
-    span.debug("Decoding stats for {d} cores", .{core_count});
-
+fn decodeCoreStats(core_count: u32, context: *DecodingContext, reader: anytype, stats: *std.ArrayList(CoreActivityRecord)) !void {
     // We are building our core stats from scratch
     stats.clearRetainingCapacity();
 
     for (0..core_count) |i| {
-        const core_span = span.child(.core);
-        defer core_span.deinit();
-        core_span.debug("Decoding core {d}/{d}", .{ i + 1, core_count });
+        try context.push(.{ .array_index = i });
 
-        try stats.append(try CoreActivityRecord.decode(.{}, reader, .{}));
+        const record = CoreActivityRecord.decode(.{}, reader, .{}) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to decode core activity record: {s}", .{@errorName(err)});
+        };
+
+        stats.append(record) catch |err| {
+            return context.makeError(error.OutOfMemory, "failed to append core stats: {s}", .{@errorName(err)});
+        };
+
+        context.pop();
     }
-
-    span.debug("Successfully decoded stats for {d} cores", .{core_count});
 }
 
-fn decodeServiceStats(reader: anytype, stats: *std.AutoHashMap(ServiceId, ServiceActivityRecord)) !void {
-    const span = trace.span(.decode_service_stats);
-    defer span.deinit();
-
-    const service_count = @as(u32, @truncate(try codec.readInteger(reader)));
-    span.debug("Decoding stats for {d} services", .{service_count});
+fn decodeServiceStats(context: *DecodingContext, reader: anytype, stats: *std.AutoHashMap(ServiceId, ServiceActivityRecord)) !void {
+    const service_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read service count: {s}", .{@errorName(err)});
+    }));
 
     for (0..service_count) |i| {
-        const service_span = span.child(.service);
-        defer service_span.deinit();
+        try context.push(.{ .array_index = i });
 
         // TODO: check this against the graypaper
         // const service_id = @as(u32, @truncate(try codec.readInteger(reader)));
-        const service_id = try reader.readInt(u32, .little);
-        service_span.debug("Decoding service {d}/{d} (ID: {d})", .{ i + 1, service_count, service_id });
+        const service_id = reader.readInt(u32, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read service id: {s}", .{@errorName(err)});
+        };
 
-        const provided_count = @as(u16, @truncate(try codec.readInteger(reader)));
-        const provided_size = @as(u32, @truncate(try codec.readInteger(reader)));
+        const provided_count = @as(u16, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read provided_count: {s}", .{@errorName(err)});
+        }));
+        const provided_size = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read provided_size: {s}", .{@errorName(err)});
+        }));
 
-        const refinement_count = @as(u32, @truncate(try codec.readInteger(reader)));
-        const refinement_gas_used = try codec.readInteger(reader);
+        const refinement_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read refinement_count: {s}", .{@errorName(err)});
+        }));
+        const refinement_gas_used = codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read refinement_gas_used: {s}", .{@errorName(err)});
+        };
 
         // FIXME: fix ordering back to @davxy ordering after merge
         // of: https://github.com/jam-duna/jamtestnet/issues/181
-        const imports = @as(u32, @truncate(try codec.readInteger(reader)));
-        const exports = @as(u32, @truncate(try codec.readInteger(reader)));
-        const extrinsic_size = @as(u32, @truncate(try codec.readInteger(reader)));
-        const extrinsic_count = @as(u32, @truncate(try codec.readInteger(reader)));
+        const imports = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read imports: {s}", .{@errorName(err)});
+        }));
+        const exports = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read exports: {s}", .{@errorName(err)});
+        }));
+        const extrinsic_size = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read extrinsic_size: {s}", .{@errorName(err)});
+        }));
+        const extrinsic_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read extrinsic_count: {s}", .{@errorName(err)});
+        }));
 
-        const accumulate_count = @as(u32, @truncate(try codec.readInteger(reader)));
-        const accumulate_gas_used = try codec.readInteger(reader);
+        const accumulate_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read accumulate_count: {s}", .{@errorName(err)});
+        }));
+        const accumulate_gas_used = codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read accumulate_gas_used: {s}", .{@errorName(err)});
+        };
 
-        const on_transfers_count = @as(u32, @truncate(try codec.readInteger(reader)));
-        const on_transfers_gas_used = try codec.readInteger(reader);
-
-        service_span.trace("Service data: provided={d} items ({d} bytes), refinements={d} (gas={d})", .{ provided_count, provided_size, refinement_count, refinement_gas_used });
-
-        service_span.trace("Service activity: imports={d}, extrinsics={d} ({d} bytes), exports={d}", .{ imports, extrinsic_count, extrinsic_size, exports });
-
-        service_span.trace("Service operations: accumulate={d} (gas={d}), transfers={d} (gas={d})", .{ accumulate_count, accumulate_gas_used, on_transfers_count, on_transfers_gas_used });
+        const on_transfers_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read on_transfers_count: {s}", .{@errorName(err)});
+        }));
+        const on_transfers_gas_used = codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read on_transfers_gas_used: {s}", .{@errorName(err)});
+        };
 
         const record = ServiceActivityRecord{
             .provided_count = provided_count,
@@ -157,8 +206,10 @@ fn decodeServiceStats(reader: anytype, stats: *std.AutoHashMap(ServiceId, Servic
             .on_transfers_gas_used = on_transfers_gas_used,
         };
 
-        try stats.put(service_id, record);
-    }
+        stats.put(service_id, record) catch |err| {
+            return context.makeError(error.OutOfMemory, "failed to insert service stats: {s}", .{@errorName(err)});
+        };
 
-    span.debug("Successfully decoded stats for {d} services", .{service_count});
+        context.pop();
+    }
 }

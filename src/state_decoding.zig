@@ -53,11 +53,211 @@ comptime {
 }
 
 pub const DecodingError = error{
+    // Basic errors
     InvalidData,
     OutOfMemory,
     EndOfStream,
+
+    // Size/bounds errors
     InvalidSize,
+    InvalidArrayLength,
+    ExceededMaximumSize,
+
+    // Format errors
     InvalidFormat,
+    InvalidEnumValue,
+    InvalidStateType,
+    UnexpectedVersion,
+
+    // Value validation errors
     InvalidValue,
+    InvalidServiceIndex,
+    InvalidValidatorIndex,
+    InvalidTimestamp,
+
+    // State consistency errors
     InvalidState,
+    InconsistentState,
+    MissingRequiredField,
+    InvalidExistenceMarker,
 };
+
+/// Tracks the current decoding path and position for error reporting
+pub const DecodingContext = struct {
+    /// Stack of what we're currently decoding
+    path: std.ArrayList(PathSegment),
+    /// Current byte offset in the stream
+    offset: usize,
+    /// Stored error information
+    error_info: ?ErrorInfo,
+    /// Allocator for error storage
+    allocator: std.mem.Allocator,
+
+    pub const PathSegment = union(enum) {
+        component: []const u8, // "alpha", "beta", etc.
+        field: []const u8, // "pool_length", "validator_data", etc.
+        array_index: usize, // [0], [1], etc.
+        map_key: []const u8, // for map entries
+    };
+
+    pub const ErrorInfo = struct {
+        err: DecodingError,
+        message: []u8,
+        path_snapshot: []u8,
+        offset: usize,
+    };
+
+    /// Create a new context
+    pub fn init(allocator: std.mem.Allocator) DecodingContext {
+        return .{
+            .path = std.ArrayList(PathSegment).init(allocator),
+            .offset = 0,
+            .error_info = null,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *DecodingContext) void {
+        self.clearError();
+        self.path.deinit();
+    }
+
+    /// Push a new segment to the path
+    pub fn push(self: *DecodingContext, segment: PathSegment) !void {
+        try self.path.append(segment);
+    }
+
+    /// Pop the last segment
+    pub fn pop(self: *DecodingContext) void {
+        _ = self.path.pop();
+    }
+
+    /// Format current path as string for error messages
+    pub fn formatPath(self: *const DecodingContext, writer: anytype) !void {
+        for (self.path.items, 0..) |segment, i| {
+            if (i > 0) try writer.writeAll(".");
+            switch (segment) {
+                .component => |name| try writer.writeAll(name),
+                .field => |name| try writer.writeAll(name),
+                .array_index => |idx| try writer.print("[{}]", .{idx}),
+                .map_key => |key| try writer.print("[{s}]", .{key}),
+            }
+        }
+    }
+
+    /// Clear stored error information
+    pub fn clearError(self: *DecodingContext) void {
+        if (self.error_info) |info| {
+            self.allocator.free(info.message);
+            self.allocator.free(info.path_snapshot);
+            self.error_info = null;
+        }
+    }
+
+    /// Format the stored error as a string
+    pub fn formatError(self: *const DecodingContext, writer: anytype) !void {
+        if (self.error_info) |info| {
+            try writer.print("Decoding error at byte {}: ", .{info.offset});
+            if (info.path_snapshot.len > 0) {
+                try writer.writeAll(info.path_snapshot);
+                try writer.writeAll(": ");
+            }
+            try writer.writeAll(info.message);
+        }
+    }
+
+    /// Log the stored error using std.log.err
+    pub fn dumpError(self: *const DecodingContext) void {
+        if (self.error_info) |_| {
+            var buf: [1024]u8 = undefined;
+            var stream = std.io.fixedBufferStream(&buf);
+            self.formatError(stream.writer()) catch return;
+            std.log.err("{s}", .{stream.getWritten()});
+        }
+    }
+
+    /// Create an error with context information
+    /// Stores error details in the context for later retrieval/logging
+    pub fn makeError(self: *DecodingContext, err: DecodingError, comptime fmt: []const u8, args: anytype) DecodingError {
+        // Clear any previous error
+        self.clearError();
+
+        // Allocate and store error info
+        const message = std.fmt.allocPrint(self.allocator, fmt, args) catch {
+            // If allocation fails, just return the error without storing context
+            return err;
+        };
+
+        var path_snapshot_stream = std.ArrayList(u8).init(self.allocator);
+        self.formatPath(path_snapshot_stream.writer()) catch {
+            // Clean up message allocation if path allocation fails
+            self.allocator.free(message);
+            return err;
+        };
+
+        const path_snapshot = path_snapshot_stream.toOwnedSlice() catch {
+            // Clean up message allocation if path snapshot fails
+            self.allocator.free(message);
+            path_snapshot_stream.deinit();
+            return err;
+        };
+
+        self.error_info = .{
+            .err = err,
+            .message = message,
+            .path_snapshot = path_snapshot,
+            .offset = self.offset,
+        };
+
+        return err;
+    }
+};
+
+/// Wrapper that tracks position and updates context during reads
+pub fn ContextReader(comptime ReaderType: type) type {
+    return struct {
+        inner: ReaderType,
+        context: *DecodingContext,
+
+        const Self = @This();
+
+        pub fn init(reader: ReaderType, context: *DecodingContext) Self {
+            return .{
+                .inner = reader,
+                .context = context,
+            };
+        }
+
+        pub fn readByte(self: *Self) !u8 {
+            const byte = try self.inner.readByte();
+            self.context.offset += 1;
+            return byte;
+        }
+
+        pub fn readInt(self: *Self, comptime T: type, endian: std.builtin.Endian) !T {
+            const value = try self.inner.readInt(T, endian);
+            self.context.offset += @sizeOf(T);
+            return value;
+        }
+
+        pub fn readNoEof(self: *Self, buffer: []u8) !void {
+            try self.inner.readNoEof(buffer);
+            self.context.offset += buffer.len;
+        }
+
+        pub fn readAll(self: *Self, buffer: []u8) !usize {
+            const bytes_read = try self.inner.readAll(buffer);
+            self.context.offset += bytes_read;
+            return bytes_read;
+        }
+
+        // Forward reader interface for compatibility
+        pub const Error = ReaderType.Error;
+
+        pub fn read(self: *Self, buffer: []u8) Error!usize {
+            const bytes_read = try self.inner.read(buffer);
+            self.context.offset += bytes_read;
+            return bytes_read;
+        }
+    };
+}

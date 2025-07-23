@@ -6,41 +6,73 @@ const Hash = disputes.Hash;
 const PublicKey = disputes.PublicKey;
 const decoder = @import("../codec/decoder.zig");
 const codec = @import("../codec.zig");
+const state_decoding = @import("../state_decoding.zig");
+const DecodingError = state_decoding.DecodingError;
+const DecodingContext = state_decoding.DecodingContext;
 
-pub fn decode(allocator: std.mem.Allocator, reader: anytype) !Psi {
+pub fn decode(
+    allocator: std.mem.Allocator,
+    context: *DecodingContext,
+    reader: anytype,
+) !Psi {
+    try context.push(.{ .component = "psi" });
+    defer context.pop();
+
     var psi = Psi.init(allocator);
     errdefer psi.deinit();
 
     // Read good_set
-    try decodeHashSet(allocator, &psi.good_set, reader);
+    try context.push(.{ .field = "good_set" });
+    try decodeHashSet(context, &psi.good_set, reader);
+    context.pop();
 
     // Read bad_set
-    try decodeHashSet(allocator, &psi.bad_set, reader);
+    try context.push(.{ .field = "bad_set" });
+    try decodeHashSet(context, &psi.bad_set, reader);
+    context.pop();
 
     // Read wonky_set
-    try decodeHashSet(allocator, &psi.wonky_set, reader);
+    try context.push(.{ .field = "wonky_set" });
+    try decodeHashSet(context, &psi.wonky_set, reader);
+    context.pop();
 
     // Read punish_set
-    try decodeHashSet(allocator, &psi.punish_set, reader);
+    try context.push(.{ .field = "punish_set" });
+    try decodeHashSet(context, &psi.punish_set, reader);
+    context.pop();
 
     return psi;
 }
 
-fn decodeHashSet(_: std.mem.Allocator, set: anytype, reader: anytype) !void {
+fn decodeHashSet(context: *DecodingContext, set: anytype, reader: anytype) !void {
     // Read set length
-    const len = try codec.readInteger(reader);
+    const len = codec.readInteger(reader) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read set length: {s}", .{@errorName(err)});
+    };
 
     // Read hashes in order
     var i: usize = 0;
     while (i < len) : (i += 1) {
+        try context.push(.{ .array_index = i });
+
         var hash: [32]u8 = undefined;
-        try reader.readNoEof(&hash);
-        try set.put(hash, {});
+        reader.readNoEof(&hash) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read hash: {s}", .{@errorName(err)});
+        };
+
+        set.put(hash, {}) catch |err| {
+            return context.makeError(error.OutOfMemory, "failed to insert hash into set: {s}", .{@errorName(err)});
+        };
+
+        context.pop();
     }
 }
 
 test "decode psi - empty state" {
     const allocator = testing.allocator;
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create buffer with empty sets
     var buffer = std.ArrayList(u8).init(allocator);
@@ -53,7 +85,7 @@ test "decode psi - empty state" {
     try buffer.append(0); // punish_set
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var psi = try decode(allocator, fbs.reader());
+    var psi = try decode(allocator, &context, fbs.reader());
     defer psi.deinit();
 
     // Verify empty sets
@@ -65,6 +97,9 @@ test "decode psi - empty state" {
 
 test "decode psi - with entries" {
     const allocator = testing.allocator;
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create test data
     var buffer = std.ArrayList(u8).init(allocator);
@@ -87,7 +122,7 @@ test "decode psi - with entries" {
     try buffer.appendSlice(&[_]u8{4} ** 32);
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var psi = try decode(allocator, fbs.reader());
+    var psi = try decode(allocator, &context, fbs.reader());
     defer psi.deinit();
 
     // Verify good_set
@@ -112,16 +147,22 @@ test "decode psi - insufficient data" {
 
     // Test truncated length
     {
+        var context = DecodingContext.init(allocator);
+        defer context.deinit();
+
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
 
         try buffer.writer().writeByte(0xFF); // Invalid varint
         var fbs = std.io.fixedBufferStream(buffer.items);
-        try testing.expectError(error.EndOfStream, decode(allocator, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(allocator, &context, fbs.reader()));
     }
 
     // Test truncated hash
     {
+        var context = DecodingContext.init(allocator);
+        defer context.deinit();
+
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
 
@@ -129,13 +170,16 @@ test "decode psi - insufficient data" {
         try buffer.appendSlice(&[_]u8{1} ** 16); // Only half hash
 
         var fbs = std.io.fixedBufferStream(buffer.items);
-        try testing.expectError(error.EndOfStream, decode(allocator, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(allocator, &context, fbs.reader()));
     }
 }
 
 test "decode psi - roundtrip" {
     const allocator = testing.allocator;
     const encoder = @import("../state_encoding/psi.zig");
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create original psi state
     var original = Psi.init(allocator);
@@ -155,7 +199,7 @@ test "decode psi - roundtrip" {
 
     // Decode
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var decoded = try decode(allocator, fbs.reader());
+    var decoded = try decode(allocator, &context, fbs.reader());
     defer decoded.deinit();
 
     // Verify sets

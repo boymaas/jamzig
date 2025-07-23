@@ -312,11 +312,16 @@ To maintain consistency and predictability across the codebase, follow this para
 
 1. **Self parameter** (`self`, `*self`, `*const self`)
 2. **Compile-time parameters** (`comptime` params)
+   - Can use structs to group related compile-time parameters
+   - Example: `comptime params: DecoderParams` instead of multiple individual parameters
 3. **Allocator** (if needed)
    - Only include if the function needs an allocator for its own allocations
    - Do NOT include if the struct already has an allocator member
    - Do NOT include if using types that manage their own allocation (e.g., std.AutoArrayHashMap)
-4. **State components** (in canonical order):
+4. **Context objects** (e.g., `DecodingContext`, `EncodingContext`, `ValidationContext`)
+   - Objects that provide context, error handling, or tracking throughout the operation
+   - Usually passed as pointers to allow mutation
+5. **State components** (in canonical order when dealing with blockchain state):
    - Alpha (α) - Authorizations
    - Beta (β) - Recent blocks
    - Gamma (γ) - Safrole state
@@ -332,38 +337,63 @@ To maintain consistency and predictability across the codebase, follow this para
    - Psi (ψ) - Preimage storage
    - Rho (ρ) - Pending reports
    - Tau (τ) - Time/timestamp
-5. **Context/configuration objects** (e.g., `StateTransition`, `AccumulationContext`)
-6. **Primary data to be processed** (e.g., `reports`, `transfers`, `blocks`)
-7. **Secondary/derived parameters** (e.g., `gas_limit`, `slot_in_epoch`)
-8. **Output parameters** (if any)
+6. **Configuration objects** (e.g., `Config`, `Options`, `Settings`)
+7. **Runtime parameters** (e.g., `validators_count`, `core_count` when not compile-time)
+8. **Primary data to be processed** (e.g., `reports`, `transfers`, `blocks`)
+9. **Secondary/derived parameters** (e.g., `gas_limit`, `slot_in_epoch`)
+10. **Output parameters** (if any)
+11. **Reader/Writer** (`reader: anytype`, `writer: anytype`)
+    - Always comes last as the data source/sink
+    - Consistent with Zig stdlib patterns
 
 ### Examples:
 
 ```zig
-// GOOD: State components come before data
+// GOOD: Following parameter order
 pub fn processReports(
     self: *Self,
     allocator: std.mem.Allocator,
-    xi: *state.Xi,              // State component
-    theta: *state.Theta,         // State component
-    reports: []WorkReport,       // Data to process
-    gas_limit: u64,             // Secondary parameter
+    context: *ProcessingContext,    // Context object
+    xi: *state.Xi,                  // State component
+    theta: *state.Theta,            // State component  
+    reports: []WorkReport,          // Data to process
+    gas_limit: u64,                 // Secondary parameter
 ) !Result { ... }
 
-// BAD: Data comes before state components
+// GOOD: Decoder with grouped compile-time params
+pub fn decode(
+    comptime params: DecoderParams, // Grouped compile-time params
+    allocator: std.mem.Allocator,
+    context: *DecodingContext,      // Context for error tracking
+    reader: anytype,                // Reader comes last
+) !MyType { ... }
+
+// GOOD: Function with runtime parameters
+pub fn validate(
+    allocator: std.mem.Allocator,
+    context: *ValidationContext,    // Context object
+    validator_count: u32,           // Runtime parameter
+    data: []const u8,               // Primary data
+    strict_mode: bool,              // Secondary parameter
+) !ValidationResult { ... }
+
+// BAD: Inconsistent ordering
 pub fn processReports(
     self: *Self,
-    reports: []WorkReport,       // Should come after state
+    reports: []WorkReport,          // Should come after state
     xi: *state.Xi,
-    theta: *state.Theta,
+    allocator: std.mem.Allocator,  // Should come earlier
     gas_limit: u64,
 ) !Result { ... }
 ```
 
 ### Rationale:
 - **Predictability**: Developers know where to find parameters
+- **Compile-time first**: Zig requires compile-time parameters to come first
+- **Context early**: Context objects often needed throughout the operation for error handling
 - **State-first**: Emphasizes state management in blockchain context
 - **Data flow**: Parameters flow from context (state) to data to modifiers
+- **Reader/Writer last**: Data sources/sinks come at the end, matching Zig stdlib patterns
 - **Consistency**: Same ordering across all functions reduces cognitive load
 
 ## Formatting Rules

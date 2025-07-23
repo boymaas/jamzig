@@ -4,37 +4,88 @@ const services_privileged = @import("../services_priviledged.zig");
 const Chi = services_privileged.Chi;
 const decoder = @import("../codec/decoder.zig");
 const codec = @import("../codec.zig");
+const state_decoding = @import("../state_decoding.zig");
+const DecodingError = state_decoding.DecodingError;
+const DecodingContext = state_decoding.DecodingContext;
 
-pub fn decode(allocator: std.mem.Allocator, reader: anytype) !Chi {
+pub fn decode(
+    allocator: std.mem.Allocator,
+    context: *DecodingContext,
+    reader: anytype,
+) !Chi {
+    try context.push(.{ .component = "chi" });
+    defer context.pop();
+
     var chi = Chi.init(allocator);
     errdefer chi.deinit();
 
-    // Read manager, assign, and designate service indices
-    const manager_idx = try reader.readInt(u32, .little);
-    const assign_idx = try reader.readInt(u32, .little);
-    const designate_idx = try reader.readInt(u32, .little);
-
-    // Convert 0 to null for optional indices
+    // Read manager index
+    try context.push(.{ .field = "manager" });
+    const manager_idx = reader.readInt(u32, .little) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read manager index: {s}", .{@errorName(err)});
+    };
     chi.manager = if (manager_idx == 0) null else manager_idx;
-    chi.assign = if (assign_idx == 0) null else assign_idx;
-    chi.designate = if (designate_idx == 0) null else designate_idx;
+    context.pop();
 
-    // Read always_accumulate map length
-    const map_len = try codec.readInteger(reader);
+    // Read assign index
+    try context.push(.{ .field = "assign" });
+    const assign_idx = reader.readInt(u32, .little) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read assign index: {s}", .{@errorName(err)});
+    };
+    chi.assign = if (assign_idx == 0) null else assign_idx;
+    context.pop();
+
+    // Read designate index
+    try context.push(.{ .field = "designate" });
+    const designate_idx = reader.readInt(u32, .little) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read designate index: {s}", .{@errorName(err)});
+    };
+    chi.designate = if (designate_idx == 0) null else designate_idx;
+    context.pop();
+
+    // Read always_accumulate map
+    try context.push(.{ .field = "always_accumulate" });
+    const map_len = codec.readInteger(reader) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read map length: {s}", .{@errorName(err)});
+    };
 
     // Read always_accumulate entries (ordered by key)
+    var prev_key: ?u32 = null;
     var i: usize = 0;
     while (i < map_len) : (i += 1) {
-        const key = try reader.readInt(u32, .little);
-        const value = try reader.readInt(u64, .little);
-        try chi.always_accumulate.put(key, value);
+        try context.push(.{ .array_index = i });
+
+        const key = reader.readInt(u32, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read map key: {s}", .{@errorName(err)});
+        };
+        const value = reader.readInt(u64, .little) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read map value: {s}", .{@errorName(err)});
+        };
+
+        // Validate ordering
+        if (prev_key) |pk| {
+            if (key <= pk) {
+                return context.makeError(error.InvalidFormat, "map keys must be sorted, but {} <= {}", .{ key, pk });
+            }
+        }
+        prev_key = key;
+
+        chi.always_accumulate.put(key, value) catch |err| {
+            return context.makeError(error.OutOfMemory, "failed to insert map entry: {s}", .{@errorName(err)});
+        };
+
+        context.pop();
     }
+    context.pop(); // always_accumulate
 
     return chi;
 }
 
 test "decode chi - empty state" {
     const allocator = testing.allocator;
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create buffer with zero/null values
     var buffer = std.ArrayList(u8).init(allocator);
@@ -49,7 +100,7 @@ test "decode chi - empty state" {
     try buffer.append(0); // map length
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var chi = try decode(allocator, fbs.reader());
+    var chi = try decode(allocator, &context, fbs.reader());
     defer chi.deinit();
 
     // Verify empty state
@@ -61,6 +112,9 @@ test "decode chi - empty state" {
 
 test "decode chi - with values" {
     const allocator = testing.allocator;
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create test buffer
     var buffer = std.ArrayList(u8).init(allocator);
@@ -81,7 +135,7 @@ test "decode chi - with values" {
     try buffer.writer().writeInt(u64, 2000, .little); // value 2
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var chi = try decode(allocator, fbs.reader());
+    var chi = try decode(allocator, &context, fbs.reader());
     defer chi.deinit();
 
     // Verify service indices
@@ -100,13 +154,19 @@ test "decode chi - insufficient data" {
 
     // Test truncated indices
     {
-        var buffer = [_]u8{1} ** 8; // Only partial indices
+        var context = DecodingContext.init(allocator);
+        defer context.deinit();
+
+        var buffer = [_]u8{ 1, 0, 0, 0, 1, 0, 0, 0 }; // Only 2 indices, missing third
         var fbs = std.io.fixedBufferStream(&buffer);
-        try testing.expectError(error.EndOfStream, decode(allocator, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(allocator, &context, fbs.reader()));
     }
 
     // Test truncated map entry
     {
+        var context = DecodingContext.init(allocator);
+        defer context.deinit();
+
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
 
@@ -120,13 +180,16 @@ test "decode chi - insufficient data" {
         try buffer.writer().writeInt(u32, 5, .little); // key only, missing value
 
         var fbs = std.io.fixedBufferStream(buffer.items);
-        try testing.expectError(error.EndOfStream, decode(allocator, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(allocator, &context, fbs.reader()));
     }
 }
 
 test "decode chi - roundtrip" {
     const allocator = testing.allocator;
     const encoder = @import("../state_encoding/chi.zig");
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create original chi state
     var original = Chi.init(allocator);
@@ -146,7 +209,7 @@ test "decode chi - roundtrip" {
 
     // Decode
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var decoded = try decode(allocator, fbs.reader());
+    var decoded = try decode(allocator, &context, fbs.reader());
     defer decoded.deinit();
 
     // Verify service indices

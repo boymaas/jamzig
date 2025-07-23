@@ -4,12 +4,31 @@ const state = @import("../state.zig");
 const types = @import("../types.zig");
 const jam_params = @import("../jam_params.zig");
 const codec = @import("../codec.zig");
+const state_decoding = @import("../state_decoding.zig");
+const DecodingError = state_decoding.DecodingError;
+const DecodingContext = state_decoding.DecodingContext;
+
+pub const DecoderParams = struct {
+    validators_count: u16,
+    epoch_length: u32,
+
+    pub fn fromJamParams(comptime params: anytype) DecoderParams {
+        return .{
+            .validators_count = params.validators_count,
+            .epoch_length = params.epoch_length,
+        };
+    }
+};
 
 pub fn decode(
-    comptime params: jam_params.Params,
+    comptime params: DecoderParams,
     allocator: std.mem.Allocator,
+    context: *DecodingContext,
     reader: anytype,
 ) !state.Gamma(params.validators_count, params.epoch_length) {
+    try context.push(.{ .component = "gamma" });
+    defer context.pop();
+
     // FIXME: as this allocates we can optimze this away
     var gamma = try state.Gamma(params.validators_count, params.epoch_length).init(allocator);
     errdefer gamma.deinit(allocator);
@@ -17,21 +36,34 @@ pub fn decode(
     // Since validatordata is safe to convert directly we are going to write
     // directly over the memory.
     // See: https://github.com/ziglang/zig/issues/20057
+    try context.push(.{ .field = "validators" });
     const vbuffer: []u8 = std.mem.sliceAsBytes(gamma.k.validators);
-    try reader.readNoEof(vbuffer);
+    reader.readNoEof(vbuffer) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read validators: {s}", .{@errorName(err)});
+    };
+    context.pop();
 
     // Decode VRF root
-    try reader.readNoEof(&gamma.z);
+    try context.push(.{ .field = "vrf_root" });
+    reader.readNoEof(&gamma.z) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read VRF root: {s}", .{@errorName(err)});
+    };
+    context.pop();
 
     // Decode state-specific fields by first checking state type (tickets or keys)
-    const state_type = try reader.readByte();
+    try context.push(.{ .field = "epoch_state" });
+    const state_type = reader.readByte() catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read state type: {s}", .{@errorName(err)});
+    };
     switch (state_type) {
         0 => { // Tickets state
             const tickets = try allocator.alloc(types.TicketBody, params.epoch_length);
             errdefer allocator.free(tickets);
 
             const tbuffer: []u8 = std.mem.sliceAsBytes(tickets);
-            try reader.readNoEof(tbuffer);
+            reader.readNoEof(tbuffer) catch |err| {
+                return context.makeError(error.EndOfStream, "failed to read tickets: {s}", .{@errorName(err)});
+            };
 
             gamma.s.deinit(allocator); // Since we will allocate over all the pointers
             gamma.s = .{ .tickets = tickets };
@@ -41,21 +73,30 @@ pub fn decode(
             errdefer allocator.free(keys);
 
             const kbuffer: []u8 = std.mem.sliceAsBytes(keys);
-            try reader.readNoEof(kbuffer);
+            reader.readNoEof(kbuffer) catch |err| {
+                return context.makeError(error.EndOfStream, "failed to read keys: {s}", .{@errorName(err)});
+            };
 
             gamma.s.deinit(allocator); // Since we will allocate over all the pointers
             gamma.s = .{ .keys = keys };
         },
-        else => return error.InvalidStateType,
+        else => return context.makeError(error.InvalidStateType, "invalid state type: {}", .{state_type}),
     }
+    context.pop();
 
     // Decode array length for gamma.a
-    const tickets_len = try codec.readInteger(reader);
+    try context.push(.{ .field = "tickets_array" });
+    const tickets_len = codec.readInteger(reader) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read tickets array length: {s}", .{@errorName(err)});
+    };
     const tickets = try allocator.alloc(types.TicketBody, tickets_len);
     errdefer allocator.free(tickets);
 
     const tbuffer: []u8 = std.mem.sliceAsBytes(tickets);
-    try reader.readNoEof(tbuffer);
+    reader.readNoEof(tbuffer) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read tickets array: {s}", .{@errorName(err)});
+    };
+    context.pop();
 
     gamma.a = tickets;
 
@@ -64,7 +105,10 @@ pub fn decode(
 
 test "decode gamma - empty state" {
     const allocator = testing.allocator;
-    const TINY = jam_params.TINY_PARAMS;
+    const params = comptime DecoderParams.fromJamParams(jam_params.TINY_PARAMS);
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create minimal buffer
     var buffer = std.ArrayList(u8).init(allocator);
@@ -73,7 +117,7 @@ test "decode gamma - empty state" {
     var writer = buffer.writer();
 
     // Write empty validator data
-    for (0..TINY.validators_count) |_| {
+    for (0..params.validators_count) |_| {
         try writer.writeAll(&[_]u8{0} ** @sizeOf(types.ValidatorData)); // bandersnatch + ed25519 + bls + metadata
     }
 
@@ -82,7 +126,7 @@ test "decode gamma - empty state" {
 
     // Write tickets state
     try buffer.writer().writeByte(0); // tickets state type
-    for (0..TINY.epoch_length) |_| {
+    for (0..params.epoch_length) |_| {
         try writer.writeAll(&[_]u8{0} ** (32 + 1)); // id + attempt
     }
 
@@ -90,7 +134,7 @@ test "decode gamma - empty state" {
     try buffer.writer().writeByte(0); // length 0
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var gamma = try decode(TINY, allocator, fbs.reader());
+    var gamma = try decode(params, allocator, &context, fbs.reader());
     defer gamma.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 0), gamma.a.len);
@@ -98,13 +142,16 @@ test "decode gamma - empty state" {
 
 test "decode gamma - with data" {
     const allocator = testing.allocator;
-    const TINY = jam_params.TINY_PARAMS;
+    const params = comptime DecoderParams.fromJamParams(jam_params.TINY_PARAMS);
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
     // Write validator data
-    for (0..TINY.validators_count) |i| {
+    for (0..params.validators_count) |i| {
         try buffer.appendSlice(&[_]u8{@intCast(i)} ** 32); // bandersnatch
         try buffer.appendSlice(&[_]u8{@intCast(i + 1)} ** 32); // ed25519
         try buffer.appendSlice(&[_]u8{@intCast(i + 2)} ** 144); // bls
@@ -116,7 +163,7 @@ test "decode gamma - with data" {
 
     // Write keys state
     try buffer.writer().writeByte(1); // keys state type
-    for (0..TINY.epoch_length) |i| {
+    for (0..params.epoch_length) |i| {
         try buffer.appendSlice(&[_]u8{@intCast(i)} ** 32); // bandersnatch public key
     }
 
@@ -130,7 +177,7 @@ test "decode gamma - with data" {
     }
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var gamma = try decode(TINY, allocator, fbs.reader());
+    var gamma = try decode(params, allocator, &context, fbs.reader());
     defer gamma.deinit(allocator);
 
     // Verify validator data
@@ -164,13 +211,16 @@ test "decode gamma - with data" {
 
 test "decode gamma - invalid state type" {
     const allocator = testing.allocator;
-    const TINY = jam_params.TINY_PARAMS;
+    const params = comptime DecoderParams.fromJamParams(jam_params.TINY_PARAMS);
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
     // Write minimal valid data until state type
-    for (0..TINY.validators_count) |_| {
+    for (0..params.validators_count) |_| {
         try buffer.appendSlice(&[_]u8{0} ** (32 + 32 + 144 + 128));
     }
     try buffer.appendSlice(&[_]u8{0} ** 144);
@@ -179,17 +229,20 @@ test "decode gamma - invalid state type" {
     try buffer.writer().writeByte(2);
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    const gamma = decode(TINY, allocator, fbs.reader());
+    const gamma = decode(params, allocator, &context, fbs.reader());
     try testing.expectError(error.InvalidStateType, gamma);
 }
 
 test "decode gamma - roundtrip" {
     const allocator = testing.allocator;
     const encoder = @import("../state_encoding/gamma.zig");
-    const TINY = jam_params.TINY_PARAMS;
+    const params = comptime DecoderParams.fromJamParams(jam_params.TINY_PARAMS);
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create original gamma state
-    var original = try state.Gamma(TINY.validators_count, TINY.epoch_length).init(allocator);
+    var original = try state.Gamma(params.validators_count, params.epoch_length).init(allocator);
     defer original.deinit(allocator);
 
     // Set test data
@@ -208,11 +261,11 @@ test "decode gamma - roundtrip" {
     // Encode
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
-    try encoder.encode(TINY, &original, buffer.writer());
+    try encoder.encode(jam_params.TINY_PARAMS, &original, buffer.writer());
 
     // Decode
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var decoded = try decode(TINY, allocator, fbs.reader());
+    var decoded = try decode(params, allocator, &context, fbs.reader());
     defer decoded.deinit(allocator);
 
     // Verify validator data

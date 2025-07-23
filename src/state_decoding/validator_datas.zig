@@ -3,24 +3,55 @@ const testing = std.testing;
 const types = @import("../types.zig");
 const ValidatorSet = types.ValidatorSet;
 const ValidatorData = types.ValidatorData;
+const state_decoding = @import("../state_decoding.zig");
+const DecodingError = state_decoding.DecodingError;
+const DecodingContext = state_decoding.DecodingContext;
 
-pub fn decode(allocator: std.mem.Allocator, validators_count: u32, reader: anytype) !ValidatorSet {
+pub fn decode(
+    allocator: std.mem.Allocator,
+    context: *DecodingContext,
+    validators_count: u32,
+    reader: anytype,
+) !ValidatorSet {
+    try context.push(.{ .component = "validator_datas" });
+    defer context.pop();
+
     var validator_set = try ValidatorSet.init(allocator, validators_count);
     errdefer validator_set.deinit(allocator);
 
     // Read each validator's data sequentially
-    for (validator_set.validators) |*validator| {
+    for (validator_set.validators, 0..) |*validator, i| {
+        try context.push(.{ .array_index = i });
+        
         // Read bandersnatch public key
-        try reader.readNoEof(&validator.bandersnatch);
+        try context.push(.{ .field = "bandersnatch" });
+        reader.readNoEof(&validator.bandersnatch) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read bandersnatch key: {s}", .{@errorName(err)});
+        };
+        context.pop();
 
         // Read ed25519 public key
-        try reader.readNoEof(&validator.ed25519);
+        try context.push(.{ .field = "ed25519" });
+        reader.readNoEof(&validator.ed25519) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read ed25519 key: {s}", .{@errorName(err)});
+        };
+        context.pop();
 
         // Read bls public key
-        try reader.readNoEof(&validator.bls);
+        try context.push(.{ .field = "bls" });
+        reader.readNoEof(&validator.bls) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read bls key: {s}", .{@errorName(err)});
+        };
+        context.pop();
 
         // Read metadata
-        try reader.readNoEof(&validator.metadata);
+        try context.push(.{ .field = "metadata" });
+        reader.readNoEof(&validator.metadata) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read metadata: {s}", .{@errorName(err)});
+        };
+        context.pop();
+        
+        context.pop(); // array_index
     }
 
     return validator_set;
@@ -30,11 +61,14 @@ test "decode validator_datas - empty set" {
     const allocator = testing.allocator;
     const validators_count: u32 = 0;
 
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
+
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var validator_set = try decode(allocator, validators_count, fbs.reader());
+    var validator_set = try decode(allocator, &context, validators_count, fbs.reader());
     defer validator_set.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 0), validator_set.len());
@@ -43,6 +77,9 @@ test "decode validator_datas - empty set" {
 test "decode validator_datas - single validator" {
     const allocator = testing.allocator;
     const validators_count: u32 = 1;
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
@@ -54,7 +91,7 @@ test "decode validator_datas - single validator" {
     try buffer.appendSlice(&[_]u8{4} ** 128); // metadata
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var validator_set = try decode(allocator, validators_count, fbs.reader());
+    var validator_set = try decode(allocator, &context, validators_count, fbs.reader());
     defer validator_set.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 1), validator_set.len());
@@ -70,6 +107,9 @@ test "decode validator_datas - multiple validators" {
     const allocator = testing.allocator;
     const validators_count: u32 = 3;
 
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
+
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
@@ -83,7 +123,7 @@ test "decode validator_datas - multiple validators" {
     }
 
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var validator_set = try decode(allocator, validators_count, fbs.reader());
+    var validator_set = try decode(allocator, &context, validators_count, fbs.reader());
     defer validator_set.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 3), validator_set.len());
@@ -103,27 +143,36 @@ test "decode validator_datas - insufficient data" {
 
     // Test truncated bandersnatch key
     {
+        var context = DecodingContext.init(allocator);
+        defer context.deinit();
+        
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
         try buffer.appendSlice(&[_]u8{1} ** 16); // Only half of bandersnatch key
 
         var fbs = std.io.fixedBufferStream(buffer.items);
-        try testing.expectError(error.EndOfStream, decode(allocator, validators_count, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(allocator, &context, validators_count, fbs.reader()));
     }
 
     // Test truncated ed25519 key
     {
+        var context = DecodingContext.init(allocator);
+        defer context.deinit();
+        
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
         try buffer.appendSlice(&[_]u8{1} ** 32); // Complete bandersnatch
         try buffer.appendSlice(&[_]u8{2} ** 16); // Half ed25519
 
         var fbs = std.io.fixedBufferStream(buffer.items);
-        try testing.expectError(error.EndOfStream, decode(allocator, validators_count, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(allocator, &context, validators_count, fbs.reader()));
     }
 
     // Test truncated bls key
     {
+        var context = DecodingContext.init(allocator);
+        defer context.deinit();
+        
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
         try buffer.appendSlice(&[_]u8{1} ** 32); // bandersnatch
@@ -131,7 +180,7 @@ test "decode validator_datas - insufficient data" {
         try buffer.appendSlice(&[_]u8{3} ** 72); // Half bls
 
         var fbs = std.io.fixedBufferStream(buffer.items);
-        try testing.expectError(error.EndOfStream, decode(allocator, validators_count, fbs.reader()));
+        try testing.expectError(error.EndOfStream, decode(allocator, &context, validators_count, fbs.reader()));
     }
 }
 
@@ -139,6 +188,9 @@ test "decode validator_datas - roundtrip" {
     const allocator = testing.allocator;
     const encoder = @import("../state_encoding/validator_datas.zig");
     const validators_count: u32 = 2;
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create original validator set
     var original = try ValidatorSet.init(allocator, validators_count);
@@ -165,7 +217,7 @@ test "decode validator_datas - roundtrip" {
 
     // Decode
     var fbs = std.io.fixedBufferStream(buffer.items);
-    var decoded = try decode(allocator, validators_count, fbs.reader());
+    var decoded = try decode(allocator, &context, validators_count, fbs.reader());
     defer decoded.deinit(allocator);
 
     // Verify set size

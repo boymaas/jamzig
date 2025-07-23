@@ -3,32 +3,67 @@ const types = @import("../types.zig");
 const available_reports = @import("../reports_ready.zig");
 const codec = @import("../codec.zig");
 const WorkReport = types.WorkReport;
+const state_decoding = @import("../state_decoding.zig");
+const DecodingError = state_decoding.DecodingError;
+const DecodingContext = state_decoding.DecodingContext;
 
-pub fn decode(comptime epoch_size: usize, allocator: std.mem.Allocator, reader: anytype) !available_reports.Theta(epoch_size) {
-    var theta = available_reports.Theta(epoch_size).init(allocator);
+pub const DecoderParams = struct {
+    epoch_length: u32,
+
+    pub fn fromJamParams(comptime params: anytype) DecoderParams {
+        return .{
+            .epoch_length = params.epoch_length,
+        };
+    }
+};
+
+pub fn decode(
+    comptime params: DecoderParams,
+    allocator: std.mem.Allocator,
+    context: *DecodingContext,
+    reader: anytype,
+) !available_reports.Theta(params.epoch_length) {
+    try context.push(.{ .component = "theta" });
+    defer context.pop();
+
+    var theta = available_reports.Theta(params.epoch_length).init(allocator);
     errdefer theta.deinit();
 
     // Decode each slot's entries
+    try context.push(.{ .field = "entries" });
     var slot: usize = 0;
-    while (slot < epoch_size) : (slot += 1) {
-        try decodeSlotEntries(allocator, &theta.entries[slot], reader);
+    while (slot < params.epoch_length) : (slot += 1) {
+        try context.push(.{ .array_index = slot });
+        try decodeSlotEntries(allocator, context, &theta.entries[slot], reader);
+        context.pop();
     }
+    context.pop();
 
     return theta;
 }
 
-fn decodeSlotEntries(allocator: std.mem.Allocator, slot_entries: *available_reports.TimeslotEntries, reader: anytype) !void {
-    const entry_count = try codec.readInteger(reader);
+fn decodeSlotEntries(allocator: std.mem.Allocator, context: *DecodingContext, slot_entries: *available_reports.TimeslotEntries, reader: anytype) !void {
+    const entry_count = codec.readInteger(reader) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read entry count: {s}", .{@errorName(err)});
+    };
     var i: usize = 0;
     while (i < entry_count) : (i += 1) {
-        const entry = try decodeEntry(allocator, reader);
-        try slot_entries.append(allocator, entry);
+        try context.push(.{ .array_index = i });
+        const entry = try decodeEntry(allocator, context, reader);
+        slot_entries.append(allocator, entry) catch |err| {
+            return context.makeError(error.OutOfMemory, "failed to append entry: {s}", .{@errorName(err)});
+        };
+        context.pop();
     }
 }
 
-fn decodeEntry(allocator: std.mem.Allocator, reader: anytype) !available_reports.WorkReportAndDeps {
+fn decodeEntry(allocator: std.mem.Allocator, context: *DecodingContext, reader: anytype) !available_reports.WorkReportAndDeps {
     // Decode work report
-    const work_report = try codec.deserializeAlloc(WorkReport, {}, allocator, reader);
+    try context.push(.{ .field = "work_report" });
+    const work_report = codec.deserializeAlloc(WorkReport, {}, allocator, reader) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to decode work report: {s}", .{@errorName(err)});
+    };
+    context.pop();
 
     var entry = available_reports.WorkReportAndDeps{
         .work_report = work_report,
@@ -36,13 +71,23 @@ fn decodeEntry(allocator: std.mem.Allocator, reader: anytype) !available_reports
     };
 
     // Decode dependencies
-    const dependency_count = try codec.readInteger(reader);
+    try context.push(.{ .field = "dependencies" });
+    const dependency_count = codec.readInteger(reader) catch |err| {
+        return context.makeError(error.EndOfStream, "failed to read dependency count: {s}", .{@errorName(err)});
+    };
     var i: usize = 0;
     while (i < dependency_count) : (i += 1) {
+        try context.push(.{ .array_index = i });
         var hash: [32]u8 = undefined;
-        try reader.readNoEof(&hash);
-        try entry.dependencies.put(allocator, hash, {});
+        reader.readNoEof(&hash) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read dependency hash: {s}", .{@errorName(err)});
+        };
+        entry.dependencies.put(allocator, hash, {}) catch |err| {
+            return context.makeError(error.OutOfMemory, "failed to add dependency: {s}", .{@errorName(err)});
+        };
+        context.pop();
     }
+    context.pop();
 
     return entry;
 }
@@ -51,9 +96,15 @@ test "encode/decode" {
     const testing = std.testing;
     const allocator = testing.allocator;
     const createEmptyWorkReport = @import("../tests/fixtures.zig").createEmptyWorkReport;
+    const params = comptime DecoderParams{
+        .epoch_length = 4,
+    };
+
+    var context = DecodingContext.init(allocator);
+    defer context.deinit();
 
     // Create test data
-    var original = available_reports.Theta(4).init(allocator);
+    var original = available_reports.Theta(params.epoch_length).init(allocator);
     defer original.deinit();
 
     var entry1 = available_reports.WorkReportAndDeps{
@@ -78,7 +129,7 @@ test "encode/decode" {
 
     // Decode
     var stream = std.io.fixedBufferStream(fbs.getWritten());
-    var decoded = try decode(4, allocator, stream.reader());
+    var decoded = try decode(params, allocator, &context, stream.reader());
     defer decoded.deinit();
 
     // Verify
