@@ -495,11 +495,13 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            auth_queue.queue[core_index].clearRetainingCapacity();
-            auth_queue.queue[core_index].appendSlice(authorizer_hashes) catch {
-                span.err("Failed to set authorizations for core {d}", .{core_index});
-                return .{ .terminal = .panic };
-            };
+            // Clear all slots for this core and set new authorizations
+            for (0..params.max_authorizations_queue_items) |i| {
+                auth_queue.setAuthorization(core_index, i, authorizer_hashes[i]) catch {
+                    span.err("Failed to set authorization at index {d} for core {d}", .{ i, core_index });
+                    return .{ .terminal = .panic };
+                };
+            }
 
             // Return success
             span.debug("Core assigned successfully", .{});

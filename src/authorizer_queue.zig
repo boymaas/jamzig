@@ -6,9 +6,9 @@
 ///
 /// Key features:
 /// - Maintains C separate queues, one for each core.
-/// - Each queue can hold up to Q authorization hashes.
+/// - Each queue has exactly Q authorization slots.
 /// - Authorizations are 32-byte hashes.
-/// - Supports adding and removing authorizations for each core.
+/// - Supports setting/getting authorizations at specific indices.
 ///
 const std = @import("std");
 
@@ -18,71 +18,59 @@ const AuthorizerHash = [32]u8;
 // Define the AuthorizationQueue type
 pub fn Phi(
     comptime core_count: u16,
-    comptime max_authorizations_queue_items: u8, // Q
+    comptime authorization_queue_length: u8, // Q
 ) type {
     return struct {
-        queue: [core_count]std.ArrayList(AuthorizerHash),
+        // Single contiguous heap allocation for all authorization slots
+        queue_data: [][32]u8,
         allocator: std.mem.Allocator,
 
-        max_authorizations_queue_items: u8 = max_authorizations_queue_items,
+        const total_slots = core_count * authorization_queue_length;
 
         // Initialize the AuthorizationQueue
-        pub fn init(allocator: std.mem.Allocator) !Phi(core_count, max_authorizations_queue_items) {
+        pub fn init(allocator: std.mem.Allocator) !Phi(core_count, authorization_queue_length) {
             // Compile-time assertions
             comptime {
                 std.debug.assert(core_count > 0);
-                std.debug.assert(max_authorizations_queue_items > 0);
+                std.debug.assert(authorization_queue_length > 0);
             }
-            
-            var queue: [core_count]std.ArrayList(AuthorizerHash) = undefined;
-            for (0..core_count) |i| {
-                queue[i] = std.ArrayList(AuthorizerHash).init(allocator);
-                // Postcondition: queue is initialized empty
-                std.debug.assert(queue[i].items.len == 0);
+
+            // Allocate all slots in one contiguous block
+            const queue_data = try allocator.alloc([32]u8, total_slots);
+            errdefer allocator.free(queue_data);
+
+            // Initialize all slots to zero
+            for (queue_data) |*slot| {
+                slot.* = [_]u8{0} ** 32;
             }
-            
-            // Postcondition: all queues initialized
-            std.debug.assert(queue.len == core_count);
-            return .{ .queue = queue, .allocator = allocator };
+
+            return .{ .queue_data = queue_data, .allocator = allocator };
         }
 
         // Create a deep copy of the AuthorizationQueue
         pub fn deepClone(self: *const @This()) !@This() {
             // Preconditions
-            std.debug.assert(self.queue.len == core_count);
-            
-            // Initialize a new queue with the same allocator
-            var cloned: @This() = .{
-                .allocator = self.allocator,
-                .queue = undefined,
-            };
+            std.debug.assert(self.queue_data.len == total_slots);
 
-            // Deep copy each core's queue
-            // TIGER STYLE: No hidden allocations - caller controls memory
-            for (0..core_count) |i| {
-                // Initialize new ArrayList for each core
-                cloned.queue[i] = std.ArrayList(AuthorizerHash).init(self.allocator);
-                // Reserve capacity to avoid multiple allocations
-                try cloned.queue[i].ensureTotalCapacity(self.queue[i].items.len);
-                // Copy items directly
-                for (self.queue[i].items) |item| {
-                    try cloned.queue[i].append(item);
-                }
-                
-                // Postcondition: cloned queue has same length as original
-                std.debug.assert(cloned.queue[i].items.len == self.queue[i].items.len);
-            }
-            
-            // Postcondition: clone has same structure as original
-            std.debug.assert(cloned.queue.len == self.queue.len);
-            return cloned;
+            // Allocate new queue data
+            const cloned_data = try self.allocator.alloc([32]u8, total_slots);
+            errdefer self.allocator.free(cloned_data);
+
+            // Copy all slots
+            @memcpy(cloned_data, self.queue_data);
+
+            // Postcondition: clone has same data
+            std.debug.assert(cloned_data.len == self.queue_data.len);
+
+            return .{
+                .queue_data = cloned_data,
+                .allocator = self.allocator,
+            };
         }
 
         // Deinitialize the AuthorizationQueue
         pub fn deinit(self: *@This()) void {
-            for (0..core_count) |i| {
-                self.queue[i].deinit();
-            }
+            self.allocator.free(self.queue_data);
             self.* = undefined;
         }
 
@@ -98,7 +86,7 @@ pub fn Phi(
         ) !void {
             try @import("state_format/phi.zig").format(
                 core_count,
-                max_authorizations_queue_items,
+                authorization_queue_length,
                 self,
                 fmt,
                 options,
@@ -106,43 +94,60 @@ pub fn Phi(
             );
         }
 
-        // Add an authorization to the queue for a specific core
-        pub fn addAuthorization(self: *@This(), core: usize, hash: AuthorizerHash) !void {
+        // Get the entire queue for a specific core
+        pub fn getQueue(self: *const @This(), core: usize) ![][32]u8 {
             // Preconditions
-            std.debug.assert(self.queue.len == core_count);
-            std.debug.assert(hash.len == @sizeOf(AuthorizerHash));
-            
             if (core >= core_count) return error.InvalidCore;
-            if (self.queue[core].items.len >= max_authorizations_queue_items) return error.QueueFull;
-            
-            const initial_len = self.queue[core].items.len;
-            try self.queue[core].append(hash);
-            
-            // Postcondition: queue length increased by 1
-            std.debug.assert(self.queue[core].items.len == initial_len + 1);
+
+            const start_index = core * authorization_queue_length;
+            const end_index = start_index + authorization_queue_length;
+            return self.queue_data[start_index..end_index];
         }
 
-        // Remove and return the first authorization from the queue for a specific core
-        pub fn popAuthorization(self: *@This(), core: usize) !?AuthorizerHash {
+        // Get an authorization at a specific index for a core
+        pub fn getAuthorization(self: *const @This(), core: usize, index: usize) AuthorizerHash {
             // Preconditions
-            std.debug.assert(self.queue.len == core_count);
-            
-            if (core >= core_count) return error.InvalidCore;
-            if (self.queue[core].items.len == 0) return null;
-            
-            const initial_len = self.queue[core].items.len;
-            const result = self.queue[core].orderedRemove(0);
-            
-            // Postcondition: queue length decreased by 1
-            std.debug.assert(self.queue[core].items.len == initial_len - 1);
-            return result;
+            // REFACTOR: do the same as in setAuthorization, where this function cal fail with error.InvalidCore or error.InvalidIndex
+            std.debug.assert(core < core_count);
+            std.debug.assert(index < authorization_queue_length);
+
+            const slot_index = core * authorization_queue_length + index;
+            return self.queue_data[slot_index];
         }
 
-        // Get the number of authorizations in the queue for a specific core
+        // Set an authorization at a specific index for a core
+        pub fn setAuthorization(self: *@This(), core: usize, index: usize, hash: AuthorizerHash) !void {
+            if (core >= core_count) return error.InvalidCore;
+            if (index >= authorization_queue_length) return error.InvalidIndex;
+
+            const slot_index = core * authorization_queue_length + index;
+            self.queue_data[slot_index] = hash;
+        }
+
+        // Clear an authorization at a specific index (set to zeros)
+        pub fn clearAuthorization(self: *@This(), core: usize, index: usize) !void {
+            if (core >= core_count) return error.InvalidCore;
+            if (index >= authorization_queue_length) return error.InvalidIndex;
+
+            const slot_index = core * authorization_queue_length + index;
+            self.queue_data[slot_index] = [_]u8{0} ** 32;
+        }
+
+        // Check if an authorization slot is empty (all zeros)
+        pub fn isEmptySlot(self: *const @This(), core: usize, index: usize) bool {
+            const hash = self.getAuthorization(core, index);
+            for (hash) |byte| {
+                if (byte != 0) return false;
+            }
+            return true;
+        }
+
+        // Get the fixed queue length (always returns Q)
         pub fn getQueueLength(self: *const @This(), core: usize) usize {
+            _ = self;
             // Assertion instead of error for bounds check
             std.debug.assert(core < core_count);
-            return self.queue[core].items.len;
+            return authorization_queue_length;
         }
     };
 }
@@ -162,42 +167,43 @@ test "AuthorizationQueue - initialization and deinitialization" {
     var auth_queue = try Phi(2, 6).init(testing.allocator);
     defer auth_queue.deinit();
 
-    try testing.expectEqual(@as(usize, 2), auth_queue.queue.len);
-    for (auth_queue.queue) |queue| {
-        try testing.expectEqual(@as(usize, 0), queue.items.len);
+    // Check all slots are initialized to zero
+    for (0..2) |core| {
+        for (0..6) |index| {
+            try testing.expect(auth_queue.isEmptySlot(core, index));
+        }
     }
 }
 
-test "AuthorizationQueue - add and pop authorizations" {
+test "AuthorizationQueue - set and get authorizations" {
     var auth_queue = try Phi(2, 6).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash = [_]u8{1} ** H;
 
-    // Add to core 0
-    try auth_queue.addAuthorization(0, test_hash);
-    try testing.expectEqual(@as(usize, 1), auth_queue.getQueueLength(0));
+    // Set at core 0, index 0
+    try auth_queue.setAuthorization(0, 0, test_hash);
+    try testing.expect(!auth_queue.isEmptySlot(0, 0));
 
-    // Pop from core 0
-    const popped_hash = try auth_queue.popAuthorization(0);
-    try testing.expect(popped_hash != null);
-    try testing.expectEqualSlices(u8, &test_hash, &popped_hash.?);
-    try testing.expectEqual(@as(usize, 0), auth_queue.getQueueLength(0));
+    // Get from core 0, index 0
+    const retrieved_hash = auth_queue.getAuthorization(0, 0);
+    try testing.expectEqualSlices(u8, &test_hash, &retrieved_hash);
+
+    // Queue length is always fixed
+    try testing.expectEqual(@as(usize, 6), auth_queue.getQueueLength(0));
 }
 
-test "AuthorizationQueue - queue full error" {
+test "AuthorizationQueue - invalid index error" {
     var auth_queue = try Phi(2, 6).init(testing.allocator);
     defer auth_queue.deinit();
 
     const test_hash = [_]u8{1} ** H;
 
-    // Fill the queue
-    for (0..6) |_| {
-        try auth_queue.addAuthorization(0, test_hash);
-    }
+    // Try to set at invalid index
+    try testing.expectError(error.InvalidIndex, auth_queue.setAuthorization(0, 6, test_hash));
 
-    // Try to add one more
-    try testing.expectError(error.QueueFull, auth_queue.addAuthorization(0, test_hash));
+    // Clear at invalid index should also error
+    try testing.expectError(error.InvalidIndex, auth_queue.clearAuthorization(0, 6));
 }
 
 test "AuthorizationQueue - invalid core error" {
@@ -206,9 +212,9 @@ test "AuthorizationQueue - invalid core error" {
 
     const test_hash = [_]u8{1} ** H;
 
-    try testing.expectError(error.InvalidCore, auth_queue.addAuthorization(2, test_hash));
-    try testing.expect(auth_queue.popAuthorization(2) == error.InvalidCore);
-    // getQueueLength now uses assertions instead of returning errors
+    try testing.expectError(error.InvalidCore, auth_queue.setAuthorization(2, 0, test_hash));
+    try testing.expectError(error.InvalidCore, auth_queue.clearAuthorization(2, 0));
+    // getAuthorization and getQueueLength use assertions instead of returning errors
     // Attempting to access invalid core would trigger assertion failure in debug mode
 }
 
@@ -219,27 +225,35 @@ test "AuthorizationQueue - multiple cores" {
     const test_hash1 = [_]u8{1} ** H;
     const test_hash2 = [_]u8{2} ** H;
 
-    try auth_queue.addAuthorization(0, test_hash1);
-    try auth_queue.addAuthorization(1, test_hash2);
+    try auth_queue.setAuthorization(0, 0, test_hash1);
+    try auth_queue.setAuthorization(1, 2, test_hash2);
 
-    try testing.expectEqual(@as(usize, 1), auth_queue.getQueueLength(0));
-    try testing.expectEqual(@as(usize, 1), auth_queue.getQueueLength(1));
+    // Queue length is always fixed
+    try testing.expectEqual(@as(usize, 6), auth_queue.getQueueLength(0));
+    try testing.expectEqual(@as(usize, 6), auth_queue.getQueueLength(1));
 
-    const popped_hash1 = try auth_queue.popAuthorization(0);
-    const popped_hash2 = try auth_queue.popAuthorization(1);
+    const retrieved_hash1 = auth_queue.getAuthorization(0, 0);
+    const retrieved_hash2 = auth_queue.getAuthorization(1, 2);
 
-    try testing.expectEqualSlices(u8, &test_hash1, &popped_hash1.?);
-    try testing.expectEqualSlices(u8, &test_hash2, &popped_hash2.?);
+    try testing.expectEqualSlices(u8, &test_hash1, &retrieved_hash1);
+    try testing.expectEqualSlices(u8, &test_hash2, &retrieved_hash2);
 }
 
-test "AuthorizationQueue - pop from empty queue" {
+test "AuthorizationQueue - clear authorization" {
     var auth_queue = try Phi(2, 6).init(testing.allocator);
     defer auth_queue.deinit();
 
-    try testing.expect(try auth_queue.popAuthorization(0) == null);
+    const test_hash = [_]u8{1} ** H;
+
+    // Set and then clear
+    try auth_queue.setAuthorization(0, 3, test_hash);
+    try testing.expect(!auth_queue.isEmptySlot(0, 3));
+
+    try auth_queue.clearAuthorization(0, 3);
+    try testing.expect(auth_queue.isEmptySlot(0, 3));
 }
 
-test "AuthorizationQueue - FIFO order" {
+test "AuthorizationQueue - deep clone" {
     var auth_queue = try Phi(2, 6).init(testing.allocator);
     defer auth_queue.deinit();
 
@@ -247,11 +261,19 @@ test "AuthorizationQueue - FIFO order" {
     const test_hash2 = [_]u8{2} ** H;
     const test_hash3 = [_]u8{3} ** H;
 
-    try auth_queue.addAuthorization(0, test_hash1);
-    try auth_queue.addAuthorization(0, test_hash2);
-    try auth_queue.addAuthorization(0, test_hash3);
+    try auth_queue.setAuthorization(0, 0, test_hash1);
+    try auth_queue.setAuthorization(0, 1, test_hash2);
+    try auth_queue.setAuthorization(1, 3, test_hash3);
 
-    try testing.expectEqualSlices(u8, &test_hash1, &(try auth_queue.popAuthorization(0)).?);
-    try testing.expectEqualSlices(u8, &test_hash2, &(try auth_queue.popAuthorization(0)).?);
-    try testing.expectEqualSlices(u8, &test_hash3, &(try auth_queue.popAuthorization(0)).?);
+    var cloned = try auth_queue.deepClone();
+    defer cloned.deinit();
+
+    // Verify cloned data matches
+    try testing.expectEqualSlices(u8, &test_hash1, &cloned.getAuthorization(0, 0));
+    try testing.expectEqualSlices(u8, &test_hash2, &cloned.getAuthorization(0, 1));
+    try testing.expectEqualSlices(u8, &test_hash3, &cloned.getAuthorization(1, 3));
+
+    // Verify empty slots are still empty
+    try testing.expect(cloned.isEmptySlot(0, 2));
+    try testing.expect(cloned.isEmptySlot(1, 0));
 }

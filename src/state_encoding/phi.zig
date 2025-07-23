@@ -17,31 +17,13 @@ pub fn encode(self: anytype, writer: anytype) !void {
     defer span.deinit();
     span.debug("Starting phi encoding", .{});
 
-    // Each core queue must have exactly 80 entries
-    // Each entry is either a valid hash or zeros
-    for (self.queue, 0..) |core_queue, i| {
-        const core_span = span.child(.core);
-        defer core_span.deinit();
-        core_span.debug("Encoding core {d} queue", .{i});
-
-        // The hashes are already properly serialized as raw bytes
-        // Just write them in order, padding with zeros
-        for (0..self.max_authorizations_queue_items) |j| {
-            const hash_span = core_span.child(.hash);
-            defer hash_span.deinit();
-
-            if (j < core_queue.items.len) {
-                hash_span.debug("Writing hash {d} of {d}", .{ j + 1, core_queue.items.len });
-                hash_span.trace("Hash value: {any}", .{std.fmt.fmtSliceHexLower(&core_queue.items[j])});
-                try writer.writeAll(&core_queue.items[j]);
-            } else {
-                // Write zero hash for any remaining slots
-                const zero_hash = [_]u8{0} ** H;
-                hash_span.debug("Writing zero hash {d} of {d}", .{ j + 1, self.max_authorizations_queue_items - core_queue.items.len });
-                try writer.writeAll(&zero_hash);
-            }
-        }
+    // Simply write all queue data in order
+    // Data is already in the correct format: C * Q hashes
+    span.debug("Encoding {d} authorization slots", .{self.queue_data.len});
+    for (self.queue_data) |hash| {
+        try writer.writeAll(&hash);
     }
+    
     span.debug("Successfully completed phi encoding", .{});
 }
 
@@ -63,28 +45,30 @@ test "encode" {
     const test_hash1 = [_]u8{1} ** H;
     const test_hash2 = [_]u8{2} ** H;
 
-    try auth_queue.addAuthorization(0, test_hash1);
-    try auth_queue.addAuthorization(1, test_hash2);
+    try auth_queue.setAuthorization(0, 0, test_hash1);
+    try auth_queue.setAuthorization(1, 0, test_hash2);
 
     var buf: [C * Q * H]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
     try encode(&auth_queue, fbs.writer());
 
-    // Check the first core's hash
+    // Check the first core's first hash
     try testing.expectEqualSlices(u8, &test_hash1, buf[0..H]);
 
-    // Check the second core's hash
+    // Check the second core's first hash
     try testing.expectEqualSlices(u8, &test_hash2, buf[Q * H .. Q * H + H]);
 
-    // Check that the rest is zeroed
+    // Check that other slots in first core are zeroed
     for (buf[H .. Q * H]) |byte| {
         try testing.expectEqual(@as(u8, 0), byte);
     }
-    for (buf[Q * H + H ..]) |byte| {
+    
+    // Check that other slots in second core are zeroed (except first)
+    for (buf[Q * H + H .. 2 * Q * H]) |byte| {
         try testing.expectEqual(@as(u8, 0), byte);
     }
 
-    // Check that all other entries in the map are zero
+    // Check that all other cores are completely zero
     for (2..C) |core| {
         const start = core * Q * H;
         const end = start + Q * H;

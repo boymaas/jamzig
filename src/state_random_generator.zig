@@ -321,16 +321,24 @@ pub const RandomStateGenerator = struct {
         comptime params: Params,
         phi: *jamstate.Phi(params.core_count, params.max_authorizations_queue_items),
     ) !void {
-        // For each core, generate random number of authorizations
+        // For each core, generate random authorizations at random indices
         for (0..params.core_count) |core| {
-            // Generate random queue length (0 to max_items, but limit to 5 for performance)
+            // Generate random number of non-empty slots (0 to max_items, but limit to 5 for performance)
             const max_items = @min(params.max_authorizations_queue_items, 5);
-            const queue_length = self.rng.uintAtMost(u8, max_items);
+            const num_non_empty = self.rng.uintAtMost(u8, max_items);
 
-            for (0..queue_length) |_| {
+            // Create a list of indices and shuffle them
+            var indices: [5]u8 = undefined;
+            for (0..max_items) |i| {
+                indices[i] = @intCast(i);
+            }
+            self.rng.shuffle(u8, indices[0..max_items]);
+
+            // Set authorizations at the first num_non_empty shuffled indices
+            for (0..num_non_empty) |i| {
                 var hash: [32]u8 = undefined;
                 self.rng.bytes(&hash);
-                try phi.addAuthorization(core, hash);
+                try phi.setAuthorization(core, indices[i], hash);
             }
         }
     }

@@ -29,9 +29,6 @@ pub fn convertToAlpha(
 
         // Add each hash in the pool to the Alpha instance
         for (pool.items) |hash| {
-            // Skip empty hashes (all zeros)
-            if (isEmptyHash(&hash)) continue;
-
             try alpha.addAuthorizer(core_idx, hash);
             span.trace("Added authorizer hash to core {d}: {s}", .{
                 core_idx,
@@ -56,20 +53,14 @@ pub fn convertToPhi(
     var phi = try auth_queue.Phi(params.core_count, params.max_authorizations_queue_items).init(allocator);
     errdefer phi.deinit();
 
-    // For each core in the test state, add authorizers to the Phi queues
+    // For each core in the test state, set authorizers in the Phi queues
     for (test_state.auth_queues, 0..) |queue, core_idx| {
         span.debug("Processing core {d} queue with {d} items", .{ core_idx, queue.items.len });
 
-        // Add each hash in the queue to the Phi instance
-        for (queue.items) |hash| {
-            // Skip empty hashes (all zeros)
-            if (isEmptyHash(&hash)) continue;
-
-            try phi.addAuthorization(core_idx, hash);
-            span.trace("Added authorizor hash to core {d} queue: {s}", .{
-                core_idx,
-                std.fmt.fmtSliceHexLower(&hash),
-            });
+        // Set each hash in the queue at its corresponding index
+        for (queue.items, 0..) |hash, index| {
+            // We need to set all items, including empty ones
+            try phi.setAuthorization(core_idx, index, hash);
         }
     }
 
