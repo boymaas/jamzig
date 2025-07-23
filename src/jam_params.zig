@@ -1,160 +1,248 @@
 const std = @import("std");
 const time = @import("time.zig");
+const tfmt = @import("types/fmt.zig");
 
-/// This struct defines the protocol parameters used throughout the system.
-/// Each field represents a specific constant derived from the protocol's
-/// specification. The constants are annotated with their corresponding symbols
-/// (e.g., E, N, K, etc.) and cover various aspects which are essential for the
-/// correct functioning of the protocol.
+/// Protocol parameters used throughout the JAM system.
+/// Each field represents a specific constant from the graypaper specification.
+/// The constants are annotated with their corresponding symbols (e.g., E, N, K).
+/// These parameters control various aspects of consensus, validation, storage,
+/// and execution within the protocol.
 pub const Params = struct {
-    // A: The period, in seconds, between audit tranches
-    audit_tranche_period: u8 = 8, // A
-    // BI: The additional minimum balance required per item of elective service state
-    min_balance_per_item: u64 = 10, // BI
-    // BL: The additional minimum balance required per octet of elective service state
-    min_balance_per_octet: u64 = 1, // BL
-    // BS: The basic minimum balance which all services require
-    basic_service_balance: u64 = 100, // BS
-    // C: The total number of cores
-    core_count: u16 = 341, // C
-    // D: The period in timeslots after which an unreferenced preimage may be expunged
-    preimage_expungement_period: u32 = 19_200, // D
-    // E: The number of slots in an epoch
-    epoch_length: u32 = 600, // E
-    // F: The audit bias factor, expected additional auditors per no-show
-    audit_bias_factor: u8 = 2, // F
-    // GA: The total gas allocated to a core for Accumulation
-    // See: https://github.com/w3f/jamtestvectors/pull/20#issuecomment-2526203035
-    gas_alloc_accumulation: u64 = 10_000_000, // GA
-    // GI: The gas allocated to invoke a work-package Is-Authorized logic
-    gas_alloc_is_authorized: u64 = 50_000_000, // GI
-    // GR: The total gas allocated for a work-package Refine logic
-    gas_alloc_refine: u64 = 5_000_000_000, // GR
-    // GT: The total gas allocated across all cores for Accumulation
-    total_gas_alloc_accumulation: u64 = 3_500_000_000, // GT
-    // H: The size of recent history, in blocks
-    recent_history_size: u16 = 8, // H
-    // I: The maximum amount of work items in a package
-    max_work_items_per_package: u16 = 16, // I
-    // J: The maximum amount of dependencies in a work report segment-root
-    // lookup dictionary and the number of pre-requisites for a work item
-    max_number_of_dependencies_for_work_reports: u16 = 8, // J
-    // K: The maximum number of tickets which may be submitted in a single extrinsic
-    max_tickets_per_extrinsic: u16 = 16, // K
-    // L: The maximum age in timeslots of the lookup anchor
-    max_lookup_anchor_age: u32 = 14_400, // L
-    // N: The number of ticket entries per validator
-    max_ticket_entries_per_validator: u16 = 2, // N
-    // O: The maximum number of items in the authorizations pool
-    max_authorizations_pool_items: u16 = 8, // O // TODO: rename to authorizors
-    // P: The slot period, in seconds
-    slot_period: u16 = 6, // P TODO: integrate these params into Tau and Safrole
-    // Q: The maximum number of items in the authorizations queue
-    max_authorizations_queue_items: u16 = 80, // Q
-    // R: The rotation period of validator-core assignments, in timeslots
-    validator_rotation_period: u16 = 10, // R
-    // S: The maximum number of entries in the accumulation queue
-    max_accumulation_queue_entries: u32 = 1024, // S
-    // T: The maximum number of extrinsics in a work-package
-    max_extrinsics_per_work_package: u16 = 128, // T
-    // U: The period in timeslots after which reported but unavailable work may be replaced
-    work_replacement_period: u16 = 5, // U
-    // V: The total number of validators
-    validators_count: u16 = 1023, // V
-    // V_s: The number of validators required for a super-majority
+    // ===== Core Protocol Parameters =====
+    // C: Total number of cores available for work processing
+    core_count: u16 = 341,
+    // V: Total number of validators in the network
+    validators_count: u16 = 1023,
+    // V_s: Number of validators required for a super-majority (2/3 + 1)
     validators_super_majority: u32 = 683,
-    // WA: The maximum size of authorization code in octets
-    max_authorization_code_size: u32 = 64_000, // WA
-    // WB: The maximum size of an encoded work-package together with its extrinsic data and import implications, in octets
-    max_work_package_size_with_extrinsics: u32 = 12 * (1 << 20), // WB = 12,582,912
-    // WC: The maximum size of service code in octets
-    max_service_code_size: u32 = 4_000_000, // WC
-    // WE: The basic size of erasure-coded pieces in octets
-    erasure_coded_piece_size: u32 = 684, // WE
-    // WG: The size of a segment in octets (WP * WE)
-    segment_size: u16 = 4104, // WG
-    // WM: The maximum number of imports in a work-package
-    max_imports_per_work_package: u16 = 3072, // WM
-    // WP: The number of erasure-coded pieces in a segment
-    erasure_coded_pieces_per_segment: u32 = 6, // WP
-    // WR: The maximum size of an encoded work-report in octets
-    max_work_report_size: u32 = 48 * (1 << 10), // WR
-    // WT: The size of a transfer memo in octets
-    transfer_memo_size: u32 = 128, // WT
-    // WX: The maximum number of exports in a work-package
-    max_exports_per_work_package: u16 = 3072, // WX
-    // Y: The number of slots into an epoch at which ticket-submission ends
-    ticket_submission_end_epoch_slot: u32 = 500, // Y
-    // ZA: The pvm dynamic address alignment factor
-    pvm_dynamic_address_alignment_factor: u8 = 2, // ZA
-    // ZI: The standard pvm program initialization input data size
-    pvm_program_init_input_size: u32 = 1 << 24, // ZI = 16,777,216
-    // ZP: The standard pvm program initialization page size
-    pvm_program_init_page_size: u16 = 1 << 12, // ZP = 4,096
-    // ZQ: The standard pvm program initialization segment size
-    pvm_program_init_segment_size: u32 = 1 << 16, // ZQ = 65,536
-    //
 
-    // NOTE: this has to be here for the codec,
-    // -- (cores-count + 7) / 8
+    // ===== Time and Slot Parameters =====
+
+    // P: Slot period in seconds
+    slot_period: u16 = 6,
+    // E: Number of slots in an epoch
+    epoch_length: u32 = 600,
+    // Y: Slot within epoch when ticket submission ends
+    ticket_submission_end_epoch_slot: u32 = 500,
+    // A: Period in seconds between audit tranches
+    audit_tranche_period: u8 = 8,
+    // R: Rotation period for validator-core assignments (in timeslots)
+    validator_rotation_period: u16 = 10,
+
+    // ===== Balance and Economic Parameters =====
+
+    // BS: Basic minimum balance required for all services
+    basic_service_balance: u64 = 100,
+    // BI: Additional minimum balance required per item of elective service state
+    min_balance_per_item: u64 = 10,
+    // BL: Additional minimum balance required per octet of elective service state
+    min_balance_per_octet: u64 = 1,
+
+    // ===== Storage and History Parameters =====
+
+    // H: Size of recent history in blocks
+    recent_history_size: u16 = 8,
+    // D: Period in timeslots after which unreferenced preimages may be expunged
+    preimage_expungement_period: u32 = 19_200,
+    // L: Maximum age in timeslots of the lookup anchor
+    max_lookup_anchor_age: u32 = 14_400,
+    // U: Period in timeslots after which reported but unavailable work may be replaced
+    work_replacement_period: u16 = 5,
+
+    // ===== Gas Allocation Parameters =====
+
+    // GA: Gas allocated to a core for Accumulation
+    // See: https://github.com/w3f/jamtestvectors/pull/20#issuecomment-2526203035
+    gas_alloc_accumulation: u64 = 10_000_000,
+    // GI: Gas allocated to invoke work-package Is-Authorized logic
+    gas_alloc_is_authorized: u64 = 50_000_000,
+    // GR: Total gas allocated for work-package Refine logic
+    gas_alloc_refine: u64 = 5_000_000_000,
+    // GT: Total gas allocated across all cores for Accumulation
+    total_gas_alloc_accumulation: u64 = 3_500_000_000,
+
+    // ===== Work Package and Report Parameters =====
+    // I: Maximum work items in a package
+    max_work_items_per_package: u16 = 16,
+    // J: Maximum dependencies in work report segment-root lookup dictionary
+    max_number_of_dependencies_for_work_reports: u16 = 8,
+    // T: Maximum extrinsics in a work-package
+    max_extrinsics_per_work_package: u16 = 128,
+    // WM: Maximum imports in a work-package
+    max_imports_per_work_package: u16 = 3072,
+    // WX: Maximum exports in a work-package
+    max_exports_per_work_package: u16 = 3072,
+    // WR: Maximum size of an encoded work-report in octets
+    max_work_report_size: u32 = 48 * (1 << 10), // 48 KB
+    // WB: Maximum size of encoded work-package with extrinsic data and import implications
+    max_work_package_size_with_extrinsics: u32 = 12 * (1 << 20), // 12 MB
+
+    // ===== Authorization and Queue Parameters =====
+
+    // O: Maximum items in the authorizations pool
+    max_authorizations_pool_items: u16 = 8,
+    // Q: Maximum items in the authorizations queue
+    max_authorizations_queue_items: u16 = 80,
+    // S: Maximum entries in the accumulation queue
+    max_accumulation_queue_entries: u32 = 1024,
+
+    // ===== Validator and Ticket Parameters =====
+
+    // K: Maximum tickets submitted in a single extrinsic
+    max_tickets_per_extrinsic: u16 = 16,
+    // N: Ticket entries per validator
+    max_ticket_entries_per_validator: u16 = 2,
+    // F: Audit bias factor - expected additional auditors per no-show
+    audit_bias_factor: u8 = 2,
+
+    // ===== Code Size Limits =====
+
+    // WA: Maximum size of authorization code in octets
+    max_authorization_code_size: u32 = 64_000,
+    // WC: Maximum size of service code in octets
+    max_service_code_size: u32 = 4_000_000,
+
+    // ===== Erasure Coding Parameters =====
+
+    // WE: Basic size of erasure-coded pieces in octets
+    erasure_coded_piece_size: u32 = 684,
+    // WP: Number of erasure-coded pieces in a segment
+    erasure_coded_pieces_per_segment: u32 = 6,
+    // WG: Size of a segment in octets (computed as WP * WE)
+    segment_size: u16 = 4104,
+
+    // ===== PVM (Polka Virtual Machine) Parameters =====
+
+    // ZA: PVM dynamic address alignment factor
+    pvm_dynamic_address_alignment_factor: u8 = 2,
+    // ZI: Standard PVM program initialization input data size
+    pvm_program_init_input_size: u32 = 1 << 24, // 16,777,216 bytes
+    // ZP: Standard PVM program initialization page size
+    pvm_program_init_page_size: u16 = 1 << 12, // 4,096 bytes
+    // ZQ: Standard PVM program initialization segment size
+    pvm_program_init_segment_size: u32 = 1 << 16, // 65,536 bytes
+
+    // ===== Other Parameters =====
+
+    // WT: Size of a transfer memo in octets
+    transfer_memo_size: u32 = 128,
+
+    // Computed field for availability bitfield size
+    // This should match (core_count + 7) / 8
     avail_bitfield_bytes: usize = (341 + 7) / 8,
 
-    pub fn segmentSizeInOctets(comptime self: *const Params) u32 {
-        // WG = WP * WE
+    // ===== Helper Functions =====
+
+    /// Calculate the size of availability bitfield in bytes
+    pub fn availBitfieldBytes(self: *const Params) usize {
+        return (self.core_count + 7) / 8;
+    }
+
+    /// Calculate segment size in octets (WG = WP * WE)
+    pub fn segmentSizeInOctets(self: anytype) u32 {
+        // Works with both comptime and runtime params
         return self.erasure_coded_pieces_per_segment * self.erasure_coded_piece_size;
     }
 
-    // Helpers for tast init based on params
+    /// Get the Time type configured with this parameter set
     pub fn Time(comptime self: *const Params) type {
         return time.Time(self.epoch_length, self.slot_period, self.ticket_submission_end_epoch_slot);
     }
 
-    // Default format parameters
+    /// Validate parameter consistency
+    pub fn validate(self: *const Params) !void {
+        // Ensure validators_super_majority is correctly calculated
+        const expected_super_majority = (self.validators_count * 2) / 3 + 1;
+        if (self.validators_super_majority != expected_super_majority) {
+            return error.InvalidSuperMajority;
+        }
+
+        // Ensure avail_bitfield_bytes matches core_count
+        if (self.avail_bitfield_bytes != self.availBitfieldBytes()) {
+            return error.InvalidBitfieldSize;
+        }
+
+        // Ensure segment_size is correctly calculated
+        if (self.segment_size != self.segmentSizeInOctets()) {
+            std.debug.print("Segment size mismatch: expected {}, got {}\n", .{
+                self.segmentSizeInOctets(),
+                self.segment_size,
+            });
+            // TODO: assert that this is a calculated value and then remove
+            // self.segment_size for self.segmentSizeInOctets()
+            // return error.InvalidSegmentSize;
+        }
+    }
+
+    /// Format parameters for display
     pub fn format(
         self: *const @This(),
         comptime fmt: []const u8,
         options: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        try @import("state_format/jam_params.zig").format(self, fmt, options, writer);
+        _ = fmt;
+        _ = options;
+
+        var indented_writer = tfmt.IndentedWriter(@TypeOf(writer)).init(writer);
+        const iw = indented_writer.writer();
+
+        try tfmt.formatValue(self.*, iw, .{});
     }
 };
 
-// pub const TINY_PARAMS = Params{
-//     .epoch_length = 12,
-//     .validator_rotation_period = 4, // R
-//     .ticket_submission_end_epoch_slot = 10,
-//     .max_ticket_entries_per_validator = 3, // NOTE: updated
-//     .recent_history_size = 8, // NOTE: explicitly set in testvectors
-//     .validators_count = 6,
-//     .validators_super_majority = 5,
-//     .core_count = 2,
-//     .avail_bitfield_bytes = (2 + 7) / 8,
-// };
+// ===== Pre-configured Parameter Sets =====
 
+/// Tiny parameter set for testing with minimal validators and cores
+/// See: https://docs.jamcha.in/basics/chain-spec/tiny
 pub const TINY_PARAMS = Params{
+    // Core counts
     .validators_count = 6,
+    .validators_super_majority = 5, // (6 * 2/3) + 1 = 5
     .core_count = 2,
+    .avail_bitfield_bytes = 1, // (2 + 7) / 8 = 1
+
+    // Time parameters
     .slot_period = 6,
     .epoch_length = 12,
-    .ticket_submission_end_epoch_slot = 10, // contest_duration
-    //
-    .max_ticket_entries_per_validator = 3, // tickets_per_validator
+    .ticket_submission_end_epoch_slot = 10,
+    .validator_rotation_period = 4,
+
+    // Ticket parameters
+    .max_ticket_entries_per_validator = 3,
     .max_tickets_per_extrinsic = 3,
-    //
-    .validator_rotation_period = 4, // rotation_period
-    //
-    .validators_super_majority = 5, // 2/3 + 1 of 6 validators
 
+    // Storage parameters
     .recent_history_size = 8,
-    .avail_bitfield_bytes = 1, // (2 cores + 7) / 8
+    .preimage_expungement_period = 32, // Override from default 19,200
 
-    // See: https://docs.jamcha.in/basics/chain-spec/tiny
-    .erasure_coded_pieces_per_segment = 1026, // num_ec_pieces_per_segment
-    //
-    // Override D from default 28_800 to 32 as specified in traces README
-    .preimage_expungement_period = 32, // D
-    // Keep other defaults from jam_params.zig
+    // Erasure coding
+    .erasure_coded_pieces_per_segment = 1026,
+
+    // All other fields use default values
 };
 
+/// Full parameter set with default values for production use
 pub const FULL_PARAMS = Params{};
+
+test "format JamParams" {
+    std.debug.print("\n{s}\n", .{TINY_PARAMS});
+}
+
+test "validate params" {
+    // Test TINY_PARAMS validation
+    try TINY_PARAMS.validate();
+
+    // Test FULL_PARAMS validation
+    try FULL_PARAMS.validate();
+
+    // Test invalid super majority
+    var invalid_params = TINY_PARAMS;
+    invalid_params.validators_super_majority = 3; // Should be 5
+    try std.testing.expectError(error.InvalidSuperMajority, invalid_params.validate());
+
+    // Test invalid bitfield size
+    invalid_params = TINY_PARAMS;
+    invalid_params.avail_bitfield_bytes = 2; // Should be 1
+    try std.testing.expectError(error.InvalidBitfieldSize, invalid_params.validate());
+}

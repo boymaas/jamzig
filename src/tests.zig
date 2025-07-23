@@ -66,7 +66,6 @@ comptime {
     _ = @import("state_format/reports_ready.zig"); // TODO: rename to theta
     _ = @import("state_format/chi.zig");
     _ = @import("state_format/delta.zig");
-    _ = @import("state_format/jam_params.zig");
     _ = @import("state_format/jam_state.zig");
     _ = @import("state_format/phi.zig");
     _ = @import("state_format/pi.zig");
