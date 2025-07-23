@@ -9,52 +9,23 @@ const trace = @import("../tracing.zig").scoped(.state_decoding);
 
 pub fn decode(
     comptime core_count: u16,
-    comptime max_authorizations_queue_items: u8,
+    comptime authorization_queue_length: u8,
     allocator: std.mem.Allocator,
     reader: anytype,
-) !Phi(core_count, max_authorizations_queue_items) {
+) !Phi(core_count, authorization_queue_length) {
     const span = trace.span(.decode);
     defer span.deinit();
 
-    span.debug("starting phi state decoding for {d} cores", .{core_count});
+    span.debug("starting phi state decoding for {d} cores with queue length {d}", .{ core_count, authorization_queue_length });
 
-    var phi = try Phi(core_count, max_authorizations_queue_items).init(allocator);
+    var phi = try Phi(core_count, authorization_queue_length).init(allocator);
     errdefer phi.deinit();
 
-    span.debug("initialized empty phi state", .{});
+    span.debug("initialized phi state with {d} total slots", .{phi.queue_data.len});
 
-    // For each core
-    for (0..core_count) |core| {
-        const core_span = span.child(.process_core);
-        defer core_span.deinit();
-        core_span.debug("processing core {d}", .{core});
-
-        var i: usize = 0;
-        while (i < max_authorizations_queue_items) : (i += 1) {
-            var hash: [H]u8 = undefined;
-            try reader.readNoEof(&hash);
-
-            // Check if hash is non-zero
-            var is_zero = true;
-            for (hash) |byte| {
-                if (byte != 0) {
-                    is_zero = false;
-                    break;
-                }
-            }
-
-            if (is_zero) {
-                core_span.trace("skipping zero hash at position {d}", .{i});
-            } else {
-                core_span.debug("found non-zero hash at position {d}", .{i});
-                try phi.addAuthorization(@intCast(core), hash);
-            }
-        }
-        core_span.info("processed {d} hashes for core {d}, found {d} non-zero", .{
-            max_authorizations_queue_items,
-            core,
-            phi.queue[core].items.len,
-        });
+    // Read all authorization data directly into queue_data
+    for (phi.queue_data) |*slot| {
+        try reader.readNoEof(slot);
     }
 
     span.info("completed decoding phi state", .{});
@@ -65,7 +36,6 @@ pub fn decode(
 test "decode phi - empty queues" {
     const allocator = testing.allocator;
     const core_count: u16 = 2;
-
     const Q = 80;
 
     // Create buffer with all zero hashes
@@ -83,16 +53,17 @@ test "decode phi - empty queues" {
     var phi = try decode(core_count, Q, allocator, fbs.reader());
     defer phi.deinit();
 
-    // Verify empty queues
+    // Verify all slots are empty (zero)
     for (0..core_count) |core| {
-        try testing.expectEqual(@as(usize, 0), phi.queue[core].items.len);
+        for (0..Q) |index| {
+            try testing.expect(phi.isEmptySlot(core, index));
+        }
     }
 }
 
 test "decode phi - with authorizations" {
     const allocator = testing.allocator;
     const core_count: u16 = 2;
-
     const Q = 80;
 
     // Create test data
@@ -126,13 +97,17 @@ test "decode phi - with authorizations" {
     defer phi.deinit();
 
     // Verify Core 0
-    try testing.expectEqual(@as(usize, 1), phi.queue[0].items.len);
-    try testing.expectEqualSlices(u8, &auth1, &phi.queue[0].items[0]);
+    try testing.expectEqualSlices(u8, &auth1, &phi.getAuthorization(0, 0));
+    for (1..Q) |index| {
+        try testing.expect(phi.isEmptySlot(0, index));
+    }
 
     // Verify Core 1
-    try testing.expectEqual(@as(usize, 2), phi.queue[1].items.len);
-    try testing.expectEqualSlices(u8, &auth2, &phi.queue[1].items[0]);
-    try testing.expectEqualSlices(u8, &auth3, &phi.queue[1].items[1]);
+    try testing.expectEqualSlices(u8, &auth2, &phi.getAuthorization(1, 0));
+    try testing.expectEqualSlices(u8, &auth3, &phi.getAuthorization(1, 1));
+    for (2..Q) |index| {
+        try testing.expect(phi.isEmptySlot(1, index));
+    }
 }
 
 test "decode phi - insufficient data" {
@@ -156,18 +131,17 @@ test "decode phi - roundtrip" {
     const allocator = testing.allocator;
     const encoder = @import("../state_encoding/phi.zig");
     const core_count: u16 = 2;
-
     const Q = 80;
 
     // Create original phi state
     var original = try Phi(core_count, Q).init(allocator);
     defer original.deinit();
 
-    // Add authorizations
+    // Set authorizations at various positions
     const auth1 = [_]u8{1} ** H;
     const auth2 = [_]u8{2} ** H;
-    try original.addAuthorization(0, auth1);
-    try original.addAuthorization(1, auth2);
+    try original.setAuthorization(0, 0, auth1);
+    try original.setAuthorization(1, 5, auth2);
 
     // Encode
     var buffer = std.ArrayList(u8).init(allocator);
@@ -179,11 +153,12 @@ test "decode phi - roundtrip" {
     var decoded = try decode(core_count, Q, allocator, fbs.reader());
     defer decoded.deinit();
 
-    // Verify queues
+    // Verify all slots match
     for (0..core_count) |core| {
-        try testing.expectEqual(original.queue[core].items.len, decoded.queue[core].items.len);
-        for (original.queue[core].items, decoded.queue[core].items) |orig, dec| {
-            try testing.expectEqualSlices(u8, &orig, &dec);
+        for (0..Q) |index| {
+            const orig_hash = original.getAuthorization(core, index);
+            const dec_hash = decoded.getAuthorization(core, index);
+            try testing.expectEqualSlices(u8, &orig_hash, &dec_hash);
         }
     }
 }

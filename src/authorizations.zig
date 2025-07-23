@@ -115,7 +115,6 @@ fn processAuthorizationRotation(
     comptime {
         std.debug.assert(params.core_count > 0);
     }
-    std.debug.assert(current_slot < std.math.maxInt(@TypeOf(current_slot)));
 
     const authorization_rotation_span = parent_span.child(.rotation);
     defer authorization_rotation_span.deinit();
@@ -149,15 +148,12 @@ fn rotateAuthorizationForCore(
     defer core_span.deinit();
     core_span.debug("Processing core {d}", .{core_index});
 
-    const queue_items = phi_prime.queue[core_index].items;
+    const queue_items = try phi_prime.getQueue(core_index);
     core_span.trace("Queue items for core {d}: {d} available", .{ core_index, queue_items.len });
 
-    if (queue_items.len == 0) {
-        core_span.debug("Core {d} has empty queue, skipping", .{core_index});
-        return;
-    }
+    std.debug.assert(queue_items.len == params.max_authorizations_queue_items);
 
-    const auth_index = @mod(current_slot, queue_items.len);
+    const auth_index = @mod(current_slot, params.max_authorizations_queue_items);
     core_span.trace("Selected auth index {d} for slot {d}", .{ auth_index, current_slot });
 
     const selected_auth = queue_items[auth_index];

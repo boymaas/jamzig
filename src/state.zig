@@ -165,10 +165,11 @@ pub fn JamState(comptime params: Params) type {
             var state = try JamState(params).init(allocator);
 
             try state.initAlpha(allocator);
+            try state.initPhi(allocator);
+
             try state.initBeta(allocator);
             try state.initChi(allocator);
             try state.initDelta(allocator);
-            try state.initPhi(allocator);
             try state.initPsi(allocator);
             try state.initPi(allocator);
             try state.initXi(allocator);
