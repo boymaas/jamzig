@@ -101,11 +101,6 @@ pub fn StateTransition(comptime params: Params) type {
             }
         }
 
-        /// Type-hinted variant of ensure() for IDE support
-        pub fn ensureT(self: *Self, comptime T: type, comptime field: STAccessors(State)) Error!STAccessorPointerType(T, field) {
-            return try self.ensure(field);
-        }
-
         /// Creates transient value. One-time operation, debug-mode enforced. Transferring ownership
         pub fn createTransient(self: *Self, comptime field: STAccessors(State), value: STBaseType(State, field)) Error!void {
             const builtin = @import("builtin");
@@ -155,10 +150,6 @@ pub fn StateTransition(comptime params: Params) type {
             return &prime_field.*.?;
         }
 
-        pub fn initTransientWithBaseT(self: *Self, comptime T: type, comptime field: STAccessors(State)) Error!T {
-            return try self.initTransientWithBase(field);
-        }
-
         /// Returns field value. Debug mode enforces existence.
         pub inline fn get(self: *Self, comptime field: STAccessors(State)) !STAccessorPointerType(STBaseType(State, field), field) {
             const builtin = @import("builtin");
@@ -193,9 +184,6 @@ pub fn StateTransition(comptime params: Params) type {
                     &@field(self.base, base_name);
                 return &field_ptr.*.?;
             }
-        }
-        pub fn getT(self: *Self, comptime T: type, comptime field: STAccessors(State)) Error!T {
-            return try self.get(field);
         }
 
         fn cloneField(self: *Self, field: anytype) Error!@TypeOf(field.?) {

@@ -38,7 +38,7 @@ pub fn transition(
         stats.updateAvailabilityAssurances(1);
     }
 
-    const pending_reports = try stx.ensureT(state.Rho(params.core_count), .rho_prime);
+    const pending_reports: *state.Rho(params.core_count) = try stx.ensure(.rho_prime);
 
     return try assurances.processAssuranceExtrinsic(
         params,

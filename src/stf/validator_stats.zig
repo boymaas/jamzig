@@ -57,7 +57,7 @@ pub fn transition(
     defer span.deinit();
     span.debug("Starting validator_stats transition", .{});
 
-    var pi: *state.Pi = try stx.ensureT(state.Pi, .pi_prime);
+    var pi: *state.Pi = try stx.ensure(.pi_prime);
 
     // Since we have validated guarantees here lets run through them
     // and update appropiate core statistics.
@@ -171,7 +171,7 @@ pub fn transition_epoch(
     const span = trace.span(.transition_validator_stats_epoch);
     defer span.deinit();
     span.debug("Starting validator_stats transition", .{});
-    var pi: *state.Pi = try stx.ensureT(state.Pi, .pi_prime);
+    var pi: *state.Pi = try stx.ensure(.pi_prime);
 
     if (stx.time.isNewEpoch()) {
         try pi.transitionToNextEpoch();

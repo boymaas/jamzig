@@ -22,10 +22,10 @@ pub fn handleEpochTransition(
     span.debug("Starting epoch transition", .{});
 
     // Get current states we need
-    const current_kappa = try stx.getT(*const types.Kappa, .kappa);
-    const current_gamma = try stx.getT(*const state.init.Gamma(params), .gamma);
-    const current_iota = try stx.getT(*const types.Iota, .iota);
-    const eta_prime = try stx.getT(*types.Eta, .eta_prime);
+    const current_kappa: *const types.Kappa = try stx.get(.kappa);
+    const current_gamma: *const state.init.Gamma(params) = try stx.get(.gamma);
+    const current_iota: *const types.Iota = try stx.get(.iota);
+    const eta_prime: *types.Eta = try stx.get(.eta_prime);
 
     // Rotate validator keys
     span.debug("Rotating validator keys", .{});
@@ -37,10 +37,10 @@ pub fn handleEpochTransition(
     try stx.createTransient(.kappa_prime, try current_gamma.k.deepClone(stx.allocator));
 
     // Create new gamma state
-    var gamma_prime = try stx.initTransientWithBaseT(*state.init.Gamma(params), .gamma_prime);
+    var gamma_prime: *state.init.Gamma(params) = try stx.initTransientWithBase(.gamma_prime);
 
     // γ.k gets ι (with offenders zeroed out)
-    const current_psi = try stx.getT(*const state.Psi, .psi);
+    const current_psi: *const state.Psi = try stx.get(.psi);
     gamma_prime.k.deinit(stx.allocator);
     gamma_prime.k = zeroOutOffenders(
         try current_iota.deepClone(stx.allocator),
