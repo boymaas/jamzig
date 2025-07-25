@@ -8,6 +8,7 @@ const state = @import("state.zig");
 const jam_params = @import("jam_params.zig");
 
 const diffz = @import("tests/diffz.zig");
+const state_diff = @import("tests/state_diff.zig");
 
 test "sequoia: State transition with sequoia-generated blocks" {
     // Initialize test environment
@@ -35,14 +36,14 @@ test "sequoia: State transition with sequoia-generated blocks" {
 
     // sequoia.logging.printStateDebug(jam_params.TINY_PARAMS, current_state);
 
-    // var debug_last_state: []u8 =
-    //     try sequoia.logging.allocPrintStateDebug(jam_params.TINY_PARAMS, allocator, current_state);
-    // defer allocator.free(debug_last_state);
-
     var block_importer = block_import.BlockImporter(jam_params.TINY_PARAMS).init(allocator);
 
+    // Keep a copy of the previous state for comparison
+    var previous_state = try current_state.deepClone(allocator);
+    defer previous_state.deinit(allocator);
+
     // Generate and process multiple blocks
-    for (0..num_blocks) |_| {
+    for (0..num_blocks) |block_idx| {
         // Build next block
         var block = try builder.buildNextBlock();
         defer block.deinit(allocator);
@@ -55,19 +56,20 @@ test "sequoia: State transition with sequoia-generated blocks" {
         defer result.deinit();
         try result.commit();
 
-        // OLD WAY
-        // var state_transition = try stf.stateTransition(jam_params.TINY_PARAMS, allocator, current_state, &block);
-        // defer state_transition.deinitHeap();
+        _ = block_idx;
+        // // Print state diff after processing each block
+        // var jam_state_diff = try state_diff.JamStateDiff(jam_params.TINY_PARAMS).build(allocator, &previous_state, current_state);
+        // defer jam_state_diff.deinit();
         //
-        // try state_transition.mergePrimeOntoBase();
-
-        // Log block information for debugging after state transition
-        // const debug_current_state = try sequoia.logging.allocPrintStateDebug(jam_params.TINY_PARAMS, allocator, current_state);
-        // if (!std.mem.eql(u8, debug_last_state, debug_current_state)) {
-        //     std.debug.print("\n\nState changes detected:\n", .{});
-        //     try diffz.debugPrintDiffMarkChanges(allocator, debug_last_state, debug_current_state);
+        // if (jam_state_diff.hasChanges()) {
+        //     std.debug.print("\n========== State changes after block {d} ==========\n", .{block_idx});
+        //     jam_state_diff.printToStdErr();
+        // } else {
+        //     std.debug.print("\n========== No state changes after block {d} ==========\n", .{block_idx});
         // }
-        // allocator.free(debug_last_state);
-        // debug_last_state = debug_current_state;
+
+        // Update previous state for next iteration
+        previous_state.deinit(allocator);
+        previous_state = try current_state.deepClone(allocator);
     }
 }
