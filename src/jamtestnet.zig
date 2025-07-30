@@ -19,12 +19,8 @@ const trace = tracing.scoped(.stf_test);
 
 const block_import = @import("block_import.zig");
 
-// Removed JAMDUNA_PARAMS - now using only W3F format and params
-
-// Removed tests for jamduna, jamzig, and javajam parsers - now using only W3F format
-
 // W3F Traces Tests
-const W3F_PARAMS = jam_params.TINY_PARAMS;
+pub const W3F_PARAMS = jam_params.TINY_PARAMS;
 
 test "w3f:traces:fallback" {
     const allocator = std.testing.allocator;

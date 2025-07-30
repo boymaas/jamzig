@@ -24,7 +24,7 @@ pub fn main() !void {
     var rng = prng.random();
 
     // Params
-    const PARAMS = jamtestnet.JAMDUNA_PARAMS;
+    const PARAMS = jamtestnet.W3F_PARAMS;
 
     // Create genesis config and block builder
     const config = try sequoia.GenesisConfig(PARAMS).buildWithRng(allocator, &rng);
