@@ -44,6 +44,18 @@ pub const Entry = struct {
 };
 
 pub fn getOrderedFiles(allocator: Allocator, dir_path: []const u8) !OrderedFileList {
+    return getOrderedFilesWithFilter(allocator, dir_path, struct {
+        fn acceptAll(_: []const u8) bool {
+            return true;
+        }
+    }.acceptAll);
+}
+
+pub fn getOrderedFilesWithFilter(
+    allocator: Allocator,
+    dir_path: []const u8,
+    filterFn: fn (name: []const u8) bool,
+) !OrderedFileList {
     var dir = try fs.cwd().openDir(dir_path, .{ .iterate = true });
     defer dir.close();
 
@@ -52,7 +64,7 @@ pub fn getOrderedFiles(allocator: Allocator, dir_path: []const u8) !OrderedFileL
 
     // NOTE: memory of path becomes invalid after next next() call
     while (try dir_iterator.next()) |path| {
-        if (path.kind == .file) {
+        if (path.kind == .file and filterFn(path.name)) {
             const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_path, path.name });
             try files.append(.{
                 .name = try allocator.dupe(u8, path.name),
