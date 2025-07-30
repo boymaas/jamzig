@@ -7,12 +7,6 @@ pub const state_transitions = @import("state_transitions.zig");
 const Params = @import("../jam_params.zig").Params;
 const MerklizationDictionary = state_dictionary.MerklizationDictionary;
 
-pub const jamduna =
-    @import("parsers/jamduna.zig");
-
-pub const jamzig =
-    @import("parsers/jamzig.zig");
-
 pub const w3f =
     @import("parsers/w3f.zig");
 

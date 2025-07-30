@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-pub const parsers = @import("jamtestnet/parsers.zig");
+pub const jamtestnet = @import("jamtestnet/parsers.zig");
 pub const state_transitions = @import("jamtestnet/state_transitions.zig");
 
 const stf = @import("stf.zig");
@@ -14,108 +14,14 @@ const services = @import("services.zig");
 
 const jam_params = @import("jam_params.zig");
 
-const jamtestnet = @import("jamtestnet/parsers.zig");
-
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.stf_test);
 
 const block_import = @import("block_import.zig");
 
-// we derive from the normal settings
-// see: https://github.com/jam-duna/jamtestnet/blob/main/chainspecs.json#L2
-pub const JAMDUNA_PARAMS = jam_params.Params{
-    .epoch_length = 12,
-    .ticket_submission_end_epoch_slot = 10,
-    .validators_count = 6,
-    .validators_super_majority = 5,
-    .validator_rotation_period = 4,
-    .core_count = 2,
-    .avail_bitfield_bytes = (2 + 7) / 8,
-    // JAMDUNA changes
-    .max_tickets_per_extrinsic = 3, // K
-    .max_ticket_entries_per_validator = 3, // N
-    .max_authorizations_queue_items = 80, // Q
-    .max_authorizations_pool_items = 8, // O
-    .preimage_expungement_period = 6, // D
-};
+// Removed JAMDUNA_PARAMS - now using only W3F format and params
 
-// TODO: add these
-// {
-//     "tiny": {
-//         "segment_size": 4104,
-//         "ec_piece_size": 4,
-//         "num_ec_pieces_per_segment": 1026,
-//     },
-//
-// test "jamduna:fallback" {
-//     const allocator = std.testing.allocator;
-//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-//     try runStateTransitionTests(
-//         JAMDUNA_PARAMS,
-//         loader.loader(),
-//         allocator,
-//         "src/jamtestnet/teams/jamduna/data/fallback/state_transitions",
-//     );
-// }
-//
-// test "jamduna:safrole" {
-//     const allocator = std.testing.allocator;
-//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-//     try runStateTransitionTests(
-//         JAMDUNA_PARAMS,
-//         loader.loader(),
-//         allocator,
-//         "src/jamtestnet/teams/jamduna/data/safrole/state_transitions",
-//     );
-// }
-//
-// test "jamduna:assurances" {
-//     const allocator = std.testing.allocator;
-//
-//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-//     try runStateTransitionTests(
-//         JAMDUNA_PARAMS,
-//         loader.loader(),
-//         allocator,
-//         "src/jamtestnet/teams/jamduna/data/assurances/state_transitions",
-//     );
-// }
-//
-// test "jamduna:orderedaccumulation" {
-//     const allocator = std.testing.allocator;
-//
-//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-//     try runStateTransitionTests(
-//         JAMDUNA_PARAMS,
-//         loader.loader(),
-//         allocator,
-//         "src/jamtestnet/teams/jamduna/data/orderedaccumulation/state_transitions",
-//     );
-// }
-
-// // TODO: update
-// test "javajam:stf" {
-//     const allocator = std.testing.allocator;
-//     const loader = jamtestnet.jamduna.Loader(JAMDUNA_PARAMS){};
-//     try runStateTransitionTests(
-//         JAMDUNA_PARAMS,
-//         loader.loader(),
-//         allocator,
-//         "src/jamtestnet/teams/javajam/stf/state_transitions",
-//     );
-// }
-
-// TODO: update
-// test "jamzig:safrole" {
-//     const allocator = std.testing.allocator;
-//     const loader = jamtestnet.jamzig.Loader(JAMDUNA_PARAMS){};
-//     try runStateTransitionTests(
-//         JAMDUNA_PARAMS,
-//         loader.loader(),
-//         allocator,
-//         "src/jamtestnet/teams/jamzig/safrole/state_transitions",
-//     );
-// }
+// Removed tests for jamduna, jamzig, and javajam parsers - now using only W3F format
 
 // W3F Traces Tests
 const W3F_PARAMS = jam_params.TINY_PARAMS;

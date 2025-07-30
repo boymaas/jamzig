@@ -31,7 +31,7 @@ pub fn main() !void {
     var builder = try sequoia.BlockBuilder(PARAMS).init(allocator, config, &rng);
     defer builder.deinit();
 
-    const output_dir = "src/jamtestnet/teams/jamzig/safrole/state_transitions";
+    const output_dir = "jamtestnet_export_output";
     const num_blocks = 64;
 
     std.debug.print("Generating {d} blocks...\n", .{num_blocks});

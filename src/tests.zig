@@ -104,7 +104,7 @@ comptime {
     _ = @import("preimages_test.zig");
 
     _ = @import("jamtestnet.zig");
-    _ = @import("jamtestnet/parsers/jamduna/state_snapshot.zig");
+    // Removed import for jamduna parser - now using only W3F format
 
     _ = @import("stf_test.zig");
 
