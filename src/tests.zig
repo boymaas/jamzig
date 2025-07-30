@@ -80,7 +80,6 @@ comptime {
     _ = @import("assurances_test.zig");
 
     _ = @import("reports.zig");
-    // FIXME: enable when: https://github.com/davxy/jam-test-vectors/issues/34 has been merged https://github.com/davxy/jam-test-vectors/pull/35
     _ = @import("reports_test.zig");
 
     _ = @import("disputes.zig");

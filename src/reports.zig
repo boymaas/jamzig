@@ -679,7 +679,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 const timeout_span = span.child(.validate_timeout);
                 defer timeout_span.deinit();
 
-                const rho: *const state.Rho(params.core_count) = try stx.ensure(.rho);
+                const rho: *const state.Rho(params.core_count) = try stx.ensure(.rho_prime);
                 if (rho.getReport(guarantee.report.core_index)) |entry| {
                     timeout_span.debug("Checking core {d} timeout - last: {d}, current: {d}, period: {d}", .{
                         guarantee.report.core_index,

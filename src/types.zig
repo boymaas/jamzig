@@ -360,7 +360,7 @@ pub const AvailabilityAssignment = struct {
     timeout: U32,
 
     pub fn isTimedOut(self: @This(), work_replacement_period: u8, timeslot: TimeSlot) bool {
-        return self.timeout + work_replacement_period <= timeslot;
+        return timeslot >= self.timeout + work_replacement_period;
     }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
