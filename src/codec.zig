@@ -4,6 +4,7 @@ pub const decoder = @import("codec/decoder.zig");
 pub const encoder = @import("codec/encoder.zig");
 const Scanner = @import("codec/scanner.zig").Scanner;
 const GenericReader = std.io.GenericReader;
+pub const DecodingContext = @import("codec/context.zig").DecodingContext;
 
 const trace = @import("tracing.zig").scoped(.codec);
 
@@ -109,7 +110,7 @@ pub fn deserialize(
         result.arena.deinit();
     }
 
-    result.value = try deserializeInternal(T, params, result.arena.allocator(), reader);
+    result.value = try deserializeInternal(T, params, result.arena.allocator(), reader, null);
 
     span.debug("Successfully deserialized type {s}", .{@typeName(T)});
     return result;
@@ -138,7 +139,7 @@ pub fn deserializeAlloc(
     var tracking_allocator = TrackingAllocator.init(allocator);
     defer tracking_allocator.deinit();
 
-    const result = deserializeInternal(T, params, tracking_allocator.allocator(), reader) catch |err| {
+    const result = deserializeInternal(T, params, tracking_allocator.allocator(), reader, null) catch |err| {
         const inner_span = span.child(.cleanup_on_error);
         defer inner_span.deinit();
         inner_span.debug("Deserialization failed, cleaning up {d} tracked allocations", .{tracking_allocator.allocations.items.len});
@@ -152,15 +153,109 @@ pub fn deserializeAlloc(
     return result;
 }
 
+/// Deserializes a value of type T from a reader with context tracking, returning a Deserialized wrapper
+/// that manages memory cleanup. The wrapper must be deinitialized after use.
+/// The context provides detailed error information including the exact path where deserialization failed.
+///
+/// Parameters:
+/// - T: The type to deserialize
+/// - params: Compile-time parameters passed to custom decode methods
+/// - parent_allocator: The allocator to use for creating the arena
+/// - reader: Any reader that supports readByte, readAll, readNoEof operations
+/// - context: DecodingContext for tracking decoding path and errors
+pub fn deserializeWithContext(
+    comptime T: type,
+    comptime params: anytype,
+    parent_allocator: std.mem.Allocator,
+    reader: anytype,
+    context: *DecodingContext,
+) !Deserialized(T) {
+    const span = trace.span(.deserialize_with_context);
+    defer span.deinit();
+    span.debug("Starting deserialization with context for type {s}", .{@typeName(T)});
+
+    var result = Deserialized(T){
+        .arena = try parent_allocator.create(ArenaAllocator),
+        .value = undefined,
+    };
+    errdefer {
+        span.debug("Cleanup after error - destroying arena", .{});
+        parent_allocator.destroy(result.arena);
+    }
+
+    result.arena.* = ArenaAllocator.init(parent_allocator);
+    errdefer {
+        span.debug("Cleanup after error - deinitializing arena", .{});
+        result.arena.deinit();
+    }
+
+    result.value = try deserializeInternal(T, params, result.arena.allocator(), reader, context);
+
+    span.debug("Successfully deserialized type {s} with context", .{@typeName(T)});
+    return result;
+}
+
+/// Deserializes a value of type T from a reader with context tracking, using the provided allocator directly.
+/// Unlike deserializeWithContext(), this returns the value directly without a wrapper.
+/// Memory is tracked and will be freed on error, but must be managed by caller on success.
+/// The context provides detailed error information including the exact path where deserialization failed.
+///
+/// Parameters:
+/// - T: The type to deserialize
+/// - params: Compile-time parameters passed to custom decode methods
+/// - allocator: The allocator to use for any allocations
+/// - reader: Any reader that supports readByte, readAll, readNoEof operations
+/// - context: DecodingContext for tracking decoding path and errors
+pub fn deserializeAllocWithContext(
+    comptime T: type,
+    comptime params: anytype,
+    allocator: std.mem.Allocator,
+    reader: anytype,
+    context: *DecodingContext,
+) !T {
+    const span = trace.span(.deserialize_alloc_with_context);
+    defer span.deinit();
+    span.debug("Starting allocation-based deserialization with context for type {s}", .{@typeName(T)});
+
+    const TrackingAllocator = @import("tracking_allocator.zig").TrackingAllocator;
+    var tracking_allocator = TrackingAllocator.init(allocator);
+    defer tracking_allocator.deinit();
+
+    const result = deserializeInternal(T, params, tracking_allocator.allocator(), reader, context) catch |err| {
+        const inner_span = span.child(.cleanup_on_error);
+        defer inner_span.deinit();
+        inner_span.debug("Deserialization failed, cleaning up {d} tracked allocations", .{tracking_allocator.allocations.items.len});
+        tracking_allocator.freeAllAllocations();
+        return err;
+    };
+
+    // Success - commit allocations to prevent cleanup
+    tracking_allocator.commitAllocations();
+    span.debug("Successfully deserialized type {s} with allocator and context", .{@typeName(T)});
+    return result;
+}
+
 /// (272) Function to decode an integer (0 to 2^64) from a variable-length
 /// encoding as described in the gray paper.
 pub fn readInteger(reader: anytype) !u64 {
+    return readIntegerWithContext(reader, null);
+}
+
+/// (272) Function to decode an integer (0 to 2^64) from a variable-length
+/// encoding as described in the gray paper, with optional context tracking.
+pub fn readIntegerWithContext(reader: anytype, context: ?*DecodingContext) !u64 {
     const span = trace.span(.read_integer);
     defer span.deinit();
     span.debug("Reading variable-length integer", .{});
 
     // Read first byte
-    const first_byte = try reader.readByte();
+    const first_byte = reader.readByte() catch |err| {
+        if (context) |ctx| {
+            return ctx.makeError(err, "failed to read first byte of integer: {s}", .{@errorName(err)});
+        }
+        return err;
+    };
+    if (context) |ctx| ctx.addOffset(1);
     span.trace("First byte: 0x{X:0>2}", .{first_byte});
 
     if (first_byte == 0) {
@@ -176,18 +271,35 @@ pub fn readInteger(reader: anytype) !u64 {
     if (first_byte == EIGHT_BYTE_MARKER) {
         span.debug("8-byte fixed-length integer detected", .{});
         var buf: [8]u8 = undefined;
-        try reader.readNoEof(&buf);
+        reader.readNoEof(&buf) catch |err| {
+            if (context) |ctx| {
+                return ctx.makeError(err, "failed to read 8-byte integer: {s}", .{@errorName(err)});
+            }
+            return err;
+        };
+        if (context) |ctx| ctx.addOffset(8);
         const value = decoder.decodeFixedLengthInteger(u64, &buf);
         span.debug("Decoded 8-byte value: {d}", .{value});
         span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(&buf)});
         return value;
     }
 
-    const dl = try util.decodePrefixByte(first_byte);
+    const dl = util.decodePrefixByte(first_byte) catch |err| {
+        if (context) |ctx| {
+            return ctx.makeError(err, "invalid prefix byte: 0x{X:0>2}", .{first_byte});
+        }
+        return err;
+    };
     span.trace("Decoded prefix - l: {d}, integer_multiple: {d}", .{ dl.l, dl.integer_multiple });
 
     var buf: [8]u8 = undefined;
-    try reader.readNoEof(buf[0..dl.l]);
+    reader.readNoEof(buf[0..dl.l]) catch |err| {
+        if (context) |ctx| {
+            return ctx.makeError(err, "failed to read {d} bytes of variable-length integer: {s}", .{ dl.l, @errorName(err) });
+        }
+        return err;
+    };
+    if (context) |ctx| ctx.addOffset(dl.l);
     const remainder = decoder.decodeFixedLengthInteger(u64, buf[0..dl.l]);
     const final_value = remainder + dl.integer_multiple;
 
@@ -207,6 +319,7 @@ fn deserializeSizedField(
     comptime params: anytype,
     allocator: std.mem.Allocator,
     reader: anytype,
+    context: ?*DecodingContext,
 ) ![]std.meta.Child(FieldType) {
     const span = trace.span(.deserialize_sized_field);
     defer span.deinit();
@@ -220,10 +333,15 @@ fn deserializeSizedField(
     span.trace("Allocated slice of size {d}", .{size});
 
     for (slice, 0..) |*item, i| {
+        if (context) |ctx| {
+            try ctx.push(.{ .slice_item = i });
+        }
+        defer if (context) |ctx| ctx.pop();
+
         const item_span = span.child(.slice_item);
         defer item_span.deinit();
         item_span.debug("Deserializing item {d} of {d}", .{ i + 1, size });
-        item.* = try deserializeInternal(std.meta.Child(FieldType), params, allocator, reader);
+        item.* = try deserializeInternal(std.meta.Child(FieldType), params, allocator, reader, context);
     }
 
     return slice;
@@ -261,12 +379,18 @@ fn serializeSizedField(
 
 // ---- Type-specific Deserialization Functions ----
 
-fn deserializeBool(reader: anytype) !bool {
-    const byte = try reader.readByte();
+fn deserializeBool(reader: anytype, context: ?*DecodingContext) !bool {
+    const byte = reader.readByte() catch |err| {
+        if (context) |ctx| {
+            return ctx.makeError(err, "failed to read bool: {s}", .{@errorName(err)});
+        }
+        return err;
+    };
+    if (context) |ctx| ctx.addOffset(1);
     return byte != 0;
 }
 
-fn deserializeInt(comptime T: type, reader: anytype) !T {
+fn deserializeInt(comptime T: type, reader: anytype, context: ?*DecodingContext) !T {
     const intInfo = @typeInfo(T).int;
     const span = trace.span(.deserialize_int);
     defer span.deinit();
@@ -274,7 +398,13 @@ fn deserializeInt(comptime T: type, reader: anytype) !T {
     span.debug("Deserializing {d}-bit integer", .{intInfo.bits});
     inline for (.{ u8, u16, u32, u64, u128 }) |t| {
         if (intInfo.bits == @bitSizeOf(t)) {
-            const buf = try reader.readBytesNoEof(intInfo.bits / 8);
+            const buf = reader.readBytesNoEof(intInfo.bits / 8) catch |err| {
+                if (context) |ctx| {
+                    return ctx.makeError(err, "failed to read {d}-bit integer: {s}", .{ intInfo.bits, @errorName(err) });
+                }
+                return err;
+            };
+            if (context) |ctx| ctx.addOffset(intInfo.bits / 8);
             const integer = decoder.decodeFixedLengthInteger(t, &buf);
             span.debug("Decoded {d}-bit integer: {d}", .{ intInfo.bits, integer });
             span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(&buf)});
@@ -285,12 +415,18 @@ fn deserializeInt(comptime T: type, reader: anytype) !T {
     @panic("unhandled integer type");
 }
 
-fn deserializeOptional(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype) !T {
+fn deserializeOptional(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype, context: ?*DecodingContext) !T {
     const optionalInfo = @typeInfo(T).optional;
     const span = trace.span(.deserialize_optional);
     defer span.deinit();
 
-    const present = try reader.readByte();
+    const present = reader.readByte() catch |err| {
+        if (context) |ctx| {
+            return ctx.makeError(err, "failed to read optional present byte: {s}", .{@errorName(err)});
+        }
+        return err;
+    };
+    if (context) |ctx| ctx.addOffset(1);
     span.debug("Deserializing optional, present byte: {d}", .{present});
 
     if (present == 0) {
@@ -300,33 +436,46 @@ fn deserializeOptional(comptime T: type, comptime params: anytype, allocator: st
         const child_span = span.child(.optional_value);
         defer child_span.deinit();
         child_span.debug("Deserializing optional child of type {s}", .{@typeName(optionalInfo.child)});
-        const value = try deserializeInternal(optionalInfo.child, params, allocator, reader);
+        const value = try deserializeInternal(optionalInfo.child, params, allocator, reader, context);
         child_span.debug("Successfully deserialized optional value", .{});
         return value;
     } else {
         span.err("Invalid present byte for optional: {d}", .{present});
-        return DeserializationError.InvalidOptionalByte;
+        const err = DeserializationError.InvalidOptionalByte;
+        if (context) |ctx| {
+            return ctx.makeError(err, "invalid optional present byte: {d} (must be 0 or 1)", .{present});
+        }
+        return err;
     }
 }
 
-fn deserializeEnum(comptime T: type, reader: anytype) !T {
+fn deserializeEnum(comptime T: type, reader: anytype, context: ?*DecodingContext) !T {
     const enumInfo = @typeInfo(T).@"enum";
     const enum_span = trace.span(.enum_deserialize);
     defer enum_span.deinit();
     enum_span.debug("Deserializing enum type: {s}", .{@typeName(T)});
 
-    const tag_value = try readInteger(reader);
+    const tag_value = readIntegerWithContext(reader, context) catch |err| {
+        if (context) |ctx| {
+            return ctx.makeError(err, "failed to read enum tag: {s}", .{@errorName(err)});
+        }
+        return err;
+    };
     enum_span.debug("Read enum tag value: {d}", .{tag_value});
 
     if (tag_value >= enumInfo.fields.len) {
         enum_span.err("Invalid enum tag value: {d}", .{tag_value});
-        return DeserializationError.InvalidEnumTagValue;
+        const err = DeserializationError.InvalidEnumTagValue;
+        if (context) |ctx| {
+            return ctx.makeError(err, "invalid enum tag {d} for type {s} (max: {d})", .{ tag_value, @typeName(T), enumInfo.fields.len - 1 });
+        }
+        return err;
     }
 
     return @enumFromInt(tag_value);
 }
 
-fn deserializeStruct(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype) !T {
+fn deserializeStruct(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype, context: ?*DecodingContext) !T {
     const structInfo = @typeInfo(T).@"struct";
     const struct_span = trace.span(.struct_deserialize);
     defer struct_span.deinit();
@@ -344,15 +493,20 @@ fn deserializeStruct(comptime T: type, comptime params: anytype, allocator: std.
 
     var result: T = undefined;
     inline for (structInfo.fields) |field| {
+        if (context) |ctx| {
+            try ctx.push(.{ .field = field.name });
+        }
+        defer if (context) |ctx| ctx.pop();
+
         const field_span = struct_span.child(.field);
         defer field_span.deinit();
         field_span.debug("Deserializing field: {s} of type {s}", .{ field.name, @typeName(field.type) });
 
         const field_type = field.type;
         if (@hasDecl(T, field.name ++ "_size")) {
-            @field(result, field.name) = try deserializeSizedField(T, field.name, field_type, params, allocator, reader);
+            @field(result, field.name) = try deserializeSizedField(T, field.name, field_type, params, allocator, reader, context);
         } else {
-            const field_value = try deserializeInternal(field_type, params, allocator, reader);
+            const field_value = try deserializeInternal(field_type, params, allocator, reader, context);
             @field(result, field.name) = field_value;
         }
         field_span.debug("Successfully deserialized field: {s}", .{field.name});
@@ -361,7 +515,7 @@ fn deserializeStruct(comptime T: type, comptime params: anytype, allocator: std.
     return result;
 }
 
-fn deserializeUnion(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype) !T {
+fn deserializeUnion(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype, context: ?*DecodingContext) !T {
     const unionInfo = @typeInfo(T).@"union";
     const union_span = trace.span(.union_deserialize);
     defer union_span.deinit();
@@ -376,11 +530,21 @@ fn deserializeUnion(comptime T: type, comptime params: anytype, allocator: std.m
         });
     }
 
-    const tag_value = try readInteger(reader);
+    const tag_value = readIntegerWithContext(reader, context) catch |err| {
+        if (context) |ctx| {
+            return ctx.makeError(err, "failed to read union tag: {s}", .{@errorName(err)});
+        }
+        return err;
+    };
     union_span.debug("Read union tag value: {d}", .{tag_value});
 
     inline for (unionInfo.fields, 0..) |field, idx| {
         if (tag_value == idx) {
+            if (context) |ctx| {
+                try ctx.push(.{ .union_variant = field.name });
+            }
+            defer if (context) |ctx| ctx.pop();
+
             const field_span = union_span.child(.field);
             defer field_span.deinit();
             field_span.debug("Processing union field: {s}", .{field.name});
@@ -393,21 +557,25 @@ fn deserializeUnion(comptime T: type, comptime params: anytype, allocator: std.m
 
                 const field_type = field.type;
                 if (@hasDecl(T, field.name ++ "_size")) {
-                    const slice = try deserializeSizedField(T, field.name, field_type, params, allocator, reader);
+                    const slice = try deserializeSizedField(T, field.name, field_type, params, allocator, reader, context);
                     return @unionInit(T, field.name, slice);
                 }
 
-                const field_value = try deserializeInternal(field.type, params, allocator, reader);
+                const field_value = try deserializeInternal(field.type, params, allocator, reader, context);
                 return @unionInit(T, field.name, field_value);
             }
         }
     }
 
     union_span.err("Invalid union tag: {d}", .{tag_value});
-    return DeserializationError.InvalidUnionTagValue;
+    const err = DeserializationError.InvalidUnionTagValue;
+    if (context) |ctx| {
+        return ctx.makeError(err, "invalid union tag {d} for type {s} (max: {d})", .{ tag_value, @typeName(T), unionInfo.fields.len - 1 });
+    }
+    return err;
 }
 
-fn deserializePointer(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype) !T {
+fn deserializePointer(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype, context: ?*DecodingContext) !T {
     const pointerInfo = @typeInfo(T).pointer;
     const ptr_span = trace.span(.pointer);
     defer ptr_span.deinit();
@@ -415,7 +583,12 @@ fn deserializePointer(comptime T: type, comptime params: anytype, allocator: std
 
     switch (pointerInfo.size) {
         .slice => {
-            const len = try readInteger(reader);
+            const len = readIntegerWithContext(reader, context) catch |err| {
+                if (context) |ctx| {
+                    return ctx.makeError(err, "failed to read slice length: {s}", .{@errorName(err)});
+                }
+                return err;
+            };
             ptr_span.debug("Deserializing slice of length: {d}", .{len});
 
             const slice = try allocator.alloc(pointerInfo.child, @intCast(len));
@@ -423,18 +596,32 @@ fn deserializePointer(comptime T: type, comptime params: anytype, allocator: std
 
             if (pointerInfo.child == u8) {
                 ptr_span.debug("Optimized path for byte array", .{});
-                const bytes_read = try reader.readAll(slice);
+                const bytes_read = reader.readAll(slice) catch |err| {
+                    if (context) |ctx| {
+                        return ctx.makeError(err, "failed to read byte slice: {s}", .{@errorName(err)});
+                    }
+                    return err;
+                };
                 if (bytes_read != len) {
                     ptr_span.err("Incomplete read - expected {d} bytes, got {d}", .{ len, bytes_read });
-                    return DeserializationError.UnexpectedEndOfStream;
+                    const err = DeserializationError.UnexpectedEndOfStream;
+                    if (context) |ctx| {
+                        return ctx.makeError(err, "incomplete read - expected {d} bytes, got {d}", .{ len, bytes_read });
+                    }
+                    return err;
                 }
+                if (context) |ctx| ctx.addOffset(bytes_read);
                 ptr_span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(slice)});
             } else {
                 for (slice, 0..) |*item, i| {
+                    if (context) |ctx| {
+                        try ctx.push(.{ .slice_item = i });
+                    }
+                    defer if (context) |ctx| ctx.pop();
                     const item_span = ptr_span.child(.slice_item);
                     defer item_span.deinit();
                     item_span.debug("Deserializing item {d} of {d}", .{ i + 1, len });
-                    item.* = try deserializeInternal(pointerInfo.child, params, allocator, reader);
+                    item.* = try deserializeInternal(pointerInfo.child, params, allocator, reader, context);
                 }
             }
             return slice;
@@ -446,22 +633,28 @@ fn deserializePointer(comptime T: type, comptime params: anytype, allocator: std
     }
 }
 
-fn deserializeInternal(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype) !T {
+fn deserializeInternal(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype, context: ?*DecodingContext) !T {
     const span = trace.span(.recursive_deserialize);
     defer span.deinit();
 
     span.debug("Start deserializing type: {s}", .{@typeName(T)});
 
+    // Push type name to context if available
+    if (context) |ctx| {
+        try ctx.push(.{ .type_name = @typeName(T) });
+    }
+    defer if (context) |ctx| ctx.pop();
+
     switch (@typeInfo(T)) {
-        .bool => return try deserializeBool(reader),
-        .int => return try deserializeInt(T, reader),
-        .optional => return try deserializeOptional(T, params, allocator, reader),
+        .bool => return try deserializeBool(reader, context),
+        .int => return try deserializeInt(T, reader, context),
+        .optional => return try deserializeOptional(T, params, allocator, reader, context),
         .float => {
             span.err("Float deserialization not implemented", .{});
             @compileError("Float deserialization not implemented yet");
         },
-        .@"enum" => return try deserializeEnum(T, reader),
-        .@"struct" => return try deserializeStruct(T, params, allocator, reader),
+        .@"enum" => return try deserializeEnum(T, reader, context),
+        .@"struct" => return try deserializeStruct(T, params, allocator, reader, context),
         .array => |arrayInfo| {
             const array_span = span.child(.array);
             defer array_span.deinit();
@@ -471,10 +664,10 @@ fn deserializeInternal(comptime T: type, comptime params: anytype, allocator: st
                 array_span.err("Arrays with sentinels are not supported", .{});
                 @compileError("Arrays with sentinels are not supported for deserialization");
             }
-            return try deserializeArray(arrayInfo.child, arrayInfo.len, params, allocator, reader);
+            return try deserializeArray(arrayInfo.child, arrayInfo.len, params, allocator, reader, context);
         },
-        .pointer => return try deserializePointer(T, params, allocator, reader),
-        .@"union" => return try deserializeUnion(T, params, allocator, reader),
+        .pointer => return try deserializePointer(T, params, allocator, reader, context),
+        .@"union" => return try deserializeUnion(T, params, allocator, reader, context),
         else => {
             span.err("Unsupported type: {s}", .{@typeName(T)});
             @compileError("Unsupported type for deserialization: " ++ @typeName(T));
@@ -482,7 +675,7 @@ fn deserializeInternal(comptime T: type, comptime params: anytype, allocator: st
     }
 }
 
-fn deserializeArray(comptime T: type, comptime len: usize, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype) ![len]T {
+fn deserializeArray(comptime T: type, comptime len: usize, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype, context: ?*DecodingContext) ![len]T {
     const span = trace.span(.array_deserialize);
     defer span.deinit();
     span.debug("Deserializing fixed array - type: {s}, length: {d}", .{ @typeName(T), len });
@@ -491,19 +684,33 @@ fn deserializeArray(comptime T: type, comptime len: usize, comptime params: anyt
 
     if (T == u8) {
         span.debug("Optimized path for byte array", .{});
-        const bytes_read = try reader.readAll(&result);
+        const bytes_read = reader.readAll(&result) catch |err| {
+            if (context) |ctx| {
+                return ctx.makeError(err, "failed to read byte array: {s}", .{@errorName(err)});
+            }
+            return err;
+        };
         if (bytes_read != len) {
             span.err("Incomplete read - expected {d} bytes, got {d}", .{ len, bytes_read });
-            return DeserializationError.UnexpectedEndOfStream;
+            const err = DeserializationError.UnexpectedEndOfStream;
+            if (context) |ctx| {
+                return ctx.makeError(err, "incomplete read - expected {d} bytes, got {d}", .{ len, bytes_read });
+            }
+            return err;
         }
+        if (context) |ctx| ctx.addOffset(bytes_read);
         span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(&result)});
     } else {
         span.debug("Deserializing array elements individually", .{});
         for (&result, 0..) |*element, i| {
+            if (context) |ctx| {
+                try ctx.push(.{ .array_index = i });
+            }
+            defer if (context) |ctx| ctx.pop();
             const element_span = span.child(.array_element);
             defer element_span.deinit();
             element_span.debug("Deserializing element {d} of {d}", .{ i + 1, len });
-            element.* = try deserializeInternal(T, params, allocator, reader);
+            element.* = try deserializeInternal(T, params, allocator, reader, context);
         }
     }
 
