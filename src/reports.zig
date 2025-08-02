@@ -16,6 +16,7 @@ const timing = @import("reports/timing/timing.zig");
 const gas = @import("reports/gas/gas.zig");
 const authorization = @import("reports/authorization/authorization.zig");
 const signature = @import("reports/signature/signature.zig");
+const output = @import("reports/output/output.zig");
 
 const StateTransition = @import("state_delta.zig").StateTransition;
 
@@ -100,30 +101,10 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             prev_guarantee_core = guarantee.report.core_index;
 
             // Validate output size limits
-            {
-                const size_span = span.child(.validate_output_sizes);
-                defer size_span.deinit();
-
-                size_span.debug("Starting output size validation", .{});
-                size_span.trace("Auth output size: {d} bytes", .{guarantee.report.auth_output.len});
-
-                var total_size: usize = guarantee.report.auth_output.len;
-
-                for (guarantee.report.results, 0..) |result, i| {
-                    const result_size = result.result.len();
-                    size_span.trace("Result[{d}] size: {d} bytes", .{ i, result_size });
-                    total_size += result_size;
-                }
-
-                const max_size = params.max_work_report_size;
-                size_span.debug("Total size: {d} bytes, limit: {d} bytes", .{ total_size, max_size });
-
-                if (total_size > max_size) {
-                    size_span.err("Total output size {d} exceeds limit {d}", .{ total_size, max_size });
-                    return Error.WorkReportTooBig;
-                }
-                size_span.debug("Output size validation passed", .{});
-            }
+            output.validateOutputSize(params, guarantee) catch |err| switch (err) {
+                output.Error.WorkReportTooBig => return Error.WorkReportTooBig,
+                else => |e| return e,
+            };
 
             // Validate gas limits
             gas.validateGasLimits(params, guarantee) catch |err| switch (err) {
