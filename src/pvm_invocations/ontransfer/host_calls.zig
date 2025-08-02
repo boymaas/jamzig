@@ -55,7 +55,6 @@ pub fn HostCalls(comptime params: Params) type {
                 );
             }
 
-
             pub fn deinit(self: *Self) void {
                 self.service_accounts.deinit();
                 self.* = undefined;
@@ -235,6 +234,13 @@ pub fn HostCalls(comptime params: Params) type {
                 const l = @min(limit, data.len - f);
 
                 span.debug("Fetching {d} bytes from offset {d}", .{ l, f });
+
+                // Check if we're being asked for zero bytes (length query only)
+                if (l == 0) {
+                    span.debug("Zero len requested, returning size: {d}", .{data.len});
+                    exec_ctx.registers[7] = data.len;
+                    return .play;
+                }
 
                 // Write data to memory
                 exec_ctx.memory.writeSlice(@truncate(output_ptr), data[f..][0..l]) catch {
