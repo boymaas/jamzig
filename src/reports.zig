@@ -7,8 +7,8 @@ const recent_blocks = @import("recent_blocks.zig");
 
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.reports);
-const guarantor_validation = @import("guarantor_validation.zig");
 const duplicate_check = @import("reports/duplicate_check/duplicate_check.zig");
+const guarantor = @import("reports/guarantor/guarantor.zig");
 
 const StateTransition = @import("state_delta.zig").StateTransition;
 
@@ -20,9 +20,9 @@ pub const Error = error{
     InsufficientGuarantees,
     TooManyDependencies,
 
-    TooManyGuarantees,
     OutOfOrderGuarantee,
     NotSortedOrUniqueGuarantors,
+    TooManyGuarantees,
     WrongAssignment,
     CoreEngaged,
     AnchorNotRecent,
@@ -250,27 +250,10 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
 
             // Validate guarantors are sorted and unique
-            {
-                const guarantor_span = span.child(.signatures_sorted_unique);
-                defer guarantor_span.deinit();
-
-                guarantor_span.debug("Validating {d} guarantor signatures are sorted and unique", .{guarantee.signatures.len});
-
-                var prev_index: ?types.ValidatorIndex = null;
-                for (guarantee.signatures, 0..) |sig, i| {
-                    guarantor_span.trace("Checking validator index {d} at position {d}", .{ sig.validator_index, i });
-
-                    if (prev_index != null and sig.validator_index <= prev_index.?) {
-                        guarantor_span.err("Guarantor validation failed: index {d} <= previous {d}", .{
-                            sig.validator_index,
-                            prev_index.?,
-                        });
-                        return Error.NotSortedOrUniqueGuarantors;
-                    }
-                    prev_index = sig.validator_index;
-                }
-                guarantor_span.debug("All guarantor indices validated as sorted and unique", .{});
-            }
+            guarantor.validateSortedAndUnique(guarantee) catch |err| switch (err) {
+                guarantor.Error.NotSortedOrUniqueGuarantors => return Error.NotSortedOrUniqueGuarantors,
+                else => |e| return e,
+            };
 
             // Check service ID exists
             {
@@ -551,20 +534,12 @@ pub const ValidatedGuaranteeExtrinsic = struct {
 
                 sig_span.debug("Validating {d} guarantor signatures", .{guarantee.signatures.len});
 
-                sig_span.debug("Checking signature count: {d} must be either 2 or 3", .{guarantee.signatures.len});
-
-                if (guarantee.signatures.len < 2) {
-                    sig_span.err("Insufficient guarantees: got {d}, minimum required is 2", .{
-                        guarantee.signatures.len,
-                    });
-                    return Error.InsufficientGuarantees;
-                }
-                if (guarantee.signatures.len > 3) {
-                    sig_span.err("Too many guarantees: got {d}, maximum allowed is 3", .{
-                        guarantee.signatures.len,
-                    });
-                    return Error.TooManyGuarantees;
-                }
+                // Validate signature count
+                guarantor.validateSignatureCount(guarantee) catch |err| switch (err) {
+                    guarantor.Error.InsufficientGuarantees => return Error.InsufficientGuarantees,
+                    guarantor.Error.TooManyGuarantees => return Error.TooManyGuarantees,
+                    else => |e| return e,
+                };
                 // Validate all validator indices are in range upfront
                 for (guarantee.signatures) |sig| {
                     if (sig.validator_index >= params.validators_count) {
@@ -577,25 +552,17 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 }
 
                 // Validate guarantor assignments against rotation periods
-                {
-                    const assign_span = sig_span.child(.validate_assignments);
-                    defer assign_span.deinit();
-                    assign_span.debug("Validating guarantor assignments for {d} signatures", .{guarantee.signatures.len});
-
-                    guarantor_validation.validateGuarantors(
-                        params,
-                        allocator,
-                        stx,
-                        guarantee,
-                    ) catch |err| switch (err) {
-                        error.InvalidGuarantorAssignment => return Error.WrongAssignment,
-                        error.InvalidRotationPeriod => return Error.InvalidRotationPeriod,
-                        error.InvalidSlotRange => return Error.InvalidSlotRange,
-                        else => |e| return e,
-                    };
-
-                    assign_span.debug("Assignment validation successful", .{});
-                }
+                guarantor.validateGuarantorAssignments(
+                    params,
+                    allocator,
+                    stx,
+                    guarantee,
+                ) catch |err| switch (err) {
+                    guarantor.Error.InvalidGuarantorAssignment => return Error.WrongAssignment,
+                    guarantor.Error.InvalidRotationPeriod => return Error.InvalidRotationPeriod,
+                    guarantor.Error.InvalidSlotRange => return Error.InvalidSlotRange,
+                    else => |e| return e,
+                };
 
                 // Validate signatures
                 const kappa: *const state.Kappa = try stx.ensure(.kappa);
