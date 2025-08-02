@@ -14,6 +14,7 @@ const dependency = @import("reports/dependency/dependency.zig");
 const anchor = @import("reports/anchor/anchor.zig");
 const timing = @import("reports/timing/timing.zig");
 const gas = @import("reports/gas/gas.zig");
+const authorization = @import("reports/authorization/authorization.zig");
 
 const StateTransition = @import("state_delta.zig").StateTransition;
 
@@ -285,28 +286,10 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             };
 
             // Check if the authorizer hash is valid
-            {
-                const auth_span = span.child(.validate_authorization);
-                defer auth_span.deinit();
-
-                auth_span.debug("Checking authorization for core {d} with hash {s}", .{
-                    guarantee.report.core_index,
-                    std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash),
-                });
-
-                const alpha: *const state.Alpha(
-                    params.core_count,
-                    params.max_authorizations_pool_items,
-                ) = try stx.ensure(.alpha);
-                if (!alpha.isAuthorized(guarantee.report.core_index, guarantee.report.authorizer_hash)) {
-                    auth_span.err("Core {d} not authorized for hash {s}", .{
-                        guarantee.report.core_index,
-                        std.fmt.fmtSliceHexLower(&guarantee.report.authorizer_hash),
-                    });
-                    return Error.CoreUnauthorized;
-                }
-                auth_span.debug("Authorization validated for core {d}", .{guarantee.report.core_index});
-            }
+            authorization.validateCoreAuthorization(params, stx, guarantee) catch |err| switch (err) {
+                authorization.Error.CoreUnauthorized => return Error.CoreUnauthorized,
+                else => |e| return e,
+            };
 
             // Check for duplicate packages across states
             duplicate_check.checkDuplicatePackageInRecentHistory(params, stx, guarantee, guarantees) catch |err| switch (err) {
