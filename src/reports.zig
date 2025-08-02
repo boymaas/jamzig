@@ -13,6 +13,7 @@ const service = @import("reports/service/service.zig");
 const dependency = @import("reports/dependency/dependency.zig");
 const anchor = @import("reports/anchor/anchor.zig");
 const timing = @import("reports/timing/timing.zig");
+const gas = @import("reports/gas/gas.zig");
 
 const StateTransition = @import("state_delta.zig").StateTransition;
 
@@ -123,27 +124,10 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
 
             // Validate gas limits
-            {
-                const gas_span = span.child(.validate_gas);
-                defer gas_span.deinit();
-                gas_span.debug("Validating gas limits for {d} results", .{guarantee.report.results.len});
-
-                // Calculate total accumulate gas for this report
-                var total_gas: u64 = 0;
-                for (guarantee.report.results) |result| {
-                    total_gas += result.accumulate_gas;
-                }
-
-                gas_span.debug("Total accumulate gas: {d}", .{total_gas});
-
-                // Check total doesn't exceed G_A
-                if (total_gas > params.gas_alloc_accumulation) {
-                    gas_span.err("Work report gas {d} exceeds limit {d}", .{ total_gas, params.gas_alloc_accumulation });
-                    return Error.WorkReportGasTooHigh;
-                }
-
-                gas_span.debug("Gas validation passed", .{});
-            }
+            gas.validateGasLimits(params, guarantee) catch |err| switch (err) {
+                gas.Error.WorkReportGasTooHigh => return Error.WorkReportGasTooHigh,
+                else => |e| return e,
+            };
 
             // Check total dependencies don't exceed J according to equation 11.3
             dependency.validateDependencyCount(params, guarantee) catch |err| switch (err) {
