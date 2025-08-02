@@ -12,6 +12,7 @@ const guarantor = @import("reports/guarantor/guarantor.zig");
 const service = @import("reports/service/service.zig");
 const dependency = @import("reports/dependency/dependency.zig");
 const anchor = @import("reports/anchor/anchor.zig");
+const timing = @import("reports/timing/timing.zig");
 
 const StateTransition = @import("state_delta.zig").StateTransition;
 
@@ -152,46 +153,21 @@ pub const ValidatedGuaranteeExtrinsic = struct {
 
             // Check if we have enough signatures:
 
-            const slot_span = span.child(.validate_slot);
-
-            defer slot_span.deinit();
-            slot_span.debug("Validating report slot {d} against current slot {d} for core {d}", .{
-                guarantee.slot,
-                stx.time.current_slot,
-                guarantee.report.core_index,
-            });
-
             // Validate report slot is not in future
-            if (guarantee.slot > stx.time.current_slot) {
-                slot_span.err("Report slot {d} is in the future (current: {d})", .{ guarantee.slot, stx.time.current_slot });
-                return Error.FutureReportSlot;
-            }
-
-            const rotation_span = span.child(.validate_rotation);
-            defer rotation_span.deinit();
+            timing.validateReportSlot(params, stx, guarantee) catch |err| switch (err) {
+                timing.Error.FutureReportSlot => return Error.FutureReportSlot,
+                else => |e| return e,
+            };
 
             // Check rotation period according to graypaper 11.27
             const current_rotation = @divFloor(stx.time.current_slot, params.validator_rotation_period);
             const report_rotation = @divFloor(guarantee.slot, params.validator_rotation_period);
             const is_current_rotation = (current_rotation == report_rotation);
 
-            rotation_span.debug("Validating report rotation {d} against current rotation {d} (rotation_period={d})", .{
-                report_rotation,
-                current_rotation,
-                params.validator_rotation_period,
-            });
-
-            // Report must be from current  rotation
-            if (report_rotation < current_rotation -| 1) {
-                rotation_span.err(
-                    "Report from rotation {d} is too old (current: {d})",
-                    .{
-                        report_rotation,
-                        current_rotation,
-                    },
-                );
-                return Error.ReportEpochBeforeLast;
-            }
+            timing.validateRotationPeriod(params, stx, guarantee) catch |err| switch (err) {
+                timing.Error.ReportEpochBeforeLast => return Error.ReportEpochBeforeLast,
+                else => |e| return e,
+            };
 
             // Validate anchor is recent
             anchor.validateAnchor(params, stx, guarantee) catch |err| switch (err) {
@@ -234,18 +210,10 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             };
 
             // Check timeslot is within valid range
-            const min_guarantee_slot = (@divFloor(stx.time.current_slot, params.validator_rotation_period) -| 1) * params.validator_rotation_period;
-            const max_guarantee_slot = stx.time.current_slot;
-            rotation_span.debug("Validating guarantee time slot {d} is between {d} and {d}", .{ guarantee.slot, min_guarantee_slot, max_guarantee_slot });
-
-            // Report must be from current  rotation
-            if (!(guarantee.slot >= min_guarantee_slot and guarantee.slot <= stx.time.current_slot)) {
-                rotation_span.err(
-                    "Guarantee time slot out of range: {d} is NOT between {d} and {d}",
-                    .{ guarantee.slot, min_guarantee_slot, max_guarantee_slot },
-                );
-                return Error.ReportEpochBeforeLast;
-            }
+            timing.validateSlotRange(params, stx, guarantee) catch |err| switch (err) {
+                timing.Error.ReportEpochBeforeLast => return Error.ReportEpochBeforeLast,
+                else => |e| return e,
+            };
 
             // 11.27 ---
 
@@ -327,32 +295,10 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
 
             // Core must be free or its previous report must have timed out
-            // (exceeded WorkReplacementPeriod since last report)
-            {
-                const timeout_span = span.child(.validate_timeout);
-                defer timeout_span.deinit();
-
-                const rho: *const state.Rho(params.core_count) = try stx.ensure(.rho_prime);
-                if (rho.getReport(guarantee.report.core_index)) |entry| {
-                    timeout_span.debug("Checking core {d} timeout - last: {d}, current: {d}, period: {d}", .{
-                        guarantee.report.core_index,
-                        entry.assignment.timeout,
-                        guarantee.slot,
-                        params.work_replacement_period,
-                    });
-
-                    if (!entry.assignment.isTimedOut(params.work_replacement_period, guarantee.slot)) {
-                        timeout_span.err("Core {d} still engaged - needs {d} more slots", .{
-                            guarantee.report.core_index,
-                            (entry.assignment.timeout + params.work_replacement_period) - guarantee.slot,
-                        });
-                        return Error.CoreEngaged;
-                    }
-                    timeout_span.debug("Core {d} timeout validated", .{guarantee.report.core_index});
-                } else {
-                    timeout_span.debug("Core {d} is free", .{guarantee.report.core_index});
-                }
-            }
+            timing.validateCoreTimeout(params, stx, guarantee) catch |err| switch (err) {
+                timing.Error.CoreEngaged => return Error.CoreEngaged,
+                else => |e| return e,
+            };
 
             // Check if the authorizer hash is valid
             {
