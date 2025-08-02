@@ -11,6 +11,7 @@ const duplicate_check = @import("reports/duplicate_check/duplicate_check.zig");
 const guarantor = @import("reports/guarantor/guarantor.zig");
 const service = @import("reports/service/service.zig");
 const dependency = @import("reports/dependency/dependency.zig");
+const anchor = @import("reports/anchor/anchor.zig");
 
 const StateTransition = @import("state_delta.zig").StateTransition;
 
@@ -193,48 +194,13 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             }
 
             // Validate anchor is recent
-            const anchor_span = span.child(.validate_anchor);
-            defer anchor_span.deinit();
-
-            const beta: *const state.Beta = try stx.ensure(.beta_prime);
-            if (beta.getBlockInfoByHash(guarantee.report.context.anchor)) |binfo| {
-                anchor_span.debug("Found anchor block, validating roots", .{});
-                anchor_span.trace("Block info - hash: {s}, state root: {s}", .{
-                    std.fmt.fmtSliceHexLower(&binfo.header_hash),
-                    std.fmt.fmtSliceHexLower(&binfo.state_root),
-                });
-
-                if (!std.mem.eql(u8, &guarantee.report.context.beefy_root, &binfo.beefyMmrRoot())) {
-                    anchor_span.err("Beefy MMR root mismatch - expected: {s}, got: {s}", .{
-                        std.fmt.fmtSliceHexLower(&binfo.beefyMmrRoot()),
-                        std.fmt.fmtSliceHexLower(&guarantee.report.context.beefy_root),
-                    });
-                    return Error.BadBeefyMmrRoot;
-                }
-
-                if (!std.mem.eql(u8, &guarantee.report.context.state_root, &binfo.state_root)) {
-                    anchor_span.err("State root mismatch - expected: {s}, got: {s}", .{
-                        std.fmt.fmtSliceHexLower(&binfo.state_root),
-                        std.fmt.fmtSliceHexLower(&guarantee.report.context.state_root),
-                    });
-                    return Error.BadStateRoot;
-                }
-
-                if (!std.mem.eql(u8, &guarantee.report.context.anchor, &binfo.header_hash)) {
-                    anchor_span.err("Anchor hash mismatch - expected: {s}, got: {s}", .{
-                        std.fmt.fmtSliceHexLower(&binfo.header_hash),
-                        std.fmt.fmtSliceHexLower(&guarantee.report.context.anchor),
-                    });
-                    return Error.BadAnchor;
-                }
-
-                anchor_span.debug("Anchor validation successful", .{});
-            } else {
-                anchor_span.err("Anchor block not found in recent history: {s}", .{
-                    std.fmt.fmtSliceHexLower(&guarantee.report.context.anchor),
-                });
-                return Error.AnchorNotRecent;
-            }
+            anchor.validateAnchor(params, stx, guarantee) catch |err| switch (err) {
+                anchor.Error.AnchorNotRecent => return Error.AnchorNotRecent,
+                anchor.Error.BadBeefyMmrRoot => return Error.BadBeefyMmrRoot,
+                anchor.Error.BadStateRoot => return Error.BadStateRoot,
+                anchor.Error.BadAnchor => return Error.BadAnchor,
+                else => |e| return e,
+            };
 
             // Validate guarantors are sorted and unique
             guarantor.validateSortedAndUnique(guarantee) catch |err| switch (err) {
