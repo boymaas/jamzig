@@ -9,6 +9,7 @@ const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.reports);
 const duplicate_check = @import("reports/duplicate_check/duplicate_check.zig");
 const guarantor = @import("reports/guarantor/guarantor.zig");
+const service = @import("reports/service/service.zig");
 
 const StateTransition = @import("state_delta.zig").StateTransition;
 
@@ -256,56 +257,12 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             };
 
             // Check service ID exists
-            {
-                const service_span = span.child(.validate_services);
-                defer service_span.deinit();
-                service_span.debug("Validating {d} service results", .{guarantee.report.results.len});
-
-                const delta: *const state.Delta = try stx.ensure(.delta);
-                for (guarantee.report.results, 0..) |result, i| {
-                    const result_span = service_span.child(.validate_service_result);
-                    defer result_span.deinit();
-
-                    result_span.debug("Validating service ID {d} for result {d}", .{ result.service_id, i });
-                    result_span.trace("Code hash: {s}, gas: {d}", .{
-                        std.fmt.fmtSliceHexLower(&result.code_hash),
-                        result.accumulate_gas,
-                    });
-
-                    if (delta.getAccount(result.service_id)) |service| {
-                        result_span.debug("Found service account, validating code hash and gas", .{});
-                        result_span.trace("Service code hash: {s}, min gas: {d}", .{
-                            std.fmt.fmtSliceHexLower(&service.code_hash),
-                            service.min_gas_accumulate,
-                        });
-
-                        // Validate code hash matches
-                        if (!std.mem.eql(u8, &service.code_hash, &result.code_hash)) {
-                            result_span.err("Code hash mismatch - expected: {s}, got: {s}", .{
-                                std.fmt.fmtSliceHexLower(&service.code_hash),
-                                std.fmt.fmtSliceHexLower(&result.code_hash),
-                            });
-                            return Error.BadCodeHash;
-                        }
-
-                        // Check gas limits
-                        if (result.accumulate_gas < service.min_gas_accumulate) {
-                            result_span.err("Insufficient gas: {d} < minimum {d}", .{
-                                result.accumulate_gas,
-                                service.min_gas_accumulate,
-                            });
-                            return Error.ServiceItemGasTooLow;
-                        }
-
-                        result_span.debug("Service validation successful", .{});
-                    } else {
-                        result_span.err("Service ID {d} not found", .{result.service_id});
-                        return Error.BadServiceId;
-                    }
-                }
-
-                service_span.debug("All service validations passed", .{});
-            }
+            service.validateServices(params, stx, guarantee) catch |err| switch (err) {
+                service.Error.BadServiceId => return Error.BadServiceId,
+                service.Error.BadCodeHash => return Error.BadCodeHash,
+                service.Error.ServiceItemGasTooLow => return Error.ServiceItemGasTooLow,
+                else => |e| return e,
+            };
 
             // TODO: Check core is not engaged
             // if (jam_state.rho.?.isEngaged(guarantee.report.core_index)) {
