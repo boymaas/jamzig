@@ -182,6 +182,13 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 preimage.len, f, f + l, l,
             });
 
+            // Check if we're being asked for zero bytes (length query only)
+            if (l == 0) {
+                span.debug("Zero len requested, returning size: {d}", .{preimage.len});
+                exec_ctx.registers[7] = preimage.len;
+                return .play;
+            }
+
             // Write length to memory first (this implicitly checks if the memory is writable)
             span.debug("Writing preimage to memory at 0x{x}", .{output_ptr});
             exec_ctx.memory.writeSlice(@truncate(output_ptr), preimage[f..][0..l]) catch {
