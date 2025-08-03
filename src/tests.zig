@@ -110,6 +110,9 @@ comptime {
     _ = @import("crypto/bandersnatch.zig");
     _ = @import("crypto/bls12_381.zig");
 
+    // Data structures
+    _ = @import("datastruct/hash_set.zig");
+
     // Networking
     _ = @import("net/tests.zig");
 
