@@ -1,6 +1,7 @@
 const std = @import("std");
 const sort = std.sort;
 const encoder = @import("../codec/encoder.zig");
+const HashSet = @import("../datastruct/hash_set.zig").HashSet;
 
 const trace = @import("../tracing.zig").scoped(.codec);
 
@@ -9,7 +10,7 @@ const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
 
 /// Xi (ξ) is defined as a dictionary mapping hashes to hashes: D⟨H → H⟩E
 /// where H represents 32-byte hashes
-pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *const [epoch_size]std.AutoHashMapUnmanaged([32]u8, void), writer: anytype) !void {
+pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *const [epoch_size]HashSet([32]u8), writer: anytype) !void {
     const span = trace.span(.encode);
     defer span.deinit();
     span.debug("Starting Xi encoding for {d} epochs", .{epoch_size});
@@ -22,7 +23,7 @@ pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *con
     span.debug("Successfully encoded all epochs", .{});
 }
 
-pub fn encodeTimeslotEntry(allocator: std.mem.Allocator, xi: *const std.AutoHashMapUnmanaged([32]u8, void), writer: anytype) !void {
+pub fn encodeTimeslotEntry(allocator: std.mem.Allocator, xi: *const HashSet([32]u8), writer: anytype) !void {
     const span = trace.span(.encode_timeslot);
     defer span.deinit();
 
@@ -39,7 +40,7 @@ pub fn encodeTimeslotEntry(allocator: std.mem.Allocator, xi: *const std.AutoHash
 
     var iter = xi.keyIterator();
     while (iter.next()) |key| {
-        try keys.append(key.*);
+        try keys.append(key);
     }
     span.trace("Collected {d} keys", .{keys.items.len});
 
@@ -63,15 +64,15 @@ test "Xi encode" {
     const allocator = testing.allocator;
 
     // Create test xi mapping
-    var xi: std.AutoHashMapUnmanaged([32]u8, void) = .{};
+    var xi = HashSet([32]u8).init();
     defer xi.deinit(allocator);
 
     // Create some test hashes
     const key1 = [_]u8{3} ** 32;
     const key2 = [_]u8{1} ** 32;
 
-    try xi.put(allocator, key1, {});
-    try xi.put(allocator, key2, {});
+    try xi.add(allocator, key1);
+    try xi.add(allocator, key2);
 
     // Create buffer for output
     var buffer = std.ArrayList(u8).init(allocator);

@@ -5,8 +5,6 @@ const crypto = std.crypto;
 
 const recent_blocks = @import("recent_blocks.zig");
 
-const tracing = @import("tracing.zig");
-const trace = tracing.scoped(.reports);
 const duplicate_check = @import("reports/duplicate_check/duplicate_check.zig");
 const guarantor = @import("reports/guarantor/guarantor.zig");
 const service = @import("reports/service/service.zig");
@@ -19,6 +17,9 @@ const signature = @import("reports/signature/signature.zig");
 const output = @import("reports/output/output.zig");
 
 const StateTransition = @import("state_delta.zig").StateTransition;
+
+const tracing = @import("tracing.zig");
+const trace = tracing.scoped(.reports);
 
 /// Error types for report validation and processing
 pub const Error = error{

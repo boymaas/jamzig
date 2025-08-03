@@ -6,8 +6,9 @@ const state = @import("../state.zig");
 const state_decoding = @import("../state_decoding.zig");
 const DecodingError = state_decoding.DecodingError;
 const DecodingContext = state_decoding.DecodingContext;
+const HashSet = @import("../datastruct/hash_set.zig").HashSet;
 
-const GlobalIndex = std.AutoHashMapUnmanaged(types.WorkPackageHash, void);
+const GlobalIndex = HashSet(types.WorkPackageHash);
 
 pub const DecoderParams = struct {
     epoch_length: u32,
@@ -28,8 +29,8 @@ pub fn decode(
     try context.push(.{ .component = "xi" });
     defer context.pop();
 
-    var global_index: GlobalIndex = .{};
-    var result: [params.epoch_length]std.AutoHashMapUnmanaged([32]u8, void) = undefined;
+    var global_index = GlobalIndex.init();
+    var result: [params.epoch_length]HashSet(types.WorkPackageHash) = undefined;
     
     try context.push(.{ .field = "entries" });
     for (&result, 0..) |*epoch, i| {
@@ -47,8 +48,8 @@ pub fn decodeTimeslotEntryAndFillGlobalIndex(
     context: *DecodingContext,
     reader: anytype,
     global_index: *GlobalIndex,
-) !std.AutoHashMapUnmanaged([32]u8, void) {
-    var result = std.AutoHashMapUnmanaged([32]u8, void){};
+) !HashSet(types.WorkPackageHash) {
+    var result = HashSet(types.WorkPackageHash).init();
     errdefer result.deinit(allocator);
 
     // Read length prefix
@@ -68,10 +69,10 @@ pub fn decodeTimeslotEntryAndFillGlobalIndex(
             return context.makeError(error.EndOfStream, "failed to read work package hash: {s}", .{@errorName(err)});
         };
 
-        result.put(allocator, key, {}) catch |err| {
+        result.add(allocator, key) catch |err| {
             return context.makeError(error.OutOfMemory, "failed to add entry: {s}", .{@errorName(err)});
         };
-        global_index.put(allocator, key, {}) catch |err| {
+        global_index.add(allocator, key) catch |err| {
             return context.makeError(error.OutOfMemory, "failed to add to global index: {s}", .{@errorName(err)});
         };
         

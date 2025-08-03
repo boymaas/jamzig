@@ -29,6 +29,10 @@ pub fn HashSet(comptime T: type) type {
             return self.map.remove(item);
         }
 
+        pub fn swapRemove(self: *@This(), item: T) bool {
+            return self.map.swapRemove(item);
+        }
+
         pub fn count(self: *const @This()) usize {
             return self.map.count();
         }
@@ -52,6 +56,22 @@ pub fn HashSet(comptime T: type) type {
         pub fn ensureTotalCapacity(self: *@This(), allocator: std.mem.Allocator, new_capacity: usize) !void {
             try self.map.ensureTotalCapacity(allocator, new_capacity);
         }
+
+        /// Returns an iterator over all items in the set
+        pub fn keyIterator(self: *const @This()) KeyIterator {
+            return KeyIterator{ .iter = self.map.iterator() };
+        }
+
+        pub const KeyIterator = struct {
+            iter: std.AutoHashMapUnmanaged(T, void).Iterator,
+
+            pub fn next(self: *@This()) ?T {
+                if (self.iter.next()) |entry| {
+                    return entry.key_ptr.*;
+                }
+                return null;
+            }
+        };
     };
 }
 

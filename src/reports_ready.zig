@@ -1,8 +1,10 @@
 const std = @import("std");
 const types = @import("types.zig");
 const WorkReport = types.WorkReport;
+const HashSet = @import("datastruct/hash_set.zig").HashSet;
 
 pub const TimeslotEntries = std.ArrayListUnmanaged(WorkReportAndDeps);
+// TODO: Future optimization - use HashSet for better API, but keep AutoArrayHashMap for now due to indexed access requirements
 pub const WorkPackageHashSet = std.AutoArrayHashMapUnmanaged(types.WorkPackageHash, void);
 
 pub fn Theta(comptime epoch_size: usize) type {

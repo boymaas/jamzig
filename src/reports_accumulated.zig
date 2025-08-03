@@ -18,19 +18,20 @@
 const std = @import("std");
 const types = @import("types.zig");
 const WorkPackageHash = types.WorkPackageHash;
+const HashSet = @import("datastruct/hash_set.zig").HashSet;
 
 pub fn Xi(comptime epoch_size: usize) type {
     return struct {
         // Array of sets, each containing work package hashes for a specific time slot
-        entries: [epoch_size]std.AutoHashMapUnmanaged(WorkPackageHash, void),
+        entries: [epoch_size]HashSet(WorkPackageHash),
         // Global index tracking all work packages across all slots
-        global_index: std.AutoHashMapUnmanaged(WorkPackageHash, void),
+        global_index: HashSet(WorkPackageHash),
         allocator: std.mem.Allocator,
 
         pub fn init(allocator: std.mem.Allocator) @This() {
             return .{
-                .entries = [_]std.AutoHashMapUnmanaged(WorkPackageHash, void){.{}} ** epoch_size,
-                .global_index = .{},
+                .entries = [_]HashSet(WorkPackageHash){HashSet(WorkPackageHash).init()} ** epoch_size,
+                .global_index = HashSet(WorkPackageHash).init(),
                 .allocator = allocator,
             };
         }
@@ -38,7 +39,7 @@ pub fn Xi(comptime epoch_size: usize) type {
         pub fn deepClone(self: *const @This(), allocator: std.mem.Allocator) !@This() {
             var cloned = @This(){
                 .entries = undefined,
-                .global_index = .{},
+                .global_index = HashSet(WorkPackageHash).init(),
                 .allocator = allocator,
             };
             // Clone the entries array
@@ -79,9 +80,9 @@ pub fn Xi(comptime epoch_size: usize) type {
         ) !void {
             // Add to the newest time slot (last slot in the array)
             const newest_slot = epoch_size - 1;
-            try self.entries[newest_slot].put(self.allocator, work_package_hash, {});
+            try self.entries[newest_slot].add(self.allocator, work_package_hash);
             // Add to the global index
-            try self.global_index.put(self.allocator, work_package_hash, {});
+            try self.global_index.add(self.allocator, work_package_hash);
         }
 
         pub fn containsWorkPackage(
@@ -99,7 +100,7 @@ pub fn Xi(comptime epoch_size: usize) type {
                 self.entries[i] = self.entries[i + 1];
             }
             // Clear the last slot (it's now empty for new entries)
-            self.entries[epoch_size - 1] = .{};
+            self.entries[epoch_size - 1] = HashSet(WorkPackageHash).init();
             // Update global index by removing dropped entries
             // Workpackage hashes are unique over the Xi domain
             var dropped_slot_iter = dropped_slot.iterator();
@@ -134,8 +135,8 @@ test "Xi - simulation across multiple epochs" {
     defer xi.deinit();
 
     // Keep track of active work packages for verification
-    var active_packages = std.AutoHashMap(WorkPackageHash, void).init(allocator);
-    defer active_packages.deinit();
+    var active_packages = HashSet(WorkPackageHash).init();
+    defer active_packages.deinit(allocator);
 
     // Simulate multiple epochs
     var epoch: u32 = 0;
@@ -155,7 +156,7 @@ test "Xi - simulation across multiple epochs" {
                 global_seed += 1;
 
                 try xi.addWorkPackage(hash);
-                try active_packages.put(hash, {});
+                try active_packages.add(allocator, hash);
                 std.debug.print("    Added work package with seed {d}\n", .{global_seed - 1});
             }
 
