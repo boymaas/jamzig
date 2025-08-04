@@ -68,11 +68,12 @@ pub const AlwaysAccumulateMapItem = struct {
 // to the jamtestvectors/accumulate as they are tv specific.
 pub const Privileges = struct {
     bless: types.ServiceId,
-    assign: types.ServiceId,
+    assign: []types.ServiceId, // Changed to array in v0.6.7
     designate: types.ServiceId,
     always_acc: []AlwaysAccumulateMapItem,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.assign);
         allocator.free(self.always_acc);
         self.* = undefined;
     }
@@ -132,8 +133,33 @@ pub const StorageMapEntry = struct {
     }
 };
 
+/// ServiceInfo type for test vectors with additional fields
+pub const ServiceInfoTestVector = struct {
+    code_hash: types.OpaqueHash,
+    balance: types.Balance,
+    min_item_gas: types.Gas,
+    min_memo_gas: types.Gas,
+    bytes: types.U64,
+    deposit_offset: types.U64,
+    items: types.U32,
+    creation_slot: types.U32,
+    last_accumulation_slot: types.U32,
+    parent_service: types.U32,
+
+    pub fn toCore(self: @This()) types.ServiceInfo {
+        return .{
+            .code_hash = self.code_hash,
+            .balance = self.balance,
+            .min_item_gas = self.min_item_gas,
+            .min_memo_gas = self.min_memo_gas,
+            .bytes = self.bytes,
+            .items = self.items,
+        };
+    }
+};
+
 pub const Account = struct {
-    service: types.ServiceInfo,
+    service: ServiceInfoTestVector,
     storage: []StorageMapEntry,
     preimages: []PreimageEntry,
 

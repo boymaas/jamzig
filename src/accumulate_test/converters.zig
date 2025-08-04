@@ -83,11 +83,14 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
     var service_account = state.services.ServiceAccount.init(allocator);
     errdefer service_account.deinit();
 
-    // Set the code hash and basic account info
-    service_account.code_hash = account.data.service.code_hash;
-    service_account.balance = account.data.service.balance;
-    service_account.min_gas_accumulate = account.data.service.min_item_gas;
-    service_account.min_gas_on_transfer = account.data.service.min_memo_gas;
+    // Convert test vector ServiceInfo to core ServiceInfo using toCore()
+    const core_service_info = account.data.service.toCore();
+    
+    // Set the code hash and basic account info from core type
+    service_account.code_hash = core_service_info.code_hash;
+    service_account.balance = core_service_info.balance;
+    service_account.min_gas_accumulate = core_service_info.min_item_gas;
+    service_account.min_gas_on_transfer = core_service_info.min_memo_gas;
 
     // Add all preimages
     for (account.data.preimages) |preimage| {
@@ -127,7 +130,9 @@ pub fn convertPrivileges(allocator: std.mem.Allocator, privileges: tv_types.Priv
 
     // Map the privileged service identities
     chi.manager = privileges.bless;
-    chi.assign = privileges.assign;
+    // For now, use the first element of the assign array for backward compatibility
+    // TODO: Update state.Chi to support multiple assign services if needed
+    chi.assign = if (privileges.assign.len > 0) privileges.assign[0] else 0;
     chi.designate = privileges.designate;
 
     // Add all always-accumulate mappings
