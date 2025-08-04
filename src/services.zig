@@ -110,6 +110,9 @@ pub const ServiceAccount = struct {
     min_gas_accumulate: GasLimit,
     min_gas_on_transfer: GasLimit,
 
+    // Storage offset for gratis (free) storage allowance - NEW in v0.6.7
+    storage_offset: ?u64,
+
     pub fn init(allocator: Allocator) ServiceAccount {
         return .{
             .storage = std.AutoHashMap(types.StateKey, []const u8).init(allocator),
@@ -119,6 +122,7 @@ pub const ServiceAccount = struct {
             .balance = 0,
             .min_gas_accumulate = 0,
             .min_gas_on_transfer = 0,
+            .storage_offset = null,
         };
     }
 
@@ -151,6 +155,7 @@ pub const ServiceAccount = struct {
         clone.balance = self.balance;
         clone.min_gas_accumulate = self.min_gas_accumulate;
         clone.min_gas_on_transfer = self.min_gas_on_transfer;
+        clone.storage_offset = self.storage_offset;
 
         return clone;
     }

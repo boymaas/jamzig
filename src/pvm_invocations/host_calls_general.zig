@@ -481,25 +481,46 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             min_item_gas: types.Gas,
             /// Gas limit for on_transfer operations (tm)
             min_memo_gas: types.Gas,
-            /// Total storage size in bytes (tl)
+            /// Total storage size in bytes (to)
             total_storage_size: u64,
             /// Total number of items in storage (ti)
             total_items: u32,
+            /// Free storage offset (tf) - NEW in v0.6.7
+            free_storage_offset: u64,
+            /// Preimage count (tr) - NEW in v0.6.7
+            preimage_count: u32,
+            /// Total preimage size (ta) - NEW in v0.6.7
+            total_preimage_size: u32,
+            /// Preimage lookup count (tp) - NEW in v0.6.7
+            preimage_lookup_count: u32,
 
             pub fn encode(
                 self: ServiceInfo,
                 writer: anytype,
             ) !void {
-                const codec = @import("../codec.zig");
-
-                // Serialize the ServiceInfo struct to the provided writer
-                try codec.serialize([32]u8, .{}, writer, self.code_hash);
-                try codec.writeInteger(self.balance, writer);
-                try codec.writeInteger(self.threshold_balance, writer);
-                try codec.writeInteger(self.min_item_gas, writer);
-                try codec.writeInteger(self.min_memo_gas, writer);
-                try codec.writeInteger(self.total_storage_size, writer);
-                try codec.writeInteger(self.total_items, writer);
+                // According to v0.6.7, info uses fixed-length encoding:
+                // se(tc, se_8(tb, tt, tg, tm, to), se_4(ti), se_8(tf), se_4(tr, ta, tp))
+                
+                // Write code hash (32 bytes)
+                try writer.writeAll(&self.code_hash);
+                
+                // Write first group of 8-byte values: tb, tt, tg, tm, to
+                try writer.writeInt(u64, self.balance, .little);
+                try writer.writeInt(u64, self.threshold_balance, .little);
+                try writer.writeInt(u64, self.min_item_gas, .little);
+                try writer.writeInt(u64, self.min_memo_gas, .little);
+                try writer.writeInt(u64, self.total_storage_size, .little);
+                
+                // Write ti as 4-byte value
+                try writer.writeInt(u32, self.total_items, .little);
+                
+                // Write tf as 8-byte value
+                try writer.writeInt(u64, self.free_storage_offset, .little);
+                
+                // Write last group of 4-byte values: tr, ta, tp
+                try writer.writeInt(u32, self.preimage_count, .little);
+                try writer.writeInt(u32, self.total_preimage_size, .little);
+                try writer.writeInt(u32, self.preimage_lookup_count, .little);
             }
         };
 
@@ -550,6 +571,18 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 .min_memo_gas = service_account.?.min_gas_on_transfer,
                 .total_storage_size = fprint.a_o,
                 .total_items = fprint.a_i,
+                // NEW fields for v0.6.7
+                .free_storage_offset = service_account.?.storage_offset orelse 0,
+                .preimage_count = @intCast(service_account.?.preimages.count()),
+                .total_preimage_size = blk: {
+                    var total: u32 = 0;
+                    var it = service_account.?.preimages.iterator();
+                    while (it.next()) |entry| {
+                        total += @intCast(entry.value_ptr.len);
+                    }
+                    break :blk total;
+                },
+                .preimage_lookup_count = @intCast(service_account.?.preimage_lookups.count()),
             };
 
             // Since we are varint encoding will only be smaller
