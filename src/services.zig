@@ -474,9 +474,15 @@ pub const ServiceAccount = struct {
             a_o += 32 + @as(u64, @intCast(value.len));
         }
 
-        // FIXME: this comes for JamParams
-        // a_t
-        const a_t: Balance = B_S + B_I * a_i + B_L * a_o;
+        // Calculate storage cost with gratis (free) storage allowance - v0.6.7
+        // If storage_offset is set, the first storage_offset bytes are free
+        const billable_bytes = if (self.storage_offset) |offset|
+            a_o -| offset
+        else
+            a_o;
+
+        // a_t = B_S + B_I * a_i + B_L * billable_bytes
+        const a_t: Balance = B_S + B_I * a_i + B_L * billable_bytes;
 
         return .{ .a_i = a_i, .a_o = a_o, .a_t = a_t };
     }
@@ -511,7 +517,6 @@ pub const Delta = struct {
             .allocator = allocator,
         };
     }
-
 
     pub fn deepClone(self: *const Delta) !Delta {
         var clone = Delta.init(self.allocator);
