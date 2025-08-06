@@ -147,8 +147,8 @@ pub fn convertReadyQueue(
     comptime epoch_size: usize,
     allocator: std.mem.Allocator,
     ready_queue: tv_types.ReadyQueue,
-) !state.Theta(epoch_size) {
-    var theta = state.Theta(epoch_size).init(allocator);
+) !state.VarTheta(epoch_size) {
+    var theta = state.VarTheta(epoch_size).init(allocator);
     errdefer theta.deinit();
 
     // Initialize the ready queue items for each epoch slot

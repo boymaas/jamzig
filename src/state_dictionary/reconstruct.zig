@@ -144,16 +144,23 @@ pub fn reconstructState(
                     jam_state.pi = try state_decoding.pi.decode(pi_params, allocator, &decoding_context, f.reader());
                 },
                 14 => {
-                    entry_span.debug("Decoding theta component (id={d})", .{key[0]});
+                    // v0.6.7: VarTheta (work reports queue, renamed from Theta)
+                    entry_span.debug("Decoding vartheta component (id={d})", .{key[0]});
                     var f = fbs(dict_entry.value);
-                    const theta_params = comptime state_decoding.theta.DecoderParams.fromJamParams(params);
-                    jam_state.theta = try state_decoding.theta.decode(theta_params, allocator, &decoding_context, f.reader());
+                    const vartheta_params = comptime state_decoding.vartheta.DecoderParams.fromJamParams(params);
+                    jam_state.vartheta = try state_decoding.vartheta.decode(vartheta_params, allocator, &decoding_context, f.reader());
                 },
                 15 => {
                     entry_span.debug("Decoding xi component (id={d})", .{key[0]});
                     var f = fbs(dict_entry.value);
                     const xi_params = comptime state_decoding.xi.DecoderParams.fromJamParams(params);
                     jam_state.xi = try state_decoding.xi.decode(xi_params, allocator, &decoding_context, f.reader());
+                },
+                16 => {
+                    // v0.6.7: New Theta (accumulation outputs)
+                    entry_span.debug("Decoding theta component (id={d})", .{key[0]});
+                    var f = fbs(dict_entry.value);
+                    jam_state.theta = try state_decoding.theta.decode(allocator, &decoding_context, f.reader());
                 },
                 else => {
                     entry_span.err("Unknown state component ID: {d}", .{key[0]});

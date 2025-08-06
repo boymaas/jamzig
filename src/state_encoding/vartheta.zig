@@ -42,7 +42,7 @@ pub fn encode(vartheta: anytype, writer: anytype) !void {
     span.debug("Completed theta encoding", .{});
 }
 
-pub fn encodeSlotEntry(allocator: std.mem.Allocator, slot_entries: Theta.SlotEntries, writer: anytype) !void {
+pub fn encodeSlotEntry(allocator: std.mem.Allocator, slot_entries: reports_ready.TimeslotEntries, writer: anytype) !void {
     const span = trace.span(.encode_slot_entry);
     defer span.deinit();
     span.debug("Starting slot entries encoding", .{});

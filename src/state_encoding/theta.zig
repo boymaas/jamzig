@@ -26,7 +26,7 @@ pub fn encode(theta: *const Theta, writer: anytype) !void {
     span.debug("Encoding {d} accumulation outputs", .{outputs.len});
     
     // Sort outputs by service_id for deterministic encoding
-    var sorted_outputs = try theta.allocator.alloc(AccumulationOutput, outputs.len);
+    const sorted_outputs = try theta.allocator.alloc(AccumulationOutput, outputs.len);
     defer theta.allocator.free(sorted_outputs);
     @memcpy(sorted_outputs, outputs);
     

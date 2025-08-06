@@ -37,6 +37,39 @@ pub const Beta = struct {
         };
     }
 
+    /// Get the hash of the last block in recent history
+    pub fn getLastBlockHash(self: *const Beta) types.Hash {
+        return self.recent_history.getLastBlockHash();
+    }
+
+    /// Update the state root of the parent block
+    pub fn updateParentBlockStateRoot(self: *Beta, parent_state_root: types.Hash) void {
+        self.recent_history.updateParentBlockStateRoot(parent_state_root);
+    }
+
+    /// Get block info by hash from recent history
+    pub fn getBlockInfoByHash(self: *const Beta, hash: types.Hash) ?RecentHistory.BlockInfo {
+        return self.recent_history.getBlockInfoByHash(hash);
+    }
+
+    /// Import a new block into recent history
+    pub fn import(self: *Beta, block: anytype) !void {
+        // For v0.6.7, we add to recent_history and update beefy_belt
+        // The block should have the necessary fields for both components
+        
+        // Add to recent history
+        const block_info = RecentHistory.BlockInfo{
+            .header_hash = block.header_hash,
+            .beefy_root = block.mmr_root,
+            .state_root = block.state_root,
+            .work_reports = block.work_packages,
+        };
+        try self.recent_history.addBlock(block_info);
+        
+        // Update BEEFY belt if needed
+        // TODO: Implement BEEFY MMR peak updates when needed
+    }
+
     pub fn format(
         self: *const @This(),
         comptime fmt: []const u8,
@@ -85,6 +118,11 @@ pub const RecentHistory = struct {
                 .work_reports = try allocator.dupe(types.ReportedWorkPackage, self.work_reports),
             };
         }
+
+        /// Get the BEEFY MMR root (for v0.6.7 compatibility)
+        pub fn beefyMmrRoot(self: *const BlockInfo) types.Hash {
+            return self.beefy_root;
+        }
     };
 
     pub fn init(allocator: Allocator, max_blocks: usize) !RecentHistory {
@@ -101,6 +139,31 @@ pub const RecentHistory = struct {
         }
         self.blocks.deinit();
         self.* = undefined;
+    }
+
+    /// Get the hash of the last block
+    pub fn getLastBlockHash(self: *const RecentHistory) types.Hash {
+        if (self.blocks.items.len > 0) {
+            return self.blocks.items[self.blocks.items.len - 1].header_hash;
+        }
+        return [_]u8{0} ** 32;
+    }
+
+    /// Update the state root of the most recent block
+    pub fn updateParentBlockStateRoot(self: *RecentHistory, parent_state_root: types.Hash) void {
+        if (self.blocks.items.len > 0) {
+            self.blocks.items[self.blocks.items.len - 1].state_root = parent_state_root;
+        }
+    }
+
+    /// Get block info by hash
+    pub fn getBlockInfoByHash(self: *const RecentHistory, hash: types.Hash) ?BlockInfo {
+        for (self.blocks.items) |block| {
+            if (std.mem.eql(u8, &block.header_hash, &hash)) {
+                return block;
+            }
+        }
+        return null;
     }
 
     pub fn deepClone(self: *const RecentHistory, allocator: Allocator) !RecentHistory {

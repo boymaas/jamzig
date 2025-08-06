@@ -509,14 +509,14 @@ pub fn buildStateMerklizationDictionaryWithConfig(
             .value = pi_value,
         });
 
-        // Theta (14)
-        const theta_key = state_keys.constructStateComponentKey(14);
-        var theta_managed = try getOrInitManaged(allocator, &state.theta, .{allocator});
-        defer theta_managed.deinit(allocator);
-        const theta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTheta, .{theta_managed.ptr});
-        try map.put(theta_key, .{
-            .key = theta_key,
-            .value = theta_value,
+        // VarTheta (14) - v0.6.7: Work reports queue (renamed from Theta)
+        const vartheta_key = state_keys.constructStateComponentKey(14);
+        var vartheta_managed = try getOrInitManaged(allocator, &state.vartheta, .{allocator});
+        defer vartheta_managed.deinit(allocator);
+        const vartheta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeVarTheta, .{vartheta_managed.ptr});
+        try map.put(vartheta_key, .{
+            .key = vartheta_key,
+            .value = vartheta_value,
         });
 
         // Xi (15)
@@ -527,6 +527,16 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(xi_key, .{
             .key = xi_key,
             .value = xi_value,
+        });
+
+        // Theta (16) - v0.6.7: NEW - Accumulation outputs (lastaccout)
+        const theta_key = state_keys.constructStateComponentKey(16);
+        var theta_managed = try getOrInitManaged(allocator, &state.theta, .{allocator});
+        defer theta_managed.deinit(allocator);
+        const theta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTheta, .{theta_managed.ptr});
+        try map.put(theta_key, .{
+            .key = theta_key,
+            .value = theta_value,
         });
     }
 

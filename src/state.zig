@@ -350,7 +350,7 @@ pub const Beta = beta.Beta; // v0.6.7: Now contains (recent_history, beefy_belt)
 
 // History and Queuing of work reports
 pub const Xi = accumulated_reports.Xi;
-pub const VarTheta = reports_ready.Theta; // v0.6.7: Renamed from Theta to Vartheta
+pub const VarTheta = reports_ready.VarTheta; // v0.6.7: Renamed from Theta to VarTheta
 pub const Theta = accumulation_outputs.Theta; // v0.6.7: NEW - accumulation outputs
 
 // Validator and network state

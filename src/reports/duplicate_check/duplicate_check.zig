@@ -70,7 +70,7 @@ pub fn checkDuplicatePackageInRecentHistory(
     });
 
     const beta: *const state.Beta = try stx.ensure(.beta_prime);
-    const blocks = beta.blocks;
+    const blocks = beta.recent_history.blocks;
     span.debug("Comparing against {d} blocks", .{blocks.items.len});
     for (blocks.items, 0..) |block, block_idx| {
         const block_span = span.child(.check_block);

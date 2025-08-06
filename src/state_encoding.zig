@@ -50,6 +50,7 @@ comptime {
     _ = @import("state_encoding/rho.zig");
     _ = @import("state_encoding/tau.zig");
     _ = @import("state_encoding/theta.zig");
+    _ = @import("state_encoding/vartheta.zig");
     _ = @import("state_encoding/validator_datas.zig");
     _ = @import("state_encoding/xi.zig");
 }

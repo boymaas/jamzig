@@ -488,7 +488,7 @@ pub const RandomStateGenerator = struct {
         self: *RandomStateGenerator,
         comptime params: Params,
         complexity: StateComplexity,
-        theta: *jamstate.Theta(params.epoch_length),
+        theta: *jamstate.VarTheta(params.epoch_length),
     ) !void {
         const WorkReportBuilder = @import("state_random_generator/work_report_builder.zig").WorkReportBuilder;
 

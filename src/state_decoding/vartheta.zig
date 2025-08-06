@@ -22,11 +22,11 @@ pub fn decode(
     allocator: std.mem.Allocator,
     context: *DecodingContext,
     reader: anytype,
-) !available_reports.Theta(params.epoch_length) {
+) !available_reports.VarTheta(params.epoch_length) {
     try context.push(.{ .component = "theta" });
     defer context.pop();
 
-    var theta = available_reports.Theta(params.epoch_length).init(allocator);
+    var theta = available_reports.VarTheta(params.epoch_length).init(allocator);
     errdefer theta.deinit();
 
     // Decode each slot's entries
