@@ -33,6 +33,18 @@ pub fn encodeServiceAccountBase(account: *const ServiceAccount, writer: anytype)
     // Write 4-byte items count (a_i)
     span.trace("Writing items count (a_i): {d}", .{storage_footprint.a_i});
     try writer.writeInt(u32, storage_footprint.a_i, .little);
+    
+    // Write storage_offset (optional u64) - NEW in v0.6.7
+    // Format: 1 byte presence flag + 8 bytes value if present
+    if (account.storage_offset) |offset| {
+        span.trace("Writing storage_offset presence flag: true", .{});
+        try writer.writeByte(1); // Present
+        span.trace("Writing storage_offset value: {d}", .{offset});
+        try writer.writeInt(u64, offset, .little);
+    } else {
+        span.trace("Writing storage_offset presence flag: false", .{});
+        try writer.writeByte(0); // Not present
+    }
 }
 
 const state_dictionary = @import("../state_dictionary.zig");
@@ -74,6 +86,7 @@ test "encodeServiceAccountBase" {
     account.balance = 1000;
     account.min_gas_accumulate = 500;
     account.min_gas_on_transfer = 250;
+    account.storage_offset = null; // Test without storage_offset first
 
     var buffer = std.ArrayList(u8).init(testing.allocator);
     defer buffer.deinit();
@@ -81,14 +94,33 @@ test "encodeServiceAccountBase" {
     try encodeServiceAccountBase(&account, buffer.writer());
 
     const expected = [_]u8{1} ** 32 ++ [_]u8{
-        232, 3, 0, 0, 0, 0, 0, 0,
-        244, 1, 0, 0, 0, 0, 0, 0,
-        250, 0, 0, 0, 0, 0, 0, 0,
-        0,   0, 0, 0, 0, 0, 0, 0,
-        0,   0, 0, 0,
+        232, 3, 0, 0, 0, 0, 0, 0, // balance: 1000
+        244, 1, 0, 0, 0, 0, 0, 0, // min_gas_accumulate: 500
+        250, 0, 0, 0, 0, 0, 0, 0, // min_gas_on_transfer: 250
+        0,   0, 0, 0, 0, 0, 0, 0, // storage footprint bytes: 0
+        0,   0, 0, 0,             // storage footprint items: 0
+        0,                        // storage_offset presence flag: false
     };
 
     try testing.expectEqualSlices(u8, &expected, buffer.items);
+    
+    // Test with storage_offset present
+    buffer.clearRetainingCapacity();
+    account.storage_offset = 5000;
+    
+    try encodeServiceAccountBase(&account, buffer.writer());
+    
+    const expected_with_offset = [_]u8{1} ** 32 ++ [_]u8{
+        232, 3, 0, 0, 0, 0, 0, 0, // balance: 1000
+        244, 1, 0, 0, 0, 0, 0, 0, // min_gas_accumulate: 500
+        250, 0, 0, 0, 0, 0, 0, 0, // min_gas_on_transfer: 250
+        0,   0, 0, 0, 0, 0, 0, 0, // storage footprint bytes: 0
+        0,   0, 0, 0,             // storage footprint items: 0
+        1,                        // storage_offset presence flag: true
+        136, 19, 0, 0, 0, 0, 0, 0, // storage_offset value: 5000
+    };
+    
+    try testing.expectEqualSlices(u8, &expected_with_offset, buffer.items);
 }
 
 test "encodePreimageLookup" {

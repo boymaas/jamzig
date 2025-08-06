@@ -33,6 +33,15 @@ pub fn decodeServiceAccountBase(
     // account.items = items;
     _ = bytes;
     _ = items;
+    
+    // Read storage_offset (optional u64) - NEW in v0.6.7
+    // Format: 1 byte presence flag + 8 bytes value if present
+    const has_storage_offset = try reader.readByte();
+    if (has_storage_offset != 0) {
+        account.storage_offset = try reader.readInt(u64, .little);
+    } else {
+        account.storage_offset = null;
+    }
 }
 
 /// Decodes a preimage lookup from the encoded format: E(↕[E_4(x) | x <− t])
@@ -84,30 +93,69 @@ test "decodeServiceAccountBase" {
     const bytes: types.U64 = 500;
     const items: types.U32 = 10;
 
-    // Create a buffer with encoded data
-    var buffer = std.ArrayList(u8).init(allocator);
-    defer buffer.deinit();
+    // Test 1: Without storage_offset
+    {
+        // Create a buffer with encoded data (no storage_offset)
+        var buffer = std.ArrayList(u8).init(allocator);
+        defer buffer.deinit();
 
-    const writer = buffer.writer();
-    try writer.writeAll(&code_hash);
-    try writer.writeInt(types.U64, balance, .little);
-    try writer.writeInt(types.Gas, min_item_gas, .little);
-    try writer.writeInt(types.Gas, min_memo_gas, .little);
-    try writer.writeInt(types.U64, bytes, .little);
-    try writer.writeInt(types.U32, items, .little);
+        const writer = buffer.writer();
+        try writer.writeAll(&code_hash);
+        try writer.writeInt(types.U64, balance, .little);
+        try writer.writeInt(types.Gas, min_item_gas, .little);
+        try writer.writeInt(types.Gas, min_memo_gas, .little);
+        try writer.writeInt(types.U64, bytes, .little);
+        try writer.writeInt(types.U32, items, .little);
+        try writer.writeByte(0); // storage_offset not present
 
-    // Test decoding
-    var stream = std.io.fixedBufferStream(buffer.items);
-    try decodeServiceAccountBase(allocator, &delta, service_id, stream.reader());
+        // Test decoding
+        var stream = std.io.fixedBufferStream(buffer.items);
+        try decodeServiceAccountBase(allocator, &delta, service_id, stream.reader());
 
-    // Verify results
-    try testing.expect(delta.accounts.contains(service_id));
-    const account = delta.accounts.get(service_id).?;
+        // Verify results
+        try testing.expect(delta.accounts.contains(service_id));
+        const account = delta.accounts.get(service_id).?;
 
-    try testing.expectEqualSlices(u8, &code_hash, &account.code_hash);
-    try testing.expectEqual(balance, account.balance);
-    try testing.expectEqual(min_item_gas, account.min_gas_accumulate);
-    try testing.expectEqual(min_memo_gas, account.min_gas_on_transfer);
+        try testing.expectEqualSlices(u8, &code_hash, &account.code_hash);
+        try testing.expectEqual(balance, account.balance);
+        try testing.expectEqual(min_item_gas, account.min_gas_accumulate);
+        try testing.expectEqual(min_memo_gas, account.min_gas_on_transfer);
+        try testing.expectEqual(@as(?u64, null), account.storage_offset);
+    }
+    
+    // Test 2: With storage_offset
+    {
+        const service_id_2: types.ServiceId = 43;
+        const storage_offset_value: u64 = 5000;
+        
+        // Create a buffer with encoded data (with storage_offset)
+        var buffer = std.ArrayList(u8).init(allocator);
+        defer buffer.deinit();
+
+        const writer = buffer.writer();
+        try writer.writeAll(&code_hash);
+        try writer.writeInt(types.U64, balance, .little);
+        try writer.writeInt(types.Gas, min_item_gas, .little);
+        try writer.writeInt(types.Gas, min_memo_gas, .little);
+        try writer.writeInt(types.U64, bytes, .little);
+        try writer.writeInt(types.U32, items, .little);
+        try writer.writeByte(1); // storage_offset present
+        try writer.writeInt(u64, storage_offset_value, .little);
+
+        // Test decoding
+        var stream = std.io.fixedBufferStream(buffer.items);
+        try decodeServiceAccountBase(allocator, &delta, service_id_2, stream.reader());
+
+        // Verify results
+        try testing.expect(delta.accounts.contains(service_id_2));
+        const account = delta.accounts.get(service_id_2).?;
+
+        try testing.expectEqualSlices(u8, &code_hash, &account.code_hash);
+        try testing.expectEqual(balance, account.balance);
+        try testing.expectEqual(min_item_gas, account.min_gas_accumulate);
+        try testing.expectEqual(min_memo_gas, account.min_gas_on_transfer);
+        try testing.expectEqual(@as(?u64, storage_offset_value), account.storage_offset);
+    }
     // bytes and items are not currently used
     // try testing.expectEqual(bytes, account.bytes);
     // try testing.expectEqual(items, account.items);
