@@ -11,46 +11,51 @@ const RecentBlock = recent_blocks.RecentBlock;
 const RecentHistory = recent_blocks.RecentHistory;
 
 const tvector = @import("jamtestvectors/history.zig");
-const HistoryTestVector = tvector.HistoryTestVector;
 const TestCase = tvector.TestCase;
-
-const getSortedListOfJsonFilesInDir = @import("jamtestvectors/json_types/utils.zig").getSortedListOfJsonFilesInDir;
+const jam_params = @import("jam_params.zig");
 
 test "recent blocks: parsing all test cases" {
     const allocator = testing.allocator;
     const target_dir = tvector.BASE_PATH;
 
-    var entries = try getSortedListOfJsonFilesInDir(allocator, target_dir);
-    defer entries.deinit();
+    var dir = try std.fs.cwd().openDir(target_dir, .{ .iterate = true });
+    defer dir.close();
 
-    for (entries.items) |entry| {
-        std.debug.print("\n\x1b[1;32mProcessing test vector: {s}\x1b[0m\n", .{entry});
+    var dir_iterator = dir.iterate();
+    while (try dir_iterator.next()) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".bin")) continue;
+        
+        std.debug.print("\n\x1b[1;32mProcessing test vector: {s}\x1b[0m\n", .{entry.name});
 
-        const file_path = try std.fs.path.join(allocator, &[_][]const u8{ target_dir, entry });
+        const file_path = try std.fs.path.join(allocator, &[_][]const u8{ target_dir, entry.name });
         defer allocator.free(file_path);
 
-        var vector = try HistoryTestVector(TestCase).build_from(allocator, file_path);
-        defer vector.deinit();
+        var test_case = try TestCase.buildFrom(
+            jam_params.TINY_PARAMS,
+            allocator,
+            file_path,
+        );
+        defer test_case.deinit(allocator);
 
         // Test the RecentHistory implementation, H = 8 see GP
         var recent_history = try RecentHistory.init(allocator, 8);
         defer recent_history.deinit();
 
         // Set up pre-state
-        for (vector.expected.value.pre_state.beta) |block_info| {
+        for (test_case.pre_state.beta.history) |block_info| {
             const block = try fromTestVectorBlockInfo(allocator, block_info);
             try recent_history.addBlockInfo(block);
         }
 
         // Process the new block
-        const recent_block = try fromTestVectorInputToRecentBlock(allocator, vector.expected.value.input);
+        const recent_block = try fromTestVectorInputToRecentBlock(allocator, test_case.input);
         errdefer recent_block.deinit(allocator);
 
         try recent_history.import(recent_block);
 
         // Verify the post-state
-        try testing.expectEqual(vector.expected.value.post_state.beta.len, recent_history.blocks.items.len);
-        for (vector.expected.value.post_state.beta, 0..) |expected_block, i| {
+        try testing.expectEqual(test_case.post_state.beta.history.len, recent_history.blocks.items.len);
+        for (test_case.post_state.beta.history, 0..) |expected_block, i| {
             const actual_block = recent_history.getBlockInfo(i) orelse
                 return error.BlockInfoNotFoud;
 
@@ -70,14 +75,14 @@ fn fromTestVectorInputToRecentBlock(allocator: std.mem.Allocator, input: tvector
     var work_packages = try allocator.alloc(ReportedWorkPackage, input.work_packages.len);
     for (input.work_packages, 0..) |wp, i| {
         work_packages[i] = ReportedWorkPackage{
-            .hash = wp.hash.bytes,
-            .exports_root = wp.exports_root.bytes,
+            .hash = wp.hash,
+            .exports_root = wp.exports_root,
         };
     }
     return RecentBlock{
-        .header_hash = input.header_hash.bytes,
-        .parent_state_root = input.parent_state_root.bytes,
-        .accumulate_root = input.accumulate_root.bytes,
+        .header_hash = input.header_hash,
+        .parent_state_root = input.parent_state_root,
+        .accumulate_root = input.accumulate_root,
         .work_reports = work_packages,
     };
 }
@@ -85,24 +90,20 @@ fn fromTestVectorInputToRecentBlock(allocator: std.mem.Allocator, input: tvector
 /// Converts a test vector BlockInfo into our internal BlockInfo structure.
 /// This function allocates memory for the beefy_mmr and work_report_hashes fields,
 /// so the caller is responsible for freeing this memory when it's no longer needed.
-fn fromTestVectorBlockInfo(allocator: std.mem.Allocator, block_info: tvector.BlockInfo) !BlockInfo {
+fn fromTestVectorBlockInfo(allocator: std.mem.Allocator, block_info: tvector.BlockInfoTestVector) !BlockInfo {
     var block = BlockInfo{
-        .header_hash = block_info.header_hash.bytes,
-        .state_root = block_info.state_root.bytes,
-        .beefy_mmr = try allocator.alloc(?Hash, block_info.mmr.peaks.len),
+        .header_hash = block_info.header_hash,
+        .state_root = block_info.state_root,
+        // Test vectors have a single beefy_root instead of MMR peaks
+        .beefy_mmr = try allocator.alloc(?Hash, 1),
         .work_reports = try allocator.alloc(ReportedWorkPackage, block_info.reported.len),
     };
-    for (block_info.mmr.peaks, 0..) |peak, i| {
-        if (peak) |p| {
-            block.beefy_mmr[i] = p.bytes;
-        } else {
-            block.beefy_mmr[i] = null;
-        }
-    }
+    // Store the beefy_root as the single element
+    block.beefy_mmr[0] = block_info.beefy_root;
     for (block_info.reported, 0..) |report, i| {
         block.work_reports[i] = ReportedWorkPackage{
-            .hash = report.hash.bytes,
-            .exports_root = report.exports_root.bytes,
+            .hash = report.hash,
+            .exports_root = report.exports_root,
         };
     }
     return block;

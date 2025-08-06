@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const jam_params = @import("../jam_params.zig");
 
-const BASE_PATH = "src/jamtestvectors/data/stf/history/";
+pub const BASE_PATH = "src/jamtestvectors/data/stf/history/";
 
 /// ReportedWorkPackage for test vectors
 pub const ReportedWorkPackage = struct {
