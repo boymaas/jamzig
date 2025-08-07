@@ -36,7 +36,7 @@ const deInterleaveServiceId = deInterleavePrefix;
 /// Determines the type of a state dictionary key
 pub fn detectKeyType(key: types.StateKey) DictKeyType {
     // First check for simple state component keys (1-15 followed by zeros)
-    if (key[0] >= 1 and key[0] <= 15) {
+    if (key[0] >= 1 and key[0] <= 16) {
         var is_state_component = true;
         // Verify remaining bytes are zero
         for (key[1..]) |byte| {
