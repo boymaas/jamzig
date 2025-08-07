@@ -26,7 +26,7 @@ test "reconstruct delta base account" {
     const base_key = state_keys.constructServiceBaseKey(service_id);
 
     // Create sample account data
-    const base_value = [_]u8{1} ** 68; // Sample account data
+    const base_value = [_]u8{1} ** 68 ++ [_]u8{0} ** 1; // Sample account data
 
     // Test reconstruction
     try delta_reconstruction.reconstructServiceAccountBase(allocator, &delta, base_key, &base_value);

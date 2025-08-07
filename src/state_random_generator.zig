@@ -185,18 +185,9 @@ pub const RandomStateGenerator = struct {
         var state_root: types.Hash = undefined;
         self.rng.bytes(&state_root);
 
-        // Generate random MMR (1-10 peaks, some may be null)
-        const mmr_size = self.rng.uintAtMost(usize, 10) + 1;
-        const beefy_mmr = try self.allocator.alloc(?types.Hash, mmr_size);
-        for (beefy_mmr) |*peak| {
-            if (self.rng.boolean()) {
-                var hash: types.Hash = undefined;
-                self.rng.bytes(&hash);
-                peak.* = hash;
-            } else {
-                peak.* = null;
-            }
-        }
+        // Generate random BEEFY root (v0.6.7: single hash instead of MMR peaks)
+        var beefy_root: types.Hash = undefined;
+        self.rng.bytes(&beefy_root);
 
         // Generate random work reports (0-5 reports)
         const num_reports = self.rng.uintAtMost(usize, 5);
@@ -206,10 +197,6 @@ pub const RandomStateGenerator = struct {
             self.rng.bytes(&report.exports_root);
         }
 
-        // For v0.6.7, return Beta.RecentHistory.BlockInfo which has beefy_root instead of beefy_mmr
-        const beefy_root = if (beefy_mmr.len > 0 and beefy_mmr[0] != null) beefy_mmr[0].? else [_]u8{0} ** 32;
-        self.allocator.free(beefy_mmr); // Free the MMR array as we only need the root
-        
         return @import("beta.zig").RecentHistory.BlockInfo{
             .header_hash = header_hash,
             .beefy_root = beefy_root,
@@ -646,10 +633,10 @@ test "random_state_generator_maximal" {
     try std.testing.expect(state.psi != null);
     try std.testing.expect(state.pi != null);
     try std.testing.expect(state.xi != null);
-    try std.testing.expect(state.theta != null);
+    try std.testing.expect(state.vartheta != null); // v0.6.7: work reports queue
+    // Note: state.theta (accumulation outputs) may or may not be initialized
     try std.testing.expect(state.rho != null);
     try std.testing.expect(state.iota != null);
     try std.testing.expect(state.kappa != null);
     try std.testing.expect(state.lambda != null);
 }
-
