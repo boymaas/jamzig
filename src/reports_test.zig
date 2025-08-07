@@ -165,6 +165,11 @@ test "tiny/wrong_assignment-1.bin" {
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/wrong_assignment-1.bin");
 }
 
+test "tiny/different_core_same_guarantors-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/different_core_same_guarantors-1.bin");
+}
+
 // Run all tiny test vectors
 test "all.tiny.vectors" {
     const allocator = std.testing.allocator;
