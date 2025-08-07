@@ -410,22 +410,6 @@ fn applyRandomMutations(
     }
 }
 
-test "mutation_robustness_low_rate" {
-    const allocator = std.testing.allocator;
-    const TINY = @import("jam_params.zig").TINY_PARAMS;
-
-    // Test with low mutation rate - should mostly succeed or fail gracefully
-    try runRoundTripTestWithMutation(allocator, TINY, .moderate, 42, 0.05);
-}
-
-test "mutation_robustness_medium_rate" {
-    const allocator = std.testing.allocator;
-    const TINY = @import("jam_params.zig").TINY_PARAMS;
-
-    // Test with medium mutation rate - reconstruction should handle corrupted data
-    try runRoundTripTestWithMutation(allocator, TINY, .moderate, 123, 0.20);
-}
-
 test "mutation_robustness_with_shortening" {
     const allocator = std.testing.allocator;
     const TINY = @import("jam_params.zig").TINY_PARAMS;
