@@ -269,7 +269,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             // Construct storage key using the hash
             span.debug("Constructing PVM storage key", .{});
 
-            const storage_key = state_keys.constructStorageKey(resolved_service_id, key_hash);
+            const storage_key = state_keys.constructStorageKey(resolved_service_id, &key_hash);
             span.trace("Generated PVM storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
             span.info("Final storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
 
@@ -378,7 +378,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             span.debug("Constructing PVM storage key", .{});
             span.info("Service ID for storage key: {d}", .{host_ctx.service_id});
 
-            const storage_key = state_keys.constructStorageKey(host_ctx.service_id, key_hash);
+            const storage_key = state_keys.constructStorageKey(host_ctx.service_id, &key_hash);
             span.trace("Generated PVM storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
             span.info("Final storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
 
@@ -500,23 +500,23 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             ) !void {
                 // According to v0.6.7, info uses fixed-length encoding:
                 // se(tc, se_8(tb, tt, tg, tm, to), se_4(ti), se_8(tf), se_4(tr, ta, tp))
-                
+
                 // Write code hash (32 bytes)
                 try writer.writeAll(&self.code_hash);
-                
+
                 // Write first group of 8-byte values: tb, tt, tg, tm, to
                 try writer.writeInt(u64, self.balance, .little);
                 try writer.writeInt(u64, self.threshold_balance, .little);
                 try writer.writeInt(u64, self.min_item_gas, .little);
                 try writer.writeInt(u64, self.min_memo_gas, .little);
                 try writer.writeInt(u64, self.total_storage_size, .little);
-                
+
                 // Write ti as 4-byte value
                 try writer.writeInt(u32, self.total_items, .little);
-                
+
                 // Write tf as 8-byte value
                 try writer.writeInt(u64, self.free_storage_offset, .little);
-                
+
                 // Write last group of 4-byte values: tr, ta, tp
                 try writer.writeInt(u32, self.preimage_count, .little);
                 try writer.writeInt(u32, self.total_preimage_size, .little);

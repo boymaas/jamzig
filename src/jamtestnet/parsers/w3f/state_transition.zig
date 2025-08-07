@@ -24,8 +24,19 @@ pub fn loadTestVector(comptime params: Params, allocator: std.mem.Allocator, fil
         const file = try std.fs.cwd().openFile(file_path, .{});
         defer file.close();
 
+        var context = codec.DecodingContext.init(allocator);
+        defer context.deinit();
+
         const reader = file.reader();
-        return try codec.deserializeAlloc(StateTransition, params, allocator, reader);
+        return codec.deserializeAllocWithContext(StateTransition, params, allocator, reader, &context) catch |err| {
+            // Log comprehensive error information
+            std.log.err("\n===== Deserialization Error =====", .{});
+            std.log.err("Error: {s}", .{@errorName(err)});
+            std.log.err("Test vector file: {s}", .{file_path});
+            context.dumpError();
+            std.log.err("=================================\n", .{});
+            return err;
+        };
     } else {
         return error.UnknownFileFormat;
     }

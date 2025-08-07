@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 
 // ============================================================================
-// Base C function variants as per JAM graypaper D.1
+// Base C function variants as per JAM graypaper D.1 (v0.6.7)
 // ============================================================================
 
 /// C function variant 1: i ∈ ℕ₂₈ → [i, 0, 0, ...]
@@ -13,7 +13,7 @@ fn C_variant1(i: u8) types.StateKey {
     return result;
 }
 
-/// C function variant 2: (i, s ∈ ℕ₈) → [i, n₀, 0, n₁, 0, n₂, 0, n₃, 0, 0, ...]
+/// C function variant 2: (i, s ∈ ℕS) → [i, n₀, 0, n₁, 0, n₂, 0, n₃, 0, 0, ...]
 /// Where n = ℰ₄(s) (little-endian encoding of s)
 /// For service base keys
 fn C_variant2(i: u8, s: u32) types.StateKey {
@@ -37,39 +37,35 @@ fn C_variant2(i: u8, s: u32) types.StateKey {
     return result;
 }
 
-/// C function variant 3: (s, h) → [n₀, h₀, n₁, h₁, n₂, h₂, n₃, h₃, h₄, h₅, ..., h₂₆]
-/// Where n = ℰ₄(s) (little-endian encoding of s)
-/// For interleaved keys with service ID and data
+/// C function variant 3 (v0.6.7): (s, h) → [n₀, a₀, n₁, a₁, n₂, a₂, n₃, a₃, a₄, a₅, ..., a₂₆]
+/// Where n = ℰ₄(s) and a = ℋ(h)₀...₂₇
+/// IMPORTANT: In v0.6.7, this variant now HASHES the input h first!
+/// For interleaved keys with service ID and hashed data
 fn C_variant3(s: u32, h: []const u8) types.StateKey {
     var result: types.StateKey = undefined;
+
+    // NEW in v0.6.7: Hash the input first
+    var a: [32]u8 = undefined;
+    var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
+    hasher.update(h);
+    hasher.final(&a);
 
     // Encode s in little-endian (ℰ₄(s))
     var n: [4]u8 = undefined;
     std.mem.writeInt(u32, &n, s, .little);
 
-    // Interleave service ID bytes with first 4 bytes of h
+    // Interleave service ID bytes with first 4 bytes of a (the hash)
     result[0] = n[0];
-    result[1] = if (h.len > 0) h[0] else 0;
+    result[1] = a[0];
     result[2] = n[1];
-    result[3] = if (h.len > 1) h[1] else 0;
+    result[3] = a[1];
     result[4] = n[2];
-    result[5] = if (h.len > 2) h[2] else 0;
+    result[5] = a[2];
     result[6] = n[3];
-    result[7] = if (h.len > 3) h[3] else 0;
+    result[7] = a[3];
 
-    // Copy remaining bytes from h (up to position 27, giving us h₄...h₂₆)
-    const remaining_start = 8;
-    const remaining_h_start = 4;
-    const remaining_len = @min(h.len -| remaining_h_start, 31 - remaining_start);
-
-    if (remaining_len > 0) {
-        @memcpy(result[remaining_start..][0..remaining_len], h[remaining_h_start..][0..remaining_len]);
-    }
-
-    // Fill any remaining bytes with zeros
-    if (remaining_start + remaining_len < 31) {
-        @memset(result[remaining_start + remaining_len .. 31], 0);
-    }
+    // Copy remaining bytes from a (a₄...a₂₆)
+    @memcpy(result[8..31], a[4..27]);
 
     return result;
 }
@@ -79,93 +75,81 @@ fn C_variant3(s: u32, h: []const u8) types.StateKey {
 // ============================================================================
 
 /// Constructs a 31-byte key for state components (Alpha, Phi, Beta, etc.)
-///
-/// Uses C variant 1: i ∈ ℕ₂₈ → [i, 0, 0, ...]
-/// Used for JAM state components 1-15 in the merklization dictionary.
-///
-/// @param component_id - The state component identifier (1-15)
-/// @return A 31-byte key for the state component
 pub fn constructStateComponentKey(component_id: u8) types.StateKey {
     return C_variant1(component_id);
 }
 
-/// Constructs a 31-byte key for service storage operations per JAM graypaper
+/// Constructs a 31-byte key for service storage operations per JAM graypaper v0.6.7
 ///
-/// Uses C variant 3: C(s, ℰ₄(2³² - 1) ⌢ h₀...₂₇)
-/// Where h₀...₂₇ are the first 28 bytes of the provided hash
+/// Uses C variant 3: C(s, ℰ₄(2³² - 1) ⌢ 𝐤)
+/// Where 𝐤 is the raw storage key (any length)
+/// The C function will hash this before using it
 ///
 /// @param service_id - The service identifier
-/// @param key_data - The 32-byte hash (e.g., Blake2b-256 of the PVM key data)
+/// @param storage_key - The raw storage key (any length)
 /// @return A 31-byte key for storage operations
-pub fn constructStorageKey(service_id: u32, storage_key: [32]u8) types.StateKey {
-    // Prepare the data: ℰ₄(2³² - 1) ⌢ h₀...₂₇
-    var data: [32]u8 = undefined;
+pub fn constructStorageKey(service_id: u32, storage_key: []const u8) types.StateKey {
+    // Prepare the data: ℰ₄(2³² - 1) ⌢ storage_key
+    var data = std.ArrayList(u8).init(std.heap.page_allocator);
+    defer data.deinit();
 
     // ℰ₄(2³² - 1) = [255, 255, 255, 255] in little-endian
-    std.mem.writeInt(u32, data[0..4], std.math.maxInt(u32), .little);
+    var max_u32_bytes: [4]u8 = undefined;
+    std.mem.writeInt(u32, &max_u32_bytes, std.math.maxInt(u32), .little);
+    data.appendSlice(&max_u32_bytes) catch unreachable;
 
-    // Concatenate with first 28 bytes of the hash
-    @memcpy(data[4..32], storage_key[0..28]);
+    // Append the full storage key (not truncated)
+    data.appendSlice(storage_key) catch unreachable;
 
-    return C_variant3(service_id, &data);
+    return C_variant3(service_id, data.items);
 }
 
 /// Constructs a 31-byte key for service base account metadata
-///
-/// Uses C variant 2: C(255, s)
-/// Format: [255, n₀, 0, n₁, 0, n₂, 0, n₃, 0, 0, ..., 0]
-/// Where n₀-n₃ are service ID bytes (little-endian)
-///
-/// @param service_id - The service identifier
-/// @return A 31-byte key for the service base account data
 pub fn constructServiceBaseKey(service_id: u32) types.StateKey {
     return C_variant2(255, service_id);
 }
 
-/// Constructs a 31-byte key for service preimage entries
+/// Constructs a 31-byte key for service preimage entries per JAM graypaper v0.6.7
 ///
-/// Uses C variant 3: C(s, ℰ₄(2³² - 2) ⌢ h₁...₂₈)
-/// Where h₁...₂₈ are bytes 1-28 of the Blake2b-256 hash
+/// Uses C variant 3: C(s, ℰ₄(2³² - 2) ⌢ h)
+/// Where h is the full 32-byte hash
+/// The C function will hash this before using it
 ///
 /// @param service_id - The service identifier
 /// @param hash - The 32-byte Blake2b-256 hash of the preimage
 /// @return A 31-byte key for the preimage entry
 pub fn constructServicePreimageKey(service_id: u32, hash: [32]u8) types.StateKey {
-    // Prepare the data: ℰ₄(2³² - 2) ⌢ h₁...₂₈
-    var data: [32]u8 = undefined;
+    // Prepare the data: ℰ₄(2³² - 2) ⌢ h
+    var data: [36]u8 = undefined;
 
     // ℰ₄(2³² - 2) = [254, 255, 255, 255] in little-endian
     std.mem.writeInt(u32, data[0..4], std.math.maxInt(u32) - 1, .little);
 
-    // Concatenate with h₁...₂₈ (bytes 1-28 of the hash)
-    @memcpy(data[4..32], hash[1..29]);
+    // Concatenate with the full hash
+    @memcpy(data[4..36], &hash);
 
     return C_variant3(service_id, &data);
 }
 
-/// Constructs a 31-byte key for service preimage lookup entries
+/// Constructs a 31-byte key for service preimage lookup entries per JAM graypaper v0.6.7
 ///
-/// Uses C variant 3: C(s, ℰ₄(l) ⌢ ℋ(h)₂...₂₉)
-/// Where l is the preimage length and ℋ(h)₂...₂₉ are bytes 2-29 of the hash
+/// Uses C variant 3: C(s, ℰ₄(l) ⌢ h)
+/// Where l is the preimage length and h is the full hash
+/// The C function will hash this before using it
 ///
 /// @param service_id - The service identifier
 /// @param length - The preimage length
 /// @param hash - The 32-byte hash (typically Blake2b-256)
 /// @return A 31-byte key for the preimage lookup entry
 pub fn constructServicePreimageLookupKey(service_id: u32, length: u32, hash: [32]u8) types.StateKey {
-    var hash_of_hash: [32]u8 = undefined;
-    var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
-    hasher.update(&hash);
-    hasher.final(&hash_of_hash);
-
-    // Prepare the data: ℰ₄(l) ⌢ ℋ(h)₂...₂₉
-    var data: [32]u8 = undefined;
+    // Prepare the data: ℰ₄(l) ⌢ h
+    var data: [36]u8 = undefined;
 
     // ℰ₄(l) - encode length in little-endian
     std.mem.writeInt(u32, data[0..4], length, .little);
 
-    // Concatenate with ℋ(h)₂...₂₉ (bytes 2-29 of the hash)
-    @memcpy(data[4..32], hash_of_hash[2..30]);
+    // Concatenate with the full hash
+    @memcpy(data[4..36], &hash);
 
     return C_variant3(service_id, &data);
 }

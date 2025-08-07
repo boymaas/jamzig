@@ -113,6 +113,20 @@ pub const ServiceAccount = struct {
     // Storage offset for gratis (free) storage allowance - NEW in v0.6.7
     storage_offset: ?u64,
 
+    // Time slot when this service was created (r in spec)
+    creation_slot: u32, // types.TimeSlot or u32
+
+    // Time slot of the most recent accumulation for this service (a in spec)
+    last_accumulation_slot: u32, // types.TimeSlot or u32
+
+    // Index of the parent service that created this service (p in spec)
+    parent_service: types.ServiceId, // or u32
+
+    // Storage footprint metrics (calculated from storage content)
+    // These are used to calculate the threshold balance
+    storage_bytes: u64, // Total bytes used (o in spec, a_o)
+    storage_items: u32, // Total number of items (i in spec, a_i)
+
     pub fn init(allocator: Allocator) ServiceAccount {
         return .{
             .storage = std.AutoHashMap(types.StateKey, []const u8).init(allocator),
@@ -123,6 +137,11 @@ pub const ServiceAccount = struct {
             .min_gas_accumulate = 0,
             .min_gas_on_transfer = 0,
             .storage_offset = null,
+            .creation_slot = 0,
+            .last_accumulation_slot = 0,
+            .parent_service = 0,
+            .storage_bytes = 0,
+            .storage_items = 0,
         };
     }
 

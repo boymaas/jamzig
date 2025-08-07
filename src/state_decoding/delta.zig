@@ -7,18 +7,26 @@ const DecodingError = @import("../state_decoding.zig").DecodingError;
 /// Decodes base service account data and adds/updates the account in delta
 /// Base account data includes service info like code hash, balance, gas limits etc
 pub fn decodeServiceAccountBase(
-    _: std.mem.Allocator, // TODO: remove?
+    _: std.mem.Allocator,
     delta: *state.Delta,
     service_id: types.ServiceId,
     reader: anytype,
 ) !void {
     // Read basic service info fields from the encoded data
     const code_hash = try readHash(reader);
+
+    // se_8 encoded fields (8 bytes each)
     const balance = try reader.readInt(types.U64, .little);
     const min_item_gas = try reader.readInt(types.Gas, .little);
     const min_memo_gas = try reader.readInt(types.Gas, .little);
     const bytes = try reader.readInt(types.U64, .little);
+    const storage_offset = try reader.readInt(types.U64, .little); // NEW: a_f
+
+    // se_4 encoded fields (4 bytes each)
     const items = try reader.readInt(types.U32, .little);
+    const creation_slot = try reader.readInt(types.U32, .little); // NEW: a_r
+    const last_accumulation_slot = try reader.readInt(types.U32, .little); // NEW: a_a
+    const parent_service = try reader.readInt(types.U32, .little); // NEW: a_p
 
     // Construct account
     var account = try delta.getOrCreateAccount(service_id);
@@ -26,22 +34,15 @@ pub fn decodeServiceAccountBase(
     account.balance = balance;
     account.min_gas_accumulate = min_item_gas;
     account.min_gas_on_transfer = min_memo_gas;
+    account.storage_offset = storage_offset; // gratis storage offset
+    account.creation_slot = creation_slot;
+    account.last_accumulation_slot = last_accumulation_slot;
+    account.parent_service = parent_service;
 
-    // FIXME: these are calculatd from the storage footprint
-    // need to integrate these
-    // account.bytes = bytes;
-    // account.items = items;
-    _ = bytes;
-    _ = items;
-    
-    // Read storage_offset (optional u64) - NEW in v0.6.7
-    // Format: 1 byte presence flag + 8 bytes value if present
-    const has_storage_offset = try reader.readByte();
-    if (has_storage_offset != 0) {
-        account.storage_offset = try reader.readInt(u64, .little);
-    } else {
-        account.storage_offset = null;
-    }
+    // These are the storage footprint values (a_o and a_i)
+    // They should be used to validate/update the account's storage metrics
+    account.storage_bytes = bytes; // a_o
+    account.storage_items = items; // a_i
 }
 
 /// Decodes a preimage lookup from the encoded format: E(↕[E_4(x) | x <− t])
@@ -122,12 +123,12 @@ test "decodeServiceAccountBase" {
         try testing.expectEqual(min_memo_gas, account.min_gas_on_transfer);
         try testing.expectEqual(@as(?u64, null), account.storage_offset);
     }
-    
+
     // Test 2: With storage_offset
     {
         const service_id_2: types.ServiceId = 43;
         const storage_offset_value: u64 = 5000;
-        
+
         // Create a buffer with encoded data (with storage_offset)
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();

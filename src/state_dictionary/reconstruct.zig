@@ -195,6 +195,7 @@ pub fn reconstructState(
                 lookup_span.debug("Buffering delta lookup entry for later processing", .{});
 
                 // Buffer this entry for processing after all other entries
+                // TODO: if service accounts are already present process immediately
                 try preimage_lookup_buffer.append(dict_entry);
             },
         }
