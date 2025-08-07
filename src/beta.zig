@@ -60,9 +60,9 @@ pub const Beta = struct {
         // Add to recent history
         const block_info = RecentHistory.BlockInfo{
             .header_hash = block.header_hash,
-            .beefy_root = block.mmr_root,
-            .state_root = block.state_root,
-            .work_reports = block.work_packages,
+            .beefy_root = block.accumulate_root, // Using accumulate_root as beefy_root for now
+            .state_root = block.parent_state_root, // Using parent_state_root as state_root
+            .work_reports = block.work_reports,
         };
         try self.recent_history.addBlock(block_info);
         
