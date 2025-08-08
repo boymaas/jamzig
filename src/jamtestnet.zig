@@ -44,25 +44,47 @@ test "w3f:traces:safrole" {
     );
 }
 
-test "w3f:traces:reports-l0" {
+test "w3f:traces:preimages" {
     const allocator = std.testing.allocator;
     const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
     try runBlockImportTests(
         W3F_PARAMS,
         loader.loader(),
         allocator,
-        "src/jamtestvectors/data/traces/reports-l0",
+        "src/jamtestvectors/data/traces/preimages",
     );
 }
 
-test "w3f:traces:reports-l1" {
+test "w3f:traces:preimages_light" {
     const allocator = std.testing.allocator;
     const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
     try runBlockImportTests(
         W3F_PARAMS,
         loader.loader(),
         allocator,
-        "src/jamtestvectors/data/traces/reports-l1",
+        "src/jamtestvectors/data/traces/preimages_light",
+    );
+}
+
+test "w3f:traces:storage" {
+    const allocator = std.testing.allocator;
+    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
+    try runBlockImportTests(
+        W3F_PARAMS,
+        loader.loader(),
+        allocator,
+        "src/jamtestvectors/data/traces/storage",
+    );
+}
+
+test "w3f:traces:storage_light" {
+    const allocator = std.testing.allocator;
+    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
+    try runBlockImportTests(
+        W3F_PARAMS,
+        loader.loader(),
+        allocator,
+        "src/jamtestvectors/data/traces/storage_light",
     );
 }
 
