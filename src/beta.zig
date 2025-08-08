@@ -57,17 +57,24 @@ pub const Beta = struct {
         // For v0.6.7, we add to recent_history and update beefy_belt
         // The block should have the necessary fields for both components
         
+        // Update BEEFY belt with accumulation output root
+        // Per graypaper equation 27: β'_B ≡ A(β_B, M_B(s, H_K), H_K)
+        // For now, we use the accumulate_root directly as the MMR leaf
+        try self.beefy_belt.append(block.accumulate_root);
+        
+        // Get the MMR root after appending
+        const beefy_mmr_root = self.beefy_belt.getSuperPeak();
+        
         // Add to recent history
+        // Per graypaper equation 31-43: new blocks get H^0 (zero hash) as state_root
+        // The actual state root is corrected when the NEXT block arrives via updateParentBlockStateRoot
         const block_info = RecentHistory.BlockInfo{
             .header_hash = block.header_hash,
-            .beefy_root = block.accumulate_root, // Using accumulate_root as beefy_root for now
-            .state_root = block.parent_state_root, // Using parent_state_root as state_root
+            .beefy_root = beefy_mmr_root, // M_R(β'_B) - the root of the updated BEEFY belt
+            .state_root = std.mem.zeroes(types.Hash), // H^0 as per graypaper - will be corrected later
             .work_reports = block.work_reports,
         };
         try self.recent_history.addBlock(block_info);
-        
-        // Update BEEFY belt if needed
-        // TODO: Implement BEEFY MMR peak updates when needed
     }
 
     pub fn format(
@@ -217,14 +224,10 @@ pub const BeefyBelt = struct {
 
     /// Append a new accumulation output root to the MMR
     pub fn append(self: *BeefyBelt, root: types.Hash) !void {
-        const new_peaks = try mmr.append(
-            self.allocator,
-            self.peaks,
-            root,
-            std.crypto.hash.sha3.Keccak256,
-        );
-        self.allocator.free(self.peaks);
-        self.peaks = new_peaks;
+        // Convert to MMR struct, append, then convert back
+        var m = mmr.MMR.fromOwnedSlice(self.allocator, self.peaks);
+        try mmr.append(&m, root, std.crypto.hash.sha3.Keccak256);
+        self.peaks = try m.toOwnedSlice();
     }
 
     /// Get the super-peak (root) of the MMR
