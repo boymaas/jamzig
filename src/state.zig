@@ -68,9 +68,13 @@ pub fn JamState(comptime params: Params) type {
         /// ξ: Epochs worth history of accumulated work reports
         xi: ?Xi(params.epoch_length) = null,
 
-        /// θ: List of available and/or audited but not yet accumulated work
-        /// reports
-        theta: ?Theta(params.epoch_length) = null,
+        /// ϑ (vartheta): List of available and/or audited but not yet accumulated work
+        /// reports (v0.6.7: renamed from theta)
+        vartheta: ?VarTheta(params.epoch_length) = null,
+
+        /// θ (theta): The most recent accumulation outputs
+        /// (v0.6.7: new component, stores service/hash pairs from last accumulation)
+        theta: ?Theta = null,
 
         /// Initialize Alpha component
         pub fn initAlpha(self: *JamState(params), _: std.mem.Allocator) !void {
@@ -123,9 +127,14 @@ pub fn JamState(comptime params: Params) type {
             self.rho = Rho(params.core_count).init(allocator);
         }
 
-        /// Initialize Theta component
+        /// Initialize Vartheta component (work reports queue)
+        pub fn initVartheta(self: *JamState(params), allocator: std.mem.Allocator) !void {
+            self.vartheta = VarTheta(params.epoch_length).init(allocator);
+        }
+
+        /// Initialize Theta component (accumulation outputs)
         pub fn initTheta(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.theta = Theta(params.epoch_length).init(allocator);
+            self.theta = Theta.init(allocator);
         }
 
         /// Initialize Eta component
@@ -173,6 +182,7 @@ pub fn JamState(comptime params: Params) type {
             try state.initPsi(allocator);
             try state.initPi(allocator);
             try state.initXi(allocator);
+            try state.initVartheta(allocator);
             try state.initTheta(allocator);
             try state.initRho(allocator);
 
@@ -297,7 +307,8 @@ pub fn JamStateView(comptime params: Params) type {
         psi: ?*const Psi = null,
         pi: ?*const Pi = null,
         xi: ?*const Xi(params.epoch_length) = null,
-        theta: ?*const Theta(params.epoch_length) = null,
+        vartheta: ?*const VarTheta(params.epoch_length) = null,
+        theta: ?*const Theta = null,
 
         pub fn init() Self {
             return Self{};
@@ -320,9 +331,11 @@ pub fn JamStateView(comptime params: Params) type {
 
 // Core imports
 pub const authorizer_pool = @import("authorizer_pool.zig");
+pub const beta = @import("beta.zig");
 pub const recent_blocks = @import("recent_blocks.zig");
 pub const accumulated_reports = @import("reports_accumulated.zig");
 pub const reports_ready = @import("reports_ready.zig");
+pub const accumulation_outputs = @import("accumulation_outputs.zig");
 pub const safrole_state = @import("safrole_state.zig");
 pub const services = @import("services.zig");
 pub const pending_reports = @import("reports_pending.zig");
@@ -333,11 +346,12 @@ pub const validator_stats = @import("validator_stats.zig");
 
 // State components
 pub const Alpha = authorizer_pool.Alpha;
-pub const Beta = recent_blocks.RecentHistory;
+pub const Beta = beta.Beta; // v0.6.7: Now contains (recent_history, beefy_belt)
 
 // History and Queuing of work reports
 pub const Xi = accumulated_reports.Xi;
-pub const Theta = reports_ready.Theta;
+pub const VarTheta = reports_ready.VarTheta; // v0.6.7: Renamed from Theta to VarTheta
+pub const Theta = accumulation_outputs.Theta; // v0.6.7: NEW - accumulation outputs
 
 // Validator and network state
 pub const Gamma = safrole_state.Gamma;

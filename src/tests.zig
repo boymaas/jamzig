@@ -14,6 +14,7 @@ comptime {
     _ = @import("jamtestvectors/authorizations.zig");
     _ = @import("jamtestvectors/accumulate.zig");
     _ = @import("jamtestvectors/preimages.zig");
+    _ = @import("jamtestvectors/statistics.zig");
 
     _ = @import("codec.zig");
     _ = @import("codec_test.zig");

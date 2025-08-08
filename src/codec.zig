@@ -93,26 +93,19 @@ pub fn deserialize(
 ) !Deserialized(T) {
     const span = trace.span(.deserialize);
     defer span.deinit();
-    span.debug("Starting deserialization for type {s}", .{@typeName(T)});
+    span.debug("type: {s}", .{@typeName(T)});
 
     var result = Deserialized(T){
         .arena = try parent_allocator.create(ArenaAllocator),
         .value = undefined,
     };
-    errdefer {
-        span.debug("Cleanup after error - destroying arena", .{});
-        parent_allocator.destroy(result.arena);
-    }
+    errdefer parent_allocator.destroy(result.arena);
 
     result.arena.* = ArenaAllocator.init(parent_allocator);
-    errdefer {
-        span.debug("Cleanup after error - deinitializing arena", .{});
-        result.arena.deinit();
-    }
+    errdefer result.arena.deinit();
 
     result.value = try deserializeInternal(T, params, result.arena.allocator(), reader, null);
 
-    span.debug("Successfully deserialized type {s}", .{@typeName(T)});
     return result;
 }
 
@@ -133,7 +126,7 @@ pub fn deserializeAlloc(
 ) !T {
     const span = trace.span(.deserialize_alloc);
     defer span.deinit();
-    span.debug("Starting allocation-based deserialization for type {s}", .{@typeName(T)});
+    span.debug("type: {s}", .{@typeName(T)});
 
     const TrackingAllocator = @import("tracking_allocator.zig").TrackingAllocator;
     var tracking_allocator = TrackingAllocator.init(allocator);
@@ -142,14 +135,13 @@ pub fn deserializeAlloc(
     const result = deserializeInternal(T, params, tracking_allocator.allocator(), reader, null) catch |err| {
         const inner_span = span.child(.cleanup_on_error);
         defer inner_span.deinit();
-        inner_span.debug("Deserialization failed, cleaning up {d} tracked allocations", .{tracking_allocator.allocations.items.len});
+        inner_span.trace("cleanup: {d} allocations", .{tracking_allocator.allocations.items.len});
         tracking_allocator.freeAllAllocations();
         return err;
     };
 
     // Success - commit allocations to prevent cleanup
     tracking_allocator.commitAllocations();
-    span.debug("Successfully deserialized type {s} with allocator", .{@typeName(T)});
     return result;
 }
 
@@ -172,26 +164,19 @@ pub fn deserializeWithContext(
 ) !Deserialized(T) {
     const span = trace.span(.deserialize_with_context);
     defer span.deinit();
-    span.debug("Starting deserialization with context for type {s}", .{@typeName(T)});
+    span.debug("type: {s}", .{@typeName(T)});
 
     var result = Deserialized(T){
         .arena = try parent_allocator.create(ArenaAllocator),
         .value = undefined,
     };
-    errdefer {
-        span.debug("Cleanup after error - destroying arena", .{});
-        parent_allocator.destroy(result.arena);
-    }
+    errdefer parent_allocator.destroy(result.arena);
 
     result.arena.* = ArenaAllocator.init(parent_allocator);
-    errdefer {
-        span.debug("Cleanup after error - deinitializing arena", .{});
-        result.arena.deinit();
-    }
+    errdefer result.arena.deinit();
 
     result.value = try deserializeInternal(T, params, result.arena.allocator(), reader, context);
 
-    span.debug("Successfully deserialized type {s} with context", .{@typeName(T)});
     return result;
 }
 
@@ -215,7 +200,7 @@ pub fn deserializeAllocWithContext(
 ) !T {
     const span = trace.span(.deserialize_alloc_with_context);
     defer span.deinit();
-    span.debug("Starting allocation-based deserialization with context for type {s}", .{@typeName(T)});
+    span.debug("type: {s}", .{@typeName(T)});
 
     const TrackingAllocator = @import("tracking_allocator.zig").TrackingAllocator;
     var tracking_allocator = TrackingAllocator.init(allocator);
@@ -224,14 +209,13 @@ pub fn deserializeAllocWithContext(
     const result = deserializeInternal(T, params, tracking_allocator.allocator(), reader, context) catch |err| {
         const inner_span = span.child(.cleanup_on_error);
         defer inner_span.deinit();
-        inner_span.debug("Deserialization failed, cleaning up {d} tracked allocations", .{tracking_allocator.allocations.items.len});
+        inner_span.trace("cleanup: {d} allocations", .{tracking_allocator.allocations.items.len});
         tracking_allocator.freeAllAllocations();
         return err;
     };
 
     // Success - commit allocations to prevent cleanup
     tracking_allocator.commitAllocations();
-    span.debug("Successfully deserialized type {s} with allocator and context", .{@typeName(T)});
     return result;
 }
 
@@ -246,7 +230,7 @@ pub fn readInteger(reader: anytype) !u64 {
 pub fn readIntegerWithContext(reader: anytype, context: ?*DecodingContext) !u64 {
     const span = trace.span(.read_integer);
     defer span.deinit();
-    span.debug("Reading variable-length integer", .{});
+    span.debug("integer: variable-length", .{});
 
     // Read first byte
     const first_byte = reader.readByte() catch |err| {
@@ -256,20 +240,17 @@ pub fn readIntegerWithContext(reader: anytype, context: ?*DecodingContext) !u64 
         return err;
     };
     if (context) |ctx| ctx.addOffset(1);
-    span.trace("First byte: 0x{X:0>2}", .{first_byte});
+    span.trace("first_byte: 0x{X:0>2}", .{first_byte});
 
     if (first_byte == 0) {
-        span.debug("Zero value detected", .{});
         return 0;
     }
 
     if (first_byte < SINGLE_BYTE_MAX) {
-        span.debug("Single byte value: {d}", .{first_byte});
         return first_byte;
     }
 
     if (first_byte == EIGHT_BYTE_MARKER) {
-        span.debug("8-byte fixed-length integer detected", .{});
         var buf: [8]u8 = undefined;
         reader.readNoEof(&buf) catch |err| {
             if (context) |ctx| {
@@ -279,8 +260,7 @@ pub fn readIntegerWithContext(reader: anytype, context: ?*DecodingContext) !u64 
         };
         if (context) |ctx| ctx.addOffset(8);
         const value = decoder.decodeFixedLengthInteger(u64, &buf);
-        span.debug("Decoded 8-byte value: {d}", .{value});
-        span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(&buf)});
+        span.trace("8byte_value: {d}, bytes: {s}", .{ value, std.fmt.fmtSliceHexLower(&buf) });
         return value;
     }
 
@@ -290,7 +270,7 @@ pub fn readIntegerWithContext(reader: anytype, context: ?*DecodingContext) !u64 
         }
         return err;
     };
-    span.trace("Decoded prefix - l: {d}, integer_multiple: {d}", .{ dl.l, dl.integer_multiple });
+    span.trace("prefix: l={d} multiple={d}", .{ dl.l, dl.integer_multiple });
 
     var buf: [8]u8 = undefined;
     reader.readNoEof(buf[0..dl.l]) catch |err| {
@@ -302,10 +282,7 @@ pub fn readIntegerWithContext(reader: anytype, context: ?*DecodingContext) !u64 
     if (context) |ctx| ctx.addOffset(dl.l);
     const remainder = decoder.decodeFixedLengthInteger(u64, buf[0..dl.l]);
     const final_value = remainder + dl.integer_multiple;
-
-    span.debug("Decoded variable-length integer: {d}", .{final_value});
-    span.trace("Breakdown - remainder: {d}, multiple: {d}", .{ remainder, dl.integer_multiple });
-
+    span.trace("varlen_value: {d} (remainder={d} + multiple={d})", .{ final_value, remainder, dl.integer_multiple });
     return final_value;
 }
 
@@ -324,23 +301,23 @@ fn deserializeSizedField(
     const span = trace.span(.deserialize_sized_field);
     defer span.deinit();
 
-    span.debug("Field has size function", .{});
     const size_fn = @field(ParentType, field_name ++ "_size");
     const size = @call(.auto, size_fn, .{params});
-    span.debug("Size function returned: {d}", .{size});
+    span.debug("sized_field: {s} size={d}", .{ field_name, size });
 
     const slice = try allocator.alloc(std.meta.Child(FieldType), size);
-    span.trace("Allocated slice of size {d}", .{size});
+    span.trace("alloc_slice: size={d}", .{size});
 
     for (slice, 0..) |*item, i| {
         if (context) |ctx| {
             try ctx.push(.{ .slice_item = i });
         }
+        errdefer if (context) |ctx| ctx.markError();
         defer if (context) |ctx| ctx.pop();
 
         const item_span = span.child(.slice_item);
         defer item_span.deinit();
-        item_span.debug("Deserializing item {d} of {d}", .{ i + 1, size });
+        item_span.debug("item: {d}/{d}", .{ i + 1, size });
         item.* = try deserializeInternal(std.meta.Child(FieldType), params, allocator, reader, context);
     }
 
@@ -359,10 +336,9 @@ fn serializeSizedField(
     const span = trace.span(.serialize_sized_field);
     defer span.deinit();
 
-    span.debug("Field has size function", .{});
     const size_fn = @field(ParentType, field_name ++ "_size");
     const size = @call(.auto, size_fn, .{params});
-    span.debug("Size function returned: {d}", .{size});
+    span.debug("sized_field: {s} size={d}", .{ field_name, size });
 
     if (field_value.len != size) {
         span.err("Field slice length {d} does not match size function return value {d}", .{ field_value.len, size });
@@ -372,7 +348,7 @@ fn serializeSizedField(
     for (field_value[0..size], 0..) |item, i| {
         const item_span = span.child(.slice_item);
         defer item_span.deinit();
-        item_span.debug("Serializing item {d} of {d}", .{ i + 1, size });
+        item_span.debug("item: {d}/{d}", .{ i + 1, size });
         try serializeInternal(std.meta.Child(FieldType), params, writer, item);
     }
 }
@@ -395,7 +371,7 @@ fn deserializeInt(comptime T: type, reader: anytype, context: ?*DecodingContext)
     const span = trace.span(.deserialize_int);
     defer span.deinit();
 
-    span.debug("Deserializing {d}-bit integer", .{intInfo.bits});
+    span.debug("int: {d}-bit", .{intInfo.bits});
     inline for (.{ u8, u16, u32, u64, u128 }) |t| {
         if (intInfo.bits == @bitSizeOf(t)) {
             const buf = reader.readBytesNoEof(intInfo.bits / 8) catch |err| {
@@ -406,8 +382,7 @@ fn deserializeInt(comptime T: type, reader: anytype, context: ?*DecodingContext)
             };
             if (context) |ctx| ctx.addOffset(intInfo.bits / 8);
             const integer = decoder.decodeFixedLengthInteger(t, &buf);
-            span.debug("Decoded {d}-bit integer: {d}", .{ intInfo.bits, integer });
-            span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(&buf)});
+            span.trace("int{d}_value: {d}, bytes: {s}", .{ intInfo.bits, integer, std.fmt.fmtSliceHexLower(&buf) });
             return integer;
         }
     }
@@ -427,17 +402,15 @@ fn deserializeOptional(comptime T: type, comptime params: anytype, allocator: st
         return err;
     };
     if (context) |ctx| ctx.addOffset(1);
-    span.debug("Deserializing optional, present byte: {d}", .{present});
+    span.debug("optional: present={d}", .{present});
 
     if (present == 0) {
-        span.debug("Optional value is null", .{});
         return null;
     } else if (present == 1) {
         const child_span = span.child(.optional_value);
         defer child_span.deinit();
-        child_span.debug("Deserializing optional child of type {s}", .{@typeName(optionalInfo.child)});
+        child_span.debug("optional_child: {s}", .{@typeName(optionalInfo.child)});
         const value = try deserializeInternal(optionalInfo.child, params, allocator, reader, context);
-        child_span.debug("Successfully deserialized optional value", .{});
         return value;
     } else {
         span.err("Invalid present byte for optional: {d}", .{present});
@@ -453,7 +426,7 @@ fn deserializeEnum(comptime T: type, reader: anytype, context: ?*DecodingContext
     const enumInfo = @typeInfo(T).@"enum";
     const enum_span = trace.span(.enum_deserialize);
     defer enum_span.deinit();
-    enum_span.debug("Deserializing enum type: {s}", .{@typeName(T)});
+    enum_span.debug("enum: {s}", .{@typeName(T)});
 
     const tag_value = readIntegerWithContext(reader, context) catch |err| {
         if (context) |ctx| {
@@ -461,7 +434,7 @@ fn deserializeEnum(comptime T: type, reader: anytype, context: ?*DecodingContext
         }
         return err;
     };
-    enum_span.debug("Read enum tag value: {d}", .{tag_value});
+    enum_span.trace("enum_tag: {d}", .{tag_value});
 
     if (tag_value >= enumInfo.fields.len) {
         enum_span.err("Invalid enum tag value: {d}", .{tag_value});
@@ -481,7 +454,7 @@ fn deserializeStruct(comptime T: type, comptime params: anytype, allocator: std.
     defer struct_span.deinit();
 
     if (@hasDecl(T, "decode")) {
-        struct_span.debug("Deserializing using custom decode method", .{});
+        struct_span.debug("struct: custom decode", .{});
         return try @call(.auto, @field(T, "decode"), .{
             params,
             reader,
@@ -489,18 +462,19 @@ fn deserializeStruct(comptime T: type, comptime params: anytype, allocator: std.
         });
     }
 
-    struct_span.debug("Deserializing struct with {d} fields", .{structInfo.fields.len});
+    struct_span.debug("struct: {d} fields", .{structInfo.fields.len});
 
     var result: T = undefined;
     inline for (structInfo.fields) |field| {
         if (context) |ctx| {
             try ctx.push(.{ .field = field.name });
         }
+        errdefer if (context) |ctx| ctx.markError();
         defer if (context) |ctx| ctx.pop();
 
         const field_span = struct_span.child(.field);
         defer field_span.deinit();
-        field_span.debug("Deserializing field: {s} of type {s}", .{ field.name, @typeName(field.type) });
+        field_span.debug("field: {s}: {s}", .{ field.name, @typeName(field.type) });
 
         const field_type = field.type;
         if (@hasDecl(T, field.name ++ "_size")) {
@@ -509,9 +483,7 @@ fn deserializeStruct(comptime T: type, comptime params: anytype, allocator: std.
             const field_value = try deserializeInternal(field_type, params, allocator, reader, context);
             @field(result, field.name) = field_value;
         }
-        field_span.debug("Successfully deserialized field: {s}", .{field.name});
     }
-    struct_span.debug("Successfully deserialized complete struct", .{});
     return result;
 }
 
@@ -519,10 +491,10 @@ fn deserializeUnion(comptime T: type, comptime params: anytype, allocator: std.m
     const unionInfo = @typeInfo(T).@"union";
     const union_span = trace.span(.union_deserialize);
     defer union_span.deinit();
-    union_span.debug("Deserializing union type: {s}", .{@typeName(T)});
+    union_span.debug("union: {s}", .{@typeName(T)});
 
     if (@hasDecl(T, "decode")) {
-        union_span.debug("Using custom decode method", .{});
+        union_span.debug("union: custom decode", .{});
         return try @call(.auto, @field(T, "decode"), .{
             params,
             reader,
@@ -536,24 +508,24 @@ fn deserializeUnion(comptime T: type, comptime params: anytype, allocator: std.m
         }
         return err;
     };
-    union_span.debug("Read union tag value: {d}", .{tag_value});
+    union_span.trace("union_tag: {d}", .{tag_value});
 
     inline for (unionInfo.fields, 0..) |field, idx| {
         if (tag_value == idx) {
             if (context) |ctx| {
                 try ctx.push(.{ .union_variant = field.name });
             }
+            errdefer if (context) |ctx| ctx.markError();
             defer if (context) |ctx| ctx.pop();
 
             const field_span = union_span.child(.field);
             defer field_span.deinit();
-            field_span.debug("Processing union field: {s}", .{field.name});
+            field_span.debug("union_field: {s}", .{field.name});
 
             if (field.type == void) {
-                field_span.debug("Void field, no additional data to read", .{});
                 return @unionInit(T, field.name, {});
             } else {
-                field_span.debug("Deserializing field value of type: {s}", .{@typeName(field.type)});
+                field_span.debug("union_field_type: {s}", .{@typeName(field.type)});
 
                 const field_type = field.type;
                 if (@hasDecl(T, field.name ++ "_size")) {
@@ -579,7 +551,7 @@ fn deserializePointer(comptime T: type, comptime params: anytype, allocator: std
     const pointerInfo = @typeInfo(T).pointer;
     const ptr_span = trace.span(.pointer);
     defer ptr_span.deinit();
-    ptr_span.debug("Deserializing pointer type: {s}", .{@tagName(pointerInfo.size)});
+    ptr_span.debug("pointer: {s}", .{@tagName(pointerInfo.size)});
 
     switch (pointerInfo.size) {
         .slice => {
@@ -589,13 +561,12 @@ fn deserializePointer(comptime T: type, comptime params: anytype, allocator: std
                 }
                 return err;
             };
-            ptr_span.debug("Deserializing slice of length: {d}", .{len});
+            ptr_span.debug("slice: len={d}", .{len});
 
             const slice = try allocator.alloc(pointerInfo.child, @intCast(len));
-            ptr_span.trace("Allocated slice of size {d}", .{len});
+            ptr_span.trace("alloc_slice: size={d}", .{len});
 
             if (pointerInfo.child == u8) {
-                ptr_span.debug("Optimized path for byte array", .{});
                 const bytes_read = reader.readAll(slice) catch |err| {
                     if (context) |ctx| {
                         return ctx.makeError(err, "failed to read byte slice: {s}", .{@errorName(err)});
@@ -611,16 +582,18 @@ fn deserializePointer(comptime T: type, comptime params: anytype, allocator: std
                     return err;
                 }
                 if (context) |ctx| ctx.addOffset(bytes_read);
-                ptr_span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(slice)});
+                ptr_span.trace("bytes: {s}", .{std.fmt.fmtSliceHexLower(slice)});
             } else {
                 for (slice, 0..) |*item, i| {
                     if (context) |ctx| {
                         try ctx.push(.{ .slice_item = i });
                     }
+                    errdefer if (context) |ctx| ctx.markError();
                     defer if (context) |ctx| ctx.pop();
+
                     const item_span = ptr_span.child(.slice_item);
                     defer item_span.deinit();
-                    item_span.debug("Deserializing item {d} of {d}", .{ i + 1, len });
+                    item_span.debug("slice_item: {d}/{d}", .{ i + 1, len });
                     item.* = try deserializeInternal(pointerInfo.child, params, allocator, reader, context);
                 }
             }
@@ -637,15 +610,19 @@ fn deserializeInternal(comptime T: type, comptime params: anytype, allocator: st
     const span = trace.span(.recursive_deserialize);
     defer span.deinit();
 
-    span.debug("Start deserializing type: {s}", .{@typeName(T)});
+    span.debug("type: {s}", .{@typeName(T)});
 
     // Push type name to context if available
     if (context) |ctx| {
         try ctx.push(.{ .type_name = @typeName(T) });
     }
+    errdefer if (context) |ctx| ctx.markError();
     defer if (context) |ctx| ctx.pop();
 
     switch (@typeInfo(T)) {
+        .void => {
+            return {};
+        },
         .bool => return try deserializeBool(reader, context),
         .int => return try deserializeInt(T, reader, context),
         .optional => return try deserializeOptional(T, params, allocator, reader, context),
@@ -658,7 +635,7 @@ fn deserializeInternal(comptime T: type, comptime params: anytype, allocator: st
         .array => |arrayInfo| {
             const array_span = span.child(.array);
             defer array_span.deinit();
-            array_span.debug("Deserializing array of type {s}[{d}]", .{ @typeName(arrayInfo.child), arrayInfo.len });
+            array_span.debug("array: {s}[{d}]", .{ @typeName(arrayInfo.child), arrayInfo.len });
 
             if (arrayInfo.sentinel_ptr != null) {
                 array_span.err("Arrays with sentinels are not supported", .{});
@@ -678,12 +655,11 @@ fn deserializeInternal(comptime T: type, comptime params: anytype, allocator: st
 fn deserializeArray(comptime T: type, comptime len: usize, comptime params: anytype, allocator: std.mem.Allocator, reader: anytype, context: ?*DecodingContext) ![len]T {
     const span = trace.span(.array_deserialize);
     defer span.deinit();
-    span.debug("Deserializing fixed array - type: {s}, length: {d}", .{ @typeName(T), len });
+    span.debug("array: {s}[{d}]", .{ @typeName(T), len });
 
     var result: [len]T = undefined;
 
     if (T == u8) {
-        span.debug("Optimized path for byte array", .{});
         const bytes_read = reader.readAll(&result) catch |err| {
             if (context) |ctx| {
                 return ctx.makeError(err, "failed to read byte array: {s}", .{@errorName(err)});
@@ -699,22 +675,21 @@ fn deserializeArray(comptime T: type, comptime len: usize, comptime params: anyt
             return err;
         }
         if (context) |ctx| ctx.addOffset(bytes_read);
-        span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(&result)});
+        span.trace("bytes: {s}", .{std.fmt.fmtSliceHexLower(&result)});
     } else {
-        span.debug("Deserializing array elements individually", .{});
         for (&result, 0..) |*element, i| {
             if (context) |ctx| {
                 try ctx.push(.{ .array_index = i });
             }
+            errdefer if (context) |ctx| ctx.markError();
             defer if (context) |ctx| ctx.pop();
             const element_span = span.child(.array_element);
             defer element_span.deinit();
-            element_span.debug("Deserializing element {d} of {d}", .{ i + 1, len });
+            element_span.debug("element: {d}/{d}", .{ i + 1, len });
             element.* = try deserializeInternal(T, params, allocator, reader, context);
         }
     }
 
-    span.debug("Successfully deserialized complete array", .{});
     return result;
 }
 
@@ -730,9 +705,8 @@ fn deserializeArray(comptime T: type, comptime len: usize, comptime params: anyt
 pub fn serialize(comptime T: type, comptime params: anytype, writer: anytype, value: T) !void {
     const span = trace.span(.serialize);
     defer span.deinit();
-    span.debug("Starting serialization of type {s}", .{@typeName(T)});
+    span.debug("type: {s}", .{@typeName(T)});
     try serializeInternal(T, params, writer, value);
-    span.debug("Successfully completed serialization", .{});
 }
 
 /// Serializes a value to a newly allocated byte slice.
@@ -747,32 +721,28 @@ pub fn serialize(comptime T: type, comptime params: anytype, writer: anytype, va
 pub fn serializeAlloc(comptime T: type, comptime params: anytype, allocator: std.mem.Allocator, value: T) ![]u8 {
     const span = trace.span(.serialize_alloc);
     defer span.deinit();
-    span.debug("Starting allocation-based serialization for type {s}", .{@typeName(T)});
+    span.debug("type: {s}", .{@typeName(T)});
 
     var list = std.ArrayList(u8).init(allocator);
     errdefer {
-        span.debug("Cleanup after error - deinitializing ArrayList", .{});
         list.deinit();
     }
 
     try serializeInternal(T, params, list.writer(), value);
 
     const result = try list.toOwnedSlice();
-    span.debug("Successfully serialized {d} bytes", .{result.len});
-    span.trace("Raw output: {any}", .{std.fmt.fmtSliceHexLower(result)});
+    span.trace("output: {d} bytes, data: {s}", .{ result.len, std.fmt.fmtSliceHexLower(result) });
     return result;
 }
 
 pub fn writeInteger(value: u64, writer: anytype) !void {
     const span = trace.span(.write_integer);
     defer span.deinit();
-    span.debug("Writing integer value: {d}", .{value});
+    span.debug("integer: {d}", .{value});
 
     const encoded = encoder.encodeInteger(value);
-    span.trace("Encoded to {d} bytes: {any}", .{ encoded.len, std.fmt.fmtSliceHexLower(encoded.as_slice()) });
-
+    span.trace("encoded: {d} bytes, data: {s}", .{ encoded.len, std.fmt.fmtSliceHexLower(encoded.as_slice()) });
     try writer.writeAll(encoded.as_slice());
-    span.debug("Successfully wrote encoded integer", .{});
 }
 
 // ---- Type-specific Serialization Functions ----
@@ -786,12 +756,12 @@ fn serializeInt(comptime T: type, writer: anytype, value: T) !void {
     const span = trace.span(.serialize_int);
     defer span.deinit();
 
-    span.debug("Serializing {d}-bit integer: {d}", .{ intInfo.bits, value });
+    span.debug("int{d}: {d}", .{ intInfo.bits, value });
     inline for (.{ u8, u16, u32, u64, u128 }) |t| {
         if (intInfo.bits == @bitSizeOf(t)) {
             var buffer: [intInfo.bits / 8]u8 = undefined;
             std.mem.writeInt(t, &buffer, value, .little);
-            span.trace("Encoded bytes: {any}", .{std.fmt.fmtSliceHexLower(&buffer)});
+            span.trace("bytes: {s}", .{std.fmt.fmtSliceHexLower(&buffer)});
             try writer.writeAll(&buffer);
             return;
         }
@@ -804,26 +774,23 @@ fn serializeOptional(comptime T: type, comptime params: anytype, writer: anytype
     const optionalInfo = @typeInfo(T).optional;
     const opt_span = trace.span(.optional);
     defer opt_span.deinit();
-    opt_span.debug("Serializing optional of type {s}", .{@typeName(optionalInfo.child)});
+    opt_span.debug("optional: {s}", .{@typeName(optionalInfo.child)});
 
     if (value) |v| {
         try writer.writeByte(1);
-        opt_span.debug("Optional has value, serializing child", .{});
         try serializeInternal(optionalInfo.child, params, writer, v);
     } else {
         try writer.writeByte(0);
-        opt_span.debug("Optional is null", .{});
     }
 }
 
 fn serializeEnum(comptime T: type, writer: anytype, value: T) !void {
     const enum_span = trace.span(.enum_serialize);
     defer enum_span.deinit();
-    enum_span.debug("Serializing enum value: {s}", .{@tagName(value)});
-
+    enum_span.debug("enum: {s}", .{@tagName(value)});
     const tag_value = @intFromEnum(value);
+    enum_span.trace("tag_value: {d}", .{tag_value});
     try writeInteger(tag_value, writer);
-    enum_span.debug("Wrote enum tag value: {d}", .{tag_value});
 }
 
 fn serializeStruct(comptime T: type, comptime params: anytype, writer: anytype, value: T) !void {
@@ -832,7 +799,7 @@ fn serializeStruct(comptime T: type, comptime params: anytype, writer: anytype, 
     defer struct_span.deinit();
 
     if (@hasDecl(T, "encode")) {
-        struct_span.debug("Encoding using custom encode method", .{});
+        struct_span.debug("struct: custom encode", .{});
         return try @call(.auto, @field(T, "encode"), .{
             &value,
             params,
@@ -840,12 +807,12 @@ fn serializeStruct(comptime T: type, comptime params: anytype, writer: anytype, 
         });
     }
 
-    struct_span.debug("Serializing struct with {d} fields", .{structInfo.fields.len});
+    struct_span.debug("struct: {d} fields", .{structInfo.fields.len});
 
     inline for (structInfo.fields) |field| {
         const field_span = struct_span.child(.field);
         defer field_span.deinit();
-        field_span.debug("Serializing field: {s} of type {s}", .{ field.name, @typeName(field.type) });
+        field_span.debug("field: {s}: {s}", .{ field.name, @typeName(field.type) });
 
         const field_value = @field(value, field.name);
         const field_type = field.type;
@@ -855,26 +822,24 @@ fn serializeStruct(comptime T: type, comptime params: anytype, writer: anytype, 
         } else {
             try serializeInternal(field_type, params, writer, field_value);
         }
-        field_span.debug("Successfully serialized field: {s}", .{field.name});
     }
-    struct_span.debug("Successfully serialized complete struct", .{});
 }
 
 fn serializePointer(comptime T: type, comptime params: anytype, writer: anytype, value: T) !void {
     const pointerInfo = @typeInfo(T).pointer;
     const ptr_span = trace.span(.pointer);
     defer ptr_span.deinit();
-    ptr_span.debug("Serializing pointer type: {s}", .{@tagName(pointerInfo.size)});
+    ptr_span.debug("pointer: {s}", .{@tagName(pointerInfo.size)});
 
     switch (pointerInfo.size) {
         .slice => {
-            ptr_span.debug("Serializing slice of length: {d}", .{value.len});
+            ptr_span.debug("slice: len={d}", .{value.len});
             try writeInteger(value.len, writer);
 
             for (value, 0..) |item, i| {
                 const item_span = ptr_span.child(.slice_item);
                 defer item_span.deinit();
-                item_span.debug("Serializing item {d} of {d}", .{ i + 1, value.len });
+                item_span.debug("item: {d}/{d}", .{ i + 1, value.len });
                 try serializeInternal(pointerInfo.child, params, writer, item);
             }
         },
@@ -889,16 +854,16 @@ fn serializeUnion(comptime T: type, comptime params: anytype, writer: anytype, v
     const unionInfo = @typeInfo(T).@"union";
     const union_span = trace.span(.union_serialize);
     defer union_span.deinit();
-    union_span.debug("Serializing union type: {s}", .{@typeName(T)});
+    union_span.debug("union: {s}", .{@typeName(T)});
 
     if (@hasDecl(T, "encode")) {
-        union_span.debug("Using custom encode method", .{});
+        union_span.debug("union: custom encode", .{});
         return try @call(.auto, @field(T, "encode"), .{ &value, params, writer });
     }
 
     const tag = std.meta.activeTag(value);
     const tag_value = @intFromEnum(tag);
-    union_span.debug("Union tag: {s} (value: {d})", .{ @tagName(tag), tag_value });
+    union_span.trace("tag: {s}={d}", .{ @tagName(tag), tag_value });
 
     try writer.writeAll(encoder.encodeInteger(tag_value).as_slice());
 
@@ -906,10 +871,9 @@ fn serializeUnion(comptime T: type, comptime params: anytype, writer: anytype, v
         if (std.mem.eql(u8, @tagName(tag), field.name)) {
             const field_span = union_span.child(.field);
             defer field_span.deinit();
-            field_span.debug("Processing union field: {s}", .{field.name});
+            field_span.debug("union_field: {s}", .{field.name});
 
             if (field.type == void) {
-                field_span.debug("Void field, no additional data to write", .{});
             } else {
                 const field_value = @field(value, field.name);
                 const field_type = field.type;
@@ -918,21 +882,23 @@ fn serializeUnion(comptime T: type, comptime params: anytype, writer: anytype, v
                     return;
                 }
 
-                field_span.debug("Serializing field value of type: {s}", .{@typeName(field.type)});
+                field_span.debug("union_field_type: {s}", .{@typeName(field.type)});
                 try serializeInternal(field.type, params, writer, field_value);
             }
             break;
         }
     }
-    union_span.debug("Successfully serialized union", .{});
 }
 
 pub fn serializeInternal(comptime T: type, comptime params: anytype, writer: anytype, value: T) !void {
     const span = trace.span(.recursive_serialize);
     defer span.deinit();
-    span.debug("Serializing type: {s}", .{@typeName(T)});
+    span.debug("type: {s}", .{@typeName(T)});
 
     switch (@typeInfo(T)) {
+        .void => {
+            // void serializes to nothing (0 bytes)
+        },
         .bool => return try serializeBool(writer, value),
         .int => return try serializeInt(T, writer, value),
         .optional => return try serializeOptional(T, params, writer, value),
@@ -961,12 +927,11 @@ pub fn serializeInternal(comptime T: type, comptime params: anytype, writer: any
 pub fn serializeArray(comptime T: type, comptime len: usize, writer: anytype, value: [len]T) !void {
     const span = trace.span(.array_serialize);
     defer span.deinit();
-    span.debug("Serializing array - type: {s}, length: {d}", .{ @typeName(T), len });
+    span.debug("array: {s}[{d}]", .{ @typeName(T), len });
 
     const bytes = std.mem.asBytes(&value);
-    span.trace("Raw bytes: {any}", .{std.fmt.fmtSliceHexLower(bytes)});
+    span.trace("bytes: {s}", .{std.fmt.fmtSliceHexLower(bytes)});
     try writer.writeAll(bytes);
-    span.debug("Successfully wrote array bytes", .{});
 }
 
 /// Serializes a slice as an array without adding a length prefix to the output.
@@ -979,13 +944,12 @@ pub fn serializeArray(comptime T: type, comptime len: usize, writer: anytype, va
 pub fn serializeSliceAsArray(comptime T: type, writer: anytype, value: []const T) !void {
     const span = trace.span(.serialize_slice_as_array);
     defer span.deinit();
-    span.debug("Serializing slice as array - type: {s}, length: {d}", .{ @typeName(T), value.len });
+    span.debug("slice_as_array: {s}[{d}]", .{ @typeName(T), value.len });
 
     for (value, 0..) |item, i| {
         const item_span = span.child(.slice_item);
         defer item_span.deinit();
-        item_span.debug("Serializing item {d} of {d}", .{ i + 1, value.len });
+        item_span.debug("item: {d}/{d}", .{ i + 1, value.len });
         try serializeInternal(T, .{}, writer, item);
     }
-    span.debug("Successfully serialized all items", .{});
 }

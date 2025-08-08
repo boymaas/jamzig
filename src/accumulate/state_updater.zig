@@ -37,7 +37,7 @@ pub fn StateUpdater(comptime params: Params) type {
         /// Updates theta state after accumulation (§12.27)
         pub fn updateThetaState(
             self: Self,
-            theta: *state.Theta(params.epoch_length),
+            theta: *state.VarTheta(params.epoch_length),
             queued: *Queued(WorkReportAndDeps),
             accumulated: []const types.WorkReport,
             map_buffer: *std.ArrayList(types.WorkReportHash),

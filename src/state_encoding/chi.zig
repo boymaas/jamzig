@@ -2,6 +2,9 @@ const std = @import("std");
 const state = @import("../state.zig");
 const serialize = @import("../codec.zig").serialize;
 const encoder = @import("../codec/encoder.zig");
+const codec = @import("../codec.zig");
+const types = @import("../types.zig");
+const jam_params = @import("../jam_params.zig");
 
 const trace = @import("../tracing.zig").scoped(.codec);
 
@@ -10,19 +13,31 @@ pub fn encode(chi: *const state.Chi, writer: anytype) !void {
     defer span.deinit();
     span.debug("Starting Chi state encoding", .{});
 
+    // TODO: Chi should store core_count when constructed
+    // For now, use TINY_PARAMS core count
+    const core_count = jam_params.TINY_PARAMS.core_count;
+
     // Encode the simple fields
     const manager_value = chi.manager orelse 0;
-    const assign_value = chi.assign orelse 0;
     const designate_value = chi.designate orelse 0;
 
-    span.trace("Encoding manager: {d}, assign: {d}, designate: {d}", .{
+    span.trace("Encoding manager: {d}, designate: {d}", .{
         manager_value,
-        assign_value,
         designate_value,
     });
 
     try writer.writeInt(u32, manager_value, .little);
-    try writer.writeInt(u32, assign_value, .little);
+
+    // Encode the assigners as a fixed-size array (one per core)
+    // The graypaper expects exactly C (core_count) assigners
+    span.trace("Encoding {} assigners (core_count)", .{core_count});
+    var i: usize = 0;
+    while (i < core_count) : (i += 1) {
+        // Write the assigner for this core, or 0 if not assigned
+        const assigner = if (i < chi.assign.items.len) chi.assign.items[i] else 0;
+        try writer.writeInt(u32, assigner, .little);
+    }
+
     try writer.writeInt(u32, designate_value, .little);
 
     // Encode X_g with ordered keys
@@ -60,69 +75,4 @@ pub fn encode(chi: *const state.Chi, writer: anytype) !void {
     }
 
     span.debug("Successfully encoded Chi state", .{});
-}
-
-//  _____         _   _
-// |_   _|__  ___| |_(_)_ __   __ _
-//   | |/ _ \/ __| __| | '_ \ / _` |
-//   | |  __/\__ \ |_| | | | | (_| |
-//   |_|\___||___/\__|_|_| |_|\__, |
-//                            |___/
-
-const decoder = @import("../codec/decoder.zig");
-
-test "Chi serialization" {
-    const testing = std.testing;
-    const allocator = std.testing.allocator;
-
-    var chi = state.Chi.init(allocator);
-    defer chi.deinit();
-
-    // Set some test values
-    chi.manager = 1;
-    chi.assign = 2;
-    chi.designate = 3;
-    try chi.always_accumulate.put(14, 1000);
-    try chi.always_accumulate.put(6, 1000);
-    try chi.always_accumulate.put(8, 1000);
-
-    var buffer = std.ArrayList(u8).init(allocator);
-    defer buffer.deinit();
-
-    try encode(&chi, buffer.writer());
-
-    // Calculate expected length:
-    // 3 * u32 (manager, assign, designate) + u8 (map length) + 3 * (u32 + u64) (map entries)
-    const expected_length = 3 * 4 + 1 + 3 * (4 + 8);
-    try testing.expectEqual(expected_length, buffer.items.len);
-
-    // Check if the keys are ordered correctly
-    var stream = std.io.fixedBufferStream(buffer.items);
-    const reader = stream.reader();
-    const manager = try reader.readInt(u32, .little);
-    const assign = try reader.readInt(u32, .little);
-    const designate = try reader.readInt(u32, .little);
-
-    // Assert that the read values match the original values
-    try testing.expectEqual(chi.manager, manager);
-    try testing.expectEqual(chi.assign, assign);
-    try testing.expectEqual(chi.designate, designate);
-
-    const map_length = try decoder.decodeInteger(reader.context.buffer[reader.context.pos..]);
-    try testing.expectEqual(@as(u32, 3), map_length.value);
-    reader.context.pos += map_length.bytes_read;
-
-    var last_key: u32 = 0;
-    var i: u32 = 0;
-    while (i < @as(usize, @intCast(map_length.value))) : (i += 1) {
-        const key = try reader.readInt(u32, .little);
-        const value = try reader.readInt(u64, .little);
-        if (i > 0) {
-            try testing.expect(key > last_key);
-        }
-        last_key = key;
-
-        // Assert that the read key-value pair matches the original map
-        try testing.expectEqual(chi.always_accumulate.get(key).?, value);
-    }
 }

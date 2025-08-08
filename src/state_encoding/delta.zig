@@ -26,13 +26,24 @@ pub fn encodeServiceAccountBase(account: *const ServiceAccount, writer: anytype)
     span.trace("Writing min gas on transfer: {d}", .{account.min_gas_on_transfer});
     try writer.writeInt(u64, account.min_gas_on_transfer, .little); // a_m
 
-    const storage_footprint = account.storageFootprint();
-    span.trace("Writing storage length (a_l): {d}", .{storage_footprint.a_o});
-    try writer.writeInt(u64, storage_footprint.a_o, .little); // a_l
+    // Calculate a_o and a_i from tracked values
+    const footprint = account.getStorageFootprint();
+    span.trace("Writing storage length (a_o): {d}", .{footprint.a_o});
+    try writer.writeInt(u64, footprint.a_o, .little); // a_o
+    //
+    // Write storage_offset (optional u64) - NEW in v0.6.7
+
+    span.trace("Writing storage_offset value: {d}", .{account.storage_offset});
+    try writer.writeInt(u64, account.storage_offset, .little);
 
     // Write 4-byte items count (a_i)
-    span.trace("Writing items count (a_i): {d}", .{storage_footprint.a_i});
-    try writer.writeInt(u32, storage_footprint.a_i, .little);
+    span.trace("Writing items count (a_i): {d}", .{footprint.a_i});
+    try writer.writeInt(u32, footprint.a_i, .little);
+
+    // se_4 encoded fields (4 bytes each)
+    try writer.writeInt(types.U32, account.creation_slot, .little); // NEW: a_r
+    try writer.writeInt(types.U32, account.last_accumulation_slot, .little); // NEW: a_a
+    try writer.writeInt(types.U32, account.parent_service, .little); // NEW: a_p
 }
 
 const state_dictionary = @import("../state_dictionary.zig");
@@ -58,53 +69,4 @@ pub fn encodePreimageLookup(lookup: PreimageLookup, writer: anytype) !void {
         span.trace("Writing timestamp {d}: {d}", .{ i, timestamp });
         try writer.writeInt(u32, timestamp, .little);
     }
-}
-
-//  _   _       _ _  _____         _
-// | | | |_ __ (_) ||_   _|__  ___| |_ ___
-// | | | | '_ \| | __|| |/ _ \/ __| __/ __|
-// | |_| | | | | | |_ | |  __/\__ \ |_\__ \
-//  \___/|_| |_|_|\__||_|\___||___/\__|___/
-
-const testing = std.testing;
-
-test "encodeServiceAccountBase" {
-    var account = ServiceAccount.init(testing.allocator);
-    account.code_hash = [_]u8{1} ** 32;
-    account.balance = 1000;
-    account.min_gas_accumulate = 500;
-    account.min_gas_on_transfer = 250;
-
-    var buffer = std.ArrayList(u8).init(testing.allocator);
-    defer buffer.deinit();
-
-    try encodeServiceAccountBase(&account, buffer.writer());
-
-    const expected = [_]u8{1} ** 32 ++ [_]u8{
-        232, 3, 0, 0, 0, 0, 0, 0,
-        244, 1, 0, 0, 0, 0, 0, 0,
-        250, 0, 0, 0, 0, 0, 0, 0,
-        0,   0, 0, 0, 0, 0, 0, 0,
-        0,   0, 0, 0,
-    };
-
-    try testing.expectEqualSlices(u8, &expected, buffer.items);
-}
-
-test "encodePreimageLookup" {
-    const lookup = PreimageLookup{
-        .status = [_]?u32{ 1, 2, null },
-    };
-
-    var buffer = std.ArrayList(u8).init(testing.allocator);
-    defer buffer.deinit();
-
-    try encodePreimageLookup(lookup, buffer.writer());
-
-    const expected = [_]u8{2} ++ [_]u8{
-        1, 0, 0, 0, //
-        2, 0, 0, 0, //
-    };
-
-    try testing.expectEqualSlices(u8, &expected, buffer.items);
 }

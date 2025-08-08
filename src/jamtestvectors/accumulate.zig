@@ -68,11 +68,16 @@ pub const AlwaysAccumulateMapItem = struct {
 // to the jamtestvectors/accumulate as they are tv specific.
 pub const Privileges = struct {
     bless: types.ServiceId,
-    assign: types.ServiceId,
+    assign: []types.ServiceId, // Changed to array in v0.6.7
     designate: types.ServiceId,
     always_acc: []AlwaysAccumulateMapItem,
 
+    pub fn assign_size(params: jam_params.Params) usize {
+        return params.core_count;
+    }
+
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.assign);
         allocator.free(self.always_acc);
         self.* = undefined;
     }
@@ -132,8 +137,33 @@ pub const StorageMapEntry = struct {
     }
 };
 
+/// ServiceInfo type for test vectors with additional fields (v0.6.7)
+pub const ServiceInfoTestVector = struct {
+    code_hash: types.OpaqueHash,
+    balance: types.Balance,
+    min_item_gas: types.Gas,
+    min_memo_gas: types.Gas,
+    bytes: types.U64,
+    deposit_offset: types.U64,
+    items: types.U32,
+    creation_slot: types.U32,
+    last_accumulation_slot: types.U32,
+    parent_service: types.U32,
+
+    pub fn toCore(self: @This()) types.ServiceInfo {
+        return .{
+            .code_hash = self.code_hash,
+            .balance = self.balance,
+            .min_item_gas = self.min_item_gas,
+            .min_memo_gas = self.min_memo_gas,
+            .bytes = self.bytes,
+            .items = self.items,
+        };
+    }
+};
+
 pub const Account = struct {
-    service: types.ServiceInfo,
+    service: ServiceInfoTestVector,
     storage: []StorageMapEntry,
     preimages: []PreimageEntry,
 
@@ -190,12 +220,12 @@ pub const TestCase = struct {
     output: Output,
     post_state: State,
 
-    pub fn build_from(
+    pub fn buildFrom(
         comptime params: jam_params.Params,
         allocator: std.mem.Allocator,
         bin_file_path: []const u8,
     ) !@This() {
-        return try @import("./loader.zig").loadAndDeserializeTestVector(
+        return try @import("./loader.zig").loadAndDeserializeTestVectorWithContext(
             TestCase,
             params,
             allocator,
@@ -220,7 +250,7 @@ test "tiny_load_and_dump" {
     };
 
     for (test_jsons) |test_json| {
-        var test_vector = try TestCase.build_from(
+        var test_vector = try TestCase.buildFrom(
             jam_params.TINY_PARAMS,
             allocator,
             test_json,
@@ -229,6 +259,22 @@ test "tiny_load_and_dump" {
 
         std.debug.print("Test vector: {?}\n", .{test_vector.output});
     }
+}
+
+test "decode_enqueue_and_unlock_chain_4" {
+    const allocator = std.testing.allocator;
+
+    // Now focus on the problematic one
+    std.debug.print("\n\nDetailed analysis of enqueue_and_unlock_chain-4...\n", .{});
+    var test_vector = TestCase.buildFrom(
+        jam_params.TINY_PARAMS,
+        allocator,
+        BASE_PATH ++ "tiny/enqueue_and_unlock_chain-4.bin",
+    ) catch |err| {
+        std.debug.print("Error decoding test vector: {}\n", .{err});
+        return err;
+    };
+    defer test_vector.deinit(allocator);
 }
 
 test "tiny_all" {

@@ -43,7 +43,6 @@ pub const ValidatorStats = struct {
     pub fn updateAvailabilityAssurances(self: *ValidatorStats, count: U32) void {
         self.availability_assurances += count;
     }
-
 };
 
 pub const CoreActivityRecord = struct {
@@ -335,7 +334,6 @@ pub const Pi = struct {
         self.service_stats.deinit();
         self.* = undefined;
     }
-
 
     pub fn format(
         self: *const @This(),

@@ -247,35 +247,13 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             defer key_data.deinit();
             span.trace("Key = {s}", .{std.fmt.fmtSliceHexLower(key_data.buffer)});
 
-            // Determine actual service ID first
+            // Log the service ID and key for debugging
             span.info("Service ID for storage key: {d}", .{resolved_service_id});
+            span.info("Raw key data (len={d}): {s}", .{ key_data.buffer.len, std.fmt.fmtSliceHexLower(key_data.buffer) });
 
-            // Hash the key_data first before constructing storage key
-            // According to graypaper, we might need to hash ℰ₄(s) ⌢ k
-            span.debug("Hashing key data", .{});
-            span.info("Raw key data to hash (len={d}): {s}", .{ key_data.buffer.len, std.fmt.fmtSliceHexLower(key_data.buffer) });
-
-            // Prepare data to hash: service_id (4 bytes little-endian) + key_data
-            var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
-            var service_id_bytes: [4]u8 = undefined;
-            std.mem.writeInt(u32, &service_id_bytes, resolved_service_id, .little);
-            hasher.update(&service_id_bytes);
-            hasher.update(key_data.buffer);
-
-            var key_hash: [32]u8 = undefined;
-            hasher.final(&key_hash);
-            span.info("Resulting hash: {s}", .{std.fmt.fmtSliceHexLower(&key_hash)});
-
-            // Construct storage key using the hash
-            span.debug("Constructing PVM storage key", .{});
-
-            const storage_key = state_keys.constructStorageKey(resolved_service_id, key_hash);
-            span.trace("Generated PVM storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
-            span.info("Final storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
-
-            // Look up the value in storage
+            // Look up the value in storage using the new method
             span.debug("Looking up value in storage", .{});
-            const value = service_account.storage.get(storage_key) orelse {
+            const value = service_account.readStorage(resolved_service_id, key_data.buffer) orelse {
                 // Key not found
                 span.debug("Key not found in storage, returning NONE", .{});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
@@ -357,40 +335,15 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             defer key_data.deinit();
             span.trace("Key data: {s}", .{std.fmt.fmtSliceHexLower(key_data.buffer)});
 
-            // Hash the key_data first before constructing storage key
-            // According to graypaper, we might need to hash ℰ₄(s) ⌢ k
-            span.debug("Hashing key data", .{});
-            span.info("Raw key data to hash (len={d}): {s}", .{ key_data.buffer.len, std.fmt.fmtSliceHexLower(key_data.buffer) });
-
-            // Prepare data to hash: service_id (4 bytes little-endian) + key_data
-            var service_id_bytes: [4]u8 = undefined;
-            std.mem.writeInt(u32, &service_id_bytes, host_ctx.service_id, .little);
-
-            var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
-            hasher.update(&service_id_bytes);
-            hasher.update(key_data.buffer);
-            var key_hash: [32]u8 = undefined;
-            hasher.final(&key_hash);
-
-            span.info("Resulting hash: {s}", .{std.fmt.fmtSliceHexLower(&key_hash)});
-
-            // Construct storage key using the hash
-            span.debug("Constructing PVM storage key", .{});
-            span.info("Service ID for storage key: {d}", .{host_ctx.service_id});
-
-            const storage_key = state_keys.constructStorageKey(host_ctx.service_id, key_hash);
-            span.trace("Generated PVM storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
-            span.info("Final storage key: {s}", .{std.fmt.fmtSliceHexLower(&storage_key)});
+            span.debug("Service ID for storage operation: {d}", .{host_ctx.service_id});
+            span.info("Raw key data (len={d}): {s}", .{ key_data.buffer.len, std.fmt.fmtSliceHexLower(key_data.buffer) });
 
             // Check if this is a removal operation (v_z == 0)
             if (v_z == 0) {
                 span.debug("Removal operation detected (v_z = 0)", .{});
                 // Remove the key from storage
-                if (service_account.storage.fetchRemove(storage_key)) |*entry| {
-                    // Return the previous length
-                    span.debug("Key found and removed, previous value: {s} length: {d}", .{ std.fmt.fmtSliceHexLower(entry.value), entry.value.len });
-                    exec_ctx.registers[7] = entry.value.len;
-                    host_ctx.allocator.free(entry.value);
+                if (service_account.removeStorage(host_ctx.service_id, key_data.buffer)) |value_length| {
+                    exec_ctx.registers[7] = value_length;
                     return .play;
                 }
                 span.debug("Key not found, returning NONE", .{});
@@ -406,10 +359,9 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             };
             defer value.deinit();
 
-            span.debug("Write Key={s} => Data len={d} (first 32 bytes max): {s}", .{
-                std.fmt.fmtSliceHexLower(&storage_key),
+            span.debug("Write operation - Key len={d}, Value len={d}", .{
+                key_data.buffer.len,
                 value.buffer.len,
-                std.fmt.fmtSliceHexLower(value.buffer[0..@min(32, value.buffer.len)]),
             });
             span.trace("Value data: {s}", .{std.fmt.fmtSliceHexLower(value.buffer)});
 
@@ -425,7 +377,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 const value_owned = host_ctx.allocator.dupe(u8, value.buffer) catch {
                     return .{ .terminal = .panic };
                 };
-                break :pv service_account.writeStorage(storage_key, value_owned) catch {
+                break :pv service_account.writeStorage(host_ctx.service_id, key_data.buffer, value_owned) catch {
                     host_ctx.allocator.free(value_owned);
                     span.err("Failed to write to storage", .{});
                     return .{ .terminal = .panic };
@@ -440,6 +392,8 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             }
 
             // Check if service has enough balance to store this data
+            // REFACTOR: this can be simplified to first check if we alrady have a prior value
+            // and actually determine the length and the delta
             const footprint = service_account.storageFootprint();
             span.debug("Checking storage footprint a_t {d} against balance {d}", .{ footprint.a_t, service_account.balance });
             if (footprint.a_t > service_account.balance) {
@@ -447,12 +401,12 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 // Restore old value, if we had a prior value, otherwise
                 // we remove the storage key, as we do not have enough balance
                 if (maybe_prior_value) |prior_value| {
-                    service_account.writeStorageFreeOldValue(storage_key, prior_value) catch {
+                    service_account.writeStorageFreeOldValue(host_ctx.service_id, key_data.buffer, prior_value) catch {
                         return .{ .terminal = .panic };
                     };
                     maybe_prior_value = null; // to avoid deferred deint
                 } else {
-                    service_account.removeStorage(storage_key);
+                    _ = service_account.removeStorage(host_ctx.service_id, key_data.buffer);
                 }
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.FULL);
                 return .play;
@@ -481,25 +435,46 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             min_item_gas: types.Gas,
             /// Gas limit for on_transfer operations (tm)
             min_memo_gas: types.Gas,
-            /// Total storage size in bytes (tl)
+            /// Total storage size in bytes (to)
             total_storage_size: u64,
             /// Total number of items in storage (ti)
             total_items: u32,
+            /// Free storage offset (tf) - NEW in v0.6.7
+            free_storage_offset: u64,
+            /// Preimage count (tr) - NEW in v0.6.7
+            preimage_count: u32,
+            /// Total preimage size (ta) - NEW in v0.6.7
+            total_preimage_size: u32,
+            /// Preimage lookup count (tp) - NEW in v0.6.7
+            preimage_lookup_count: u32,
 
             pub fn encode(
                 self: ServiceInfo,
                 writer: anytype,
             ) !void {
-                const codec = @import("../codec.zig");
+                // According to v0.6.7, info uses fixed-length encoding:
+                // se(tc, se_8(tb, tt, tg, tm, to), se_4(ti), se_8(tf), se_4(tr, ta, tp))
 
-                // Serialize the ServiceInfo struct to the provided writer
-                try codec.serialize([32]u8, .{}, writer, self.code_hash);
-                try codec.writeInteger(self.balance, writer);
-                try codec.writeInteger(self.threshold_balance, writer);
-                try codec.writeInteger(self.min_item_gas, writer);
-                try codec.writeInteger(self.min_memo_gas, writer);
-                try codec.writeInteger(self.total_storage_size, writer);
-                try codec.writeInteger(self.total_items, writer);
+                // Write code hash (32 bytes)
+                try writer.writeAll(&self.code_hash);
+
+                // Write first group of 8-byte values: tb, tt, tg, tm, to
+                try writer.writeInt(u64, self.balance, .little);
+                try writer.writeInt(u64, self.threshold_balance, .little);
+                try writer.writeInt(u64, self.min_item_gas, .little);
+                try writer.writeInt(u64, self.min_memo_gas, .little);
+                try writer.writeInt(u64, self.total_storage_size, .little);
+
+                // Write ti as 4-byte value
+                try writer.writeInt(u32, self.total_items, .little);
+
+                // Write tf as 8-byte value
+                try writer.writeInt(u64, self.free_storage_offset, .little);
+
+                // Write last group of 4-byte values: tr, ta, tp
+                try writer.writeInt(u32, self.preimage_count, .little);
+                try writer.writeInt(u32, self.total_preimage_size, .little);
+                try writer.writeInt(u32, self.preimage_lookup_count, .little);
             }
         };
 
@@ -550,6 +525,13 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 .min_memo_gas = service_account.?.min_gas_on_transfer,
                 .total_storage_size = fprint.a_o,
                 .total_items = fprint.a_i,
+                // NEW fields for v0.6.7
+                .free_storage_offset = service_account.?.storage_offset,
+                // We no longer track these separately - they're included in a_i and a_o
+                // We can't decompose a_i and a_o back into individual components
+                .preimage_count = 0, // Cannot determine from a_i/a_o
+                .total_preimage_size = 0, // Cannot determine from a_i/a_o
+                .preimage_lookup_count = 0, // Cannot determine from a_i/a_o (it's part of a_i)
             };
 
             // Since we are varint encoding will only be smaller

@@ -509,14 +509,14 @@ pub fn buildStateMerklizationDictionaryWithConfig(
             .value = pi_value,
         });
 
-        // Theta (14)
-        const theta_key = state_keys.constructStateComponentKey(14);
-        var theta_managed = try getOrInitManaged(allocator, &state.theta, .{allocator});
-        defer theta_managed.deinit(allocator);
-        const theta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTheta, .{theta_managed.ptr});
-        try map.put(theta_key, .{
-            .key = theta_key,
-            .value = theta_value,
+        // VarTheta (14) - v0.6.7: Work reports queue (renamed from Theta)
+        const vartheta_key = state_keys.constructStateComponentKey(14);
+        var vartheta_managed = try getOrInitManaged(allocator, &state.vartheta, .{allocator});
+        defer vartheta_managed.deinit(allocator);
+        const vartheta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeVarTheta, .{vartheta_managed.ptr});
+        try map.put(vartheta_key, .{
+            .key = vartheta_key,
+            .value = vartheta_value,
         });
 
         // Xi (15)
@@ -527,6 +527,16 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         try map.put(xi_key, .{
             .key = xi_key,
             .value = xi_value,
+        });
+
+        // Theta (16) - v0.6.7: NEW - Accumulation outputs (lastaccout)
+        const theta_key = state_keys.constructStateComponentKey(16);
+        var theta_managed = try getOrInitManaged(allocator, &state.theta, .{allocator});
+        defer theta_managed.deinit(allocator);
+        const theta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeTheta, .{theta_managed.ptr});
+        try map.put(theta_key, .{
+            .key = theta_key,
+            .value = theta_value,
         });
     }
 
@@ -550,43 +560,42 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                     .value = try base_value.toOwnedSlice(),
                 });
 
-                // Storage entries - use the StateKey directly as it's already in final format
-                var storage_iter = account.storage.iterator();
-                while (storage_iter.next()) |storage_entry| {
-                    const storage_key = storage_entry.key_ptr.*; // Already a properly formatted StateKey
-                    try map.put(storage_key, .{
-                        .key = storage_key,
-                        .value = try allocator.dupe(u8, storage_entry.value_ptr.*),
-                    });
-                }
-
-                if (config.include_preimages) {
-                    // Preimage entries - use the StateKey directly as it's already in final format
-                    var preimage_iter = account.preimages.iterator();
-                    while (preimage_iter.next()) |preimage_entry| {
-                        const preimage_key = preimage_entry.key_ptr.*; // Already a properly formatted StateKey
-                        try map.put(preimage_key, .{
-                            .key = preimage_key,
-                            .value = try allocator.dupe(u8, preimage_entry.value_ptr.*),
-                        });
-                    }
-
-                    if (config.include_preimage_timestamps) {
-                        // Preimage timestamps
-                        var lookup_iter = account.preimage_lookups.iterator();
-                        while (lookup_iter.next()) |lookup_entry| {
-                            const delta_encoder = state_encoder.delta;
-                            const key: types.StateKey = lookup_entry.key_ptr.*;
-
-                            var preimage_lookup = try std.ArrayList(u8).initCapacity(allocator, 24);
-                            try delta_encoder.encodePreimageLookup(lookup_entry.value_ptr.*, preimage_lookup.writer());
-
-                            // Use the StateKey directly as it's already properly formatted
-                            try map.put(key, .{
-                                .key = key,
-                                .value = try preimage_lookup.toOwnedSlice(),
-                            });
+                // All data entries - use the StateKey directly as it's already in final format
+                // With unified container, we process all data types together
+                var data_iter = account.data.iterator();
+                while (data_iter.next()) |data_entry| {
+                    const data_key = data_entry.key_ptr.*; // Already a properly formatted StateKey
+                    const data_value = data_entry.value_ptr.*;
+                    
+                    // Check if we should include this entry based on config
+                    // Storage keys always included (when include_storage is true)
+                    // Preimage keys included only if include_preimages is true
+                    // Preimage lookup keys included only if include_preimages and include_preimage_timestamps are true
+                    
+                    var should_include = false;
+                    
+                    // Identify key type by examining the interleaved pattern
+                    if (data_key[3] == 255 and data_key[5] == 255 and data_key[7] == 255) {
+                        if (data_key[1] == 255) {
+                            // Storage key (marker is 0xFFFFFFFF)
+                            should_include = true; // Already inside include_storage check
+                        } else if (data_key[1] == 254) {
+                            // Preimage key (marker is 0xFFFFFFFE)
+                            should_include = config.include_preimages;
+                        } else {
+                            // Preimage lookup key (length < 0xFFFFFFFE)
+                            should_include = config.include_preimages and config.include_preimage_timestamps;
                         }
+                    } else {
+                        // Other preimage lookup keys
+                        should_include = config.include_preimages and config.include_preimage_timestamps;
+                    }
+                    
+                    if (should_include) {
+                        try map.put(data_key, .{
+                            .key = data_key,
+                            .value = try allocator.dupe(u8, data_value),
+                        });
                     }
                 }
             }

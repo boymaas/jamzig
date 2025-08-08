@@ -63,9 +63,9 @@ pub fn validatePrerequisites(
             const blocks_span = single_prereq_span.child(.check_recent_blocks);
             defer blocks_span.deinit();
 
-            blocks_span.debug("Searching in {d} recent blocks", .{beta.blocks.items.len});
+            blocks_span.debug("Searching in {d} recent blocks", .{beta.recent_history.blocks.items.len});
 
-            outer: for (beta.blocks.items, 0..) |block, block_idx| {
+            outer: for (beta.recent_history.blocks.items, 0..) |block, block_idx| {
                 blocks_span.trace("Checking block {d} with {d} reports", .{ block_idx, block.work_reports.len });
 
                 for (block.work_reports, 0..) |report, report_idx| {
@@ -151,9 +151,9 @@ pub fn validateSegmentRootLookup(
             const blocks_span = lookup_span.child(.check_recent_blocks);
             defer blocks_span.deinit();
 
-            blocks_span.debug("Searching in {d} recent blocks", .{beta.blocks.items.len});
+            blocks_span.debug("Searching in {d} recent blocks", .{beta.recent_history.blocks.items.len});
 
-            outer: for (beta.blocks.items, 0..) |block, block_idx| {
+            outer: for (beta.recent_history.blocks.items, 0..) |block, block_idx| {
                 blocks_span.trace("Checking block {d} with {d} reports", .{
                     block_idx,
                     block.work_reports.len,

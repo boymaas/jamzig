@@ -21,13 +21,66 @@ pub const AuthPools = struct {
     }
 };
 
+/// ServiceInfo type for test vectors with additional fields
+pub const ServiceInfoTestVector = struct {
+    code_hash: types.OpaqueHash,
+    balance: types.Balance,
+    min_item_gas: types.Gas,
+    min_memo_gas: types.Gas,
+    bytes: types.U64,
+    deposit_offset: types.U64,
+    items: types.U32,
+    creation_slot: types.U32,
+    last_accumulation_slot: types.U32,
+    parent_service: types.U32,
+
+    pub fn toCore(self: @This()) types.ServiceInfo {
+        return .{
+            .code_hash = self.code_hash,
+            .balance = self.balance,
+            .min_item_gas = self.min_item_gas,
+            .min_memo_gas = self.min_memo_gas,
+            .bytes = self.bytes,
+            .items = self.items,
+        };
+    }
+};
+
+/// BlockInfo type for test vectors with beefy_root instead of beefy_mmr
+pub const BlockInfoTestVector = struct {
+    header_hash: types.Hash,
+    beefy_root: types.OpaqueHash,
+    state_root: types.StateRoot,
+    reported: []types.ReportedWorkPackage,
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.reported);
+        self.* = undefined;
+    }
+};
+
 pub const Account = struct {
-    service: types.ServiceInfo,
+    service: ServiceInfoTestVector,
 };
 
 pub const AccountsMapEntry = struct {
     id: types.ServiceId,
     data: Account,
+};
+
+/// RecentBlocks composite type for test vectors
+pub const RecentBlocks = struct {
+    history: []BlockInfoTestVector,
+    mmr: types.Mmr,
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        for (self.history) |*block| {
+            block.deinit(allocator);
+        }
+        allocator.free(self.history);
+        allocator.free(self.mmr.peaks);
+        self.* = undefined;
+    }
 };
 
 // TODO: use the types from ./jam_types.zig
@@ -98,8 +151,8 @@ pub const State = struct {
     /// [ψ'_o] Posterior offenders
     offenders: []types.Ed25519Public,
 
-    /// [β] Recent blocks
-    recent_blocks: types.BlocksHistory,
+    /// [β] Recent blocks information
+    recent_blocks: RecentBlocks,
 
     /// [α] Authorization pools per core
     auth_pools: AuthPools,
@@ -121,11 +174,7 @@ pub const State = struct {
         self.cores_statistics.deinit(allocator);
         self.services_statistics.deinit(allocator);
         allocator.free(self.offenders);
-
-        for (self.recent_blocks) |*block| {
-            block.deinit(allocator);
-        }
-        allocator.free(self.recent_blocks);
+        self.recent_blocks.deinit(allocator);
         allocator.free(self.accounts);
         self.auth_pools.deinit(allocator);
         self.* = undefined;
@@ -134,7 +183,7 @@ pub const State = struct {
 
 pub const ServiceItem = struct {
     id: types.ServiceId,
-    info: types.ServiceInfo,
+    info: ServiceInfoTestVector,
 };
 
 pub const Input = struct {
@@ -189,6 +238,7 @@ pub const ErrorCode = enum(u8) {
     segment_root_lookup_invalid = 20,
     bad_signature = 21,
     work_report_too_big = 22,
+    banned_validators = 23,
 };
 
 pub const Output = union(enum) {

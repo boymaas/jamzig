@@ -13,6 +13,7 @@ pub const psi = @import("state_encoding/psi.zig");
 pub const rho = @import("state_encoding/rho.zig");
 pub const tau = @import("state_encoding/tau.zig");
 pub const theta = @import("state_encoding/theta.zig");
+pub const vartheta = @import("state_encoding/vartheta.zig");
 pub const xi = @import("state_encoding/xi.zig");
 
 pub const iota = @import("state_encoding/validator_datas.zig");
@@ -29,6 +30,7 @@ pub const encodePi = pi.encode;
 pub const encodePsi = psi.encode;
 pub const encodeTau = tau.encode;
 pub const encodeTheta = theta.encode;
+pub const encodeVarTheta = vartheta.encode;
 pub const encodeRho = rho.encode;
 pub const encodeIota = iota.encode;
 pub const encodeKappa = kappa.encode;
@@ -48,6 +50,7 @@ comptime {
     _ = @import("state_encoding/rho.zig");
     _ = @import("state_encoding/tau.zig");
     _ = @import("state_encoding/theta.zig");
+    _ = @import("state_encoding/vartheta.zig");
     _ = @import("state_encoding/validator_datas.zig");
     _ = @import("state_encoding/xi.zig");
 }

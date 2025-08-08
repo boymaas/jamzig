@@ -43,14 +43,14 @@ pub fn processAccumulationReports(
 
     // Initialize state components
     const xi = try stx.ensure(.xi_prime);
-    const theta = try stx.ensure(.theta_prime);
+    const vartheta = try stx.ensure(.vartheta_prime);
     const chi = try stx.ensure(.chi_prime);
 
     // Step 1: Resolve dependencies and prepare reports
     const resolver = DependencyResolver(params).init(allocator);
     var prepared = try resolver.prepareReportsForAccumulation(
         xi,
-        theta,
+        vartheta,
         reports,
         stx.time.current_slot_in_epoch,
     );
@@ -92,7 +92,7 @@ pub fn processAccumulationReports(
     // Step 6: Update state
     const state_updater = StateUpdater(params).init(allocator);
     try state_updater.updateThetaState(
-        theta,
+        vartheta,
         &prepared.queued,
         accumulated,
         &prepared.map_buffer,

@@ -56,6 +56,10 @@ pub const Psi = struct {
         return self.punish_set.keys();
     }
 
+    pub fn isOffender(self: *const Psi, key: PublicKey) bool {
+        return self.punish_set.contains(key);
+    }
+
     // Get offenders with allocation (when ownership is needed)
     pub fn offendersOwned(self: *const Psi, allocator: Allocator) ![]PublicKey {
         return try allocator.dupe(PublicKey, self.punish_set.keys());
@@ -78,7 +82,6 @@ pub const Psi = struct {
         self.punish_set.deinit();
         self.* = undefined;
     }
-
 
     // Format implementation
     pub fn format(

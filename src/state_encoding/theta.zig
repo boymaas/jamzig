@@ -1,91 +1,58 @@
+/// Theta (θ) encoder for v0.6.7
+/// Encodes the accumulation outputs (lastaccout)
 const std = @import("std");
 const types = @import("../types.zig");
-const WorkReport = types.WorkReport;
-const encoder = @import("../codec/encoder.zig");
 const codec = @import("../codec.zig");
-const sort = std.sort;
+const encoder = @import("../codec/encoder.zig");
 
-const reports_ready = @import("../reports_ready.zig");
-const Theta = reports_ready.Theta;
-
-const makeLessThanSliceOfFn = @import("../utils/sort.zig").makeLessThanSliceOfFn;
-const lessThanSliceOfHashes = makeLessThanSliceOfFn(types.Hash);
+const accumulation_outputs = @import("../accumulation_outputs.zig");
+const Theta = accumulation_outputs.Theta;
+const AccumulationOutput = accumulation_outputs.AccumulationOutput;
 
 const trace = @import("../tracing.zig").scoped(.codec);
 
-/// Theta (ϑ) is defined as a sequence of work reports and their dependencies: ⟦(W, {H})⟧E
-/// where W is a work report and H is a set of 32-byte hashes representing unaccumulated dependencies
-pub fn encode(theta: anytype, writer: anytype) !void {
+/// Encode Theta (θ) - the most recent accumulation outputs
+/// As per v0.6.7: θ ∈ seq{(N_S, H)}
+/// Format: encode([encode_4(s) || encode(h) for (s, h) in sorted(theta)])
+pub fn encode(theta: *const Theta, writer: anytype) !void {
     const span = trace.span(.encode);
     defer span.deinit();
-    span.debug("Starting theta encoding", .{});
-
-    // Encode each entry
-    for (theta.entries, 0..) |slot_entry, i| {
-        const entry_span = span.child(.slot_entry);
-        defer entry_span.deinit();
-        entry_span.debug("Processing slot entry {d}", .{i});
-
-        // Encode the dependencies set
-        // First write number of dependencies
-        try codec.writeInteger(slot_entry.items.len, writer);
-        entry_span.debug("Wrote {d} slot entries", .{slot_entry.items.len});
-
-        for (slot_entry.items, 0..) |entry, j| {
-            const item_span = entry_span.child(.entry_item);
-            defer item_span.deinit();
-            item_span.debug("Encoding entry {d} of {d}", .{ j + 1, slot_entry.items.len });
-            try encodeEntry(theta.allocator, entry, writer);
+    span.debug("Starting theta (accumulation outputs) encoding", .{});
+    
+    const outputs = theta.getOutputs();
+    
+    // First encode the number of outputs
+    try codec.writeInteger(outputs.len, writer);
+    span.debug("Encoding {d} accumulation outputs", .{outputs.len});
+    
+    // Sort outputs by service_id for deterministic encoding
+    const sorted_outputs = try theta.allocator.alloc(AccumulationOutput, outputs.len);
+    defer theta.allocator.free(sorted_outputs);
+    @memcpy(sorted_outputs, outputs);
+    
+    std.sort.insertion(AccumulationOutput, sorted_outputs, {}, struct {
+        pub fn lessThan(_: void, a: AccumulationOutput, b: AccumulationOutput) bool {
+            return a.service_id < b.service_id;
         }
+    }.lessThan);
+    
+    // Encode each output: service_id (4 bytes) + hash (32 bytes)
+    for (sorted_outputs, 0..) |output, i| {
+        const output_span = span.child(.output);
+        defer output_span.deinit();
+        output_span.debug("Encoding output {d}: service_id={d}", .{ i, output.service_id });
+        
+        // Write service_id as 4 bytes little-endian
+        try writer.writeInt(u32, output.service_id, .little);
+        
+        // Write hash directly (32 bytes)
+        try writer.writeAll(&output.hash);
+        
+        output_span.trace("Encoded service {d} hash: {s}", .{ 
+            output.service_id, 
+            std.fmt.fmtSliceHexLower(&output.hash) 
+        });
     }
+    
     span.debug("Completed theta encoding", .{});
-}
-
-pub fn encodeSlotEntry(allocator: std.mem.Allocator, slot_entries: Theta.SlotEntries, writer: anytype) !void {
-    const span = trace.span(.encode_slot_entry);
-    defer span.deinit();
-    span.debug("Starting slot entries encoding", .{});
-
-    try writer.writeAll(encoder.encodeInteger(slot_entries.items.len).as_slice());
-    span.debug("Wrote slot entries count: {d}", .{slot_entries.items.len});
-
-    for (slot_entries.items, 0..) |entry, i| {
-        const entry_span = span.child(.entry);
-        defer entry_span.deinit();
-        entry_span.debug("Encoding entry {d} of {d}", .{ i + 1, slot_entries.items.len });
-        try encodeEntry(allocator, entry, writer);
-    }
-    span.debug("Completed slot entries encoding", .{});
-}
-
-pub fn encodeEntry(allocator: std.mem.Allocator, entry: reports_ready.WorkReportAndDeps, writer: anytype) !void {
-    const span = trace.span(.encode_entry);
-    defer span.deinit();
-    span.debug("Starting entry encoding", .{});
-
-    // Encode the work report
-    try codec.serialize(WorkReport, {}, writer, entry.work_report);
-    span.debug("Encoded work report", .{});
-
-    // Encode the dependencies
-    const dependency_count = entry.dependencies.count();
-    try codec.writeInteger(dependency_count, writer);
-    span.debug("Writing {d} dependencies", .{dependency_count});
-
-    // we need to dupe, otherwise in place sort can invalidate the
-    // arrayhashmap
-    const keys = try allocator.dupe(types.WorkPackageHash, entry.dependencies.keys());
-    defer allocator.free(keys);
-
-    // NOTE: assuming short lists of deps
-    sort.insertion([32]u8, keys, {}, lessThanSliceOfHashes);
-    span.debug("Sorted dependency hashes", .{});
-
-    for (keys, 0..) |hash, i| {
-        const hash_span = span.child(.hash);
-        defer hash_span.deinit();
-        hash_span.trace("Writing hash {d} of {d}: {s}", .{ i + 1, keys.len, std.fmt.fmtSliceHexLower(&hash) });
-        try writer.writeAll(&hash);
-    }
-    span.debug("Completed entry encoding", .{});
 }

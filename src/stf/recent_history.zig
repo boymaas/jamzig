@@ -28,8 +28,8 @@ pub fn updateParentBlockStateRoot(
     span.debug("Parent state root from header: {s}", .{std.fmt.fmtSliceHexLower(&parent_state_root)});
 
     // Log current state of blocks
-    if (beta_prime.blocks.items.len > 0) {
-        const last_block = beta_prime.blocks.items[beta_prime.blocks.items.len - 1];
+    if (beta_prime.recent_history.blocks.items.len > 0) {
+        const last_block = beta_prime.recent_history.blocks.items[beta_prime.recent_history.blocks.items.len - 1];
         span.debug("Last block hash: {s}, current state root: {s}", .{
             std.fmt.fmtSliceHexLower(&last_block.header_hash),
             std.fmt.fmtSliceHexLower(&last_block.state_root),
@@ -51,7 +51,7 @@ pub fn transition(
     var beta_prime: *state.Beta = try stx.ensure(.beta_prime);
 
     span.debug("Starting recent history transition", .{});
-    span.trace("Current beta block count: {d}", .{beta_prime.blocks.items.len});
+    span.trace("Current beta block count: {d}", .{beta_prime.recent_history.blocks.items.len});
 
     const RecentBlock = @import("../recent_blocks.zig").RecentBlock;
     // Transition β with information from the new block

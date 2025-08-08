@@ -32,21 +32,21 @@ pub fn validateValidatorIndices(
     }
 }
 
-/// Validate signatures for all guarantors
-pub fn validateSignatures(
+/// Validate signatures using pre-built assignments and validators
+pub fn validateSignaturesWithAssignments(
     comptime params: @import("../../jam_params.zig").Params,
     allocator: std.mem.Allocator,
-    stx: *StateTransition(params),
     guarantee: types.ReportGuarantee,
-    is_current_rotation: bool,
+    assignments: *const @import("../../guarantor_assignments.zig").GuarantorAssignmentResult,
 ) !void {
-    const span = trace.span(.validate_signatures);
+    const span = trace.span(.validate_signatures_prebuilt);
     defer span.deinit();
 
-    span.debug("Validating {d} guarantor signatures", .{guarantee.signatures.len});
+    span.debug("Validating {d} guarantor signatures using pre-built assignments", .{guarantee.signatures.len});
 
-    const kappa: *const state.Kappa = try stx.ensure(.kappa);
-    const lambda: *const state.Kappa = try stx.ensure(.lambda);
+    // Use the validators from the assignment result
+    const validators = assignments.validators;
+
     for (guarantee.signatures) |sig| {
         const sig_detail_span = span.child(.validate_signature);
         defer sig_detail_span.deinit();
@@ -54,11 +54,8 @@ pub fn validateSignatures(
         sig_detail_span.debug("Validating signature for validator index {d}", .{sig.validator_index});
         sig_detail_span.trace("Signature: {s}", .{std.fmt.fmtSliceHexLower(&sig.signature)});
 
-        const validator = if (is_current_rotation)
-            kappa.validators[sig.validator_index] //
-        else
-            lambda.validators[sig.validator_index]; //
-
+        // Get validator from the pre-determined set
+        const validator = validators.validators[sig.validator_index];
         const public_key = validator.ed25519;
         sig_detail_span.trace("Validator public key: {s}", .{std.fmt.fmtSliceHexLower(&public_key)});
 
@@ -83,3 +80,4 @@ pub fn validateSignatures(
         };
     }
 }
+

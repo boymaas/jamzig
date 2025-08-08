@@ -53,7 +53,7 @@ pub fn DependencyResolver(comptime params: Params) type {
         pub fn prepareReportsForAccumulation(
             self: Self,
             xi: *state.Xi(params.epoch_length),
-            theta: *state.Theta(params.epoch_length),
+            theta: *state.VarTheta(params.epoch_length),
             reports: []types.WorkReport,
             current_slot_in_epoch: u32,
         ) !PreparedReports {
@@ -320,7 +320,7 @@ pub fn DependencyResolver(comptime params: Params) type {
         /// Builds the pending reports queue from theta and queued reports
         fn buildPendingReportsQueue(
             self: Self,
-            theta: *state.Theta(params.epoch_length),
+            theta: *state.VarTheta(params.epoch_length),
             queued: *Queued(WorkReportAndDeps),
             current_slot_in_epoch: u32,
         ) !Queued(WorkReportAndDeps) {

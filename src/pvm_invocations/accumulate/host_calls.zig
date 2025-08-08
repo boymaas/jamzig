@@ -162,15 +162,16 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper B.7: [m, a, v, o, n]
+            // Get registers per graypaper B.7 (updated for list-based assign): [m, a_ptr, a_count, v, o, n]
             const manager_service_id: u32 = @truncate(exec_ctx.registers[7]); // Manager service ID (m)
-            const assign_service_id: u32 = @truncate(exec_ctx.registers[8]); // Assign service ID (a)
-            const validator_service_id: u32 = @truncate(exec_ctx.registers[9]); // Validator service ID (v)
-            const always_accumulate_ptr: u32 = @truncate(exec_ctx.registers[10]); // Pointer to always-accumulate services array (o)
-            const always_accumulate_count: u32 = @truncate(exec_ctx.registers[11]); // Number of entries in always-accumulate array (n)
+            const assign_ptr: u32 = @truncate(exec_ctx.registers[8]); // Pointer to assign service IDs array (a_ptr)
+            const assign_count: u32 = @truncate(exec_ctx.registers[9]); // Number of assign service IDs (a_count)
+            const validator_service_id: u32 = @truncate(exec_ctx.registers[10]); // Validator service ID (v)
+            const always_accumulate_ptr: u32 = @truncate(exec_ctx.registers[11]); // Pointer to always-accumulate services array (o)
+            const always_accumulate_count: u32 = @truncate(exec_ctx.registers[12]); // Number of entries in always-accumulate array (n)
 
-            span.debug("Host call: bless - m={d}, a={d}, v={d}, entries={d}", .{
-                manager_service_id, assign_service_id, validator_service_id, always_accumulate_count,
+            span.debug("Host call: bless - m={d}, assign_count={d}, v={d}, always_accumulate_count={d}", .{
+                manager_service_id, assign_count, validator_service_id, always_accumulate_count,
             });
 
             // Get current privileges
@@ -188,15 +189,56 @@ pub fn HostCalls(comptime params: Params) type {
                 return .play;
             }
 
-            // Check service IDs are valid
+            // Check manager and validator service IDs are valid
             // This isn't explicit in the graypaper, but it's good practice
             if ((manager_service_id != 0 and !ctx_regular.context.service_accounts.contains(manager_service_id)) or
-                (assign_service_id != 0 and !ctx_regular.context.service_accounts.contains(assign_service_id)) or
                 (validator_service_id != 0 and !ctx_regular.context.service_accounts.contains(validator_service_id)))
             {
-                span.debug("One or more service IDs don't exist", .{});
+                span.debug("Manager or validator service ID doesn't exist", .{});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO); // Index unknown
                 return .play;
+            }
+
+            // Read assign service IDs from memory
+            span.debug("Reading assign service IDs from memory at 0x{x}, count={d}", .{ assign_ptr, assign_count });
+
+            // Calculate required memory size: each service ID is 4 bytes
+            const assign_memory_size = assign_count * 4;
+
+            // Read memory for assign service IDs
+            var assign_data: PVM.Memory.MemorySlice = if (assign_count > 0)
+                exec_ctx.memory.readSlice(@truncate(assign_ptr), assign_memory_size) catch {
+                    span.err("Memory access failed while reading assign service IDs", .{});
+                    return .{ .terminal = .panic };
+                }
+            else
+                .{ .buffer = &[_]u8{} };
+            defer assign_data.deinit();
+
+            // Create a list of assign service IDs
+            var assign_services = std.ArrayList(types.ServiceId).init(ctx_regular.allocator);
+            defer assign_services.deinit();
+
+            // Parse the assign service IDs from memory
+            var i: usize = 0;
+            while (i < assign_count) : (i += 1) {
+                const offset = i * 4;
+                const service_id = std.mem.readInt(u32, assign_data.buffer[offset..][0..4], .little);
+
+                span.debug("Assign service {d}: ID={d}", .{ i, service_id });
+
+                // Verify this service exists
+                if (!ctx_regular.context.service_accounts.contains(service_id)) {
+                    span.debug("Assign service ID {d} doesn't exist", .{service_id});
+                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
+                    return .play;
+                }
+
+                // Add to the list
+                assign_services.append(service_id) catch {
+                    span.err("Failed to add service to assign list", .{});
+                    return .{ .terminal = .panic };
+                };
             }
 
             // Read always-accumulate service definitions from memory
@@ -220,15 +262,15 @@ pub fn HostCalls(comptime params: Params) type {
             defer always_accumulate_services.deinit();
 
             // Parse the always-accumulate services from the memory
-            var i: usize = 0;
-            while (i < always_accumulate_count) : (i += 1) {
-                const offset = i * 12;
+            var k: usize = 0;
+            while (k < always_accumulate_count) : (k += 1) {
+                const offset = k * 12;
 
                 // Read service ID (4 bytes) and gas limit (8 bytes)
                 const service_id = std.mem.readInt(u32, always_accumulate_data.buffer[offset..][0..4], .little);
                 const gas_limit = std.mem.readInt(u64, always_accumulate_data.buffer[offset + 4 ..][0..8], .little);
 
-                span.debug("Always-accumulate service {d}: ID={d}, gas={d}", .{ i, service_id, gas_limit });
+                span.debug("Always-accumulate service {d}: ID={d}, gas={d}", .{ k, service_id, gas_limit });
 
                 // Verify this service exists
                 // TODO: GP This seems not to be explicitly defined in the graypaper
@@ -248,10 +290,18 @@ pub fn HostCalls(comptime params: Params) type {
             // Update privileges
             span.debug("Updating privileges", .{});
 
-            // Update the manager, assign, and validator service IDs
+            // Update the manager and validator service IDs
             current_privileges.manager = manager_service_id;
-            current_privileges.assign = assign_service_id;
             current_privileges.designate = validator_service_id;
+
+            // Update the assign service IDs list
+            current_privileges.assign.clearRetainingCapacity();
+            for (assign_services.items) |service_id| {
+                current_privileges.assign.append(ctx_regular.allocator, service_id) catch {
+                    span.err("Failed to update assign services", .{});
+                    return .{ .terminal = .panic };
+                };
+            }
 
             // Update the always-accumulate services
             current_privileges.always_accumulate.clearRetainingCapacity();
@@ -461,10 +511,17 @@ pub fn HostCalls(comptime params: Params) type {
                 return .play;
             }
 
-            // Make sure this is the assign service calling
+            // Make sure this is an assign service calling
             const privileges: *const state.Chi = ctx_regular.context.privileges.getReadOnly();
-            if (privileges.assign != ctx_regular.service_id) {
-                span.debug("This service does not have the assign privilege. Ignoring", .{});
+            const has_assign_privilege = blk: {
+                for (privileges.assign.items) |assign_id| {
+                    if (assign_id == ctx_regular.service_id) break :blk true;
+                }
+                break :blk false;
+            };
+
+            if (!has_assign_privilege) {
+                span.debug("Service {d} does not have the assign privilege. Ignoring", .{ctx_regular.service_id});
                 return .play;
             }
 

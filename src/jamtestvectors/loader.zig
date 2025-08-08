@@ -24,6 +24,7 @@ pub fn loadAndDeserializeTestVectorWithContext(comptime T: type, comptime params
     return codec.deserializeAllocWithContext(T, params, allocator, file.reader(), &context) catch |err| {
         // Log comprehensive error information
         std.log.err("\n===== Deserialization Error =====", .{});
+        std.log.err("Error: {s}", .{@errorName(err)});
         std.log.err("Test vector file: {s}", .{file_path});
         std.log.err("Root type being decoded: {s}", .{@typeName(T)});
         context.dumpError();

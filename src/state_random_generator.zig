@@ -33,9 +33,9 @@ pub const RandomStateGenerator = struct {
                 // Initialize only the most basic required components
                 try self.generateMinimalState(params, &state);
 
-                // Initialize Theta and Rho with minimal complexity
-                try state.initTheta(self.allocator);
-                try self.generateRandomTheta(params, .minimal, &state.theta.?);
+                // Initialize VarTheta and Rho with minimal complexity
+                try state.initVartheta(self.allocator);
+                try self.generateRandomTheta(params, .minimal, &state.vartheta.?);
 
                 try state.initRho(self.allocator);
                 try self.generateRandomRho(params, .minimal, &state.rho.?);
@@ -45,9 +45,9 @@ pub const RandomStateGenerator = struct {
                 try self.generateMinimalState(params, &state);
                 try self.generateModerateState(params, &state);
 
-                // Initialize Theta and Rho with moderate complexity (not done in generateModerateState to avoid duplication)
-                try state.initTheta(self.allocator);
-                try self.generateRandomTheta(params, .moderate, &state.theta.?);
+                // Initialize VarTheta and Rho with moderate complexity (not done in generateModerateState to avoid duplication)
+                try state.initVartheta(self.allocator);
+                try self.generateRandomTheta(params, .moderate, &state.vartheta.?);
 
                 try state.initRho(self.allocator);
                 try self.generateRandomRho(params, .moderate, &state.rho.?);
@@ -58,9 +58,9 @@ pub const RandomStateGenerator = struct {
                 try self.generateModerateState(params, &state);
                 try self.generateMaximalState(params, &state);
 
-                // Initialize Theta and Rho with maximal complexity
-                try state.initTheta(self.allocator);
-                try self.generateRandomTheta(params, .maximal, &state.theta.?);
+                // Initialize VarTheta and Rho with maximal complexity
+                try state.initVartheta(self.allocator);
+                try self.generateRandomTheta(params, .maximal, &state.vartheta.?);
 
                 try state.initRho(self.allocator);
                 try self.generateRandomRho(params, .maximal, &state.rho.?);
@@ -166,17 +166,17 @@ pub const RandomStateGenerator = struct {
         beta: *jamstate.Beta,
     ) !void {
         // Generate a random number of blocks (0 to max_blocks)
-        const num_blocks = self.rng.uintAtMost(usize, beta.max_blocks);
+        const num_blocks = self.rng.uintAtMost(usize, beta.recent_history.max_blocks);
 
         for (0..num_blocks) |_| {
             // Generate random BlockInfo
             const block_info = try self.generateRandomBlockInfo(params);
-            try beta.addBlockInfo(block_info);
+            try beta.recent_history.addBlock(block_info);
         }
     }
 
     /// Helper function to generate a random BlockInfo
-    fn generateRandomBlockInfo(self: *RandomStateGenerator, comptime _: Params) !types.BlockInfo {
+    fn generateRandomBlockInfo(self: *RandomStateGenerator, comptime _: Params) !@import("beta.zig").RecentHistory.BlockInfo {
         // Generate random header hash
         var header_hash: types.Hash = undefined;
         self.rng.bytes(&header_hash);
@@ -185,18 +185,9 @@ pub const RandomStateGenerator = struct {
         var state_root: types.Hash = undefined;
         self.rng.bytes(&state_root);
 
-        // Generate random MMR (1-10 peaks, some may be null)
-        const mmr_size = self.rng.uintAtMost(usize, 10) + 1;
-        const beefy_mmr = try self.allocator.alloc(?types.Hash, mmr_size);
-        for (beefy_mmr) |*peak| {
-            if (self.rng.boolean()) {
-                var hash: types.Hash = undefined;
-                self.rng.bytes(&hash);
-                peak.* = hash;
-            } else {
-                peak.* = null;
-            }
-        }
+        // Generate random BEEFY root (v0.6.7: single hash instead of MMR peaks)
+        var beefy_root: types.Hash = undefined;
+        self.rng.bytes(&beefy_root);
 
         // Generate random work reports (0-5 reports)
         const num_reports = self.rng.uintAtMost(usize, 5);
@@ -206,10 +197,10 @@ pub const RandomStateGenerator = struct {
             self.rng.bytes(&report.exports_root);
         }
 
-        return types.BlockInfo{
+        return @import("beta.zig").RecentHistory.BlockInfo{
             .header_hash = header_hash,
+            .beefy_root = beefy_root,
             .state_root = state_root,
-            .beefy_mmr = beefy_mmr,
             .work_reports = work_reports,
         };
     }
@@ -261,7 +252,7 @@ pub const RandomStateGenerator = struct {
             const storage_value = try self.allocator.alloc(u8, value_size);
             self.rng.bytes(storage_value);
 
-            try service_account.storage.put(storage_key, storage_value);
+            try service_account.data.put(storage_key, storage_value);
         }
 
         // Generate random preimage entries (0-3 entries)
@@ -275,7 +266,7 @@ pub const RandomStateGenerator = struct {
             const preimage_data = try self.allocator.alloc(u8, preimage_size);
             self.rng.bytes(preimage_data);
 
-            try service_account.preimages.put(preimage_key, preimage_data);
+            try service_account.data.put(preimage_key, preimage_data);
 
             // Create corresponding preimage lookup with random status
             var lookup = @import("services.zig").PreimageLookup{ .status = [_]?types.TimeSlot{null} ** 3 };
@@ -284,7 +275,9 @@ pub const RandomStateGenerator = struct {
                 lookup.status[i] = self.rng.int(types.TimeSlot);
             }
 
-            try service_account.preimage_lookups.put(preimage_key, lookup);
+            // Encode lookup and store in unified data container
+            const encoded_lookup = try @import("services.zig").ServiceAccount.encodePreimageLookup(self.allocator, lookup);
+            try service_account.data.put(preimage_key, encoded_lookup);
         }
 
         return service_account;
@@ -351,7 +344,14 @@ pub const RandomStateGenerator = struct {
     ) !void {
         // Generate optional privileged service indices (30% chance of being null)
         chi.manager = if (self.rng.int(u8) % 10 < 3) null else self.rng.intRangeAtMost(u32, 1, 1000);
-        chi.assign = if (self.rng.int(u8) % 10 < 3) null else self.rng.intRangeAtMost(u32, 1, 1000);
+        
+        // Generate assign list - must be exactly core_count entries
+        // TODO: This needs to be updated when we support different params configurations
+        const TINY_CORE_COUNT = 2; // From TINY_PARAMS
+        for (0..TINY_CORE_COUNT) |_| {
+            try chi.assign.append(chi.allocator, self.rng.intRangeAtMost(u32, 1, 1000));
+        }
+        
         chi.designate = if (self.rng.int(u8) % 10 < 3) null else self.rng.intRangeAtMost(u32, 1, 1000);
 
         // Generate always_accumulate services map (0-5 entries for performance)
@@ -488,7 +488,7 @@ pub const RandomStateGenerator = struct {
         self: *RandomStateGenerator,
         comptime params: Params,
         complexity: StateComplexity,
-        theta: *jamstate.Theta(params.epoch_length),
+        theta: *jamstate.VarTheta(params.epoch_length),
     ) !void {
         const WorkReportBuilder = @import("state_random_generator/work_report_builder.zig").WorkReportBuilder;
 
@@ -642,10 +642,10 @@ test "random_state_generator_maximal" {
     try std.testing.expect(state.psi != null);
     try std.testing.expect(state.pi != null);
     try std.testing.expect(state.xi != null);
-    try std.testing.expect(state.theta != null);
+    try std.testing.expect(state.vartheta != null); // v0.6.7: work reports queue
+    // Note: state.theta (accumulation outputs) may or may not be initialized
     try std.testing.expect(state.rho != null);
     try std.testing.expect(state.iota != null);
     try std.testing.expect(state.kappa != null);
     try std.testing.expect(state.lambda != null);
 }
-

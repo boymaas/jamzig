@@ -69,10 +69,10 @@ pub fn convertAccount(allocator: std.mem.Allocator, service_id: u32, account: tv
             lookup_entry.key.length,
             lookup_entry.key.hash,
         );
-        try service_account.preimage_lookups.put(
-            lookup_key,
-            pre_image_lookup,
-        );
+        
+        // Encode the preimage lookup and store it in the unified data map
+        const encoded = try state.services.ServiceAccount.encodePreimageLookup(allocator, pre_image_lookup);
+        try service_account.data.put(lookup_key, encoded);
     }
 
     // Set up a basic service info with default values

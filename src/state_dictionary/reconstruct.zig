@@ -37,12 +37,6 @@ pub fn reconstructState(
 
     span.debug("Initialized empty JamState", .{});
 
-    // Buffer for storing preimage lookup entries until we can process them
-    var preimage_lookup_buffer = std.ArrayList(state_dictionary.DictEntry).init(allocator);
-    defer preimage_lookup_buffer.deinit();
-
-    // Helper function to get reader for value
-
     const fbs = std.io.fixedBufferStream;
 
     // Iterate through all entries
@@ -144,16 +138,23 @@ pub fn reconstructState(
                     jam_state.pi = try state_decoding.pi.decode(pi_params, allocator, &decoding_context, f.reader());
                 },
                 14 => {
-                    entry_span.debug("Decoding theta component (id={d})", .{key[0]});
+                    // v0.6.7: VarTheta (work reports queue, renamed from Theta)
+                    entry_span.debug("Decoding vartheta component (id={d})", .{key[0]});
                     var f = fbs(dict_entry.value);
-                    const theta_params = comptime state_decoding.theta.DecoderParams.fromJamParams(params);
-                    jam_state.theta = try state_decoding.theta.decode(theta_params, allocator, &decoding_context, f.reader());
+                    const vartheta_params = comptime state_decoding.vartheta.DecoderParams.fromJamParams(params);
+                    jam_state.vartheta = try state_decoding.vartheta.decode(vartheta_params, allocator, &decoding_context, f.reader());
                 },
                 15 => {
                     entry_span.debug("Decoding xi component (id={d})", .{key[0]});
                     var f = fbs(dict_entry.value);
                     const xi_params = comptime state_decoding.xi.DecoderParams.fromJamParams(params);
                     jam_state.xi = try state_decoding.xi.decode(xi_params, allocator, &decoding_context, f.reader());
+                },
+                16 => {
+                    // v0.6.7: New Theta (accumulation outputs)
+                    entry_span.debug("Decoding theta component (id={d})", .{key[0]});
+                    var f = fbs(dict_entry.value);
+                    jam_state.theta = try state_decoding.theta.decode(allocator, &decoding_context, f.reader());
                 },
                 else => {
                     entry_span.err("Unknown state component ID: {d}", .{key[0]});
@@ -167,44 +168,15 @@ pub fn reconstructState(
 
                 try delta_reconstruction.reconstructServiceAccountBase(allocator, &jam_state.delta.?, key, dict_entry.value);
             },
-            .delta_storage => {
-                var storage_span = entry_span.child(.process_delta_storage);
+            .delta_service_data => {
+                var storage_span = entry_span.child(.process_service_data);
                 defer storage_span.deinit();
                 storage_span.debug("Processing delta storage entry", .{});
 
                 // Passing dict entry as we need metadata to restore this
-                try delta_reconstruction.reconstructStorageEntry(allocator, &jam_state.delta.?, dict_entry);
-            },
-            .delta_preimage => {
-                var preimage_span = entry_span.child(.process_delta_preimage);
-                defer preimage_span.deinit();
-                preimage_span.debug("Processing delta preimage entry", .{});
-
-                try delta_reconstruction.reconstructPreimageEntry(allocator, &jam_state.delta.?, jam_state.tau, dict_entry);
-            },
-            .delta_preimage_lookup => {
-                var lookup_span = entry_span.child(.buffer_delta_preimage_lookup);
-                defer lookup_span.deinit();
-                lookup_span.debug("Buffering delta lookup entry for later processing", .{});
-
-                // Buffer this entry for processing after all other entries
-                try preimage_lookup_buffer.append(dict_entry);
+                try delta_reconstruction.reconstructStorageData(allocator, &jam_state.delta.?, dict_entry);
             },
         }
-    }
-
-    // Second pass: Process buffered preimage lookup entries now that all preimages are loaded
-    var lookup_span = span.child(.process_lookups);
-    defer lookup_span.deinit();
-
-    lookup_span.debug("Processing {d} buffered preimage lookup entries", .{preimage_lookup_buffer.items.len});
-
-    for (preimage_lookup_buffer.items, 0..) |buffered, i| {
-        var entry_span = lookup_span.child(.process_buffered_lookup);
-        defer entry_span.deinit();
-
-        entry_span.debug("Processing buffered lookup entry {d}/{d}", .{ i + 1, preimage_lookup_buffer.items.len });
-        try delta_reconstruction.reconstructPreimageLookupEntry(allocator, &jam_state.delta.?, buffered);
     }
 
     span.debug("State reconstruction completed successfully. Processed {d} entries total", .{

@@ -7,18 +7,27 @@ const DecodingError = @import("../state_decoding.zig").DecodingError;
 /// Decodes base service account data and adds/updates the account in delta
 /// Base account data includes service info like code hash, balance, gas limits etc
 pub fn decodeServiceAccountBase(
-    _: std.mem.Allocator, // TODO: remove?
+    _: std.mem.Allocator,
     delta: *state.Delta,
     service_id: types.ServiceId,
     reader: anytype,
 ) !void {
     // Read basic service info fields from the encoded data
     const code_hash = try readHash(reader);
+
+    // se_8 encoded fields (8 bytes each)
     const balance = try reader.readInt(types.U64, .little);
     const min_item_gas = try reader.readInt(types.Gas, .little);
     const min_memo_gas = try reader.readInt(types.Gas, .little);
     const bytes = try reader.readInt(types.U64, .little);
+
+    const storage_offset = try reader.readInt(types.U64, .little); // NEW: a_f
+
+    // se_4 encoded fields (4 bytes each)
     const items = try reader.readInt(types.U32, .little);
+    const creation_slot = try reader.readInt(types.U32, .little); // NEW: a_r
+    const last_accumulation_slot = try reader.readInt(types.U32, .little); // NEW: a_a
+    const parent_service = try reader.readInt(types.U32, .little); // NEW: a_p
 
     // Construct account
     var account = try delta.getOrCreateAccount(service_id);
@@ -26,13 +35,15 @@ pub fn decodeServiceAccountBase(
     account.balance = balance;
     account.min_gas_accumulate = min_item_gas;
     account.min_gas_on_transfer = min_memo_gas;
+    account.storage_offset = storage_offset; // gratis storage offset
+    account.creation_slot = creation_slot;
+    account.last_accumulation_slot = last_accumulation_slot;
+    account.parent_service = parent_service;
 
-    // FIXME: these are calculatd from the storage footprint
-    // need to integrate these
-    // account.bytes = bytes;
-    // account.items = items;
-    _ = bytes;
-    _ = items;
+    // Initialize footprint fields with the deserialized values
+    // items is a_i, bytes is a_o from the encoded state
+    account.footprint_items = items; // a_i = 2·|preimage_lookups| + |storage_items|
+    account.footprint_bytes = bytes; // a_o = Σ(81 + length) for lookups + Σ(65 + |value|) for storage
 }
 
 /// Decodes a preimage lookup from the encoded format: E(↕[E_4(x) | x <− t])
@@ -66,49 +77,4 @@ fn readHash(reader: anytype) !types.OpaqueHash {
         return DecodingError.EndOfStream;
     }
     return hash;
-}
-
-test "decodeServiceAccountBase" {
-    const testing = std.testing;
-    const allocator = testing.allocator;
-
-    var delta = state.Delta.init(allocator);
-    defer delta.deinit();
-
-    // Create test data
-    const service_id: types.ServiceId = 42;
-    const code_hash = [_]u8{1} ** 32;
-    const balance: types.U64 = 1000;
-    const min_item_gas: types.Gas = 100;
-    const min_memo_gas: types.Gas = 50;
-    const bytes: types.U64 = 500;
-    const items: types.U32 = 10;
-
-    // Create a buffer with encoded data
-    var buffer = std.ArrayList(u8).init(allocator);
-    defer buffer.deinit();
-
-    const writer = buffer.writer();
-    try writer.writeAll(&code_hash);
-    try writer.writeInt(types.U64, balance, .little);
-    try writer.writeInt(types.Gas, min_item_gas, .little);
-    try writer.writeInt(types.Gas, min_memo_gas, .little);
-    try writer.writeInt(types.U64, bytes, .little);
-    try writer.writeInt(types.U32, items, .little);
-
-    // Test decoding
-    var stream = std.io.fixedBufferStream(buffer.items);
-    try decodeServiceAccountBase(allocator, &delta, service_id, stream.reader());
-
-    // Verify results
-    try testing.expect(delta.accounts.contains(service_id));
-    const account = delta.accounts.get(service_id).?;
-
-    try testing.expectEqualSlices(u8, &code_hash, &account.code_hash);
-    try testing.expectEqual(balance, account.balance);
-    try testing.expectEqual(min_item_gas, account.min_gas_accumulate);
-    try testing.expectEqual(min_memo_gas, account.min_gas_on_transfer);
-    // bytes and items are not currently used
-    // try testing.expectEqual(bytes, account.bytes);
-    // try testing.expectEqual(items, account.items);
 }

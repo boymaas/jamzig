@@ -120,6 +120,7 @@ pub fn runReportTest(comptime params: Params, allocator: std.mem.Allocator, test
                     .segment_root_lookup_invalid => error.SegmentRootLookupInvalid,
                     .bad_signature => error.BadSignature,
                     .work_report_too_big => error.WorkReportTooBig,
+                    .banned_validators => error.BannedValidators,
                 };
                 if (mapped_expected_error != actual_error) {
                     std.debug.print("\nExpected error: {any} => {any} got error {any}\n", .{ expected_error, mapped_expected_error, actual_error });

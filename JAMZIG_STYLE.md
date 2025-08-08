@@ -304,6 +304,40 @@ pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
 }
 ```
 
+### Avoid Storing Derived Data
+Never store data that can be computed from existing state. This principle reduces memory usage, simplifies cleanup, and follows the "no hidden allocations" philosophy:
+
+```zig
+// BAD: Storing derived/formatted data
+pub const Context = struct {
+    path: ArrayList(PathSegment),
+    path_string: []u8,  // Derived from path - DON'T STORE!
+    
+    pub fn updatePath(self: *Context) !void {
+        // Hidden allocation for derived data
+        self.path_string = try self.formatPath(self.allocator);
+    }
+};
+
+// GOOD: Generate derived data on-demand
+pub const Context = struct {
+    path: ArrayList(PathSegment),
+    
+    pub fn formatPath(self: *const Context, writer: anytype) !void {
+        // Generate formatted path when needed
+        for (self.path.items) |segment| {
+            try writer.print("{}", .{segment});
+        }
+    }
+};
+```
+
+Key principles:
+- **Generate formatting strings on-demand** rather than storing them
+- **Compute derived values when needed** instead of caching
+- **Store only the essential state** from which other values can be derived
+- This reduces allocations, simplifies memory management, and prevents data inconsistency
+
 ## Function Parameter Ordering
 
 To maintain consistency and predictability across the codebase, follow this parameter ordering:

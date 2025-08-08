@@ -28,14 +28,23 @@ pub fn convertValidatorSet(
 
 pub fn convertBeta(
     allocator: std.mem.Allocator,
-    blocks: []types.BlockInfo,
+    recent_blocks: tvector.RecentBlocks,
     max_blocks: usize,
 ) !state.Beta {
     var beta = try state.Beta.init(allocator, max_blocks);
     errdefer beta.deinit();
 
-    for (blocks) |block| {
-        try beta.addBlockInfo(try block.deepClone(allocator));
+    // Convert each BlockInfoTestVector to Beta's BlockInfo
+    for (recent_blocks.history) |test_block| {
+        // For v0.6.7, we need to create a RecentHistory.BlockInfo
+        const RecentHistory = @import("../beta.zig").RecentHistory;
+        const block_info = RecentHistory.BlockInfo{
+            .header_hash = test_block.header_hash,
+            .beefy_root = test_block.beefy_root, // Use the beefy_root directly from test vector
+            .state_root = test_block.state_root,
+            .work_reports = try allocator.dupe(types.ReportedWorkPackage, test_block.reported),
+        };
+        try beta.recent_history.addBlock(block_info);
     }
 
     return beta;
@@ -116,11 +125,15 @@ pub fn convertOffenders(
     allocator: std.mem.Allocator,
     offenders: []types.Ed25519Public,
     validators_count: u32,
-) ![]types.Ed25519Public {
+) !state.Psi {
     if (offenders.len > validators_count) {
         return StateInitError.InvalidOffenderCount;
     }
-    return try allocator.dupe(types.Ed25519Public, offenders);
+    // Add offenders to the punish_set
+    var psi = state.Psi.init(allocator);
+    try psi.registerOffenders(offenders);
+
+    return psi;
 }
 
 pub fn convertState(
@@ -170,10 +183,8 @@ pub fn convertState(
     // Add service statistics to the Pi component
     try convertServiceStatistics(&jam_state.pi.?, test_state.services_statistics);
 
-    // Convert offenders list
-    // const converted_offenders = try convertOffenders(allocator, test_state.offenders, params.validators_count);
-    // // TODO: do something with these offenders
-    // defer allocator.free(converted_offenders);
+    // Convert offenders list and add to Psi (punish_set)
+    jam_state.psi = try convertOffenders(allocator, test_state.offenders, params.validators_count);
 
     return jam_state;
 }

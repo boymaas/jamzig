@@ -35,12 +35,12 @@ pub fn reconstructServiceAccountBase(
 }
 
 /// Reconstructs a storage entry for a service account by reconstructing the full hash
-pub fn reconstructStorageEntry(
+pub fn reconstructStorageData(
     allocator: std.mem.Allocator,
     delta: *state.Delta,
     dict_entry: state_dictionary.DictEntry,
 ) !void {
-    const span = trace.span(.reconstruct_storage_entry);
+    const span = trace.span(.reconstruct_storage_data);
     defer span.deinit();
     span.debug("Starting storage entry reconstruction", .{});
     span.trace("Key: {any}, Value length: {d}", .{ std.fmt.fmtSliceHexLower(&dict_entry.key), dict_entry.value.len });
@@ -56,67 +56,6 @@ pub fn reconstructStorageEntry(
     errdefer allocator.free(owned_value);
 
     const storage_key = dict_entry.key;
-    try account.storage.put(storage_key, owned_value);
-    span.debug("Successfully stored entry in account storage", .{});
-}
-
-/// Reconstructs a preimage entry for a service account by reconstructing the full hash
-pub fn reconstructPreimageEntry(
-    allocator: std.mem.Allocator,
-    delta: *state.Delta,
-    tau: ?types.TimeSlot,
-    dict_entry: state_dictionary.DictEntry,
-) !void {
-    const span = trace.span(.reconstruct_preimage_entry);
-    defer span.deinit();
-    span.debug("Starting preimage entry reconstruction", .{});
-    span.trace("Key: {any}, Value length: {d}, Tau: {?}", .{
-        std.fmt.fmtSliceHexLower(&dict_entry.key),
-        dict_entry.value.len,
-        tau,
-    });
-
-    const dkey = state_recovery.deconstructServiceIndexHashKey(dict_entry.key);
-    span.debug("Deconstructed service index: {d}", .{dkey.service_index});
-
-    // Get or create the account
-    var account: *services.ServiceAccount = //
-        try delta.getOrCreateAccount(dkey.service_index);
-
-    // Create owned copy of value and store with full hash
-    const owned_value = try allocator.dupe(u8, dict_entry.value);
-    errdefer allocator.free(owned_value);
-
-    // Store preimage using the StateKey directly - no conversion needed
-    try account.preimages.put(dict_entry.key, owned_value);
-    span.debug("Successfully stored preimage in account", .{});
-}
-
-pub fn reconstructPreimageLookupEntry(
-    allocator: std.mem.Allocator,
-    delta: *state.Delta,
-    dict_entry: state_dictionary.DictEntry,
-) !void {
-    const span = trace.span(.reconstruct_preimage_lookup_entry);
-    defer span.deinit();
-    span.debug("Starting preimage lookup entry reconstruction", .{});
-    span.trace("Key: {any}, Value length: {d}", .{ std.fmt.fmtSliceHexLower(&dict_entry.key), dict_entry.value.len });
-
-    _ = allocator;
-
-    // Deconstruct the dkey and the preimageLookupEntry
-    const dkey = state_recovery.deconstructServiceIndexHashKey(dict_entry.key);
-    span.debug("Deconstructed service index: {d}", .{dkey.service_index});
-
-    // Now walk the delta to see if we have on the service a preimage which matches our hash
-    var account = delta.getAccount(dkey.service_index) orelse return error.PreimageLookupEntryCannotBeReconstructedAccountMissing;
-
-    // decode the entry
-    var stream = std.io.fixedBufferStream(dict_entry.value);
-    const entry = try state_decoding.delta.decodePreimageLookup(
-        stream.reader(),
-    );
-
-    // Store preimage lookup using the StateKey directly - no conversion needed
-    try account.preimage_lookups.put(dict_entry.key, entry);
+    try account.data.put(storage_key, owned_value);
+    span.debug("Successfully stored entry in account data", .{});
 }

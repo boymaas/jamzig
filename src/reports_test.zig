@@ -43,6 +43,10 @@ test "tiny/bad_validator_index-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/bad_validator_index-1.bin");
 }
+test "tiny/banned_validator_guarantee-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/banned_validator_guarantee-1.bin");
+}
 
 test "tiny/big_work_report_output-1.bin" {
     const allocator = std.testing.allocator;
@@ -163,6 +167,11 @@ test "tiny/too_many_dependencies-1.bin" {
 test "tiny/wrong_assignment-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/wrong_assignment-1.bin");
+}
+
+test "tiny/different_core_same_guarantors-1.bin" {
+    const allocator = std.testing.allocator;
+    try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/different_core_same_guarantors-1.bin");
 }
 
 // Run all tiny test vectors

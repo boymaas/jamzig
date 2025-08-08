@@ -118,7 +118,6 @@ pub const ValidatorData = struct {
     ed25519: Ed25519Public,
     bls: BlsPublic,
     metadata: ValidatorMetadata,
-
 };
 
 pub const WorkItem = struct {
@@ -616,6 +615,10 @@ pub const ValidatorSet = struct {
         Ed25519Public,
     };
 
+    pub fn validators_size(params: jam_params.Params) usize {
+        return params.validators_count;
+    }
+
     /// Find the index of a validator by their public key
     /// key_type must be "bls", "bandersnatch", or "edwards"
     /// Returns error.ValidatorNotFound if the key doesn't match any validator
@@ -634,10 +637,6 @@ pub const ValidatorSet = struct {
             }
         }
         return error.ValidatorNotFound;
-    }
-
-    pub fn validators_size(params: jam_params.Params) usize {
-        return params.validators_count;
     }
 
     pub fn init(allocator: std.mem.Allocator, validators_count: u32) !@This() {

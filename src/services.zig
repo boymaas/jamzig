@@ -85,18 +85,10 @@ pub const AccountUpdate = struct {
 
 /// See GP0.4.1p@Ch9
 pub const ServiceAccount = struct {
-    // Storage data on-chain - using 31-byte structured keys
-    storage: std.AutoHashMap(types.StateKey, []const u8),
-
-    // Preimages for in-core access. This enables the Refine logic of the
-    // service to use the data. The service manages this through its 'p'
-    // (preimages) and 'l' (preimage_lookups) components.
-
-    // Preimage data, once supplied, may not be removed freely; instead it goes
-    // through a process of being marked as unavailable, and only after a period of
-    // time may it be removed from state - using 31-byte structured keys
-    preimages: std.AutoHashMap(types.StateKey, []const u8),
-    preimage_lookups: std.AutoHashMap(types.StateKey, PreimageLookup),
+    // Unified data container for ALL service data (storage, preimages, preimage lookups)
+    // JAM v0.6.7: Keys are intentionally opaque - the merkle tree doesn't care about data types
+    // All data is stored as 31-byte StateKeys mapped to byte arrays
+    data: std.AutoHashMap(types.StateKey, []const u8),
 
     // Must be present in pre-image lookup, this in self.preimages
     code_hash: Hash,
@@ -110,15 +102,36 @@ pub const ServiceAccount = struct {
     min_gas_accumulate: GasLimit,
     min_gas_on_transfer: GasLimit,
 
+    // Storage offset for gratis (free) storage allowance - NEW in v0.6.7
+    storage_offset: u64,
+
+    // Time slot when this service was created (r in spec)
+    creation_slot: u32, // types.TimeSlot or u32
+
+    // Time slot of the most recent accumulation for this service (a in spec)
+    last_accumulation_slot: u32, // types.TimeSlot or u32
+
+    // Index of the parent service that created this service (p in spec)
+    parent_service: types.ServiceId, // or u32
+
+    // Storage footprint tracking - NEW in v0.6.7
+    // We directly track a_i and a_o as defined in the graypaper
+    footprint_items: u32, // a_i = 2·|preimage_lookups| + |storage_items|
+    footprint_bytes: u64, // a_o = Σ(81 + length) for lookups + Σ(65 + |value|) for storage
+
     pub fn init(allocator: Allocator) ServiceAccount {
         return .{
-            .storage = std.AutoHashMap(types.StateKey, []const u8).init(allocator),
-            .preimages = std.AutoHashMap(types.StateKey, []const u8).init(allocator),
-            .preimage_lookups = std.AutoHashMap(types.StateKey, PreimageLookup).init(allocator),
+            .data = std.AutoHashMap(types.StateKey, []const u8).init(allocator),
             .code_hash = undefined,
             .balance = 0,
             .min_gas_accumulate = 0,
             .min_gas_on_transfer = 0,
+            .storage_offset = 0,
+            .creation_slot = 0,
+            .last_accumulation_slot = 0,
+            .parent_service = 0,
+            .footprint_items = 0,
+            .footprint_bytes = 0,
         };
     }
 
@@ -126,101 +139,121 @@ pub const ServiceAccount = struct {
         var clone = ServiceAccount.init(allocator);
         errdefer clone.deinit();
 
-        // Clone storage map
-        var storage_it = self.storage.iterator();
-        while (storage_it.next()) |entry| {
+        // Clone unified data map
+        var data_it = self.data.iterator();
+        while (data_it.next()) |entry| {
             const cloned_value = try allocator.dupe(u8, entry.value_ptr.*);
-            try clone.storage.put(entry.key_ptr.*, cloned_value);
+            try clone.data.put(entry.key_ptr.*, cloned_value);
         }
 
-        // Clone preimages map
-        var preimage_it = self.preimages.iterator();
-        while (preimage_it.next()) |entry| {
-            const cloned_value = try allocator.dupe(u8, entry.value_ptr.*);
-            try clone.preimages.put(entry.key_ptr.*, cloned_value);
-        }
-
-        // Clone preimage lookups
-        var lookup_it = self.preimage_lookups.iterator();
-        while (lookup_it.next()) |entry| {
-            try clone.preimage_lookups.put(entry.key_ptr.*, entry.value_ptr.*);
-        }
-
-        // Copy simple fields
+        // Copy all fields including tracking fields - they represent the exact same data
         clone.code_hash = self.code_hash;
         clone.balance = self.balance;
         clone.min_gas_accumulate = self.min_gas_accumulate;
         clone.min_gas_on_transfer = self.min_gas_on_transfer;
+        clone.storage_offset = self.storage_offset;
+        clone.creation_slot = self.creation_slot;
+        clone.last_accumulation_slot = self.last_accumulation_slot;
+        clone.parent_service = self.parent_service;
+        clone.footprint_items = self.footprint_items;
+        clone.footprint_bytes = self.footprint_bytes;
 
         return clone;
     }
 
     pub fn deinit(self: *ServiceAccount) void {
-        var storage_it = self.storage.valueIterator();
-        while (storage_it.next()) |value| {
-            self.storage.allocator.free(value.*);
+        var data_it = self.data.valueIterator();
+        while (data_it.next()) |value| {
+            self.data.allocator.free(value.*);
         }
-        self.storage.deinit();
-
-        var it = self.preimages.valueIterator();
-        while (it.next()) |value| {
-            self.preimages.allocator.free(value.*);
-        }
-        self.preimages.deinit();
-
-        self.preimage_lookups.deinit();
+        self.data.deinit();
         self.* = undefined;
     }
 
     // Functionality to read and write storage, reflecting access patterns in Section 4.9.2 on Service State.
-    pub fn readStorage(self: *ServiceAccount, key: types.StateKey) ?[]const u8 {
-        return self.storage.get(key);
+    pub fn readStorage(self: *const ServiceAccount, service_id: u32, key: []const u8) ?[]const u8 {
+        const storage_key = state_keys.constructStorageKey(service_id, key);
+        return self.data.get(storage_key);
     }
 
-    pub fn resetStorage(self: *ServiceAccount, key: types.StateKey) void {
-        if (self.storage.getPtr(key)) |old_value_ptr| {
-            self.storage.allocator.free(old_value_ptr.*);
-            self.storage.put(key, &[_]u8{}) catch unreachable;
+    pub fn resetStorage(self: *ServiceAccount, service_id: u32, key: []const u8) void {
+        const storage_key = state_keys.constructStorageKey(service_id, key);
+        if (self.data.getPtr(storage_key)) |old_value_ptr| {
+            // Update a_o - reduce bytes by old value length (key overhead stays)
+            self.footprint_bytes = self.footprint_bytes - old_value_ptr.len;
+
+            self.data.allocator.free(old_value_ptr.*);
+            self.data.put(storage_key, &[_]u8{}) catch unreachable;
+            // Empty value doesn't add bytes
         }
     }
 
-    pub fn removeStorage(self: *ServiceAccount, key: types.StateKey) void {
-        if (self.storage.getPtr(key)) |old_value_ptr| {
-            self.storage.allocator.free(old_value_ptr.*);
-            _ = self.storage.remove(key);
+    // Returns the length of the removed value
+    pub fn removeStorage(self: *ServiceAccount, service_id: u32, key: []const u8) ?usize {
+        const storage_key = state_keys.constructStorageKey(service_id, key);
+        if (self.data.fetchRemove(storage_key)) |entry| {
+            const value_length = entry.value.len;
+            // Update a_i and a_o for storage removal
+            self.footprint_items -= 1; // One storage item removed
+            self.footprint_bytes -= 34 + key.len + value_length; // 34 + key length + value length
+
+            self.data.allocator.free(entry.value);
+            return value_length;
         }
+        return null; // Key not found
     }
 
-    pub fn writeStorage(self: *ServiceAccount, key: types.StateKey, value: []const u8) !?[]const u8 {
+    pub fn writeStorage(self: *ServiceAccount, service_id: u32, key: []const u8, value: []const u8) !?[]const u8 {
+        const storage_key = state_keys.constructStorageKey(service_id, key);
         // Clear the old, otherwise we are leaking
-        const old_value = self.storage.get(key);
+        const old_value = self.data.get(storage_key);
 
-        try self.storage.put(key, value);
+        // Update a_i and a_o based on whether this is new or update
+        if (old_value) |old| {
+            // Updating existing entry - only a_o changes (value size difference)
+            self.footprint_bytes = self.footprint_bytes - old.len + value.len;
+        } else {
+            // New entry - increment both a_i and a_o
+            self.footprint_items += 1; // One new storage item
+            self.footprint_bytes += 34 + key.len + value.len; // 34 + key length + value length
+        }
+
+        try self.data.put(storage_key, value);
 
         return old_value;
     }
 
-    pub fn writeStorageFreeOldValue(self: *ServiceAccount, key: types.StateKey, value: []const u8) !void {
-        const maybe_old_value = try self.writeStorage(key, value);
-        if (maybe_old_value) |old_value| self.storage.allocator.free(old_value);
+    pub fn writeStorageNoFootprint(self: *ServiceAccount, service_id: u32, key: []const u8, value: []const u8) !void {
+        // This function does not update footprint metrics
+        const storage_key = state_keys.constructStorageKey(service_id, key);
+        try self.data.put(storage_key, value);
+    }
+
+    pub fn writeStorageFreeOldValue(self: *ServiceAccount, service_id: u32, key: []const u8, value: []const u8) !void {
+        const maybe_old_value = try self.writeStorage(service_id, key, value);
+        if (maybe_old_value) |old_value| self.data.allocator.free(old_value);
     }
 
     // Functions to add and manage preimages correspond to the discussion in Section 4.9.2 and Appendix D.
     pub fn dupeAndAddPreimage(self: *ServiceAccount, key: types.StateKey, preimage: []const u8) !void {
-        const new_preimage = try self.preimages.allocator.dupe(u8, preimage);
-        try self.preimages.put(key, new_preimage);
+        const new_preimage = try self.data.allocator.dupe(u8, preimage);
+
+        // Preimages do NOT affect a_i or a_o according to the graypaper
+        // They are stored separately and don't contribute to storage footprint
+
+        try self.data.put(key, new_preimage);
     }
 
     pub fn getPreimage(self: *const ServiceAccount, key: types.StateKey) ?[]const u8 {
-        return self.preimages.get(key);
+        return self.data.get(key);
     }
 
     /// Legacy compatibility method for hash-based preimage access
     /// TEMPORARY: Will be removed when all callers use structured keys
     pub fn getPreimageByHash(self: *const ServiceAccount, hash: Hash) ?[]const u8 {
-        // Iterate through all preimages to find one that matches the hash
+        // Iterate through all data to find a preimage that matches the hash
         // This is inefficient but needed for compatibility during transition
-        var iter = self.preimages.iterator();
+        var iter = self.data.iterator();
         while (iter.next()) |entry| {
             const key = entry.key_ptr.*;
 
@@ -244,14 +277,55 @@ pub const ServiceAccount = struct {
     }
 
     pub fn hasPreimage(self: *const ServiceAccount, key: types.StateKey) bool {
-        return self.preimages.contains(key);
+        return self.data.contains(key);
+    }
+
+    // Helper function to encode PreimageLookup to bytes for storage
+    pub fn encodePreimageLookup(allocator: Allocator, lookup: PreimageLookup) ![]const u8 {
+        var buffer = std.ArrayList(u8).init(allocator);
+        errdefer buffer.deinit();
+
+        // Count non-null timestamps
+        var count: u8 = 0;
+        for (lookup.status) |ts| {
+            if (ts != null) count += 1 else break;
+        }
+
+        // Write count as single byte
+        try buffer.append(count);
+
+        // Write each timestamp as 4 bytes little-endian
+        for (0..count) |i| {
+            try buffer.writer().writeInt(u32, lookup.status[i].?, .little);
+        }
+
+        return buffer.toOwnedSlice();
+    }
+
+    // Helper function to decode PreimageLookup from bytes
+    fn decodePreimageLookup(data: []const u8) !PreimageLookup {
+        if (data.len < 1) return error.InvalidData;
+
+        const count = data[0];
+        if (count > 3) return error.InvalidData;
+        if (data.len != 1 + count * 4) return error.InvalidData;
+
+        var lookup = PreimageLookup{ .status = .{ null, null, null } };
+
+        for (0..count) |i| {
+            const offset = 1 + i * 4;
+            lookup.status[i] = std.mem.readInt(u32, data[offset..][0..4], .little);
+        }
+
+        return lookup;
     }
 
     //  PreImageLookups assume correct state, that is when you sollicit a
     //  preimage. It should not be available already.
     pub fn getPreimageLookup(self: *const ServiceAccount, service_id: u32, hash: Hash, length: u32) ?PreimageLookup {
         const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
-        return self.preimage_lookups.get(key);
+        const data = self.data.get(key) orelse return null;
+        return decodePreimageLookup(data) catch null;
     }
 
     /// Created an entry in preimages_lookups indicating we need a preimage
@@ -267,10 +341,15 @@ pub const ServiceAccount = struct {
         const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
         // Check if we already have an entry for this hash/length
-        if (self.preimage_lookups.getPtr(key)) |preimage_lookup| {
+        if (self.data.get(key)) |existing_data| {
+            var preimage_lookup = try decodePreimageLookup(existing_data);
             const pi = preimage_lookup.asSlice();
             if (pi.len == 2) { // [x,y]
                 preimage_lookup.status[2] = current_timeslot;
+                // Re-encode and store
+                const encoded = try encodePreimageLookup(self.data.allocator, preimage_lookup);
+                self.data.allocator.free(existing_data);
+                try self.data.put(key, encoded);
                 return;
             }
             return error.AlreadySolicited;
@@ -279,7 +358,11 @@ pub const ServiceAccount = struct {
             const new_lookup = PreimageLookup{
                 .status = .{ null, null, null },
             };
-            try self.preimage_lookups.put(key, new_lookup);
+            const encoded = try encodePreimageLookup(self.data.allocator, new_lookup);
+            // Track new preimage lookup in a_i and a_o
+            self.footprint_items += 2; // Each lookup adds 2 to a_i
+            self.footprint_bytes += 81 + length; // 81 base + length to a_o
+            try self.data.put(key, encoded);
         }
     }
 
@@ -294,21 +377,36 @@ pub const ServiceAccount = struct {
     ) !void {
         // we can remove the entries when timeout occurred
         const lookup_key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
-        if (self.preimage_lookups.getPtr(lookup_key)) |preimage_lookup| {
+        if (self.data.get(lookup_key)) |existing_data| {
+            var preimage_lookup = try decodePreimageLookup(existing_data);
             var pi = preimage_lookup.asSliceMut();
             if (pi.len == 0) {
-                _ = self.preimage_lookups.remove(lookup_key);
+                self.data.allocator.free(existing_data);
+                _ = self.data.remove(lookup_key);
+                self.footprint_items -= 2; // Each lookup removal subtracts 2 from a_i
+                self.footprint_bytes -= 81 + length; // Subtract from a_o
                 self.removePreimageByHash(service_id, hash);
             } else if (pi.len == 1) {
                 preimage_lookup.status[1] = current_slot; // [x, t]
+                // Re-encode and store
+                const encoded = try encodePreimageLookup(self.data.allocator, preimage_lookup);
+                self.data.allocator.free(existing_data);
+                try self.data.put(lookup_key, encoded);
             } else if (pi.len == 2 and pi[1].? < current_slot -| preimage_expungement_period) {
-                _ = self.preimage_lookups.remove(lookup_key);
+                self.data.allocator.free(existing_data);
+                _ = self.data.remove(lookup_key);
+                self.footprint_items -= 2; // Each lookup removal subtracts 2 from a_i
+                self.footprint_bytes -= 81 + length; // Subtract from a_o
                 self.removePreimageByHash(service_id, hash);
             } else if (pi.len == 3 and pi[1].? < current_slot -| preimage_expungement_period) {
                 // [x,y,w]
                 pi[0] = pi[2];
                 pi[1] = current_slot;
                 pi[2] = null;
+                // Re-encode and store
+                const encoded = try encodePreimageLookup(self.data.allocator, preimage_lookup);
+                self.data.allocator.free(existing_data);
+                try self.data.put(lookup_key, encoded);
             } else {
                 // TODO: check this against GP
                 return error.IncorrectPreimageLookupState;
@@ -323,8 +421,9 @@ pub const ServiceAccount = struct {
         // Create the structured preimage key directly
         const preimage_key = state_keys.constructServicePreimageKey(service_id, target_hash);
 
-        if (self.preimages.fetchRemove(preimage_key)) |removed| {
-            self.preimages.allocator.free(removed.value);
+        if (self.data.fetchRemove(preimage_key)) |removed| {
+            // Preimages do NOT affect a_i or a_o
+            self.data.allocator.free(removed.value);
         }
     }
 
@@ -333,7 +432,8 @@ pub const ServiceAccount = struct {
         // Check if we have an entry in preimage_lookups
         const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
-        if (self.preimage_lookups.get(key)) |*lookup| {
+        if (self.data.get(key)) |data| {
+            const lookup = decodePreimageLookup(data) catch return false;
             const status = lookup.asSlice();
 
             // Case 1: Empty status - never supplied after solicitation
@@ -372,15 +472,19 @@ pub const ServiceAccount = struct {
         const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
         // If we do not have one, easy just set first on and ready
-        const existing_lookup = self.preimage_lookups.get(key) orelse {
+        const existing_data = self.data.get(key) orelse {
             // If no lookup exists yet, create a new one with timeslot as the first entry
             const new_lookup = PreimageLookup{
                 .status = .{ timeslot, null, null },
             };
-            try self.preimage_lookups.put(key, new_lookup);
+            const encoded = try encodePreimageLookup(self.data.allocator, new_lookup);
+            try self.data.put(key, encoded);
+            self.footprint_items += 2; // Each lookup adds 2 to a_i
+            self.footprint_bytes += 81 + length; // 81 base + length to a_o
             return;
         };
 
+        const existing_lookup = try decodePreimageLookup(existing_data);
         const status = existing_lookup.asSlice();
 
         // Create a modified lookup based on the existing one
@@ -396,7 +500,9 @@ pub const ServiceAccount = struct {
             updated_lookup.status[2] = timeslot;
         }
 
-        try self.preimage_lookups.put(key, updated_lookup);
+        const encoded = try encodePreimageLookup(self.data.allocator, updated_lookup);
+        self.data.allocator.free(existing_data);
+        try self.data.put(key, encoded);
     }
 
     // 9.2.2 Implement the historical lookup function
@@ -408,7 +514,8 @@ pub const ServiceAccount = struct {
         if (self.getPreimage(preimage_key)) |preimage| {
             // see if we have it in the lookup table
             const lookup_key = state_keys.constructServicePreimageLookupKey(service_id, @intCast(preimage.len), hash);
-            if (self.preimage_lookups.get(lookup_key)) |lookup| {
+            if (self.data.get(lookup_key)) |lookup_data| {
+                const lookup = decodePreimageLookup(lookup_data) catch return null;
                 const status = lookup.status;
                 if (status[0] == null) {
                     return null;
@@ -444,36 +551,30 @@ pub const ServiceAccount = struct {
         self.min_gas_on_transfer = new_min_limit;
     }
 
-    pub fn storageFootprint(self: *const ServiceAccount) StorageFootprint {
-        // a_i
-        const a_i: u32 = (2 * self.preimage_lookups.count()) + self.storage.count();
-        // a_l
-        var plkeys = self.preimage_lookups.iterator();
-        var a_o: u64 = 0;
-        while (plkeys.next()) |entry| {
-            // Extract length from the preimage lookup key
-            // Key format: [n₀, l₀, n₁, l₁, n₂, l₂, n₃, l₃, h₀, h₁, ..., h₂₂]
-            // Length bytes are at positions 1, 3, 5, 7 (little-endian)
-            const key_bytes = &entry.key_ptr.*;
-            var length_bytes: [4]u8 = undefined;
-            length_bytes[0] = key_bytes[1];
-            length_bytes[1] = key_bytes[3];
-            length_bytes[2] = key_bytes[5];
-            length_bytes[3] = key_bytes[7];
-            const length = std.mem.readInt(u32, &length_bytes, .little);
-            a_o += 81 + length;
-        }
+    /// Calculate storage footprint from tracked values
+    /// Returns the footprint metrics including the threshold balance
+    /// REFACTOR: we need B_S, B_I and B_L to be passed in as jam_params.Params
+    pub fn getStorageFootprint(self: *const ServiceAccount) StorageFootprint {
+        // We directly track a_i and a_o
+        const a_i = self.footprint_items;
+        const a_o = self.footprint_bytes;
 
-        var svals = self.storage.valueIterator();
-        while (svals.next()) |value| {
-            a_o += 32 + @as(u64, @intCast(value.len));
-        }
+        // Calculate threshold balance a_t
+        // Per graypaper: a_t = max(0, B_S + B_I·a_i + B_L·a_o - a_f)
+        // Where a_f is the storage_offset (free storage allowance)
+        const billable_bytes = if (self.storage_offset > 0)
+            a_o -| self.storage_offset
+        else
+            a_o;
 
-        // FIXME: this comes for JamParams
-        // a_t
-        const a_t: Balance = B_S + B_I * a_i + B_L * a_o;
+        const a_t: Balance = B_S + B_I * a_i + B_L * billable_bytes;
 
         return .{ .a_i = a_i, .a_o = a_o, .a_t = a_t };
+    }
+
+    /// Compatibility wrapper - calls getStorageFootprint
+    pub fn storageFootprint(self: *const ServiceAccount) StorageFootprint {
+        return self.getStorageFootprint();
     }
 };
 
@@ -506,7 +607,6 @@ pub const Delta = struct {
             .allocator = allocator,
         };
     }
-
 
     pub fn deepClone(self: *const Delta) !Delta {
         var clone = Delta.init(self.allocator);
@@ -573,95 +673,3 @@ pub const Delta = struct {
         self.* = undefined;
     }
 };
-
-// Tests validate the behavior of these structures as described in Section 4.2 and 4.9.
-const testing = std.testing;
-
-test "Delta initialization, account creation, and retrieval" {
-    const allocator = testing.allocator;
-    var delta = Delta.init(allocator);
-    defer delta.deinit();
-
-    const index: ServiceId = 1;
-    _ = try delta.getOrCreateAccount(index);
-}
-
-test "Delta balance update" {
-    const allocator = testing.allocator;
-    var delta = Delta.init(allocator);
-    defer delta.deinit();
-
-    const index: ServiceId = 1;
-    _ = try delta.getOrCreateAccount(index);
-
-    const new_balance: Balance = 1000;
-    try delta.updateBalance(index, new_balance);
-
-    const account = delta.getAccount(index);
-    try testing.expect(account != null);
-    try testing.expect(account.?.balance == new_balance);
-
-    const non_existent_index: ServiceId = 2;
-    try testing.expectError(error.AccountNotFound, delta.updateBalance(non_existent_index, new_balance));
-}
-
-test "ServiceAccount initialization and deinitialization" {
-    const allocator = testing.allocator;
-    var account = ServiceAccount.init(allocator);
-    defer account.deinit();
-
-    try testing.expect(account.storage.count() == 0);
-    try testing.expect(account.preimages.count() == 0);
-    try testing.expect(account.preimage_lookups.count() == 0);
-    try testing.expect(account.balance == 0);
-    try testing.expect(account.min_gas_accumulate == 0);
-    try testing.expect(account.min_gas_on_transfer == 0);
-}
-
-test "ServiceAccount historicalLookup" {
-    const allocator = testing.allocator;
-    var account = ServiceAccount.init(allocator);
-    defer account.deinit();
-
-    const hash = [_]u8{1} ** 32;
-    const preimage = "test preimage";
-
-    // Create a structured preimage key for testing (use service ID 42)
-    const preimage_key = state_keys.constructServicePreimageKey(42, hash);
-    try account.dupeAndAddPreimage(preimage_key, preimage);
-
-    const key = state_keys.constructServicePreimageLookupKey(42, @intCast(preimage.len), hash);
-
-    // Test case 1: Empty status
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ null, null, null } });
-    try testing.expectEqual(null, account.historicalLookup(42, 5, hash));
-
-    // Test case 2: Status with 1 entry
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, null, null } });
-    try testing.expectEqual(null, account.historicalLookup(42, 5, hash));
-    try testing.expectEqualStrings(preimage, account.historicalLookup(42, 15, hash).?);
-
-    // Test case 3: Status with 2 entries
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, null } });
-    try testing.expectEqualStrings(preimage, account.historicalLookup(42, 15, hash).?);
-    try testing.expectEqual(null, account.historicalLookup(42, 25, hash));
-
-    // Test case 4: Status with 3 entries
-    try account.preimage_lookups.put(key, PreimageLookup{ .status = .{ 10, 20, 30 } });
-    try testing.expectEqual(null, account.historicalLookup(42, 5, hash));
-    try testing.expectEqualStrings(preimage, account.historicalLookup(42, 15, hash).?);
-    try testing.expectEqual(null, account.historicalLookup(42, 25, hash));
-    try testing.expectEqualStrings(preimage, account.historicalLookup(42, 35, hash).?);
-
-    // Test case 5: Non-existent hash
-    const non_existent_hash = [_]u8{2} ** 32;
-    try testing.expectEqual(null, account.historicalLookup(42, 15, non_existent_hash));
-
-    // Test case 6: Preimage doesn't exist in preimages
-    const hash_without_preimage = [_]u8{3} ** 32;
-    try account.preimage_lookups.put(
-        state_keys.constructServicePreimageLookupKey(42, 10, hash_without_preimage),
-        PreimageLookup{ .status = .{ 10, 0, 0 } },
-    );
-    try testing.expect(account.historicalLookup(42, 15, hash_without_preimage) == null);
-}

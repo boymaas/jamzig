@@ -7,7 +7,7 @@ pub const TimeslotEntries = std.ArrayListUnmanaged(WorkReportAndDeps);
 // TODO: Future optimization - use HashSet for better API, but keep AutoArrayHashMap for now due to indexed access requirements
 pub const WorkPackageHashSet = std.AutoArrayHashMapUnmanaged(types.WorkPackageHash, void);
 
-pub fn Theta(comptime epoch_size: usize) type {
+pub fn VarTheta(comptime epoch_size: usize) type {
     return struct {
         entries: [epoch_size]TimeslotEntries,
         allocator: std.mem.Allocator,
@@ -87,7 +87,7 @@ pub fn Theta(comptime epoch_size: usize) type {
             processed_epochs: u32 = 0,
             processed_entry_in_epoch_entry: usize = 0,
 
-            theta: *Theta(epoch_size),
+            theta: *VarTheta(epoch_size),
 
             pub fn next(self: *@This()) ?*WorkReportAndDeps {
                 // If we exhausted all epochs we are done
@@ -154,7 +154,6 @@ pub fn Theta(comptime epoch_size: usize) type {
             }
             self.* = undefined;
         }
-
 
         pub fn format(
             self: *const @This(),
@@ -237,7 +236,7 @@ test "Theta - getReportsAtSlot" {
     const allocator = std.testing.allocator;
     const createEmptyWorkReport = @import("tests/fixtures.zig").createEmptyWorkReport;
 
-    var theta = Theta(12).init(allocator);
+    var theta = VarTheta(12).init(allocator);
     defer theta.deinit();
 
     // Create two sample WorkReports
@@ -245,11 +244,11 @@ test "Theta - getReportsAtSlot" {
     const work_report2 = createEmptyWorkReport([_]u8{2} ** 32);
 
     // Create two sample Entries
-    const entry1 = Theta(12).Entry{
+    const entry1 = VarTheta(12).Entry{
         .work_report = work_report1,
         .dependencies = .{},
     };
-    const entry2 = Theta(12).Entry{
+    const entry2 = VarTheta(12).Entry{
         .work_report = work_report2,
         .dependencies = .{},
     };
@@ -272,14 +271,14 @@ test "Theta - init, add entries, and verify" {
     const allocator = std.testing.allocator;
     const createEmptyWorkReport = @import("tests/fixtures.zig").createEmptyWorkReport;
 
-    var theta = Theta(12).init(allocator);
+    var theta = VarTheta(12).init(allocator);
     defer theta.deinit();
 
     // Create a sample WorkReport
     const work_report = createEmptyWorkReport([_]u8{1} ** 32);
 
     // Create a sample Entry
-    var entry = Theta(12).Entry{
+    var entry = VarTheta(12).Entry{
         .work_report = work_report,
         .dependencies = .{},
     };
@@ -303,7 +302,7 @@ test "Theta - iterator basic functionality" {
     const allocator = std.testing.allocator;
     const createEmptyWorkReport = @import("tests/fixtures.zig").createEmptyWorkReport;
 
-    var theta = Theta(12).init(allocator);
+    var theta = VarTheta(12).init(allocator);
     defer theta.deinit();
 
     // Create sample work reports with distinct IDs
@@ -312,15 +311,15 @@ test "Theta - iterator basic functionality" {
     const work_report3 = createEmptyWorkReport([_]u8{3} ** 32);
 
     // Create entries and add them to different slots
-    const entry1 = Theta(12).Entry{
+    const entry1 = VarTheta(12).Entry{
         .work_report = work_report1,
         .dependencies = .{},
     };
-    const entry2 = Theta(12).Entry{
+    const entry2 = VarTheta(12).Entry{
         .work_report = work_report2,
         .dependencies = .{},
     };
-    const entry3 = Theta(12).Entry{
+    const entry3 = VarTheta(12).Entry{
         .work_report = work_report3,
         .dependencies = .{},
     };
@@ -349,27 +348,27 @@ test "Theta - iterator multiple entries per slot" {
     const allocator = std.testing.allocator;
     const createEmptyWorkReport = @import("tests/fixtures.zig").createEmptyWorkReport;
 
-    var theta = Theta(12).init(allocator);
+    var theta = VarTheta(12).init(allocator);
     defer theta.deinit();
 
     // Create entries with distinct IDs
-    const entry1 = Theta(12).Entry{
+    const entry1 = VarTheta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{1} ** 32),
         .dependencies = .{},
     };
-    const entry2 = Theta(12).Entry{
+    const entry2 = VarTheta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{2} ** 32),
         .dependencies = .{},
     };
-    const entry3 = Theta(12).Entry{
+    const entry3 = VarTheta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{3} ** 32),
         .dependencies = .{},
     };
-    const entry4 = Theta(12).Entry{
+    const entry4 = VarTheta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{4} ** 32),
         .dependencies = .{},
     };
-    const entry5 = Theta(12).Entry{
+    const entry5 = VarTheta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{5} ** 32),
         .dependencies = .{},
     };

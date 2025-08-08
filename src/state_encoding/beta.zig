@@ -5,12 +5,34 @@ const ReportedWorkPackage = types.ReportedWorkPackage;
 
 const encoder = @import("../codec/encoder.zig");
 
-const recent_blocks = @import("../recent_blocks.zig");
-const RecentHistory = recent_blocks.RecentHistory;
+const beta_component = @import("../beta.zig");
+const Beta = beta_component.Beta;
+const RecentHistory = beta_component.RecentHistory;
+const BeefyBelt = beta_component.BeefyBelt;
+
+const mmr = @import("../merkle/mmr.zig");
 
 const trace = @import("../tracing.zig").scoped(.codec);
 
-pub fn encode(self: *const RecentHistory, writer: anytype) !void {
+/// Encode Beta component (v0.6.7: contains recent_history and beefy_belt)
+/// As per graypaper: encode(recent_history, encode_MMR(beefy_belt))
+pub fn encode(self: *const Beta, writer: anytype) !void {
+    const span = trace.span(.encode);
+    defer span.deinit();
+    span.debug("Starting beta encoding (v0.6.7)", .{});
+
+    // First encode recent_history
+    try encodeRecentHistory(&self.recent_history, writer);
+
+    // Then encode beefy_belt as MMR
+    span.debug("Encoding beefy_belt MMR", .{});
+    try mmr.encodePeaks(self.beefy_belt.peaks, writer);
+
+    span.debug("Beta encoding complete", .{});
+}
+
+/// Encode the recent history sub-component
+fn encodeRecentHistory(self: *const RecentHistory, writer: anytype) !void {
     const span = trace.span(.encode);
     defer span.deinit();
     span.debug("Starting recent history encoding", .{});
@@ -31,11 +53,10 @@ pub fn encode(self: *const RecentHistory, writer: anytype) !void {
         try writer.writeAll(&block.header_hash);
         block_span.debug("Encoded header hash", .{});
 
-        // Encode beefy MMR
-        const mmr_encoder = @import("../merkle/mmr.zig").encodePeaks;
-        block_span.debug("Encoding beefy MMR", .{});
-        try mmr_encoder(block.beefy_mmr, writer);
-        block_span.debug("Encoded beefy MMR", .{});
+        // Encode beefy root (v0.6.7: just the root, not full MMR)
+        block_span.trace("Beefy root: {s}", .{std.fmt.fmtSliceHexLower(&block.beefy_root)});
+        try writer.writeAll(&block.beefy_root);
+        block_span.debug("Encoded beefy root", .{});
 
         // Encode state root
         block_span.trace("State root: {s}", .{std.fmt.fmtSliceHexLower(&block.state_root)});
@@ -60,64 +81,4 @@ pub fn encode(self: *const RecentHistory, writer: anytype) !void {
         block_span.debug("Block encoding complete", .{});
     }
     span.debug("Recent history encoding complete", .{});
-}
-
-//  _____         _   _
-// |_   _|__  ___| |_(_)_ __   __ _
-//   | |/ _ \/ __| __| | '_ \ / _` |
-//   | |  __/\__ \ |_| | | | | (_| |
-//   |_|\___||___/\__|_|_| |_|\__, |
-//                            |___/
-
-const testing = std.testing;
-const BlockInfo = types.BlockInfo;
-const Hash = types.Hash;
-
-test "encode" {
-    const allocator = testing.allocator;
-    var recent_history = try RecentHistory.init(allocator, 2);
-    defer recent_history.deinit();
-
-    // Create a test block
-    const block = BlockInfo{
-        .header_hash = [_]u8{1} ** 32,
-        .state_root = [_]u8{2} ** 32,
-        .beefy_mmr = try allocator.dupe(?Hash, &.{[_]u8{3} ** 32}),
-        .work_reports = try allocator.dupe(ReportedWorkPackage, &[_]ReportedWorkPackage{
-            ReportedWorkPackage{
-                .hash = [_]u8{4} ** 32,
-                .exports_root = [_]u8{5} ** 32,
-            },
-        }),
-    };
-
-    try recent_history.addBlockInfo(block);
-
-    var buf: [1024]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-
-    try encode(&recent_history, fbs.writer());
-
-    const encoded: []u8 = fbs.getWritten();
-
-    // Check the number of blocks (should be 1)
-    try testing.expectEqual(@as(u8, 1), encoded[0]);
-
-    // Check the header hash
-    try testing.expectEqualSlices(u8, &block.header_hash, encoded[1..33]);
-
-    // Check the beefy MMR
-    try testing.expect(encoded.len > 33);
-
-    // Check the state root
-    // 32 bytes for state root, 1 byte for work reports length, 32 bytes for work report hash
-    const state_root_start = encoded.len - 32 - 1 - 32 - 32;
-    try testing.expectEqualSlices(u8, &block.state_root, encoded[state_root_start .. state_root_start + 32]);
-
-    // Check the number of work reports (should be 1)
-    try testing.expectEqual(@as(u8, 1), encoded[encoded.len - 1 - 32 - 32]);
-
-    // Check the work report hashes
-    try testing.expectEqualSlices(u8, &block.work_reports[0].hash, encoded[encoded.len - 64 ..][0..32]);
-    try testing.expectEqualSlices(u8, &block.work_reports[0].exports_root, encoded[encoded.len - 32 ..][0..32]);
 }

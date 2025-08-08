@@ -61,105 +61,37 @@ pub fn validateSignatureCount(guarantee: types.ReportGuarantee) !void {
     }
 }
 
-/// Validates if a validator is assigned to a core for a specific timeslot
-pub fn validateGuarantorAssignment(
+/// Validates guarantor assignments using pre-built assignments
+pub fn validateGuarantorAssignmentsWithPrebuilt(
     comptime params: @import("../../jam_params.zig").Params,
-    allocator: std.mem.Allocator,
-    stx: *StateTransition(params),
-    validator_index: types.ValidatorIndex,
-    core_index: types.CoreIndex,
-    guarantee_slot: types.TimeSlot,
-) !bool {
-    const span = trace.span(.validate_assignment);
-    defer span.deinit();
-
-    span.debug("Validating assignment @ current_slot {d}", .{stx.time.current_slot});
-    span.debug("Validating assignment for validator {d} on core {d} at guarantee.slot {d}", .{ validator_index, core_index, guarantee_slot });
-
-    // Calculate current and report rotations
-    const current_rotation = @divFloor(stx.time.current_slot, params.validator_rotation_period);
-    const report_rotation = @divFloor(guarantee_slot, params.validator_rotation_period);
-
-    span.debug("Current rotation: {d}, Report rotation: {d}", .{ current_rotation, report_rotation });
-
-    // NOTE: slots are already within range, checked in the validation stage
-
-    // Determine which assignments to use based on rotation period
-    const is_current_rotation = (current_rotation == report_rotation);
-    span.debug("Building assignments using {s} rotation entropy", .{if (is_current_rotation) "current" else "previous"});
-
-    var result = if (is_current_rotation)
-        // current rotation
-        try guarantor_assignments.buildForTimeSlot(
-            params,
-            allocator,
-            (try stx.ensure(.eta_prime))[2], // new eta
-            stx.time.current_slot,
-        )
-    else
-    // previous rotation
-    if (@divFloor(stx.time.current_slot -| params.validator_rotation_period, params.epoch_length) ==
-        @divFloor(stx.time.current_slot, params.epoch_length))
-        try guarantor_assignments.buildForTimeSlot(
-            params,
-            allocator,
-            (try stx.ensure(.eta_prime))[2], // prev eta
-            stx.time.current_slot - params.validator_rotation_period,
-        )
-    else
-        try guarantor_assignments.buildForTimeSlot(
-            params,
-            allocator,
-            (try stx.ensure(.eta_prime))[3], // prev eta
-            stx.time.current_slot - params.validator_rotation_period,
-        );
-
-    defer result.deinit(allocator);
-
-    span.debug("Built guarantor assignments successfully", .{});
-
-    // Check if validator is assigned to the core
-    const is_assigned = result.assignments[validator_index] == core_index;
-    // TODO: check if validator keys match
-
-    if (is_assigned) {
-        span.debug("Validator {d} correctly assigned to core {d}", .{ validator_index, core_index });
-    } else {
-        span.err("Validator {d} not assigned to core {d} (assigned to core {d})", .{ validator_index, core_index, result.assignments[validator_index] });
-    }
-
-    return is_assigned;
-}
-
-/// Validates guarantor assignments for all signatures in a guarantee
-pub fn validateGuarantorAssignments(
-    comptime params: @import("../../jam_params.zig").Params,
-    allocator: std.mem.Allocator,
-    stx: *StateTransition(params),
     guarantee: types.ReportGuarantee,
+    assignments: *const @import("../../guarantor_assignments.zig").GuarantorAssignmentResult,
 ) !void {
-    const span = trace.span(.validate_assignments);
+    _ = params; // Currently unused but kept for consistency
+    const span = trace.span(.validate_assignments_prebuilt);
     defer span.deinit();
-    span.debug("Validating guarantor assignments for {d} signatures", .{guarantee.signatures.len});
+    span.debug("Validating guarantor assignments for {d} signatures using pre-built assignments", .{guarantee.signatures.len});
+
+    const expected_core = guarantee.report.core_index;
 
     for (guarantee.signatures) |sig| {
-        const is_valid = try validateGuarantorAssignment(
-            params,
-            allocator,
-            stx,
-            sig.validator_index,
-            guarantee.report.core_index,
-            guarantee.slot,
-        );
+        const assigned_core = assignments.assignments[sig.validator_index];
 
-        if (!is_valid) {
-            span.err("Invalid guarantor assignment for validator {d} on core {d}", .{
+        if (assigned_core != expected_core) {
+            span.err("Invalid guarantor assignment for validator {d}: assigned to core {d}, expected core {d}", .{
                 sig.validator_index,
-                guarantee.report.core_index,
+                assigned_core,
+                expected_core,
             });
             return Error.InvalidGuarantorAssignment;
         }
+
+        span.trace("Validator {d} correctly assigned to core {d}", .{
+            sig.validator_index,
+            expected_core,
+        });
     }
 
     span.debug("Assignment validation successful", .{});
 }
+

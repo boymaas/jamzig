@@ -75,7 +75,10 @@ pub fn scan(
             continue;
         }
 
-        const vector = try loader.loadAndDeserializeTestVector(T, params, allocator, entry.path);
+        const vector = loader.loadAndDeserializeTestVectorWithContext(T, params, allocator, entry.path) catch |err| {
+            std.log.err("Failed to load test vector: {s}", .{entry.path});
+            return err;
+        };
         try vectors.append(vector);
     }
 
