@@ -2,38 +2,74 @@ const std = @import("std");
 const types = @import("types.zig");
 
 // ============================================================================
+// Compile-time constants for optimization
+// ============================================================================
+
+// Pre-computed byte arrays for common values
+const MAX_U32_BYTES = blk: {
+    var bytes: [4]u8 = undefined;
+    std.mem.writeInt(u32, &bytes, std.math.maxInt(u32), .little);
+    break :blk bytes;
+};
+
+const MAX_U32_MINUS_1_BYTES = blk: {
+    var bytes: [4]u8 = undefined;
+    std.mem.writeInt(u32, &bytes, std.math.maxInt(u32) - 1, .little);
+    break :blk bytes;
+};
+
+// ============================================================================
+// Helper functions for optimization
+// ============================================================================
+
+/// Interleaves service ID bytes with hash bytes for C_variant3 output
+/// This eliminates code duplication between C_variant3 and C_variant3_incremental
+inline fn interleaveServiceAndHash(result: *types.StateKey, s: u32, hash: *const [32]u8) void {
+    // Encode s in little-endian
+    var n: [4]u8 = undefined;
+    std.mem.writeInt(u32, &n, s, .little);
+    
+    // Interleave service ID bytes with first 4 bytes of hash
+    result[0] = n[0];
+    result[1] = hash[0];
+    result[2] = n[1];
+    result[3] = hash[1];
+    result[4] = n[2];
+    result[5] = hash[2];
+    result[6] = n[3];
+    result[7] = hash[3];
+    
+    // Copy remaining bytes from hash (a₄...a₂₆)
+    @memcpy(result[8..31], hash[4..27]);
+}
+
+// ============================================================================
 // Base C function variants as per JAM graypaper D.1 (v0.6.7)
 // ============================================================================
 
 /// C function variant 1: i ∈ ℕ₂₈ → [i, 0, 0, ...]
 /// For state component keys
-fn C_variant1(i: u8) types.StateKey {
-    var result: types.StateKey = [_]u8{0} ** 31;
-    result[0] = i;
-    return result;
+inline fn C_variant1(i: u8) types.StateKey {
+    return .{i} ++ .{0} ** 30;
 }
 
 /// C function variant 2: (i, s ∈ ℕS) → [i, n₀, 0, n₁, 0, n₂, 0, n₃, 0, 0, ...]
 /// Where n = ℰ₄(s) (little-endian encoding of s)
 /// For service base keys
-fn C_variant2(i: u8, s: u32) types.StateKey {
+inline fn C_variant2(i: u8, s: u32) types.StateKey {
     var result: types.StateKey = [_]u8{0} ** 31;
-
+    
     // Encode s in little-endian (ℰ₄(s))
     var n: [4]u8 = undefined;
     std.mem.writeInt(u32, &n, s, .little);
-
-    // Build the key: [i, n₀, 0, n₁, 0, n₂, 0, n₃, 0, 0, ...]
+    
     result[0] = i;
-    result[1] = n[0];
-    result[2] = 0;
-    result[3] = n[1];
-    result[4] = 0;
-    result[5] = n[2];
-    result[6] = 0;
-    result[7] = n[3];
-    // Rest are already zeros
-
+    // Unrolled loop for better optimization
+    inline for (0..4) |idx| {
+        result[1 + idx * 2] = n[idx];
+        // Zeros are already set from initialization
+    }
+    
     return result;
 }
 
@@ -41,32 +77,29 @@ fn C_variant2(i: u8, s: u32) types.StateKey {
 /// Where n = ℰ₄(s) and a = ℋ(h)₀...₂₇
 /// IMPORTANT: In v0.6.7, this variant now HASHES the input h first!
 /// For interleaved keys with service ID and hashed data
-fn C_variant3(s: u32, h: []const u8) types.StateKey {
+inline fn C_variant3(s: u32, h: []const u8) types.StateKey {
     var result: types.StateKey = undefined;
-
+    
     // NEW in v0.6.7: Hash the input first
     var a: [32]u8 = undefined;
     var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
     hasher.update(h);
     hasher.final(&a);
+    
+    interleaveServiceAndHash(&result, s, &a);
+    return result;
+}
 
-    // Encode s in little-endian (ℰ₄(s))
-    var n: [4]u8 = undefined;
-    std.mem.writeInt(u32, &n, s, .little);
-
-    // Interleave service ID bytes with first 4 bytes of a (the hash)
-    result[0] = n[0];
-    result[1] = a[0];
-    result[2] = n[1];
-    result[3] = a[1];
-    result[4] = n[2];
-    result[5] = a[2];
-    result[6] = n[3];
-    result[7] = a[3];
-
-    // Copy remaining bytes from a (a₄...a₂₆)
-    @memcpy(result[8..31], a[4..27]);
-
+/// C function variant 3 with incremental hashing: allows building the hash incrementally
+/// to avoid allocations when concatenating data
+inline fn C_variant3_incremental(s: u32, hasher: *std.crypto.hash.blake2.Blake2b256) types.StateKey {
+    var result: types.StateKey = undefined;
+    
+    // Finalize the hash
+    var a: [32]u8 = undefined;
+    hasher.final(&a);
+    
+    interleaveServiceAndHash(&result, s, &a);
     return result;
 }
 
@@ -75,7 +108,7 @@ fn C_variant3(s: u32, h: []const u8) types.StateKey {
 // ============================================================================
 
 /// Constructs a 31-byte key for state components (Alpha, Phi, Beta, etc.)
-pub fn constructStateComponentKey(component_id: u8) types.StateKey {
+pub inline fn constructStateComponentKey(component_id: u8) types.StateKey {
     return C_variant1(component_id);
 }
 
@@ -88,25 +121,21 @@ pub fn constructStateComponentKey(component_id: u8) types.StateKey {
 /// @param service_id - The service identifier
 /// @param storage_key - The raw storage key (any length)
 /// @return A 31-byte key for storage operations
-pub fn constructStorageKey(service_id: u32, storage_key: []const u8) types.StateKey {
-    // Prepare the data: ℰ₄(2³² - 1) ⌢ storage_key
-    // REFACTOR: take an allocator or handle this differently
-    var data = std.ArrayList(u8).init(std.heap.page_allocator);
-    defer data.deinit();
-
-    // ℰ₄(2³² - 1) = [255, 255, 255, 255] in little-endian
-    var max_u32_bytes: [4]u8 = undefined;
-    std.mem.writeInt(u32, &max_u32_bytes, std.math.maxInt(u32), .little);
-    data.appendSlice(&max_u32_bytes) catch unreachable;
-
+pub inline fn constructStorageKey(service_id: u32, storage_key: []const u8) types.StateKey {
+    // Build the hash incrementally without allocating
+    var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
+    
+    // Use pre-computed constant
+    hasher.update(&MAX_U32_BYTES);
+    
     // Append the full storage key (not truncated)
-    data.appendSlice(storage_key) catch unreachable;
-
-    return C_variant3(service_id, data.items);
+    hasher.update(storage_key);
+    
+    return C_variant3_incremental(service_id, &hasher);
 }
 
 /// Constructs a 31-byte key for service base account metadata
-pub fn constructServiceBaseKey(service_id: u32) types.StateKey {
+pub inline fn constructServiceBaseKey(service_id: u32) types.StateKey {
     return C_variant2(255, service_id);
 }
 
@@ -119,17 +148,15 @@ pub fn constructServiceBaseKey(service_id: u32) types.StateKey {
 /// @param service_id - The service identifier
 /// @param hash - The 32-byte Blake2b-256 hash of the preimage
 /// @return A 31-byte key for the preimage entry
-pub fn constructServicePreimageKey(service_id: u32, hash: [32]u8) types.StateKey {
-    // Prepare the data: ℰ₄(2³² - 2) ⌢ h
-    var data: [36]u8 = undefined;
-
-    // ℰ₄(2³² - 2) = [254, 255, 255, 255] in little-endian
-    std.mem.writeInt(u32, data[0..4], std.math.maxInt(u32) - 1, .little);
-
-    // Concatenate with the full hash
-    @memcpy(data[4..36], &hash);
-
-    return C_variant3(service_id, &data);
+pub inline fn constructServicePreimageKey(service_id: u32, hash: [32]u8) types.StateKey {
+    // Build the hash incrementally without allocating a temporary buffer
+    var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
+    
+    // Use pre-computed constant
+    hasher.update(&MAX_U32_MINUS_1_BYTES);
+    hasher.update(&hash);
+    
+    return C_variant3_incremental(service_id, &hasher);
 }
 
 /// Constructs a 31-byte key for service preimage lookup entries per JAM graypaper v0.6.7
@@ -142,15 +169,16 @@ pub fn constructServicePreimageKey(service_id: u32, hash: [32]u8) types.StateKey
 /// @param length - The preimage length
 /// @param hash - The 32-byte hash (typically Blake2b-256)
 /// @return A 31-byte key for the preimage lookup entry
-pub fn constructServicePreimageLookupKey(service_id: u32, length: u32, hash: [32]u8) types.StateKey {
-    // Prepare the data: ℰ₄(l) ⌢ h
-    var data: [36]u8 = undefined;
-
+pub inline fn constructServicePreimageLookupKey(service_id: u32, length: u32, hash: [32]u8) types.StateKey {
+    // Build the hash incrementally without allocating a temporary buffer
+    var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
+    
     // ℰ₄(l) - encode length in little-endian
-    std.mem.writeInt(u32, data[0..4], length, .little);
-
-    // Concatenate with the full hash
-    @memcpy(data[4..36], &hash);
-
-    return C_variant3(service_id, &data);
+    var length_bytes: [4]u8 = undefined;
+    std.mem.writeInt(u32, &length_bytes, length, .little);
+    
+    hasher.update(&length_bytes);
+    hasher.update(&hash);
+    
+    return C_variant3_incremental(service_id, &hasher);
 }
