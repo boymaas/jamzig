@@ -30,6 +30,7 @@ test "w3f:traces:fallback" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/fallback",
+        .CONTINOUS_MODE,
     );
 }
 
@@ -41,6 +42,7 @@ test "w3f:traces:safrole" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/safrole",
+        .CONTINOUS_MODE,
     );
 }
 
@@ -52,6 +54,7 @@ test "w3f:traces:preimages" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/preimages",
+        .CONTINOUS_MODE,
     );
 }
 
@@ -63,6 +66,7 @@ test "w3f:traces:preimages_light" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/preimages_light",
+        .CONTINOUS_MODE,
     );
 }
 
@@ -74,6 +78,7 @@ test "w3f:traces:storage" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/storage",
+        .CONTINOUS_MODE,
     );
 }
 
@@ -85,15 +90,54 @@ test "w3f:traces:storage_light" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/storage_light",
+        .CONTINOUS_MODE,
     );
 }
 
-/// Run state transition tests using BlockImporter for full validation
+test "w3f:fuzz_reports" {
+    const allocator = std.testing.allocator;
+    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
+
+    const fuzz_reports_dir = "src/jamtestnet/fuzz_reports";
+
+    // Scan for version directories (e.g., v0.6.7)
+    var dir = try std.fs.cwd().openDir(fuzz_reports_dir, .{ .iterate = true });
+    defer dir.close();
+
+    var version_iter = dir.iterate();
+    while (try version_iter.next()) |version_entry| {
+        if (version_entry.kind != .directory) continue;
+
+        const version_path = try std.fs.path.join(allocator, &[_][]const u8{ fuzz_reports_dir, version_entry.name });
+        defer allocator.free(version_path);
+
+        // Scan for timestamp directories within each version
+        var version_dir = try std.fs.cwd().openDir(version_path, .{ .iterate = true });
+        defer version_dir.close();
+
+        var timestamp_iter = version_dir.iterate();
+        while (try timestamp_iter.next()) |timestamp_entry| {
+            if (timestamp_entry.kind != .directory) continue;
+
+            const test_path = try std.fs.path.join(allocator, &[_][]const u8{ version_path, timestamp_entry.name });
+            defer allocator.free(test_path);
+
+            std.debug.print("\nRunning fuzz reports from: {s}/{s}/{s}\n", .{ fuzz_reports_dir, version_entry.name, timestamp_entry.name });
+
+            // Run the block import tests for this directory
+            try runBlockImportTests(W3F_PARAMS, loader.loader(), allocator, test_path, .CONTINOUS_MODE);
+        }
+    }
+}
+
+const ImportMode = enum { CONTINOUS_MODE, TRACE_MODE };
+
 pub fn runBlockImportTests(
     comptime params: jam_params.Params,
     loader: jamtestnet.Loader,
     allocator: std.mem.Allocator,
     test_dir: []const u8,
+    continuosity_check: ImportMode,
 ) !void {
     std.log.err("\nRunning block import tests from: {s}", .{test_dir});
 
@@ -126,13 +170,16 @@ pub fn runBlockImportTests(
         if (current_state) |*cs| cs.deinit(allocator);
     }
 
-    for (state_transition_vectors.items()[offset..]) |state_transition_vector| {
+    // Track last post-state root to verify trace continuity
+    var last_post_state_root: ?[32]u8 = null;
+
+    for (state_transition_vectors.items()[offset..], offset..) |state_transition_vector, idx| {
         // This is sometimes placed in the dir
         if (std.mem.eql(u8, state_transition_vector.bin.name, "genesis.bin")) {
             continue;
         }
 
-        std.debug.print("\nProcessing block import: {s}\n\n", .{state_transition_vector.bin.name});
+        std.debug.print("\n=== Processing block import {d}: {s} ===\n", .{ idx, state_transition_vector.bin.name });
 
         var state_transition = try loader.loadTestVector(allocator, state_transition_vector.bin.path);
         defer state_transition.deinit(allocator);
@@ -144,20 +191,41 @@ pub fn runBlockImportTests(
         // Validator Root Calculations
         try state_transition.validateRoots(allocator);
 
-        // Initialize genesis state if needed
-        if (current_state == null) {
+        // Check trace continuity: compare last post-state root with current pre-state root
+        if (continuosity_check == .CONTINOUS_MODE) {
+            if (last_post_state_root) |last_root| {
+                const current_pre_root = state_transition.preStateRoot();
+                if (!std.mem.eql(u8, &last_root, &current_pre_root)) {
+                    std.debug.print("\x1b[31m=== Trace continuity error ===\x1b[0m\n", .{});
+                    std.debug.print("Last post-state root: {s}\n", .{std.fmt.fmtSliceHexLower(&last_root)});
+                    std.debug.print("Current pre-state root: {s}\n", .{std.fmt.fmtSliceHexLower(&current_pre_root)});
+                    std.debug.print("The traces are not continuous - the previous post-state root doesn't match the current pre-state root!\n", .{});
+                    return error.TraceContinuityError;
+                }
+            }
+        }
+
+        // Initialize genesis state if needed, and in TRACE_MODE
+        // we always initialize current_state to the pre_state of the trace to ensure
+        // we can validate the state transition correctly.
+        if (current_state == null or continuosity_check == .TRACE_MODE) {
             // std.debug.print("Initializing genesis state...\n", .{});
-            var dict = try state_transition.preStateAsMerklizationDict(allocator);
-            defer dict.deinit();
+            var pre_state_dict = try state_transition.preStateAsMerklizationDict(allocator);
+            defer pre_state_dict.deinit();
+
+            // If we are in TRACE_MODE, we need to deinit our previous current_state
+            if (current_state) |*cs| cs.deinit(allocator);
+
             current_state = try state_dict.reconstruct.reconstructState(
                 params,
                 allocator,
-                &dict,
+                &pre_state_dict,
             );
 
             var current_state_mdict = try current_state.?.buildStateMerklizationDictionary(allocator);
             defer current_state_mdict.deinit();
-            var genesis_state_diff = try current_state_mdict.diff(&dict);
+
+            var genesis_state_diff = try current_state_mdict.diff(&pre_state_dict);
             defer genesis_state_diff.deinit();
 
             if (genesis_state_diff.has_changes()) {
@@ -169,14 +237,25 @@ pub fn runBlockImportTests(
 
         // Ensure we are starting with the same roots.
         const pre_state_root = try current_state.?.buildStateRoot(allocator);
-        try std.testing.expectEqualSlices(
-            u8,
-            &state_transition.preStateRoot(),
-            &pre_state_root,
-        );
+        if (!std.mem.eql(u8, &state_transition.preStateRoot(), &pre_state_root)) {
+            std.debug.print("\x1b[31m=== Pre-state root mismatch ===\x1b[0m\n", .{});
+            std.debug.print("Expected: {s}\n", .{std.fmt.fmtSliceHexLower(&state_transition.preStateRoot())});
+            std.debug.print("Actual: {s}\n", .{std.fmt.fmtSliceHexLower(&pre_state_root)});
 
-        // Use BlockImporter for full validation and state transition
-        std.debug.print("Using BlockImporter for full validation...\n", .{});
+            // Reconstruct expected pre-state and show diff
+            var expected_pre_state_mdict = try state_transition.preStateAsMerklizationDict(allocator);
+            defer expected_pre_state_mdict.deinit();
+
+            var expected_pre_state = try state_dict.reconstruct.reconstructState(params, allocator, &expected_pre_state_mdict);
+            defer expected_pre_state.deinit(allocator);
+
+            std.debug.print("\n\x1b[31m=== State Differences ===\x1b[0m\n", .{});
+            var state_diff = try @import("tests/state_diff.zig").JamStateDiff(params).build(allocator, &current_state.?, &expected_pre_state);
+            defer state_diff.deinit();
+            state_diff.printToStdErr();
+
+            return error.PreStateRootMismatch;
+        }
 
         // Debug: Calculate and print extrinsic hash to stderr
         const block = state_transition.block();
@@ -191,10 +270,6 @@ pub fn runBlockImportTests(
             block.extrinsic.disputes.culprits.len,
             block.extrinsic.disputes.faults.len,
         });
-
-        const calculated_hash = try block.extrinsic.calculateHash(params, allocator);
-        std.log.err("Expected extrinsic hash: {s}", .{std.fmt.fmtSliceHexLower(&block.header.extrinsic_hash)});
-        std.log.err("Calculated extrinsic hash: {s}", .{std.fmt.fmtSliceHexLower(&calculated_hash)});
 
         var import_result = importer.importBlock(
             &current_state.?,
@@ -274,10 +349,23 @@ pub fn runBlockImportTests(
 
         // Validate state root
         const state_root = try current_state.?.buildStateRoot(allocator);
+        const expected_post_root = state_transition.postStateRoot();
+
+        if (std.mem.eql(u8, &expected_post_root, &state_root)) {
+            std.debug.print("\x1b[32m✓ Post-state root matches: {s}\x1b[0m\n", .{std.fmt.fmtSliceHexLower(&state_root)});
+        } else {
+            std.debug.print("\x1b[31m✗ Post-state root mismatch!\x1b[0m\n", .{});
+            std.debug.print("Expected: {s}\n", .{std.fmt.fmtSliceHexLower(&expected_post_root)});
+            std.debug.print("Actual: {s}\n", .{std.fmt.fmtSliceHexLower(&state_root)});
+        }
+
         try std.testing.expectEqualSlices(
             u8,
-            &state_transition.postStateRoot(),
+            &expected_post_root,
             &state_root,
         );
+
+        // Save this post-state root for next iteration's continuity check
+        last_post_state_root = expected_post_root;
     }
 }
