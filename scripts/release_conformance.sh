@@ -34,11 +34,20 @@ DATE=$(date +%Y%m%d%H%M) # Format: YYYYMMDDHHMM for better release granularity
 # Base directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Get Graypaper version from source
+echo "Extracting Graypaper version..."
+cd "${PROJECT_ROOT}"
+GRAYPAPER_VERSION=$(zig run scripts/release_conformance/get_version.zig 2>/dev/null || echo "unknown")
+if [ "$GRAYPAPER_VERSION" = "unknown" ]; then
+    echo -e "${YELLOW}Warning: Could not extract Graypaper version${NC}"
+fi
 RELEASE_REPO_DIR="${PROJECT_ROOT}/../jamzig-conformance-releases"
 RELEASE_DIR="${RELEASE_REPO_DIR}"
 
 echo -e "${GREEN}Creating JAM Conformance Release${NC}"
 echo -e "${YELLOW}Git SHA: ${GIT_SHA}${NC}"
+echo -e "${YELLOW}Graypaper Version: ${GRAYPAPER_VERSION}${NC}"
 echo -e "${YELLOW}Build Date: ${DATE}${NC}"
 
 # Clean previous release files (but keep .git and base README if exists)
@@ -260,6 +269,7 @@ cat > "${RELEASE_DIR}/RELEASE_INFO.json" <<EOF
     "type": "jam-conformance-release",
     "date": "${DATE}",
     "git_sha": "${GIT_SHA}",
+    "graypaper_version": "${GRAYPAPER_VERSION}",
     "git_branch": "$(git rev-parse --abbrev-ref HEAD)",
     "build_time": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
     "build_host": "$(hostname)",
@@ -280,6 +290,7 @@ EOF
 # Copy and process README
 echo "Processing README..."
 sed -e "s/\${GIT_SHA}/${GIT_SHA}/g" \
+    -e "s/\${GRAYPAPER_VERSION}/${GRAYPAPER_VERSION}/g" \
     -e "s/\${BUILD_DATE}/$(date -u +%Y-%m-%dT%H:%M:%SZ)/g" \
     "${SCRIPT_DIR}/release_conformance/README.md" > "${RELEASE_DIR}/README.md"
 
@@ -305,6 +316,7 @@ git add .
 COMMIT_MSG="Update conformance release - ${GIT_SHA}
 
 Built from JamZig⚡ commit: ${GIT_SHA}
+Graypaper version: ${GRAYPAPER_VERSION}
 Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Platforms: ${#PLATFORMS[@]} × Param sets: 2 = ${#build_jobs[@]} total configurations"
 
