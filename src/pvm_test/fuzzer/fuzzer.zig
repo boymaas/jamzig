@@ -360,8 +360,9 @@ pub const PVMFuzzer = struct {
         // Register host call handler
         var host_calls_map = std.AutoHashMapUnmanaged(u32, PVM.HostCallFn){};
         defer host_calls_map.deinit(self.allocator);
+        const HostCallError = @import("../../pvm_invocations/host_calls.zig").HostCallError;
         try host_calls_map.put(self.allocator, 0, struct {
-            pub fn func(ctx: *PVM.ExecutionContext, _: *anyopaque) PVM.HostCallResult {
+            pub fn func(ctx: *PVM.ExecutionContext, _: *anyopaque) HostCallError!PVM.HostCallResult {
                 _ = ctx;
                 return .play;
             }
@@ -520,7 +521,13 @@ pub const PVMFuzzer = struct {
 
                     // Execute host call
                     const dummy_ctx = struct {};
-                    const result = handler(&exec_ctx, @ptrCast(@constCast(&dummy_ctx)));
+                    const result = handler(&exec_ctx, @ptrCast(@constCast(&dummy_ctx))) catch |err| {
+                        // Map error to return code as the PVM does
+                        const errorToReturnCode = @import("../../pvm_invocations/host_calls.zig").errorToReturnCode;
+                        exec_ctx.registers[7] = @intFromEnum(errorToReturnCode(err));
+                        exec_ctx.pc = host.next_pc;
+                        continue;
+                    };
                     switch (result) {
                         .play => {
                             exec_ctx.pc = host.next_pc;

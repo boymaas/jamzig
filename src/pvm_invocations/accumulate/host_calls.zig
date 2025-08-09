@@ -11,6 +11,7 @@ const AccumulationContext = @import("context.zig").AccumulationContext;
 const Params = @import("../../jam_params.zig").Params;
 
 const ReturnCode = @import("../host_calls.zig").ReturnCode;
+const HostCallError = @import("../host_calls.zig").HostCallError;
 
 const PVM = @import("../../pvm.zig").PVM;
 
@@ -88,7 +89,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn gasRemaining(
             exec_ctx: *PVM.ExecutionContext,
             _: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             return general.GeneralHostCalls(params).gasRemaining(exec_ctx);
         }
 
@@ -96,7 +97,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn lookupPreimage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             var ctx_regular = &host_ctx.regular;
 
@@ -110,7 +111,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn readStorage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             var ctx_regular = &host_ctx.regular;
 
@@ -124,7 +125,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn writeStorage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             var ctx_regular = &host_ctx.regular;
 
@@ -138,7 +139,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn infoService(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             var ctx_regular = &host_ctx.regular;
 
@@ -152,7 +153,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn blessService(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_bless);
             defer span.deinit();
 
@@ -177,7 +178,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Get current privileges
             const current_privileges: *state.Chi = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Could not get mutable privileges", .{});
-                return .{ .terminal = .panic };
+                return HostCallError.FULL;
             };
 
             // Only the current manager service can call bless
@@ -185,8 +186,7 @@ pub fn HostCalls(comptime params: Params) type {
                 span.debug("Unauthorized bless call from service {d}, current manager is {d}", .{
                     ctx_regular.service_id, current_privileges.manager,
                 });
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO); // Index unknown
-                return .play;
+                return HostCallError.WHO;
             }
 
             // Check manager and validator service IDs are valid
@@ -195,8 +195,7 @@ pub fn HostCalls(comptime params: Params) type {
                 (!ctx_regular.context.service_accounts.contains(validator_service_id)))
             {
                 span.debug("Manager or validator service ID doesn't exist", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO); // Index unknown
-                return .play;
+                return HostCallError.WHO;
             }
 
             // Read assign service IDs from memory
@@ -230,8 +229,7 @@ pub fn HostCalls(comptime params: Params) type {
                 // Verify this service exists
                 if (!ctx_regular.context.service_accounts.contains(service_id)) {
                     span.debug("Assign service ID {d} doesn't exist", .{service_id});
-                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
-                    return .play;
+                    return HostCallError.WHO;
                 }
 
                 // Add to the list
@@ -276,8 +274,7 @@ pub fn HostCalls(comptime params: Params) type {
                 // TODO: GP This seems not to be explicitly defined in the graypaper
                 if (!ctx_regular.context.service_accounts.contains(service_id)) {
                     span.debug("Always-accumulate service ID {d} doesn't exist", .{service_id});
-                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
-                    return .play;
+                    return HostCallError.WHO;
                 }
 
                 // Add to the map
@@ -323,7 +320,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn upgradeService(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_upgrade);
             defer span.deinit();
 
@@ -378,7 +375,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn transfer(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_transfer);
             defer span.deinit();
 
@@ -415,8 +412,7 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Looking up destination service account", .{});
             const destination_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
                 span.debug("Destination service not found, returning WHO error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO); // Error: destination not found
-                return .play;
+                return HostCallError.WHO;
             };
 
             // Check if gas limit is high enough for destination service's on_transfer
@@ -425,8 +421,7 @@ pub fn HostCalls(comptime params: Params) type {
             });
             if (gas_limit < destination_service.min_gas_on_transfer) {
                 span.debug("Gas limit too low, returning LOW error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.LOW); // Error: gas limit too low
-                return .play;
+                return HostCallError.LOW;
             }
 
             // Check if source has enough balance
@@ -435,8 +430,7 @@ pub fn HostCalls(comptime params: Params) type {
             });
             if (source_service.balance < amount) {
                 span.debug("Insufficient balance, returning CASH error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.CASH); // Error: insufficient funds
-                return .play;
+                return HostCallError.CASH;
             }
 
             // Read memo data from memory
@@ -487,7 +481,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn assignCore(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_assign);
             defer span.deinit();
 
@@ -507,8 +501,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Check if core index is valid
             if (core_index >= params.core_count) {
                 span.debug("Invalid core index {d}, returning CORE error", .{core_index});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.CORE);
-                return .play;
+                return HostCallError.CORE;
             }
 
             // Make sure this is an assign service calling
@@ -570,7 +563,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn checkpoint(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_checkpoint);
             defer span.deinit();
 
@@ -603,7 +596,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn newService(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_new_service);
             defer span.deinit();
 
@@ -655,8 +648,7 @@ pub fn HostCalls(comptime params: Params) type {
 
             if (calling_service.balance < initial_balance) {
                 span.debug("Insufficient balance to create new service, returning CASH error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.CASH); // Error: Insufficient funds
-                return .play;
+                return HostCallError.CASH;
             }
 
             // Create the new service account
@@ -695,7 +687,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn ejectService(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_eject);
             defer span.deinit();
 
@@ -715,15 +707,13 @@ pub fn HostCalls(comptime params: Params) type {
             // Check if target service is current service (can't eject self)
             if (target_service_id == ctx_regular.service_id) {
                 span.debug("Cannot eject current service, returning WHO error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
-                return .play;
+                return HostCallError.WHO;
             }
 
             // Get target service account (must exist)
             const target_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(target_service_id)) orelse {
                 span.debug("Target service not found, returning WHO error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
-                return .play;
+                return HostCallError.WHO;
             };
 
             // Read hash from memory
@@ -745,8 +735,7 @@ pub fn HostCalls(comptime params: Params) type {
 
             if (!std.mem.eql(u8, &current_service.code_hash, &target_service.code_hash)) {
                 span.debug("Target service code hash doesn't match current code hah, returning WHO error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
-                return .play;
+                return HostCallError.WHO;
             }
 
             // Per graypaper, check if the lookup status has a valid record
@@ -755,15 +744,13 @@ pub fn HostCalls(comptime params: Params) type {
             const l = @max(81, footprint.a_o) - 81;
             const lookup_status = target_service.getPreimageLookup(@intCast(target_service_id), hash, @intCast(l)) orelse {
                 span.debug("Hash lookup not found, returning HUH error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
-                return .play;
+                return HostCallError.HUH;
             };
 
             // Seems we should only have one preimage_lookup and nothing in the storage
             // that is the only way this can a_i
             if (footprint.a_i != 2) {
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
-                return .play;
+                return HostCallError.HUH;
             }
 
             const current_timeslot = ctx_regular.context.time.current_slot;
@@ -773,15 +760,13 @@ pub fn HostCalls(comptime params: Params) type {
             // d_i != 2: The lookup item index must be 2
             if (status.len != 2) {
                 span.debug("Lookup status length is not 2, returning HUH error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
-                return .play;
+                return HostCallError.HUH;
             }
 
             // Check if time condition is met for preimage expungement
             if (status[1].? >= current_timeslot -| params.preimage_expungement_period) {
                 span.debug("Preimage not yet expired, returning HUH error", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
-                return .play;
+                return HostCallError.HUH;
             }
 
             // All checks passed, can eject the service
@@ -810,7 +795,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn queryPreimage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_query);
             defer span.deinit();
 
@@ -846,8 +831,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Query preimage status
             span.debug("Querying preimage status", .{});
             const lookup_status = service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size)) orelse {
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                return .play;
+                return HostCallError.NONE;
             };
 
             // Encode result according to graypaper section B.7
@@ -908,7 +892,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn solicitPreimage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_solicit);
             defer span.deinit();
 
@@ -942,8 +926,7 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             } orelse {
                 span.err("Service account not found", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
-                return .play;
+                return HostCallError.HUH;
             };
 
             // Calculate storage footprint for the preimage
@@ -957,8 +940,7 @@ pub fn HostCalls(comptime params: Params) type {
 
             if (footprint.a_t + additional_balance_needed > service_account.balance) {
                 span.debug("Insufficient balance for soliciting preimage, returning FULL", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.FULL);
-                return .play;
+                return HostCallError.FULL;
             }
 
             // Try to solicit the preimage
@@ -971,7 +953,7 @@ pub fn HostCalls(comptime params: Params) type {
             } else |err| {
                 // Error occurred while soliciting preimage
                 span.err("Error while soliciting preimage: {}", .{err});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
+                return HostCallError.HUH;
             }
 
             return .play;
@@ -981,7 +963,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn forgetPreimage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_forget);
             defer span.deinit();
 
@@ -1015,8 +997,7 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             } orelse {
                 span.err("Service account not found", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
-                return .play;
+                return HostCallError.HUH;
             };
 
             // Try to forget the preimage, this either succeeds and mutates the service, or fails and it did not mutate
@@ -1024,8 +1005,7 @@ pub fn HostCalls(comptime params: Params) type {
             // span.trace("Service Account: {}", .{types.fmt.format(service_account.preimage_lookup)});
             service_account.forgetPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch |err| {
                 span.err("Error while forgetting preimage: {}", .{err});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
-                return .play;
+                return HostCallError.HUH;
             };
 
             // Success result
@@ -1038,7 +1018,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn yieldAccumulationResult(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_yield);
             defer span.deinit();
 
@@ -1077,7 +1057,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn designateValidators(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_designate);
             defer span.deinit();
 
@@ -1099,8 +1079,7 @@ pub fn HostCalls(comptime params: Params) type {
                 span.debug("Service {d} does not have designate privilege, current designator is {?d}", .{
                     ctx_regular.service_id, privileges.designate,
                 });
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
-                return .play;
+                return HostCallError.HUH;
             }
 
             // Calculate total size needed: 336 bytes per validator * V validators
@@ -1134,7 +1113,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn provide(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_provide);
             defer span.deinit();
 
@@ -1163,8 +1142,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Check if the service exists
             const service_account = ctx_regular.context.service_accounts.getReadOnly(service_id) orelse {
                 span.debug("Service {d} not found, returning WHO error", .{service_id});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
-                return .play;
+                return HostCallError.WHO;
             };
 
             // Read data from memory
@@ -1192,9 +1170,8 @@ pub fn HostCalls(comptime params: Params) type {
                 const status = lookup_status.asSlice();
                 if (status.len != 0) {
                     span.debug("Data already has preimage lookup status, returning HUH error", .{});
-                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                     ctx_regular.allocator.free(data_copy);
-                    return .play;
+                    return HostCallError.HUH;
                 }
             }
 
@@ -1229,7 +1206,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn fetch(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_fetch);
             defer span.deinit();
 
@@ -1258,8 +1235,7 @@ pub fn HostCalls(comptime params: Params) type {
                     span.debug("Encoding JAM chain constants", .{});
                     const encoded_constants = encoding_utils.encodeJamParams(ctx_regular.allocator, params) catch {
                         span.err("Failed to encode JAM chain constants", .{});
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
+                        return HostCallError.NONE;
                     };
                     data_to_fetch = encoded_constants;
                     needs_cleanup = true;
@@ -1275,8 +1251,7 @@ pub fn HostCalls(comptime params: Params) type {
                     // Selector 14: Encoded operand tuples
                     const operand_tuples_data = encoding_utils.encodeOperandTuples(ctx_regular.allocator, ctx_regular.operands) catch {
                         span.err("Failed to encode operand tuples", .{});
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
+                        return HostCallError.NONE;
                     };
                     span.debug("Operand tuples encoded successfully, count={d}", .{ctx_regular.operands.len});
                     data_to_fetch = operand_tuples_data;
@@ -1289,16 +1264,14 @@ pub fn HostCalls(comptime params: Params) type {
                         const operand_tuple = &ctx_regular.operands[index1];
                         const operand_tuple_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand_tuple) catch {
                             span.err("Failed to encode operand tuple", .{});
-                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                            return .play;
+                            return HostCallError.NONE;
                         };
                         span.debug("Operand tuple encoded successfully: index={d}", .{index1});
                         data_to_fetch = operand_tuple_data;
                         needs_cleanup = true;
                     } else {
                         span.debug("Operand tuple index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.operands.len });
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
+                        return HostCallError.NONE;
                     }
                 },
 
@@ -1307,16 +1280,14 @@ pub fn HostCalls(comptime params: Params) type {
                     if (ctx_regular.deferred_transfers.items.len > 0) {
                         const transfers_data = encoding_utils.encodeTransfers(ctx_regular.allocator, ctx_regular.deferred_transfers.items) catch {
                             span.err("Failed to encode transfer sequence", .{});
-                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                            return .play;
+                            return HostCallError.NONE;
                         };
                         span.debug("Transfer sequence encoded successfully, count={d}", .{ctx_regular.deferred_transfers.items.len});
                         data_to_fetch = transfers_data;
                         needs_cleanup = true;
                     } else {
                         span.debug("No deferred transfers available in accumulate context", .{});
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
+                        return HostCallError.NONE;
                     }
                 },
 
@@ -1327,29 +1298,25 @@ pub fn HostCalls(comptime params: Params) type {
                             const transfer_item = &ctx_regular.deferred_transfers.items[index1];
                             const transfer_data = encoding_utils.encodeTransfer(ctx_regular.allocator, transfer_item) catch {
                                 span.err("Failed to encode transfer", .{});
-                                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                                return .play;
+                                return HostCallError.NONE;
                             };
                             span.debug("Transfer encoded successfully: index={d}", .{index1});
                             data_to_fetch = transfer_data;
                             needs_cleanup = true;
                         } else {
                             span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.deferred_transfers.items.len });
-                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                            return .play;
+                            return HostCallError.NONE;
                         }
                     } else {
                         span.debug("No deferred transfers available in accumulate context", .{});
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
+                        return HostCallError.NONE;
                     }
                 },
 
                 else => {
                     // Invalid selector for accumulate context
                     span.debug("Invalid fetch selector for accumulate: {d} (valid: 0,1,14,15,16,17)", .{selector});
-                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                    return .play;
+                    return HostCallError.NONE;
                 },
             }
             defer if (needs_cleanup and data_to_fetch != null) ctx_regular.allocator.free(data_to_fetch.?);
@@ -1387,7 +1354,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn debugLog(
             exec_ctx: *PVM.ExecutionContext,
             _: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             return general.GeneralHostCalls(params).debugLog(
                 exec_ctx,
             );

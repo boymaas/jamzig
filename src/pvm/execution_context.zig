@@ -2,6 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const codec = @import("../codec.zig");
+const types = @import("../types.zig");
+const HostCallError = @import("../pvm_invocations/host_calls.zig").HostCallError;
 
 const Program = @import("program.zig").Program;
 const Decoder = @import("decoder.zig").Decoder;
@@ -16,7 +18,7 @@ pub const ExecutionContext = struct {
     registers: [13]u64,
     memory: Memory,
     // NOTE: we cannot use HostCallMap here due to circular dep
-    host_calls: ?*const std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext, *anyopaque) HostCallResult),
+    host_calls: ?*const std.AutoHashMapUnmanaged(u32, *const fn (*ExecutionContext, *anyopaque) HostCallError!HostCallResult),
 
     gas: i64,
     pc: u32,
@@ -27,7 +29,7 @@ pub const ExecutionContext = struct {
         play,
         terminal: @import("../pvm.zig").PVM.InvocationException,
     };
-    pub const HostCallFn = *const fn (*ExecutionContext, *anyopaque) HostCallResult;
+    pub const HostCallFn = *const fn (*ExecutionContext, *anyopaque) HostCallError!HostCallResult;
     pub const HostCallMap = std.AutoHashMapUnmanaged(u32, HostCallFn);
 
     pub const ErrorData = union(enum) {
@@ -372,6 +374,35 @@ pub const ExecutionContext = struct {
         self.host_calls = new_host_calls;
 
         span.debug("Host calls set successfully", .{});
+    }
+
+    /// Read memory with protocol error handling
+    /// Maps memory access errors (PageFault, UnalignedAddress, PageOverlap) to HostCallError.OOB
+    pub fn readMemory(self: *ExecutionContext, addr: u32, size: usize) HostCallError!Memory.MemorySlice {
+        return self.memory.readSlice(addr, size) catch |err| switch (err) {
+            error.PageFault => return HostCallError.OOB,
+            else => {
+                std.log.err("Unexpected memory read error: {}", .{err});
+                return HostCallError.OOB;
+            },
+        };
+    }
+
+    /// Write memory with protocol error handling
+    /// Maps memory access errors to HostCallError.OOB
+    pub fn writeMemory(self: *ExecutionContext, addr: u32, data: []const u8) HostCallError!void {
+        self.memory.writeSlice(addr, data) catch |err| switch (err) {
+            error.PageFault => return HostCallError.OOB,
+            else => {
+                std.log.err("Unexpected memory write error: {}", .{err});
+                return HostCallError.OOB;
+            },
+        };
+    }
+
+    /// Read a hash from memory with protocol error handling
+    pub fn readHash(self: *ExecutionContext, addr: u32) HostCallError!types.Hash {
+        return self.memory.readHash(addr) catch return HostCallError.OOB;
     }
 
     /// Enable or disable dynamic memory allocation

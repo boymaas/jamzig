@@ -9,6 +9,7 @@ const Params = @import("../jam_params.zig").Params;
 const DeltaSnapshot = @import("../services_snapshot.zig").DeltaSnapshot;
 
 const ReturnCode = @import("host_calls.zig").ReturnCode;
+const HostCallError = @import("host_calls.zig").HostCallError;
 
 // Add tracing import
 const trace = @import("../tracing.zig").scoped(.host_calls);
@@ -65,7 +66,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
         pub fn debugLog(
             exec_ctx: *PVM.ExecutionContext,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_debug_log);
             defer span.deinit();
 
@@ -100,7 +101,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
         /// Host call implementation for gas remaining (Ω_G)
         pub fn gasRemaining(
             exec_ctx: *PVM.ExecutionContext,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_gas);
             defer span.deinit();
             span.debug("Host call: gas remaining", .{});
@@ -120,7 +121,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
         pub fn lookupPreimage(
             exec_ctx: *PVM.ExecutionContext,
             host_ctx: anytype,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_lookup);
             defer span.deinit();
 
@@ -149,18 +150,12 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             if (service_account == null) {
                 span.debug("Service not found, returning NONE", .{});
-                // Service not found, return error status
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE); // Index unknown
-                return .play;
+                return HostCallError.NONE;
             }
 
             // Read hash from memory (access verification is implicit)
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
-            const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
-                // Error: memory access failed
-                span.err("Memory access failed while reading hash", .{});
-                return .{ .terminal = .panic };
-            };
+            const hash = try exec_ctx.readHash(@truncate(hash_ptr));
 
             span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
@@ -171,8 +166,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const preimage = service_account.?.getPreimage(preimage_key) orelse {
                 // Preimage not found, return error status
                 span.debug("Preimage not found, returning NONE", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE); // Item does not exist
-                return .play;
+                return HostCallError.NONE;
             };
 
             // Determine what to read from the preimage
@@ -191,10 +185,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             // Write length to memory first (this implicitly checks if the memory is writable)
             span.debug("Writing preimage to memory at 0x{x}", .{output_ptr});
-            exec_ctx.memory.writeSlice(@truncate(output_ptr), preimage[f..][0..l]) catch {
-                span.err("Memory access failed while writing preimage", .{});
-                return .{ .terminal = .panic };
-            };
+            try exec_ctx.writeMemory(@truncate(output_ptr), preimage[f..][0..l]);
 
             // Success result
             exec_ctx.registers[7] = preimage.len; // Success status
@@ -206,7 +197,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
         pub fn readStorage(
             exec_ctx: *PVM.ExecutionContext,
             host_ctx_: anytype,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_read);
             defer span.deinit();
 
@@ -233,17 +224,12 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             // Get service account based on special cases as per graypaper B.7
             const service_account = host_ctx.service_accounts.getReadOnly(host_ctx.service_id) orelse {
                 span.debug("Service not found, returning NONE", .{});
-                // Service not found, return error status
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                return .play;
+                return HostCallError.NONE;
             };
 
             // Read key data from memory
             span.debug("Reading key data from memory at 0x{x} (len={d})", .{ k_o, k_z });
-            var key_data = exec_ctx.memory.readSlice(@truncate(k_o), @truncate(k_z)) catch {
-                span.err("Memory access failed while reading key data", .{});
-                return .{ .terminal = .panic };
-            };
+            var key_data = try exec_ctx.readMemory(@truncate(k_o), @truncate(k_z));
             defer key_data.deinit();
             span.trace("Key = {s}", .{std.fmt.fmtSliceHexLower(key_data.buffer)});
 
@@ -256,8 +242,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const value = service_account.readStorage(resolved_service_id, key_data.buffer) orelse {
                 // Key not found
                 span.debug("Key not found in storage, returning NONE", .{});
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                return .play;
+                return HostCallError.NONE;
             };
 
             // Determine what to read from the value
@@ -281,10 +266,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             // Write the value to memory
             span.debug("Writing value to memory at 0x{x}", .{output_ptr});
-            exec_ctx.memory.writeSlice(@truncate(output_ptr), value_slice) catch {
-                span.err("Memory access failed while writing value", .{});
-                return .{ .terminal = .panic };
-            };
+            try exec_ctx.writeMemory(@truncate(output_ptr), value_slice);
 
             // Success result
             exec_ctx.registers[7] = value.len;
@@ -296,7 +278,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
         pub fn writeStorage(
             exec_ctx: *PVM.ExecutionContext,
             host_ctx: anytype,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_write);
             defer span.deinit();
 
@@ -353,10 +335,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             // Read value from memory
             span.trace("Reading value data from memory at 0x{x} len={d}", .{ v_o, v_z });
-            var value = exec_ctx.memory.readSlice(@truncate(v_o), @truncate(v_z)) catch {
-                span.err("Memory access failed while reading value data", .{});
-                return .{ .terminal = .panic };
-            };
+            var value = try exec_ctx.readMemory(@truncate(v_o), @truncate(v_z));
             defer value.deinit();
 
             span.debug("Write operation - Key len={d}, Value len={d}", .{
@@ -375,12 +354,12 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             // Write and get the prior value owned
             var maybe_prior_value: ?[]const u8 = pv: {
                 const value_owned = host_ctx.allocator.dupe(u8, value.buffer) catch {
-                    return .{ .terminal = .panic };
+                    return HostCallError.FULL;
                 };
                 break :pv service_account.writeStorage(host_ctx.service_id, key_data.buffer, value_owned) catch {
                     host_ctx.allocator.free(value_owned);
                     span.err("Failed to write to storage", .{});
-                    return .{ .terminal = .panic };
+                    return HostCallError.FULL;
                 };
             };
             defer if (maybe_prior_value) |pv| host_ctx.allocator.free(pv);
@@ -402,14 +381,13 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 // we remove the storage key, as we do not have enough balance
                 if (maybe_prior_value) |prior_value| {
                     service_account.writeStorageFreeOldValue(host_ctx.service_id, key_data.buffer, prior_value) catch {
-                        return .{ .terminal = .panic };
+                        return HostCallError.FULL;
                     };
                     maybe_prior_value = null; // to avoid deferred deint
                 } else {
                     _ = service_account.removeStorage(host_ctx.service_id, key_data.buffer);
                 }
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.FULL);
-                return .play;
+                return HostCallError.FULL;
             } else {
                 span.debug("Enough balance for storage", .{});
             }
@@ -482,7 +460,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
         pub fn infoService(
             exec_ctx: *PVM.ExecutionContext,
             host_ctx_: anytype,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_info);
             defer span.deinit();
 
@@ -509,9 +487,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             if (service_account == null) {
                 span.debug("Service not found, returning NONE", .{});
-                // Service not found, return error status
-                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                return .play;
+                return HostCallError.NONE;
             }
 
             // Serialize service account info according to the graypaper
@@ -540,17 +516,14 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             service_info.encode(fb.writer()) catch {
                 span.err("Problem encoding ServiceInfo", .{});
-                return .{ .terminal = .panic };
+                return HostCallError.FULL;
             };
             const encoded = fb.getWritten();
 
             // Write the info to memory
             span.debug("Writing info encoded in {d} bytes to memory at 0x{x}", .{ encoded.len, output_ptr });
             span.trace("Encoded Info: {s}", .{std.fmt.fmtSliceHexLower(encoded)});
-            exec_ctx.memory.writeSlice(@truncate(output_ptr), encoded) catch {
-                span.err("Memory access failed while writing info data", .{});
-                return .{ .terminal = .panic };
-            };
+            try exec_ctx.writeMemory(@truncate(output_ptr), encoded);
 
             // Return success
             span.debug("Info request successful", .{});

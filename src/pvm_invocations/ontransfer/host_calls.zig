@@ -6,6 +6,7 @@ const general = @import("../host_calls_general.zig");
 const Params = @import("../../jam_params.zig").Params;
 
 const ReturnCode = @import("../host_calls.zig").ReturnCode;
+const HostCallError = @import("../host_calls.zig").HostCallError;
 const DeltaSnapshot = @import("../../services_snapshot.zig").DeltaSnapshot;
 
 const PVM = @import("../../pvm.zig").PVM;
@@ -65,7 +66,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn gasRemaining(
             exec_ctx: *PVM.ExecutionContext,
             _: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             return general.GeneralHostCalls(params).gasRemaining(exec_ctx);
         }
 
@@ -73,7 +74,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn lookupPreimage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
 
             return general.GeneralHostCalls(params).lookupPreimage(
@@ -86,7 +87,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn readStorage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
 
             return general.GeneralHostCalls(params).readStorage(
@@ -99,7 +100,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn writeStorage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
 
             const general_context = host_ctx.toGeneralContext();
@@ -113,7 +114,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn infoService(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
 
             return general.GeneralHostCalls(params).infoService(
@@ -133,7 +134,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn fetch(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             const span = trace.span(.host_call_fetch);
             defer span.deinit();
 
@@ -161,8 +162,7 @@ pub fn HostCalls(comptime params: Params) type {
                     span.debug("Encoding JAM chain constants", .{});
                     const encoded_constants = encoding_utils.encodeJamParams(host_ctx.allocator, params) catch {
                         span.err("Failed to encode JAM chain constants", .{});
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
+                        return HostCallError.FULL;
                     };
                     data_to_fetch = encoded_constants;
                     needs_cleanup = true;
@@ -177,23 +177,20 @@ pub fn HostCalls(comptime params: Params) type {
                 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 => {
                     // Selectors 2-13: Work package related data - NOT available in ontransfer
                     span.debug("Work package data (selector {d}) not available in ontransfer context", .{selector});
-                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                    return .play;
+                    return HostCallError.NONE;
                 },
 
                 14, 15 => {
                     // Selectors 14-15: Operand data - NOT available in ontransfer
                     span.debug("Operand data (selector {d}) not available in ontransfer context", .{selector});
-                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                    return .play;
+                    return HostCallError.NONE;
                 },
 
                 16 => {
                     // Selector 16: Transfer list (from t)
                     const transfers_data = encoding_utils.encodeTransfers(host_ctx.allocator, host_ctx.transfers) catch {
                         span.err("Failed to encode transfer sequence", .{});
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
+                        return HostCallError.NONE;
                     };
                     span.debug("Transfer sequence encoded successfully, count={d}", .{host_ctx.transfers.len});
                     data_to_fetch = transfers_data;
@@ -206,24 +203,21 @@ pub fn HostCalls(comptime params: Params) type {
                         const transfer_item = &host_ctx.transfers[index1];
                         const transfer_data = encoding_utils.encodeTransfer(host_ctx.allocator, transfer_item) catch {
                             span.err("Failed to encode transfer", .{});
-                            exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                            return .play;
+                            return HostCallError.NONE;
                         };
                         span.debug("Transfer encoded successfully: index={d}", .{index1});
                         data_to_fetch = transfer_data;
                         needs_cleanup = true;
                     } else {
                         span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, host_ctx.transfers.len });
-                        exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                        return .play;
+                        return HostCallError.NONE;
                     }
                 },
 
                 else => {
                     // Invalid selector for ontransfer context
                     span.debug("Invalid fetch selector for ontransfer: {d} (valid: 0,1,16,17)", .{selector});
-                    exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
-                    return .play;
+                    return HostCallError.NONE;
                 },
             }
             defer if (needs_cleanup and data_to_fetch != null) host_ctx.allocator.free(data_to_fetch.?);
@@ -259,7 +253,7 @@ pub fn HostCalls(comptime params: Params) type {
         pub fn debugLog(
             exec_ctx: *PVM.ExecutionContext,
             _: ?*anyopaque,
-        ) PVM.HostCallResult {
+        ) HostCallError!PVM.HostCallResult {
             return general.GeneralHostCalls(params).debugLog(
                 exec_ctx,
             );
