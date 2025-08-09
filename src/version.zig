@@ -5,8 +5,8 @@ pub const Version = struct {
     patch: u8,
 };
 
-pub const GREYPAPER_VERSION = Version{
+pub const GRAYPAPER_VERSION = Version{
     .major = 0,
     .minor = 6,
-    .patch = 6,
+    .patch = 7,
 };

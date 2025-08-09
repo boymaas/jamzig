@@ -61,7 +61,7 @@ pub fn performHandshake(
     const fuzzer_peer_info = messages.PeerInfo{
         .name = "fuzzer",
         .version = .{ .major = 0, .minor = 1, .patch = 23 },
-        .protocol_version = .{ .major = 0, .minor = 6, .patch = 6 },
+        .protocol_version = version.PROTOCOL_VERSION,
     };
     try sendMessage(allocator, fuzzer_sock, .{ .peer_info = fuzzer_peer_info });
 

@@ -175,8 +175,8 @@ pub const Fuzzer = struct {
         // Send fuzzer peer info
         const fuzzer_peer_info = messages.PeerInfo{
             .name = "jamzig-fuzzer", // NOTE: static string here => no deinit
-            .version = .{ .major = 0, .minor = 1, .patch = 0 },
-            .protocol_version = .{ .major = 0, .minor = 6, .patch = 6 },
+            .version = version.FUZZ_TARGET_VERSION,
+            .protocol_version = version.PROTOCOL_VERSION,
         };
 
         // REFACTOR: I see  a pattern here, send message and waiting for a response. Seperate this

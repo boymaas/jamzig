@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const messages = @import("../messages.zig");
+const version = @import("../version.zig");
 
 test "message_encoding_and_decoding" {
     const allocator = testing.allocator;
@@ -8,8 +9,8 @@ test "message_encoding_and_decoding" {
     // Test PeerInfo message
     const peer_info = messages.PeerInfo{
         .name = "test-peer", // NOTE we use a stric string here, no deinit on the Peerinfo or message here
-        .version = .{ .major = 0, .minor = 1, .patch = 0 },
-        .protocol_version = .{ .major = 0, .minor = 6, .patch = 6 },
+        .version = version.FUZZ_TARGET_VERSION,
+        .protocol_version = version.PROTOCOL_VERSION,
     };
 
     const message = messages.Message{ .peer_info = peer_info };
