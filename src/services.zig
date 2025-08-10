@@ -344,15 +344,36 @@ pub const ServiceAccount = struct {
         if (self.data.get(key)) |existing_data| {
             var preimage_lookup = try decodePreimageLookup(existing_data);
             const pi = preimage_lookup.asSlice();
-            if (pi.len == 2) { // [x,y]
-                preimage_lookup.status[2] = current_timeslot;
-                // Re-encode and store
-                const encoded = try encodePreimageLookup(self.data.allocator, preimage_lookup);
-                self.data.allocator.free(existing_data);
-                try self.data.put(key, encoded);
-                return;
+            
+            // Validate status transitions per graypaper
+            switch (pi.len) {
+                0 => {
+                    // Status [] - Already pending, can't re-solicit
+                    return error.AlreadySolicited;
+                },
+                1 => {
+                    // Status [x] - Already available, no need to solicit
+                    return error.AlreadyAvailable;
+                },
+                2 => {
+                    // Status [x,y] - Valid re-solicitation after unavailable period
+                    // Transition: [x,y] → [x,y,t]
+                    preimage_lookup.status[2] = current_timeslot;
+                    // Re-encode and store
+                    const encoded = try encodePreimageLookup(self.data.allocator, preimage_lookup);
+                    self.data.allocator.free(existing_data);
+                    try self.data.put(key, encoded);
+                    return;
+                },
+                3 => {
+                    // Status [x,y,z] - Already re-solicited, can't re-solicit again
+                    return error.AlreadyReSolicited;
+                },
+                else => {
+                    // Invalid status length
+                    return error.InvalidState;
+                },
             }
-            return error.AlreadySolicited;
         } else {
             // If no lookup exists yet, create a new one with an empty status
             const new_lookup = PreimageLookup{

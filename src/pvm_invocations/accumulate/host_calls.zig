@@ -976,9 +976,24 @@ pub fn HostCalls(comptime params: Params) type {
                 span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size))});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             } else |err| {
-                // Error occurred while soliciting preimage
-                span.err("Error while soliciting preimage: {}", .{err});
-                return HostCallError.HUH;
+                // Handle errors per graypaper: OutOfMemory → PANIC, others → HUH
+                switch (err) {
+                    error.OutOfMemory => {
+                        span.err("Out of memory while soliciting preimage", .{});
+                        return .{ .terminal = .panic };
+                    },
+                    error.AlreadySolicited,
+                    error.AlreadyAvailable,
+                    error.AlreadyReSolicited,
+                    error.InvalidState => {
+                        span.err("Invalid solicitation attempt: {}", .{err});
+                        return HostCallError.HUH;
+                    },
+                    else => {
+                        span.err("Unexpected error while soliciting preimage: {}", .{err});
+                        return HostCallError.HUH;
+                    },
+                }
             }
 
             return .play;
