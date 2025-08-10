@@ -167,8 +167,9 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             };
 
             // Determine what to read from the preimage
+            // Per graypaper: f = min(R10, |v|) and l = min(R11, |v| - f)
             const f = @min(offset, preimage.len);
-            const l = @min(limit, preimage.len - offset);
+            const l = @min(limit, preimage.len - f); // Use f not offset per graypaper
             span.debug("Preimage found, length: {d}, returning range {d}..{d} ({d} bytes)", .{
                 preimage.len, f, f + l, l,
             });
