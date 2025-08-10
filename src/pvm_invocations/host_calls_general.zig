@@ -222,9 +222,12 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             span.debug("Offset: {d}, Limit: {d}", .{ offset, limit });
 
             // Get service account based on special cases as per graypaper B.7
-            const service_account = host_ctx.service_accounts.getReadOnly(host_ctx.service_id) orelse {
-                span.debug("Service not found, returning NONE", .{});
-                return HostCallError.NONE;
+            // s* = s when R7 = 2^64-1, otherwise s* = R7
+            // a = s when s* = s, otherwise a = d[s*]
+            const service_account = host_ctx.service_accounts.getReadOnly(resolved_service_id) orelse {
+                span.debug("Service {d} not found, returning NONE", .{resolved_service_id});
+                exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
+                return .play;
             };
 
             // Read key data from memory
