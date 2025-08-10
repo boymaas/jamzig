@@ -613,10 +613,11 @@ pub fn HostCalls(comptime params: Params) type {
             const code_len: u32 = @truncate(exec_ctx.registers[8]);
             const min_gas_limit = exec_ctx.registers[9];
             const min_memo_gas = exec_ctx.registers[10];
+            const free_storage_offset = exec_ctx.registers[11];
 
             span.debug("Host call: new service from service {d}", .{ctx_regular.service_id});
             span.debug("Code hash ptr: 0x{x}, Code len: {d}", .{ code_hash_ptr, code_len });
-            span.debug("Min gas limit: {d}, Min memo gas: {d}", .{ min_gas_limit, min_memo_gas });
+            span.debug("Min gas limit: {d}, Min memo gas: {d}, Free storage: {d}", .{ min_gas_limit, min_memo_gas, free_storage_offset });
 
             // Read code hash from memory
             span.debug("Reading code hash from memory at 0x{x}", .{code_hash_ptr});
@@ -627,7 +628,19 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Code hash: {s}", .{std.fmt.fmtSliceHexLower(&code_hash)});
 
-            // Check if the calling service has enough balance for the initial funding
+            // Check free storage grant permission: only manager can grant free storage
+            if (free_storage_offset != 0) {
+                const privileges = ctx_regular.context.privileges.getReadOnly();
+                if (ctx_regular.service_id != privileges.manager) {
+                    span.debug("Non-manager (service {d}) trying to grant free storage, manager is {d}", .{
+                        ctx_regular.service_id, privileges.manager,
+                    });
+                    return HostCallError.HUH;
+                }
+                span.debug("Manager granting {d} bytes of free storage", .{free_storage_offset});
+            }
+
+            // Get the calling service account
             span.debug("Looking up calling service account", .{});
             const calling_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable instance", .{});
@@ -637,45 +650,54 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            // Calculate the minimum balance threshold for a new service (a_t)
-            span.debug("Calculating initial balance for new service", .{});
-            const initial_balance: types.Balance = params.basic_service_balance + // B_S
-                // 2 * one lookup item + 0 storage items
-                (params.min_balance_per_item * ((2 * 1) + 0)) +
-                // 81 + code_len for preimage lookup length, 0 for storage items
-                params.min_balance_per_octet * (81 + code_len + 0);
-
-            span.debug("Initial balance required: {d}, caller balance: {d}", .{
-                initial_balance, calling_service.balance,
-            });
-
-            if (calling_service.balance < initial_balance) {
-                span.debug("Insufficient balance to create new service, returning CASH error", .{});
-                return HostCallError.CASH;
-            }
-
-            // Create the new service account
+            // Create the new service account first
             span.debug("Creating new service account with ID: {d}", .{ctx_regular.new_service_id});
             var new_account = ctx_regular.context.service_accounts.createService(ctx_regular.new_service_id) catch {
                 span.err("Failed to create new service account", .{});
                 return .{ .terminal = .panic };
             };
 
+            // Set all properties except balance
             span.debug("Setting new account properties", .{});
             new_account.code_hash = code_hash;
             new_account.min_gas_accumulate = min_gas_limit;
             new_account.min_gas_on_transfer = min_memo_gas;
-            new_account.balance = initial_balance;
+            new_account.storage_offset = free_storage_offset;
+            new_account.parent_service = ctx_regular.service_id;
+            new_account.creation_slot = ctx_regular.context.time.current_slot;
+            new_account.last_accumulation_slot = 0;
+            new_account.balance = 0; // Temporary, will be set after footprint calculation
 
+            // Solicit preimage - this updates the footprint tracking
             span.debug("Integrating preimage lookup", .{});
             new_account.solicitPreimage(ctx_regular.new_service_id, code_hash, code_len, ctx_regular.context.time.current_slot) catch {
                 span.err("Failed to integrate preimage lookup, out of memory", .{});
+                // FIXME: Should rollback service creation here
                 return .{ .terminal = .panic };
             };
 
-            // Deduct the initial balance from the calling service
-            span.debug("Deducting {d} from calling service balance", .{initial_balance});
+            // Now calculate the actual threshold balance using storageFootprint
+            const footprint = new_account.storageFootprint();
+            const initial_balance = footprint.a_t;
+
+            span.debug("Footprint: items={d}, bytes={d}, threshold={d}", .{
+                footprint.a_i, footprint.a_o, footprint.a_t,
+            });
+            span.debug("Initial balance required: {d}, caller balance: {d}", .{
+                initial_balance, calling_service.balance,
+            });
+
+            // Check if caller has enough balance
+            if (calling_service.balance < initial_balance) {
+                span.debug("Insufficient balance to create new service, returning CASH error", .{});
+                // TODO: Should rollback service creation here
+                return HostCallError.CASH;
+            }
+
+            // Set the balance and deduct from caller
+            new_account.balance = initial_balance;
             calling_service.balance -= initial_balance;
+            span.debug("Set new service balance to {d}, deducted from calling service", .{initial_balance});
 
             // Success result
             span.debug("Service created successfully, returning service ID: {d}", .{
