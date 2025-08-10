@@ -469,15 +469,17 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             span.debug("charging 10 gas", .{});
             exec_ctx.gas -= 10;
 
-            // Get registers per graypaper B.7: service ID and output pointer
+            // Get registers per graypaper B.7: service ID, output pointer, offset, and limit
             const service_id_reg = exec_ctx.registers[7];
             const output_ptr = exec_ctx.registers[8];
+            const offset = exec_ctx.registers[9]; // This was a typo in the graypaper 0.6.7
+            const limit = exec_ctx.registers[10];
 
             // Resolve service ID using graypaper convention
             const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg);
 
             span.debug("Host call: info for service {d}", .{resolved_service_id});
-            span.debug("Output pointer: 0x{x}", .{output_ptr});
+            span.debug("Output pointer: 0x{x}, Offset: {d}, Limit: {d}", .{ output_ptr, offset, limit });
 
             // Get service account
             const service_account = host_ctx.service_accounts.getReadOnly(resolved_service_id);
@@ -515,14 +517,29 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             };
             const encoded = fb.getWritten();
 
-            // Write the info to memory
-            span.debug("Writing info encoded in {d} bytes to memory at 0x{x}", .{ encoded.len, output_ptr });
-            span.trace("Encoded Info: {s}", .{std.fmt.fmtSliceHexLower(encoded)});
-            try exec_ctx.writeMemory(@truncate(output_ptr), encoded);
+            // Calculate offset and limit for partial reading (graypaper formula)
+            const f = @min(offset, encoded.len);
+            const l = @min(limit, encoded.len - f);
 
-            // Return success
-            span.debug("Info request successful", .{});
-            exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
+            span.debug("Encoded info length: {d}, returning range {d}..{d} ({d} bytes)", .{
+                encoded.len, f, f + l, l,
+            });
+
+            // Check if we're being asked for zero bytes (length query only)
+            if (l == 0) {
+                span.debug("Zero len requested, returning size: {d}", .{encoded.len});
+                exec_ctx.registers[7] = encoded.len;
+                return .play;
+            }
+
+            // Write the partial info to memory
+            span.debug("Writing {d} bytes to memory at 0x{x}", .{ l, output_ptr });
+            span.trace("Encoded Info slice: {s}", .{std.fmt.fmtSliceHexLower(encoded[f..][0..l])});
+            try exec_ctx.writeMemory(@truncate(output_ptr), encoded[f..][0..l]);
+
+            // Return the total encoded length (not just what was written)
+            span.debug("Info request successful, returning total length: {d}", .{encoded.len});
+            exec_ctx.registers[7] = encoded.len;
             return .play;
         }
     };
