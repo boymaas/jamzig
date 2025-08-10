@@ -844,6 +844,7 @@ pub fn HostCalls(comptime params: Params) type {
         }
 
         /// Host call implementation for query preimage (Ω_Q)
+        /// Queries the availability status of a preimage and returns encoded timestamps
         pub fn queryPreimage(
             exec_ctx: *PVM.ExecutionContext,
             call_ctx: ?*anyopaque,
@@ -855,7 +856,7 @@ pub fn HostCalls(comptime params: Params) type {
             exec_ctx.gas -= 10;
 
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
-            const ctx_regular = host_ctx.regular;
+            const ctx_regular: *Dimension = &host_ctx.regular;
 
             // Get registers per graypaper B.7: [o, z]
             const hash_ptr = exec_ctx.registers[7]; // Hash pointer (o)
@@ -881,8 +882,12 @@ pub fn HostCalls(comptime params: Params) type {
             };
 
             // Query preimage status
+            // Note: Accessing service_account.getPreimageLookup is equivalent to graypaper's (x_s)_l notation
+            // Both refer to the same preimage lookup table data structure in the service state
             span.debug("Querying preimage status", .{});
             const lookup_status = service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size)) orelse {
+                span.debug("Preimage lookup not found, returning NONE", .{});
+                exec_ctx.registers[8] = 0;  // Per graypaper: R8 = 0 when lookup doesn't exist
                 return HostCallError.NONE;
             };
 
