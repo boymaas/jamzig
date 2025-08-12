@@ -20,7 +20,6 @@ pub fn AccumulationContext(params: Params) type {
 
         // Additional context for fetch selectors (JAM graypaper §1.7.2)
         entropy: types.Entropy, // η - entropy for current block (fetch selector 1)
-        outputs: std.ArrayList(types.AccumulateOutput), // accumulated outputs from services
 
         const InitArgs = struct {
             service_accounts: *state.Delta,
@@ -39,7 +38,6 @@ pub fn AccumulationContext(params: Params) type {
                 .privileges = CopyOnWrite(state.Chi).init(allocator, args.privileges),
                 .time = args.time,
                 .entropy = args.entropy,
-                .outputs = std.ArrayList(types.AccumulateOutput).init(allocator),
             };
         }
 
@@ -68,7 +66,6 @@ pub fn AccumulationContext(params: Params) type {
                 // since time is not a wrapper. We just pass the pointer, as this will never be mutated
                 .time = self.time,
                 .entropy = self.entropy,
-                .outputs = try self.outputs.clone(),
             };
         }
 
@@ -79,8 +76,6 @@ pub fn AccumulationContext(params: Params) type {
             self.privileges.deinit();
             // Deinitialize the DeltaSnapshot
             self.service_accounts.deinit();
-            // Deinitialize the outputs ArrayList
-            self.outputs.deinit();
 
             // Set self to undefined to prevent use-after-free
             self.* = undefined;

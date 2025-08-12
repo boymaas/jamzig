@@ -65,6 +65,58 @@ pub fn HostCalls(comptime params: Params) type {
                 try self.context.commit();
             }
 
+            /// Apply provided preimages after accumulation
+            /// Filters still-relevant preimages and updates service accounts
+            pub fn applyProvidedPreimages(self: *@This(), current_timeslot: types.TimeSlot) !void {
+                const span = trace.span(.apply_provided_preimages);
+                defer span.deinit();
+
+                var iter = self.provided_preimages.iterator();
+                while (iter.next()) |entry| {
+                    const key = entry.key_ptr.*;
+                    const data = entry.value_ptr.*;
+
+                    span.debug("Processing provided preimage for service {d}, hash: {s}, size: {d}", .{
+                        key.service_id,
+                        std.fmt.fmtSliceHexLower(&key.hash),
+                        key.size,
+                    });
+
+                    // Get mutable service account
+                    const service = self.context.service_accounts.getMutable(key.service_id) catch {
+                        span.debug("Failed to get mutable service account {d}, skipping", .{key.service_id});
+                        continue;
+                    } orelse {
+                        span.debug("Service {d} not found, skipping", .{key.service_id});
+                        continue;
+                    };
+
+                    // Check if still needed (R function from graypaper)
+                    // Only apply if lookup still has status []
+                    const lookup = service.getPreimageLookup(key.service_id, key.hash, key.size);
+                    if (lookup != null and lookup.?.asSlice().len == 0) {
+                        span.debug("Preimage still needed (status []), applying to service", .{});
+
+                        // Store preimage in service (δ[s]_p[hash(p)] = p)
+                        const preimage_key = state_keys.constructServicePreimageKey(key.service_id, key.hash);
+                        // TODO: OPTIMIZE we can optimize here to take ownership of the data
+                        try service.dupeAndAddPreimage(preimage_key, data);
+
+                        // Update lookup status from [] to [τ'] (δ[s]_l[(hash(p), |p|)] = [τ'])
+                        try service.registerPreimageAvailable(
+                            key.service_id,
+                            key.hash,
+                            key.size,
+                            current_timeslot,
+                        );
+
+                        span.debug("Preimage applied: stored and status updated to [{d}]", .{current_timeslot});
+                    } else {
+                        span.debug("Preimage not needed or already available, skipping", .{});
+                    }
+                }
+            }
+
             pub fn deepClone(self: *const @This()) !@This() {
                 // Create a new context with the same allocator
                 var cloned_preimages = std.AutoHashMap(ProvidedKey, []const u8).init(self.allocator);
@@ -89,6 +141,12 @@ pub fn HostCalls(comptime params: Params) type {
                 };
 
                 return new_context;
+            }
+
+            pub fn deepCloneHeap(self: *const @This()) !*@This() {
+                const object = try self.allocator.create(@This());
+                object.* = try self.deepClone();
+                return object;
             }
 
             pub fn toGeneralContext(self: *@This()) general.GeneralHostCalls(params).Context {

@@ -8,6 +8,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const meta = @import("../meta.zig");
 const Params = @import("../jam_params.zig").Params;
+const HashSet = @import("../datastruct/hash_set.zig").HashSet;
 
 const execution = @import("execution.zig");
 const AccumulationServiceStats = execution.AccumulationServiceStats;
@@ -66,49 +67,62 @@ pub fn StatisticsCalculator(comptime params: Params) type {
         /// Calculates the AccumulateRoot from accumulation outputs
         fn calculateAccumulateRoot(
             self: Self,
-            accumulation_outputs: std.AutoHashMap(types.ServiceId, types.AccumulateOutput),
+            accumulation_outputs: HashSet(execution.ServiceAccumulationOutput),
         ) !types.AccumulateRoot {
             const span = trace.span(.calculate_accumulate_root);
             defer span.deinit();
 
             span.debug("Calculating AccumulateRoot from {d} accumulation outputs", .{accumulation_outputs.count()});
 
-            // Collect and sort service IDs
-            var keys = try std.ArrayList(types.ServiceId).initCapacity(self.allocator, accumulation_outputs.count());
-            defer keys.deinit();
+            // Collect all outputs into an array for sorting
+            var outputs = try std.ArrayList(execution.ServiceAccumulationOutput).initCapacity(self.allocator, accumulation_outputs.count());
+            defer outputs.deinit();
 
-            span.trace("Collecting service IDs from accumulation outputs", .{});
-            var key_iter = accumulation_outputs.keyIterator();
-            while (key_iter.next()) |key| {
-                try keys.append(key.*);
-                span.trace("Added service ID: {d}", .{key.*});
+            span.trace("Collecting service outputs from accumulation outputs", .{});
+            var iter = accumulation_outputs.iterator();
+            while (iter.next()) |entry| {
+                try outputs.append(entry.key_ptr.*);
+                span.trace("Added service ID: {d} with output", .{entry.key_ptr.service_id});
             }
 
-            span.debug("Sorting {d} service IDs in ascending order", .{keys.items.len});
-            std.mem.sort(u32, keys.items, {}, std.sort.asc(u32));
+            // Sort outputs by service ID, and if equal by output, we cannot have doubles since we are using
+            // a HashSet which ensures uniqueness.
+            span.debug("Sorting {d} outputs by service ID in ascending order", .{outputs.items.len});
+            std.mem.sort(
+                execution.ServiceAccumulationOutput,
+                outputs.items,
+                {},
+                struct {
+                    fn lessThan(_: void, a: execution.ServiceAccumulationOutput, b: execution.ServiceAccumulationOutput) bool {
+                        if (a.service_id == b.service_id) {
+                            // If service IDs are equal, compare outputs
+                            return std.mem.lessThan(u8, &a.output, &b.output);
+                        }
+                        return a.service_id < b.service_id;
+                    }
+                }.lessThan,
+            );
 
-            // Prepare blobs for Merkle tree
-            var blobs = try std.ArrayList([]u8).initCapacity(self.allocator, accumulation_outputs.count());
+            // Prepare blobs for Merkle tree (as per graypaper eq. 24)
+            var blobs = try std.ArrayList([]u8).initCapacity(self.allocator, outputs.items.len);
             defer meta.deinit.allocFreeEntriesAndAggregate(self.allocator, blobs);
 
             span.debug("Creating blobs for Merkle tree calculation", .{});
-            for (keys.items, 0..) |key, i| {
+            for (outputs.items, 0..) |item, i| {
                 const blob_span = span.child(.create_blob);
                 defer blob_span.deinit();
 
-                blob_span.trace("Processing service ID {d} at index {d}", .{ key, i });
+                blob_span.trace("Processing service ID {d} at index {d}", .{ item.service_id, i });
 
-                // Convert service ID to bytes
+                // Convert service ID to bytes (4-byte little-endian as per graypaper)
                 var service_id: [4]u8 = undefined;
-                std.mem.writeInt(u32, &service_id, key, .little);
+                std.mem.writeInt(u32, &service_id, item.service_id, .little);
                 blob_span.trace("Service ID bytes: {s}", .{std.fmt.fmtSliceHexLower(&service_id)});
 
-                // Get accumulation output for this service
-                const output = accumulation_outputs.get(key).?;
-                blob_span.trace("Accumulation output: {s}", .{std.fmt.fmtSliceHexLower(&output)});
+                blob_span.trace("Accumulation output: {s}", .{std.fmt.fmtSliceHexLower(&item.output)});
 
-                // Concatenate service ID and output
-                const blob = try self.allocator.dupe(u8, &(service_id ++ output));
+                // Concatenate service ID and output (as per graypaper eq. 24: se_4(s) || se(h))
+                const blob = try self.allocator.dupe(u8, &(service_id ++ item.output));
                 try blobs.append(blob);
             }
 
@@ -161,4 +175,3 @@ pub fn StatisticsCalculator(comptime params: Params) type {
         }
     };
 }
-
