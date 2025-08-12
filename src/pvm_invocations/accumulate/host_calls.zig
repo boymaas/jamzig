@@ -191,6 +191,14 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
+            // Check if manager and validator service IDs are in the u32 domain
+            if (exec_ctx.registers[7] > std.math.maxInt(u32) or
+                exec_ctx.registers[9] > std.math.maxInt(u32))
+            {
+                span.debug("Manager or validator service ID exceeds u32 domain", .{});
+                return HostCallError.WHO;
+            }
+
             // Get registers per graypaper B.7: [m, a, v, o, n] = registers[7..+5]
             const manager_service_id: u32 = @truncate(exec_ctx.registers[7]); // m: Manager service ID
             const assign_ptr: u32 = @truncate(exec_ctx.registers[8]); // a: Pointer to assign service IDs array
@@ -219,12 +227,15 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             // Check manager and validator service IDs are valid
-            if ((!ctx_regular.context.service_accounts.contains(manager_service_id)) or
-                (!ctx_regular.context.service_accounts.contains(validator_service_id)))
-            {
-                span.debug("Manager or validator service ID doesn't exist", .{});
-                return HostCallError.WHO;
-            }
+            // NOTE: this is not defined in the graypaper, only if the values are in the u32 domain. As such
+            // disabled this check.
+            //
+            // if ((!ctx_regular.context.service_accounts.contains(manager_service_id)) or
+            //     (!ctx_regular.context.service_accounts.contains(validator_service_id)))
+            // {
+            //     span.debug("Manager or validator service ID doesn't exist", .{});
+            //     return HostCallError.WHO;
+            // }
 
             // Read assign service IDs from memory
             // Graypaper: 𝐚 = decode_4(memory[a..a+4C]) where C = core_count
@@ -887,7 +898,7 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Querying preimage status", .{});
             const lookup_status = service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size)) orelse {
                 span.debug("Preimage lookup not found, returning NONE", .{});
-                exec_ctx.registers[8] = 0;  // Per graypaper: R8 = 0 when lookup doesn't exist
+                exec_ctx.registers[8] = 0; // Per graypaper: R8 = 0 when lookup doesn't exist
                 return HostCallError.NONE;
             };
 
