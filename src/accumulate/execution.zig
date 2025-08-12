@@ -92,9 +92,6 @@ pub fn outerAccumulation(
     comptime params: @import("../jam_params.zig").Params,
     allocator: std.mem.Allocator,
     context: *const AccumulationContext(params),
-    tau: types.TimeSlot,
-    entropy: types.Entropy,
-    privileged_services: *const std.AutoHashMap(types.ServiceId, types.Gas),
     work_reports: []const types.WorkReport,
     gas_limit: types.Gas,
 ) !OuterAccumulationResult {
@@ -127,15 +124,11 @@ pub fn outerAccumulation(
         };
     }
 
-    // Empty HashMap, as we need to clear current_privileged_services after the first iteration
-    var empty_privileged_services = std.AutoHashMap(types.ServiceId, types.Gas).init(allocator);
-    defer empty_privileged_services.deinit();
-
     // Initialize loop variables
     var current_gas_limit = gas_limit;
     var current_reports = work_reports;
-    var current_privileged_services = privileged_services;
     var total_accumulated_count: usize = 0;
+    var first_batch = true;
 
     // Process reports in batches until we've processed all or run out of gas
     while (current_reports.len > 0 and current_gas_limit > 0) {
@@ -157,12 +150,11 @@ pub fn outerAccumulation(
             params,
             allocator,
             context,
-            tau,
-            entropy,
-            current_privileged_services,
             current_reports[0..batch.reports_to_process],
+            first_batch,
         );
         defer parallelized_result.deinit(allocator);
+
         // Aggregate batch results
         try aggregateBatchResults(
             &transfers,
@@ -178,7 +170,7 @@ pub fn outerAccumulation(
         current_gas_limit = current_gas_limit -| parallelized_result.gas_used;
         span.debug("Batch finished. Accumulated: {d}, Batch Gas Used: {d}, Remaining Gas Limit: {d}", .{ batch.reports_to_process, parallelized_result.gas_used, current_gas_limit });
         // We only execute our privileged_services once
-        current_privileged_services = &empty_privileged_services;
+        first_batch = false;
 
         // If all reports processed, break early
         if (current_reports.len == batch.reports_to_process) {
@@ -231,8 +223,8 @@ pub const ParallelizedAccumulationResult = struct {
 };
 
 /// 12.17 Parallelized accumulation function Δ*
-/// Transforms an initial state context, sequence of work reports,
-/// and dictionary of privileged always-accumulate services into a tuple containing:
+/// Transforms an initial state context and sequence of work reports
+/// into a tuple containing:
 /// - Total gas utilized in PVM execution
 /// - Posterior state context
 /// - Resultant deferred transfers
@@ -241,10 +233,8 @@ pub fn parallelizedAccumulation(
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
     context: *const AccumulationContext(params),
-    tau: types.TimeSlot,
-    entropy: types.Entropy,
-    privileged_services: *const std.AutoHashMap(types.ServiceId, types.Gas),
     work_reports: []const types.WorkReport,
+    include_privileged: bool, // Whether to include privileged services (first batch only)
 ) !ParallelizedAccumulationResult {
     const span = trace.span(.parallelized_accumulation);
     defer span.deinit();
@@ -254,7 +244,7 @@ pub fn parallelizedAccumulation(
     span.debug("Starting parallelized accumulation for {d} work reports", .{work_reports.len});
 
     // Collect all unique service IDs
-    var service_ids = try collectServiceIds(allocator, privileged_services, work_reports);
+    var service_ids = try collectServiceIds(allocator, context, work_reports, include_privileged);
     defer service_ids.deinit();
 
     span.debug("Found {d} unique services to accumulate", .{service_ids.count()});
@@ -280,13 +270,12 @@ pub fn parallelizedAccumulation(
 
         // Process this service
         // TODO: https://github.com/zig-gamedev/zjobs maybe of interest
+        // TODO: When implementing parallel execution, each service should get an isolated
+        // copy of the context that can be modified without affecting others.
         var result = try singleServiceAccumulation(
             params,
             allocator,
             context,
-            tau,
-            entropy,
-            privileged_services,
             service_id,
             maybe_operands,
         );
@@ -323,9 +312,6 @@ pub fn singleServiceAccumulation(
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
     context: *const AccumulationContext(params),
-    tau: types.TimeSlot,
-    entropy: types.Entropy,
-    privileged_services: *const std.AutoHashMap(types.ServiceId, types.Gas),
     service_id: types.ServiceId,
     service_operands: ?ServiceAccumulationOperandsMap.Operands,
 ) !AccumulationResult {
@@ -338,9 +324,9 @@ pub fn singleServiceAccumulation(
         service_id, if (service_operands) |so| so.count() else 0,
     });
 
-    // Either this is a priviledges service and it has a gas limit set, or we have some operands
+    // Either this is a privileged service and it has a gas limit set, or we have some operands
     // and have a gas_limit
-    const gas_limit = privileged_services.get(service_id) orelse
+    const gas_limit = @constCast(&context.privileges).getReadOnly().always_accumulate.get(service_id) orelse
         if (service_operands) |so| so.calcGasLimit() else return AccumulationResult.Empty;
 
     // Exit early if we have a gas_limit of 0
@@ -352,8 +338,8 @@ pub fn singleServiceAccumulation(
         params,
         allocator,
         context,
-        tau,
-        entropy,
+        context.time.current_slot,
+        context.entropy,
         service_id,
         gas_limit,
         if (service_operands) |so| so.accumulationOperandSlice() else &[_]AccumulationOperand{},
@@ -366,15 +352,12 @@ pub fn executeAccumulation(
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
     stx: *state_delta.StateTransition(params),
-    chi: *state.Chi,
+    _: *state.Chi,
     accumulatable: []const types.WorkReport,
     gas_limit: u64,
 ) !OuterAccumulationResult {
     const span = trace.span(.execute_accumulation);
     defer span.deinit();
-
-    // Assertions
-    std.debug.assert(gas_limit > 0);
 
     // Build accumulation context
     var accumulation_context = pvm_accumulate.AccumulationContext(params).build(
@@ -397,9 +380,6 @@ pub fn executeAccumulation(
         params,
         allocator,
         &accumulation_context,
-        stx.time.current_slot,
-        (try stx.ensure(.eta_prime))[0],
-        &chi.always_accumulate,
         accumulatable,
         gas_limit,
     );
@@ -462,16 +442,19 @@ fn aggregateBatchResults(
 /// Collect all unique service IDs from privileged services and work reports
 fn collectServiceIds(
     allocator: std.mem.Allocator,
-    privileged_services: *const std.AutoHashMap(types.ServiceId, types.Gas),
+    context: anytype, // *const AccumulationContext(params)
     work_reports: []const types.WorkReport,
+    include_privileged: bool,
 ) !std.AutoArrayHashMap(types.ServiceId, void) {
     var service_ids = std.AutoArrayHashMap(types.ServiceId, void).init(allocator);
     errdefer service_ids.deinit();
 
-    // First the always accumulates
-    var it = privileged_services.iterator();
-    while (it.next()) |entry| {
-        try service_ids.put(entry.key_ptr.*, {});
+    // First the always accumulates (only in first batch)
+    if (include_privileged) {
+        var it = &context.privileges.getReadOnly().always_accumulate.iterator();
+        while (it.next()) |entry| {
+            try service_ids.put(entry.key_ptr.*, {});
+        }
     }
 
     // Then the work reports
