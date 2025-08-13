@@ -46,7 +46,7 @@ pub const OuterAccumulationResult = struct {
     accumulated_count: usize,
     transfers: []DeferredTransfer,
     accumulation_outputs: HashSet(ServiceAccumulationOutput),
-    service_gas_used: std.AutoHashMap(types.ServiceId, types.Gas), // Gas used per service ID
+    gas_used_per_service: std.AutoHashMap(types.ServiceId, types.Gas), // Gas used per service ID
 
     pub fn takeTransfers(self: *@This()) []DeferredTransfer {
         const result = self.transfers;
@@ -57,7 +57,7 @@ pub const OuterAccumulationResult = struct {
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.transfers);
         self.accumulation_outputs.deinit(allocator);
-        self.service_gas_used.deinit(); // Deinit the new map
+        self.gas_used_per_service.deinit(); // Deinit the new map
         self.* = undefined;
     }
 };
@@ -105,8 +105,8 @@ pub fn outerAccumulation(
     errdefer accumulation_outputs.deinit(allocator);
 
     // Map to store gas used per service ID across all batches
-    var total_service_gas_used = std.AutoHashMap(types.ServiceId, types.Gas).init(allocator);
-    errdefer total_service_gas_used.deinit();
+    var gas_used_per_service = std.AutoHashMap(types.ServiceId, types.Gas).init(allocator);
+    errdefer gas_used_per_service.deinit();
 
     // If no work reports, return early
     if (work_reports.len == 0) {
@@ -115,7 +115,7 @@ pub fn outerAccumulation(
             .accumulated_count = 0,
             .transfers = &[_]DeferredTransfer{},
             .accumulation_outputs = accumulation_outputs,
-            .service_gas_used = total_service_gas_used,
+            .gas_used_per_service = gas_used_per_service,
         };
     }
 
@@ -167,14 +167,14 @@ pub fn outerAccumulation(
             // Append transfers directly
             try transfers.appendSlice(entry.transfers());
 
-            // Add accumulation output if present
+            // Add accumulation output to our output set if present
             if (entry.output()) |output| {
                 try accumulation_outputs.add(allocator, .{ .service_id = entry.service_id, .output = output });
             }
 
             // Aggregate gas used for this service
-            const current_gas = total_service_gas_used.get(entry.service_id) orelse 0;
-            try total_service_gas_used.put(entry.service_id, current_gas + entry.gasUsed());
+            const current_gas = gas_used_per_service.get(entry.service_id) orelse 0;
+            try gas_used_per_service.put(entry.service_id, current_gas + entry.gasUsed());
 
             // Track total gas for this batch
             batch_gas_used += entry.gasUsed();
@@ -207,7 +207,7 @@ pub fn outerAccumulation(
         .accumulated_count = total_accumulated_count,
         .transfers = try transfers.toOwnedSlice(),
         .accumulation_outputs = accumulation_outputs,
-        .service_gas_used = total_service_gas_used,
+        .gas_used_per_service = gas_used_per_service,
     };
 }
 
@@ -328,6 +328,7 @@ pub fn parallelizedAccumulation(
     for (service_ids.keys()) |service_id| {
         // Get operands if we have them, privileged_services do not have them
         const maybe_operands = service_operands.getOperands(service_id);
+        const context_snapshot = try context.deepClone();
 
         // Process this service
         // TODO: https://github.com/zig-gamedev/zjobs maybe of interest
@@ -335,12 +336,11 @@ pub fn parallelizedAccumulation(
         const result = try singleServiceAccumulation(
             params,
             allocator,
-            context,
+            context_snapshot,
             service_id,
             maybe_operands,
         );
         // Don't defer deinit since we're moving ownership to service_results
-
         try service_results.put(service_id, result);
     }
 
@@ -357,7 +357,7 @@ pub fn parallelizedAccumulation(
 pub fn singleServiceAccumulation(
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
-    context: *const AccumulationContext(params),
+    context: AccumulationContext(params),
     service_id: types.ServiceId,
     service_operands: ?ServiceAccumulationOperandsMap.Operands,
 ) !AccumulationResult(params) {

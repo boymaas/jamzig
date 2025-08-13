@@ -42,7 +42,7 @@ const AccumulateArgs = struct {
 pub fn invoke(
     comptime params: Params,
     allocator: std.mem.Allocator,
-    context: *const AccumulationContext(params),
+    context: AccumulationContext(params),
     service_id: types.ServiceId,
     gas_limit: types.Gas,
     accumulation_operands: []const AccumulationOperand, // O
@@ -98,7 +98,7 @@ pub fn invoke(
         .allocator = allocator,
         .service_id = service_id,
         // Clone the context for this invocation to ensure isolation
-        .context = try context.deepClone(),
+        .context = context,
         .new_service_id = service_util.generateServiceId(&context.service_accounts, service_id, context.entropy, context.time.current_slot),
         .deferred_transfers = std.ArrayList(DeferredTransfer).init(allocator),
         .accumulation_output = null,
@@ -508,11 +508,11 @@ pub fn AccumulationResult(comptime params: Params) type {
 
         /// Create an empty result with a valid dimension
         /// The caller must provide an allocator and context reference
-        pub fn createEmpty(allocator: std.mem.Allocator, context: *const AccumulationContext(params), service_id: types.ServiceId) !@This() {
+        pub fn createEmpty(allocator: std.mem.Allocator, context: AccumulationContext(params), service_id: types.ServiceId) !@This() {
             const dimension = try allocator.create(AccumulateHostCalls(params).Dimension);
             dimension.* = .{
                 .allocator = allocator,
-                .context = try context.deepClone(),
+                .context = context,
                 .service_id = service_id,
                 .new_service_id = service_id, // No new service generated for empty result
                 .deferred_transfers = std.ArrayList(DeferredTransfer).init(allocator),

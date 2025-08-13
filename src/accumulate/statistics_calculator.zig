@@ -53,7 +53,7 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             // Calculate accumulation statistics
             const accumulation_stats = try self.calculateAccumulationStats(
                 accumulated,
-                &execution_result.service_gas_used,
+                &execution_result.gas_used_per_service,
             );
 
             span.debug("Statistics computation complete", .{});
