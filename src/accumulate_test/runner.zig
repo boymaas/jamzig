@@ -27,7 +27,13 @@ pub fn processAccumulationReports(
     try @import("../stf/time.zig").transition(params, &stx, test_case.input.slot);
 
     // Transition validator stats
-    try @import("../stf/validator_stats.zig").transition_epoch(
+    try @import("../stf/validator_stats.zig").transitionEpoch(
+        params,
+        &stx,
+    );
+
+    // Transition validator stats
+    try @import("../stf/validator_stats.zig").clearPerBlockStats(
         params,
         &stx,
     );
@@ -44,13 +50,12 @@ pub fn processAccumulationReports(
     // Call validator stats transition to update Pi with accumulation statistics
     const validator_stats_input = @import("../stf/validator_stats.zig").ValidatorStatsInput.Empty;
 
-    try @import("../stf/validator_stats.zig").transition(
+    try @import("../stf/validator_stats.zig").transitionWithInput(
         params,
         &stx,
         validator_stats_input,
+        &results,
         &[_]types.WorkReport{}, // empty ready reports, these stats are not in the test vector
-        &results.accumulation_stats,
-        &results.transfer_stats,
     );
 
     // Merge prime into base

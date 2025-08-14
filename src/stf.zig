@@ -53,7 +53,7 @@ pub fn stateTransition(
         try block.header.getEntropy(),
     );
 
-    try validator_stats.transition_epoch(
+    try validator_stats.clearPerBlockStats(
         params,
         stx,
     );
@@ -67,14 +67,14 @@ pub fn stateTransition(
     );
 
     // => rho_double_dagger
-    var available_assignments = try assurances.transition(
+    var assurance_result = try assurances.transition(
         params,
         allocator,
         stx,
         block.extrinsic.assurances,
         block.header.parent,
     );
-    defer available_assignments.deinit(allocator);
+    defer assurance_result.deinit(allocator);
 
     // Update parent block's state root before processing reports
     // This ensures guarantees can validate against the correct state root
@@ -85,15 +85,16 @@ pub fn stateTransition(
     );
 
     // => rho_prime
-    try reports.transition(
+    var reports_result = try reports.transition(
         params,
         allocator,
         stx,
         block,
     );
+    defer reports_result.deinit(allocator);
 
     // accumulate
-    const ready_reports = try available_assignments.getWorkReports(allocator);
+    const ready_reports = try assurance_result.available_assignments.getWorkReports(allocator);
     defer @import("meta.zig").deinit.deinitEntriesAndFreeSlice(allocator, ready_reports);
 
     var accumulate_result = try accumulate.transition(
@@ -132,13 +133,22 @@ pub fn stateTransition(
     );
     defer markers.deinit(allocator);
 
-    try validator_stats.transitionFromBlock(
+    // Create comprehensive ValidatorStatsInput with all collected data
+    // Convert reporters to validator indices for statistics
+
+    try validator_stats.transition(
         params,
         stx,
         block,
+        &reports_result,
+        &assurance_result,
+        &accumulate_result,
         ready_reports,
-        &accumulate_result.accumulation_stats,
-        &accumulate_result.transfer_stats,
+    );
+
+    try validator_stats.transitionEpoch(
+        params,
+        stx,
     );
 
     return stx;

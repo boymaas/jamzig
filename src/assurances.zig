@@ -18,6 +18,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
         InvalidPublicKey,
         InvalidAnchorHash,
         InvalidValidatorIndex,
+        BitSetForEmptyCore,
     };
 
     pub inline fn items(self: @This()) []types.AvailAssurance {
@@ -35,6 +36,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
         extrinsic: types.AssurancesExtrinsic,
         parent_hash: types.HeaderHash,
         kappa: types.ValidatorSet,
+        pending_reports: *const state.Rho(params.core_count),
     ) ValidationError!@This() {
         // Compile-time assertions for parameters
         comptime {
@@ -79,6 +81,28 @@ pub const ValidatedAssuranceExtrinsic = struct {
             if (!std.mem.eql(u8, &assurance.anchor, &parent_hash)) {
                 assurance_span.err("Invalid anchor hash - doesn't match parent", .{});
                 return ValidationError.InvalidAnchorHash;
+            }
+
+            // Validate that bits are only set for cores with pending reports
+            // This implements the graypaper constraint: ∀a ∈ E_A, c ∈ N_C : a_f[c] ⇒ ρ†[c] ≠ ∅
+            const bitfield_validation_span = assurance_span.child(.validate_bitfield_cores);
+            defer bitfield_validation_span.deinit();
+            bitfield_validation_span.debug("Validating bitfield against pending reports", .{});
+
+            // Check each bit in the bitfield
+            for (0..params.core_count) |core_idx| {
+                const byte_idx = core_idx / 8;
+                const bit_idx: u3 = @intCast(core_idx % 8);
+                const bit_set = (assurance.bitfield[byte_idx] & (@as(u8, 1) << bit_idx)) != 0;
+                
+                if (bit_set) {
+                    bitfield_validation_span.trace("Core {d}: bit set, checking for pending report", .{core_idx});
+                    if (!pending_reports.hasReport(core_idx)) {
+                        bitfield_validation_span.err("Core {d}: bit set but no pending report exists", .{core_idx});
+                        return ValidationError.BitSetForEmptyCore;
+                    }
+                    bitfield_validation_span.trace("Core {d}: has pending report, validation passed", .{core_idx});
+                }
             }
 
             // Validate signature

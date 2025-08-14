@@ -26,9 +26,5 @@ pub fn transition(
         preimages_extrinsic,
     );
 
-    // Now update the stats
-    const pi: *state.Pi = try stx.ensure(.pi_prime);
-    var stats = try pi.getValidatorStats(author_index);
-    stats.updatePreimagesIntroduced(preimages_extrinsic.count());
-    stats.updateOctetsAcrossPreimages(preimages_extrinsic.calcOctetsAcrossPreimages());
+    _ = author_index;
 }

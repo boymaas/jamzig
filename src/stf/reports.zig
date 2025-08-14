@@ -18,15 +18,27 @@ pub fn accumulateWorkReports(
     @panic("Not implemented");
 }
 
+pub const ReportsResult = struct {
+    result: reports.Result,
+    validator_indices: []const types.ValidatorIndex = &.{},
+
+    pub fn getValidatorIndices(self: *ReportsResult) []const types.ValidatorIndex {
+        return self.validator_indices;
+    }
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.validator_indices);
+        self.result.deinit(allocator);
+        self.* = undefined;
+    }
+};
+
 pub fn transition(
     comptime params: Params,
     allocator: std.mem.Allocator,
     stx: *StateTransition(params),
     block: *const types.Block,
-) !void {
-    // NOTE: disable to make test passing, track pi based on result?
-    // const pi: *state.Pi = try stx.ensure(.pi_prime);
-
+) !ReportsResult {
     const validated = try reports.ValidatedGuaranteeExtrinsic.validate(
         params,
         allocator,
@@ -35,19 +47,16 @@ pub fn transition(
     );
 
     // Process
-    var result = try reports.processGuaranteeExtrinsic(
+    const result = try reports.processGuaranteeExtrinsic(
         params,
         allocator,
         stx,
         validated,
     );
-    defer result.deinit(allocator);
 
-    const pi: *state.Pi = try stx.ensure(.pi_prime);
-    const kappa: *const types.ValidatorSet = try stx.ensure(.kappa);
-    for (result.reporters) |validator_key| {
-        const validator_index = try kappa.findValidatorIndex(.Ed25519Public, validator_key);
-        var stats = try pi.getValidatorStats(validator_index);
-        stats.updateReportsGuaranteed(1);
-    }
+    // Find the indices of validators who reported
+    const kappa: *const state.Kappa = try stx.get(.kappa);
+    const validator_indices = try kappa.findValidatorIndices(allocator, .Ed25519Public, result.reporters);
+
+    return .{ .validator_indices = validator_indices, .result = result };
 }

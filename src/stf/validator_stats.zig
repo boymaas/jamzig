@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 const accumulate = @import("../accumulate.zig");
+const validator_stats = @import("../validator_stats.zig");
 
 const Params = @import("../jam_params.zig").Params;
 const StateTransition = @import("../state_delta.zig").StateTransition;
@@ -21,6 +22,10 @@ pub const ValidatorStatsInput = struct {
     tickets_count: u32,
     /// The list of preimages
     preimages: []const types.Preimage,
+    /// Validators who guaranteed reports (for reports_guaranteed stat)
+    guarantor_validators: []const types.ValidatorIndex,
+    /// Validators who made assurances (for availability_assurances stat)
+    assurance_validators: []const types.ValidatorIndex,
 
     pub const Empty = ValidatorStatsInput{
         .author_index = null,
@@ -28,9 +33,11 @@ pub const ValidatorStatsInput = struct {
         .assurances = &[_]types.AvailAssurance{},
         .tickets_count = 0,
         .preimages = &[_]types.Preimage{},
+        .guarantor_validators = &[_]types.ValidatorIndex{},
+        .assurance_validators = &[_]types.ValidatorIndex{},
     };
 
-    /// Create a ValidatorStatsInput from a Block
+    /// Create a ValidatorStatsInput from a Block (basic version for tests)
     pub fn fromBlock(block: *const types.Block) ValidatorStatsInput {
         return ValidatorStatsInput{
             .author_index = block.header.author_index,
@@ -38,20 +45,39 @@ pub const ValidatorStatsInput = struct {
             .assurances = block.extrinsic.assurances.data,
             .tickets_count = @intCast(block.extrinsic.tickets.data.len),
             .preimages = block.extrinsic.preimages.data,
+            .guarantor_validators = &[_]types.ValidatorIndex{},
+            .assurance_validators = &[_]types.ValidatorIndex{},
+        };
+    }
+
+    /// Create a ValidatorStatsInput from a Block with validator indices
+    pub fn fromBlockWithValidators(
+        block: *const types.Block,
+        guarantor_validators: []const types.ValidatorIndex,
+        assurance_validators: []const types.ValidatorIndex,
+    ) ValidatorStatsInput {
+        return ValidatorStatsInput{
+            .author_index = block.header.author_index,
+            .guarantees = block.extrinsic.guarantees.data,
+            .assurances = block.extrinsic.assurances.data,
+            .tickets_count = @intCast(block.extrinsic.tickets.data.len),
+            .preimages = block.extrinsic.preimages.data,
+            .guarantor_validators = guarantor_validators,
+            .assurance_validators = assurance_validators,
         };
     }
 };
 
 pub const Error = error{};
 
-/// Modified transition function that takes ValidatorStatsInput instead of Block
-pub fn transition(
+/// Transition function that takes ValidatorStatsInput directly
+/// This is the core implementation that can be used without a block
+pub fn transitionWithInput(
     comptime params: Params,
     stx: *StateTransition(params),
     input: ValidatorStatsInput,
+    accumulate_result: *const @import("accumulate.zig").AccumulateResult,
     ready_reports: []types.WorkReport,
-    accumulation_stats: *const std.AutoHashMap(types.ServiceId, accumulate.execution.AccumulationServiceStats),
-    transfer_stats: *const std.AutoHashMap(types.ServiceId, accumulate.execution.TransferServiceStats),
 ) !void {
     const span = trace.span(.transition_validator_stats);
     defer span.deinit();
@@ -96,10 +122,31 @@ pub fn transition(
                 try std.math.divCeil(u32, report.package_spec.exports_count * 65, 64));
     }
 
+    // Update validator statistics for the block author
     if (input.author_index) |author_index| {
         var stats = try pi.getValidatorStats(author_index);
         stats.blocks_produced += 1;
         stats.tickets_introduced += input.tickets_count;
+
+        // Preimages statistics (previously in stf/preimages.zig)
+        stats.preimages_introduced += @intCast(input.preimages.len);
+        var total_octets: u32 = 0;
+        for (input.preimages) |preimage| {
+            total_octets += @intCast(preimage.blob.len);
+        }
+        stats.octets_across_preimages += total_octets;
+    }
+
+    // Update reports_guaranteed for guarantors (previously in stf/reports.zig)
+    for (input.guarantor_validators) |validator_index| {
+        var stats = try pi.getValidatorStats(validator_index);
+        stats.reports_guaranteed += 1;
+    }
+
+    // Update availability_assurances for validators who made assurances (previously in stf/assurances.zig)
+    for (input.assurance_validators) |validator_index| {
+        var stats = try pi.getValidatorStats(validator_index);
+        stats.availability_assurances += 1;
     }
 
     // Eq 13.11: Preimages Introduced (provided_count, provided_size)
@@ -129,7 +176,7 @@ pub fn transition(
 
     // Eq 13.14: Accumulation Stats (accumulate_count, accumulate_gas_used)
     // Depends on I (Accumulation Statistics - map ServiceId -> (Gas, Count)) - Eq 12.25
-    var accum_iter = accumulation_stats.iterator();
+    var accum_iter = accumulate_result.accumulation_stats.iterator();
     while (accum_iter.next()) |entry| {
         const service_id = entry.key_ptr.*;
         const stats_I = entry.value_ptr.*; // {gas_used, accumulated_count}
@@ -140,7 +187,7 @@ pub fn transition(
 
     // Eq 13.15: Transfer Stats (on_transfers_count, on_transfers_gas_used)
     // Depends on X (Transfer Statistics - map ServiceId -> (Count, Gas)) - Eq 12.30
-    var transfer_iter = transfer_stats.iterator();
+    var transfer_iter = accumulate_result.transfer_stats.iterator();
     while (transfer_iter.next()) |entry| {
         const service_id = entry.key_ptr.*;
         const stats_X = entry.value_ptr.*; // {transfer_count, gas_used}
@@ -150,21 +197,33 @@ pub fn transition(
     }
 }
 
-/// Legacy transition function that uses a Block directly
-/// This is kept for backward compatibility
-pub fn transitionFromBlock(
+/// Transition function that takes a block and delegates to transitionWithInput
+/// This maintains backward compatibility with existing code
+pub fn transition(
     comptime params: Params,
     stx: *StateTransition(params),
-    new_block: *const types.Block,
+    block: *const types.Block,
+    reports_result: *const @import("reports.zig").ReportsResult,
+    assurance_result: *const @import("assurances.zig").AssuranceResult,
+    accumulate_result: *const @import("accumulate.zig").AccumulateResult,
     ready_reports: []types.WorkReport,
-    accumulation_stats: *const std.AutoHashMap(types.ServiceId, accumulate.execution.AccumulationServiceStats),
-    transfer_stats: *const std.AutoHashMap(types.ServiceId, accumulate.execution.TransferServiceStats),
 ) !void {
-    const input = ValidatorStatsInput.fromBlock(new_block);
-    return transition(params, stx, input, ready_reports, accumulation_stats, transfer_stats);
+    const input = ValidatorStatsInput.fromBlockWithValidators(
+        block,
+        reports_result.validator_indices,
+        assurance_result.validator_indices,
+    );
+
+    try transitionWithInput(
+        params,
+        stx,
+        input,
+        accumulate_result,
+        ready_reports,
+    );
 }
 
-pub fn transition_epoch(
+pub fn transitionEpoch(
     comptime params: Params,
     stx: *StateTransition(params),
 ) !void {
@@ -174,8 +233,20 @@ pub fn transition_epoch(
     var pi: *state.Pi = try stx.ensure(.pi_prime);
 
     if (stx.time.isNewEpoch()) {
+        span.debug("Transitioning to next epoch", .{});
         try pi.transitionToNextEpoch();
     }
+}
+
+pub fn clearPerBlockStats(
+    comptime params: Params,
+    stx: *StateTransition(params),
+) !void {
+    const span = trace.span(.transition_validator_stats_epoch);
+    defer span.deinit();
+    var pi: *state.Pi = try stx.ensure(.pi_prime);
+
+    span.debug("Clearing per block stats", .{});
 
     // now clear the per block stats
     pi.clearPerBlockStats();

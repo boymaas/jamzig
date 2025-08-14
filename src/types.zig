@@ -638,6 +638,20 @@ pub const ValidatorSet = struct {
         }
         return error.ValidatorNotFound;
     }
+    
+    /// Find indices of multiple validators by their public keys
+    /// Returns an allocated slice of validator indices
+    /// Caller must free the returned slice
+    pub fn findValidatorIndices(self: ValidatorSet, allocator: std.mem.Allocator, comptime key_type: KeyType, keys: anytype) ![]ValidatorIndex {
+        var indices = try allocator.alloc(ValidatorIndex, keys.len);
+        errdefer allocator.free(indices);
+        
+        for (keys, 0..) |key, i| {
+            indices[i] = try self.findValidatorIndex(key_type, key);
+        }
+        
+        return indices;
+    }
 
     pub fn init(allocator: std.mem.Allocator, validators_count: u32) !@This() {
         return @This(){

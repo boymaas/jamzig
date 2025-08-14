@@ -20,7 +20,7 @@ fn updateLastAccumulationSlot(
     result: *const accumulate.ProcessAccumulationResult,
 ) !void {
     const delta_prime = try stx.ensure(.delta_prime);
-    
+
     // Update for accumulated services
     var iter = result.accumulation_stats.iterator();
     while (iter.next()) |entry| {
@@ -28,7 +28,7 @@ fn updateLastAccumulationSlot(
             account.last_accumulation_slot = stx.time.current_slot;
         }
     }
-    
+
     // Update for services that received transfers
     var transfer_iter = result.transfer_stats.iterator();
     while (transfer_iter.next()) |entry| {
@@ -38,12 +38,14 @@ fn updateLastAccumulationSlot(
     }
 }
 
+pub const AccumulateResult = accumulate.ProcessAccumulationResult;
+
 pub fn transition(
     comptime params: Params,
     _: std.mem.Allocator,
     stx: *StateTransition(params),
     reports: []types.WorkReport,
-) !accumulate.ProcessAccumulationResult {
+) !AccumulateResult {
     const span = trace.span(.accumulate);
     defer span.deinit();
 
