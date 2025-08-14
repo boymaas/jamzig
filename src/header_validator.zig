@@ -243,7 +243,13 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
             const span = trace.span(.validate_author);
             defer span.deinit();
 
-            const validators = state.kappa.?.validators;
+            // Determine which validator set to use based on epoch transition
+            // According to graypaper: use posterior κ' which at epoch boundaries is γ_k
+            const time = params.Time().init(state.tau.?, header.slot);
+            const validators = if (time.isNewEpoch())
+                state.gamma.?.k.validators  // Use gamma.k for first block of new epoch
+            else
+                state.kappa.?.validators;   // Use kappa for regular blocks
 
             // Validate author index
             if (header.author_index >= validators.len) {
