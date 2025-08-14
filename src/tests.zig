@@ -120,4 +120,7 @@ comptime {
 
     // Proof of Concepts
     _ = @import("lab/thread/reactor_pattern.zig");
+
+    // JAM Conformance tests
+    _ = @import("jam_conformance.zig");
 }
