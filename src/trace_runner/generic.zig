@@ -4,7 +4,6 @@ const types = @import("../types.zig");
 const jam_params = @import("../jam_params.zig");
 
 const state = @import("../state.zig");
-const testnet_json = @import("json.zig");
 const codec = @import("../codec.zig");
 const state_dictionary = @import("../state_dictionary.zig");
 
@@ -45,34 +44,6 @@ pub const StateSnapshot = struct {
         }
         allocator.free(self.keyvals);
         self.* = undefined;
-    }
-
-    pub fn exportToFormat(
-        self: *const StateSnapshot,
-        allocator: std.mem.Allocator,
-        format: export_format.Format,
-        config: export_format.Config,
-    ) ![]u8 {
-        switch (format) {
-            .json => {
-                var list = std.ArrayList(u8).init(allocator);
-                errdefer list.deinit();
-
-                try testnet_json.stringify(
-                    self.*,
-                    .{
-                        .whitespace = config.json_whitespace,
-                        .emit_strings_as_arrays = config.json_strings_as_arrays,
-                        .emit_bytes_as_hex = config.json_bytes_as_hex,
-                    },
-                    list.writer(),
-                );
-                return list.toOwnedSlice();
-            },
-            .binary => {
-                return try codec.serializeAlloc(StateSnapshot, {}, allocator, self.*);
-            },
-        }
     }
 };
 
@@ -170,74 +141,6 @@ pub const StateTransition = struct {
         self.post_state.deinit(allocator);
         allocator.destroy(self);
     }
-
-    pub fn exportToFormat(
-        self: *const StateTransition,
-        allocator: std.mem.Allocator,
-        format: export_format.Format,
-        config: export_format.Config,
-    ) ![]u8 {
-        switch (format) {
-            .json => {
-                var list = std.ArrayList(u8).init(allocator);
-                errdefer list.deinit();
-
-                try testnet_json.stringify(
-                    self.*,
-                    .{
-                        .whitespace = config.json_whitespace,
-                        .emit_strings_as_arrays = config.json_strings_as_arrays,
-                        .emit_bytes_as_hex = config.json_bytes_as_hex,
-                    },
-                    list.writer(),
-                );
-                return list.toOwnedSlice();
-            },
-            .binary => {
-                return try codec.serializeAlloc(StateTransition, {}, allocator, self.*);
-            },
-        }
-    }
-
-    pub fn writeToFile(
-        self: *const StateTransition,
-        allocator: std.mem.Allocator,
-        dir_path: []const u8,
-        filename: []const u8,
-        format: export_format.Format,
-        config: export_format.Config,
-    ) !void {
-        try std.fs.cwd().makePath(dir_path);
-
-        const ext = switch (format) {
-            .json => ".json",
-            .binary => ".bin",
-        };
-
-        const path = try std.fmt.allocPrint(allocator, "{s}/{s}{s}", .{ dir_path, filename, ext });
-        defer allocator.free(path);
-
-        const data = try self.exportToFormat(allocator, format, config);
-        defer allocator.free(data);
-
-        const file = try std.fs.cwd().createFile(path, .{});
-        defer file.close();
-
-        try file.writeAll(data);
-    }
-};
-
-pub const export_format = struct {
-    pub const Format = enum {
-        json,
-        binary,
-    };
-
-    pub const Config = struct {
-        json_whitespace: testnet_json.StringifyOptions.whitespace = .indent_2,
-        json_strings_as_arrays: bool = false,
-        json_bytes_as_hex: bool = true,
-    };
 };
 
 pub fn buildStateTransition(
@@ -288,52 +191,4 @@ fn buildKeyValsFromState(
     }.lessThan);
 
     return keyvals.toOwnedSlice();
-}
-
-pub fn writeStateTransition(
-    comptime params: jam_params.Params,
-    allocator: std.mem.Allocator,
-    transition: StateTransition,
-    output_dir: []const u8,
-) !void {
-    // Create base paths
-    const epoch = transition.block.header.slot / params.epoch_length;
-    const slot_in_epoch = transition.block.header.slot % params.epoch_length;
-
-    // Create filenames
-    const bin_path_buf = try std.fmt.allocPrint(allocator, "{s}/{:0>4}_{:0>4}.bin", .{
-        output_dir, epoch, slot_in_epoch,
-    });
-    defer allocator.free(bin_path_buf);
-
-    const json_path_buf = try std.fmt.allocPrint(allocator, "{s}/{:0>4}_{:0>4}.json", .{
-        output_dir, epoch, slot_in_epoch,
-    });
-    defer allocator.free(json_path_buf);
-
-    // Create output directory if it doesn't exist
-    try std.fs.cwd().makePath(output_dir);
-
-    // Write binary format
-    {
-        const file = try std.fs.cwd().createFile(bin_path_buf, .{});
-        defer file.close();
-        try codec.serialize(StateTransition, params, file.writer(), transition);
-    }
-
-    // Write JSON format
-    {
-        const file = try std.fs.cwd().createFile(json_path_buf, .{});
-        defer file.close();
-
-        try testnet_json.stringify(
-            transition,
-            .{
-                .whitespace = .indent_2,
-                .emit_strings_as_arrays = false,
-                .emit_bytes_as_hex = true,
-            },
-            file.writer(),
-        );
-    }
 }

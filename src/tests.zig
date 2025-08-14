@@ -1,6 +1,7 @@
 comptime {
     _ = @import("itertools.zig");
 
+    _ = @import("jamtestvectors.zig");
     _ = @import("jamtestvectors/loader.zig");
     _ = @import("jamtestvectors/safrole.zig");
     _ = @import("jamtestvectors/codec.zig");
@@ -102,9 +103,6 @@ comptime {
 
     _ = @import("preimages.zig");
     _ = @import("preimages_test.zig");
-
-    _ = @import("jamtestnet.zig");
-    // Removed import for jamduna parser - now using only W3F format
 
     _ = @import("stf_test.zig");
 

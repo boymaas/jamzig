@@ -10,8 +10,8 @@ const shared = @import("tests/shared.zig");
 const report = @import("report.zig");
 const version = @import("version.zig");
 
-const jamtestnet = @import("../jamtestnet/parsers.zig");
-const state_transitions = @import("../jamtestnet/state_transitions.zig");
+const jamtestnet = @import("../trace_runner/parsers.zig");
+const state_transitions = @import("../trace_runner/state_transitions.zig");
 const state_dict_reconstruct = @import("../state_dictionary/reconstruct.zig");
 
 const sequoia = @import("../sequoia.zig");

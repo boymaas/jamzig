@@ -3,7 +3,6 @@ const types = @import("../../../types.zig");
 const codec = @import("../../../codec.zig");
 const state_dictionary = @import("../../../state_dictionary.zig");
 const merkle = @import("../../../merkle.zig");
-const export_types = @import("../../export.zig");
 
 const tracing = @import("../../../tracing.zig");
 const codec_scope = tracing.scoped(.codec);
@@ -11,10 +10,7 @@ const codec_scope = tracing.scoped(.codec);
 const Params = @import("../../../jam_params.zig").Params;
 const MerklizationDictionary = state_dictionary.MerklizationDictionary;
 
-// Use the same types as export.zig for consistency
-pub const KeyVal = export_types.KeyVal;
-pub const StateSnapshot = export_types.StateSnapshot;
-pub const StateTransition = export_types.StateTransition;
+pub const StateTransition = @import("../../generic.zig").StateTransition;
 
 // Load test vector - supports both binary and JSON formats
 pub fn loadTestVector(comptime params: Params, allocator: std.mem.Allocator, file_path: []const u8) !StateTransition {

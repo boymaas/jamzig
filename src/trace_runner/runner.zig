@@ -1,140 +1,26 @@
 const std = @import("std");
 const testing = std.testing;
 
-pub const jamtestnet = @import("jamtestnet/parsers.zig");
-pub const state_transitions = @import("jamtestnet/state_transitions.zig");
+pub const trace_runner = @import("parsers.zig");
+pub const state_transitions = @import("state_transitions.zig");
 
-const stf = @import("stf.zig");
-const types = @import("types.zig");
-const state = @import("state.zig");
-const state_dict = @import("state_dictionary.zig");
-const state_delta = @import("state_delta.zig");
-const codec = @import("codec.zig");
-const services = @import("services.zig");
+const state = @import("../state.zig");
+const state_dict = @import("../state_dictionary.zig");
 
-const jam_params = @import("jam_params.zig");
+const jam_params = @import("../jam_params.zig");
 
-const tracing = @import("tracing.zig");
-const trace = tracing.scoped(.stf_test);
+const tracing = @import("../tracing.zig");
+const trace = tracing.scoped(.trace_runner);
 
-const block_import = @import("block_import.zig");
+const block_import = @import("../block_import.zig");
 
 // W3F Traces Tests
-pub const W3F_PARAMS = jam_params.TINY_PARAMS;
-
-test "w3f:traces:fallback" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
-    try runBlockImportTests(
-        W3F_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestvectors/data/traces/fallback",
-        .CONTINOUS_MODE,
-    );
-}
-
-test "w3f:traces:safrole" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
-    try runBlockImportTests(
-        W3F_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestvectors/data/traces/safrole",
-        .CONTINOUS_MODE,
-    );
-}
-
-test "w3f:traces:preimages" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
-    try runBlockImportTests(
-        W3F_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestvectors/data/traces/preimages",
-        .CONTINOUS_MODE,
-    );
-}
-
-test "w3f:traces:preimages_light" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
-    try runBlockImportTests(
-        W3F_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestvectors/data/traces/preimages_light",
-        .CONTINOUS_MODE,
-    );
-}
-
-test "w3f:traces:storage" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
-    try runBlockImportTests(
-        W3F_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestvectors/data/traces/storage",
-        .CONTINOUS_MODE,
-    );
-}
-
-test "w3f:traces:storage_light" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
-    try runBlockImportTests(
-        W3F_PARAMS,
-        loader.loader(),
-        allocator,
-        "src/jamtestvectors/data/traces/storage_light",
-        .CONTINOUS_MODE,
-    );
-}
-
-test "w3f:fuzz_reports" {
-    const allocator = std.testing.allocator;
-    const loader = jamtestnet.w3f.Loader(W3F_PARAMS){};
-
-    const fuzz_reports_dir = "src/jamtestnet/fuzz_reports";
-
-    // Scan for version directories (e.g., v0.6.7)
-    var dir = try std.fs.cwd().openDir(fuzz_reports_dir, .{ .iterate = true });
-    defer dir.close();
-
-    var version_iter = dir.iterate();
-    while (try version_iter.next()) |version_entry| {
-        if (version_entry.kind != .directory) continue;
-
-        const version_path = try std.fs.path.join(allocator, &[_][]const u8{ fuzz_reports_dir, version_entry.name });
-        defer allocator.free(version_path);
-
-        // Scan for timestamp directories within each version
-        var version_dir = try std.fs.cwd().openDir(version_path, .{ .iterate = true });
-        defer version_dir.close();
-
-        var timestamp_iter = version_dir.iterate();
-        while (try timestamp_iter.next()) |timestamp_entry| {
-            if (timestamp_entry.kind != .directory) continue;
-
-            const test_path = try std.fs.path.join(allocator, &[_][]const u8{ version_path, timestamp_entry.name });
-            defer allocator.free(test_path);
-
-            std.debug.print("\nRunning fuzz reports from: {s}/{s}/{s}\n", .{ fuzz_reports_dir, version_entry.name, timestamp_entry.name });
-
-            // Run the block import tests for this directory
-            try runBlockImportTests(W3F_PARAMS, loader.loader(), allocator, test_path, .CONTINOUS_MODE);
-        }
-    }
-}
 
 const ImportMode = enum { CONTINOUS_MODE, TRACE_MODE };
 
-pub fn runBlockImportTests(
+pub fn runTracesInDir(
     comptime params: jam_params.Params,
-    loader: jamtestnet.Loader,
+    loader: trace_runner.Loader,
     allocator: std.mem.Allocator,
     test_dir: []const u8,
     continuosity_check: ImportMode,
@@ -150,7 +36,7 @@ pub fn runBlockImportTests(
 
     const offset = if (offset_str) |s| try std.fmt.parseInt(usize, s, 10) else 0;
 
-    var state_transition_vectors = try jamtestnet.state_transitions.collectStateTransitions(test_dir, allocator);
+    var state_transition_vectors = try trace_runner.state_transitions.collectStateTransitions(test_dir, allocator);
     defer state_transition_vectors.deinit(allocator);
     std.log.err("Collected {d} state transition vectors", .{state_transition_vectors.items().len});
 
@@ -250,7 +136,7 @@ pub fn runBlockImportTests(
             defer expected_pre_state.deinit(allocator);
 
             std.debug.print("\n\x1b[31m=== State Differences ===\x1b[0m\n", .{});
-            var state_diff = try @import("tests/state_diff.zig").JamStateDiff(params).build(allocator, &current_state.?, &expected_pre_state);
+            var state_diff = try @import("../tests/state_diff.zig").JamStateDiff(params).build(allocator, &current_state.?, &expected_pre_state);
             defer state_diff.deinit();
             state_diff.printToStdErr();
 
@@ -315,7 +201,7 @@ pub fn runBlockImportTests(
         try import_result.state_transition.mergePrimeOntoBase();
 
         // Log block information for debugging
-        @import("sequoia.zig").logging.printBlockEntropyDebug(
+        @import("../sequoia.zig").logging.printBlockEntropyDebug(
             params,
             state_transition.block(),
             &current_state.?,
@@ -339,7 +225,7 @@ pub fn runBlockImportTests(
             var expected_state = try state_dict.reconstruct.reconstructState(params, allocator, &expected_state_mdict);
             defer expected_state.deinit(allocator);
 
-            var state_diff = try @import("tests/state_diff.zig").JamStateDiff(params).build(allocator, &current_state.?, &expected_state);
+            var state_diff = try @import("../tests/state_diff.zig").JamStateDiff(params).build(allocator, &current_state.?, &expected_state);
             defer state_diff.deinit();
 
             state_diff.printToStdErr();

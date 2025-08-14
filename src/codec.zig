@@ -873,8 +873,7 @@ fn serializeUnion(comptime T: type, comptime params: anytype, writer: anytype, v
             defer field_span.deinit();
             field_span.debug("union_field: {s}", .{field.name});
 
-            if (field.type == void) {
-            } else {
+            if (field.type == void) {} else {
                 const field_value = @field(value, field.name);
                 const field_type = field.type;
                 if (@hasDecl(T, field.name ++ "_size")) {
