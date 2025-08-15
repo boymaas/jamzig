@@ -37,7 +37,7 @@ pub fn handleEpochTransition(
     try stx.createTransient(.kappa_prime, try current_gamma.k.deepClone(stx.allocator));
 
     // Create new gamma state
-    var gamma_prime: *state.init.Gamma(params) = try stx.initTransientWithBase(.gamma_prime);
+    var gamma_prime: *state.init.Gamma(params) = try stx.ensure(.gamma_prime);
 
     // γ.k gets ι (with offenders zeroed out)
     const current_psi: *const state.Psi = try stx.get(.psi);

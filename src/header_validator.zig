@@ -247,9 +247,9 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
             // According to graypaper: use posterior κ' which at epoch boundaries is γ_k
             const time = params.Time().init(state.tau.?, header.slot);
             const validators = if (time.isNewEpoch())
-                state.gamma.?.k.validators  // Use gamma.k for first block of new epoch
+                state.gamma.?.k.validators // Use gamma.k for first block of new epoch
             else
-                state.kappa.?.validators;   // Use kappa for regular blocks
+                state.kappa.?.validators; // Use kappa for regular blocks
 
             // Validate author index
             if (header.author_index >= validators.len) {
@@ -335,10 +335,11 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
                     } else {
                         break :brl null;
                     }
-                    // Else we have settled
-                } else if (state.gamma.?.s == .tickets)
+                    // As long as we are in the same epoch, use tickets
+                } else if (time.isSameEpoch() and state.gamma.?.s == .tickets)
                     state.gamma.?.s.tickets
                 else
+                    // If we skipped an epoch or anything else fallback
                     null;
 
             // No tickets available
