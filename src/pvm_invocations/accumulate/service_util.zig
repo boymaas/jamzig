@@ -22,7 +22,7 @@ pub fn check(service_accounts: *const state.Delta.Snapshot, candidate_id: types.
 
     // Otherwise, calculate the next candidate in the sequence
     // The formula is: check((i - 2^8 + 1) mod (2^32 - 2^9) + 2^8)
-    const next_id = 0x100 + ((candidate_id - 0x100 + 1) % (std.math.maxInt(u32) - 0x200));
+    const next_id: u32 = 0x100 + ((candidate_id - 0x100 + 1) % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
     span.debug("Next candidate ID: {d}", .{next_id});
 
     // Recursive call to check the next candidate
@@ -38,15 +38,16 @@ pub fn generateServiceId(service_accounts: *const state.Delta.Snapshot, creator_
     span.trace("Entropy: {s}", .{std.fmt.fmtSliceHexLower(&entropy)});
 
     // Create input for hash: service ID + entropy + timeslot
-    var hash_input: [32 + 4 + 4]u8 = undefined;
+    // According to graypaper B.9: encode(s, η'_0, H_t)
+    var hash_input: [4 + 32 + 4]u8 = undefined;
 
-    // Copy service ID as bytes (4 bytes in little-endian format)
+    // Copy service ID as bytes (4 bytes in little-endian format) FIRST
     std.mem.writeInt(u32, hash_input[0..4], creator_id, .little);
 
-    // Copy entropy (32 bytes)
+    // Copy entropy (32 bytes) SECOND
     std.mem.copyForwards(u8, hash_input[4..36], &entropy);
 
-    // Copy timeslot (4 bytes in little-endian format)
+    // Copy timeslot (4 bytes in little-endian format) THIRD
     std.mem.writeInt(u32, hash_input[36..40], timeslot, .little);
     span.trace("Hash input: {s}", .{std.fmt.fmtSliceHexLower(&hash_input)});
 
@@ -57,7 +58,7 @@ pub fn generateServiceId(service_accounts: *const state.Delta.Snapshot, creator_
 
     // Generate initial ID: take first 4 bytes of hash mod (2^32 - 2^9) + 2^8
     const initial_value = std.mem.readInt(u32, hash_output[0..4], .little);
-    const candidate_id = 0x100 + (initial_value % (std.math.maxInt(u32) - 0x200));
+    const candidate_id = 0x100 + (initial_value % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
     span.debug("Initial candidate ID: {d}", .{candidate_id});
 
     // Check if this ID is available, and find next available if not

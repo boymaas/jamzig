@@ -390,7 +390,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Chi.assign must have exactly C elements
             std.debug.assert(assign_services.items.len == params.core_count);
             std.debug.assert(current_privileges.assign.len == params.core_count);
-            
+
             // Copy the new assign services directly (maintains exactly C elements)
             @memcpy(&current_privileges.assign, assign_services.items);
 
@@ -785,7 +785,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Check if caller has enough balance
             if (calling_service.balance < initial_balance) {
                 span.debug("Insufficient balance to create new service, returning CASH error", .{});
-                // TODO: Should rollback service creation here
+                // FIXME: Should rollback service creation here
                 return HostCallError.CASH;
             }
 
@@ -799,7 +799,10 @@ pub fn HostCalls(comptime params: Params) type {
                 ctx_regular.new_service_id,
             });
             exec_ctx.registers[7] = ctx_regular.new_service_id; // Return the new service ID on success
-            ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, ctx_regular.new_service_id); // Return the new service ID on success
+            // now prepare the next one
+            const intermediate_service_id = 0x100 + ((ctx_regular.new_service_id - 0x100 + 42) % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
+            // update the next service id
+            ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, intermediate_service_id);
             return .play;
         }
 
