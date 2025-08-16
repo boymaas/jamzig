@@ -111,18 +111,6 @@ pub fn build(b: *std.Build) !void {
 
     b.installArtifact(jamzig_exe);
 
-    const jamtestnet_export = b.addExecutable(.{
-        .name = "jamzig-jamtestnet-export",
-        .root_source_file = b.path("src/jamtestnet_export.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    jamtestnet_export.root_module.addOptions("build_options", build_options);
-    jamtestnet_export.root_module.addImport("clap", clap_module);
-    jamtestnet_export.linkLibCpp();
-    rust_deps.staticallyLinkTo(jamtestnet_export);
-    b.installArtifact(jamtestnet_export);
-
     const pvm_fuzzer = b.addExecutable(.{
         .name = "jamzig-pvm-fuzzer",
         .root_source_file = b.path("src/pvm_fuzzer.zig"),
@@ -172,15 +160,6 @@ pub fn build(b: *std.Build) !void {
     }
     const run_step = b.step("run", "Run the node");
     run_step.dependOn(&run_cmd.step);
-
-    // JAMTESTNET EXPORT
-    const run_jamtestnet_export = b.addRunArtifact(jamtestnet_export);
-    run_jamtestnet_export.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_jamtestnet_export.addArgs(args);
-    }
-    const run_jamtestnet_export_step = b.step("jamtestnet_export", "Run the jamtestnet export");
-    run_jamtestnet_export_step.dependOn(&run_jamtestnet_export.step);
 
     // PVM FUZZER
     const run_pvm_fuzzer = b.addRunArtifact(pvm_fuzzer);
