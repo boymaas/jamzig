@@ -269,7 +269,7 @@ pub fn HostCalls(comptime params: Params) type {
             });
 
             // Get current privileges
-            const current_privileges: *state.Chi = ctx_regular.context.privileges.getMutable() catch {
+            const current_privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Could not get mutable privileges", .{});
                 return HostCallError.FULL;
             };
@@ -387,13 +387,12 @@ pub fn HostCalls(comptime params: Params) type {
             current_privileges.designate = validator_service_id;
 
             // Update the assign service IDs list
-            current_privileges.assign.clearRetainingCapacity();
-            for (assign_services.items) |service_id| {
-                current_privileges.assign.append(ctx_regular.allocator, service_id) catch {
-                    span.err("Failed to update assign services", .{});
-                    return .{ .terminal = .panic };
-                };
-            }
+            // Chi.assign must have exactly C elements
+            std.debug.assert(assign_services.items.len == params.core_count);
+            std.debug.assert(current_privileges.assign.len == params.core_count);
+            
+            // Copy the new assign services directly (maintains exactly C elements)
+            @memcpy(&current_privileges.assign, assign_services.items);
 
             // Update the always-accumulate services
             current_privileges.always_accumulate.clearRetainingCapacity();
@@ -599,15 +598,15 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             // Get mutable access to privileges (Chi) to check authorization and update
-            const privileges: *state.Chi = ctx_regular.context.privileges.getMutable() catch {
+            const privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Problem getting mutable privileges", .{});
                 return .{ .terminal = .panic };
             };
 
             // Authorization check: x_s must equal (x_u)_a[c]
             // Only the current assign service for this core can update it
-            if (ctx_regular.service_id != privileges.assign.items[core_index]) {
-                span.debug("Service {d} is not the assign service for core {d} (current assign: {d}), returning HUH", .{ ctx_regular.service_id, core_index, privileges.assign.items[core_index] });
+            if (ctx_regular.service_id != privileges.assign[core_index]) {
+                span.debug("Service {d} is not the assign service for core {d} (current assign: {d}), returning HUH", .{ ctx_regular.service_id, core_index, privileges.assign[core_index] });
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                 return .play;
             }
@@ -649,7 +648,7 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             // 2. (x'_u)_a[c] = a (new assign service)
-            privileges.assign.items[core_index] = @intCast(new_assign_service);
+            privileges.assign[core_index] = @intCast(new_assign_service);
             span.debug("Updated assign service for core {d} to service {d}", .{ core_index, new_assign_service });
 
             // Return success
@@ -1218,7 +1217,7 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Offset pointer: 0x{x}", .{offset_ptr});
 
             // Check if current service has the validator privilege (x_s = (x_u)_v)
-            const privileges: *const state.Chi = ctx_regular.context.privileges.getReadOnly();
+            const privileges: *const state.Chi(params.core_count) = ctx_regular.context.privileges.getReadOnly();
             // Note: Chi incorrectly names this field 'designate' but it represents the validator service
             if (privileges.designate != ctx_regular.service_id) {
                 span.debug("Service {d} does not have validator privilege, current validator service is {?d}", .{

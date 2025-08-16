@@ -22,7 +22,7 @@ pub fn GasCalculator(comptime params: Params) type {
 
         /// Calculates the gas limit for accumulation according to equation 12.20
         /// let g = max(G_T, G_A ⋅ C + ∑_{x∈V(χ_g)}(x))
-        pub fn calculateGasLimit(self: Self, chi: *state.Chi) u64 {
+        pub fn calculateGasLimit(self: Self, chi: *state.Chi(params.core_count)) u64 {
             _ = self;
             const span = trace.span(.calculate_gas_limit);
             defer span.deinit();

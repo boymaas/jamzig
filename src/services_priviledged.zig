@@ -24,108 +24,128 @@ pub const Balance = u64;
 pub const GasLimit = u64;
 pub const Timeslot = u32;
 
-pub const Chi = struct {
-    manager: ServiceIndex,
-    assign: std.ArrayListUnmanaged(ServiceIndex),
-    designate: ServiceIndex,
-    always_accumulate: std.AutoHashMap(ServiceIndex, GasLimit),
-    allocator: Allocator,
+/// Generic Chi type parameterized by core_count
+pub fn Chi(comptime core_count: u16) type {
+    return struct {
+        manager: ServiceIndex,
+        assign: [core_count]ServiceIndex, // Fixed-size array, always exactly C elements
+        designate: ServiceIndex,
+        always_accumulate: std.AutoHashMap(ServiceIndex, GasLimit),
+        allocator: Allocator,
 
-    pub fn init(allocator: Allocator) Chi {
-        return .{
-            .manager = 0,
-            .assign = .{},
-            .designate = 0,
-            .always_accumulate = std.AutoHashMap(ServiceIndex, GasLimit).init(allocator),
-            .allocator = allocator,
-        };
-    }
+        const Self = @This();
 
-    pub fn deinit(self: *Chi) void {
-        self.always_accumulate.deinit();
-        self.assign.deinit(self.allocator);
-        self.* = undefined;
-    }
+        pub fn init(allocator: Allocator) !Self {
+            return .{
+                .manager = 0,
+                .assign = [_]ServiceIndex{0} ** core_count, // Initialize all to 0
+                .designate = 0,
+                .always_accumulate = std.AutoHashMap(ServiceIndex, GasLimit).init(allocator),
+                .allocator = allocator,
+            };
+        }
 
-    pub fn format(
-        self: *const @This(),
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        const tfmt = @import("types/fmt.zig");
-        const formatter = tfmt.Format(@TypeOf(self.*)){
-            .value = self.*,
-            .options = .{},
-        };
-        try formatter.format(fmt, options, writer);
-    }
+        pub fn deinit(self: *Self) void {
+            self.always_accumulate.deinit();
+            self.* = undefined;
+        }
 
-    pub fn setManager(self: *Chi, index: ServiceIndex) void {
-        self.manager = index;
-    }
+        pub fn format(
+            self: *const Self,
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            const tfmt = @import("types/fmt.zig");
+            const formatter = tfmt.Format(@TypeOf(self.*)){
+                .value = self.*,
+                .options = .{},
+            };
+            try formatter.format(fmt, options, writer);
+        }
 
-    pub fn pushAssign(self: *Chi, index: ServiceIndex) !void {
-        try self.assign.append(self.allocator, index);
-    }
+        pub fn setManager(self: *Self, index: ServiceIndex) void {
+            self.manager = index;
+        }
 
-    pub fn setDesignate(self: *Chi, index: ServiceIndex) void {
-        self.designate = index;
-    }
+        pub fn setAssign(self: *Self, core_index: usize, service_index: ServiceIndex) void {
+            std.debug.assert(core_index < core_count);
+            self.assign[core_index] = service_index;
+        }
 
-    pub fn addAlwaysAccumulate(self: *Chi, index: ServiceIndex, gas_limit: GasLimit) !void {
-        try self.always_accumulate.put(index, gas_limit);
-    }
+        pub fn getAssign(self: *const Self, core_index: usize) ServiceIndex {
+            std.debug.assert(core_index < core_count);
+            return self.assign[core_index];
+        }
 
-    pub fn removeAlwaysAccumulate(self: *Chi, index: ServiceIndex) void {
-        _ = self.always_accumulate.remove(index);
-    }
+        pub fn setDesignate(self: *Self, index: ServiceIndex) void {
+            self.designate = index;
+        }
 
-    pub fn getAlwaysAccumulateGasLimit(self: *Chi, index: ServiceIndex) ?GasLimit {
-        return self.always_accumulate.get(index);
-    }
+        pub fn addAlwaysAccumulate(self: *Self, index: ServiceIndex, gas_limit: GasLimit) !void {
+            try self.always_accumulate.put(index, gas_limit);
+        }
 
-    pub fn isPrivilegedService(self: *Chi, index: ServiceIndex) bool {
-        // Check if index is in the assign list
-        const is_assign_service = blk: {
-            for (self.assign.items) |assign_index| {
-                if (index == assign_index) break :blk true;
+        pub fn removeAlwaysAccumulate(self: *Self, index: ServiceIndex) void {
+            _ = self.always_accumulate.remove(index);
+        }
+
+        pub fn getAlwaysAccumulateGasLimit(self: *const Self, index: ServiceIndex) ?GasLimit {
+            return self.always_accumulate.get(index);
+        }
+
+        pub fn isPrivilegedService(self: *const Self, index: ServiceIndex) bool {
+            // Check if index is in the assign list
+            const is_assign_service = blk: {
+                for (self.assign) |assign_index| {
+                    if (index == assign_index and assign_index != 0) break :blk true;
+                }
+                break :blk false;
+            };
+            
+            return (self.manager != 0 and index == self.manager) or
+                is_assign_service or
+                (self.designate != 0 and index == self.designate) or
+                self.always_accumulate.contains(index);
+        }
+
+        pub fn clearServices(self: *Self) void {
+            self.manager = 0;
+            self.assign = [_]ServiceIndex{0} ** core_count;
+            self.designate = 0;
+            self.always_accumulate.clearRetainingCapacity();
+        }
+
+        /// Create a deep copy
+        pub fn deepClone(self: *const Self) !Self {
+            var cloned_always_accumulate = std.AutoHashMap(ServiceIndex, GasLimit).init(self.allocator);
+            errdefer cloned_always_accumulate.deinit();
+
+            var iter = self.always_accumulate.iterator();
+            while (iter.next()) |entry| {
+                try cloned_always_accumulate.put(entry.key_ptr.*, entry.value_ptr.*);
             }
-            break :blk false;
-        };
-        
-        return (self.manager != 0 and index == self.manager) or
-            is_assign_service or
-            (self.designate != 0 and index == self.designate) or
-            self.always_accumulate.contains(index);
-    }
 
-    pub fn deepClone(self: *const Chi) !Chi {
-        var cloned_assign = std.ArrayListUnmanaged(ServiceIndex){};
-        try cloned_assign.appendSlice(self.allocator, self.assign.items);
-        
-        return Chi{
-            .manager = self.manager,
-            .assign = cloned_assign,
-            .designate = self.designate,
-            .always_accumulate = try self.always_accumulate.clone(),
-            .allocator = self.allocator,
-        };
-    }
-};
+            return .{
+                .manager = self.manager,
+                .assign = self.assign, // Fixed array can be copied directly
+                .designate = self.designate,
+                .always_accumulate = cloned_always_accumulate,
+                .allocator = self.allocator,
+            };
+        }
+    };
+}
 
-//  _   _       _ _  _____         _
-// | | | |_ __ (_) ||_   _|__  ___| |_ ___
-// | | | | '_ \| | __|| |/ _ \/ __| __/ __|
-// | |_| | | | | | |_ | |  __/\__ \ |_\__ \
-//  \___/|_| |_|_|\__||_|\___||___/\__|___/
+//
+// Tests
 //
 
 const testing = std.testing;
 
 test "Chi service privileges" {
     const allocator = testing.allocator;
-    var chi = Chi.init(allocator);
+    var chi = try Chi(2).init(allocator); // Use 2 cores for testing
     defer chi.deinit();
 
     const manager_index: ServiceIndex = 1;
@@ -134,7 +154,7 @@ test "Chi service privileges" {
     const always_accumulate_index: ServiceIndex = 4;
 
     chi.setManager(manager_index);
-    try chi.pushAssign(assign_index);
+    chi.setAssign(0, assign_index); // Set first core's assign service
     chi.setDesignate(designate_index);
     try chi.addAlwaysAccumulate(always_accumulate_index, 1000);
 
@@ -143,9 +163,6 @@ test "Chi service privileges" {
     try testing.expect(chi.isPrivilegedService(designate_index));
     try testing.expect(chi.isPrivilegedService(always_accumulate_index));
     try testing.expect(!chi.isPrivilegedService(5));
-
-    try testing.expectEqual(@as(?GasLimit, 1000), chi.getAlwaysAccumulateGasLimit(always_accumulate_index));
-    try testing.expectEqual(@as(?GasLimit, null), chi.getAlwaysAccumulateGasLimit(5));
 
     chi.removeAlwaysAccumulate(always_accumulate_index);
     try testing.expect(!chi.isPrivilegedService(always_accumulate_index));

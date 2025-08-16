@@ -8,14 +8,14 @@ const jam_params = @import("../jam_params.zig");
 
 const trace = @import("../tracing.zig").scoped(.codec);
 
-pub fn encode(chi: *const state.Chi, writer: anytype) !void {
+pub fn encode(
+    comptime params: jam_params.Params,
+    chi: *const state.Chi(params.core_count),
+    writer: anytype,
+) !void {
     const span = trace.span(.encode);
     defer span.deinit();
     span.debug("Starting Chi state encoding", .{});
-
-    // TODO: Chi should store core_count when constructed
-    // For now, use TINY_PARAMS core count
-    const core_count = jam_params.TINY_PARAMS.core_count;
 
     // Encode the simple fields
     span.trace("Encoding manager: {d}, designate: {d}", .{
@@ -27,11 +27,10 @@ pub fn encode(chi: *const state.Chi, writer: anytype) !void {
 
     // Encode the assigners as a fixed-size array (one per core)
     // The graypaper expects exactly C (core_count) assigners
-    span.trace("Encoding {} assigners (core_count)", .{core_count});
-    var i: usize = 0;
-    while (i < core_count) : (i += 1) {
-        // Write the assigner for this core, or 0 if not assigned
-        const assigner = if (i < chi.assign.items.len) chi.assign.items[i] else 0;
+    span.trace("Encoding {} assigners (core_count)", .{params.core_count});
+    
+    // Chi.assign is now a fixed array of exactly core_count elements
+    for (chi.assign) |assigner| {
         try writer.writeInt(u32, assigner, .little);
     }
 

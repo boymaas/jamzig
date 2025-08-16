@@ -38,6 +38,7 @@ pub fn convertTestStateIntoJamState(
     );
 
     jam_state.chi = try convertPrivileges(
+        params.core_count,
         allocator,
         test_state.privileges,
     );
@@ -115,16 +116,17 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
     return service_account;
 }
 
-pub fn convertPrivileges(allocator: std.mem.Allocator, privileges: tv_types.Privileges) !state.Chi {
-    var chi = state.Chi.init(allocator);
+pub fn convertPrivileges(comptime core_count: u16, allocator: std.mem.Allocator, privileges: tv_types.Privileges) !state.Chi(core_count) {
+    // Verify privileges.assign has exactly the right number of cores
+    std.debug.assert(privileges.assign.len == core_count);
+    
+    var chi = try state.Chi(core_count).init(allocator);
     errdefer chi.deinit();
 
     // Map the privileged service identities
     chi.manager = privileges.bless;
-    // Add all assign services to the list
-    for (privileges.assign) |assign_service| {
-        try chi.assign.append(chi.allocator, assign_service);
-    }
+    // Copy all assign services (should be exactly core_count elements)
+    @memcpy(&chi.assign, privileges.assign);
     chi.designate = privileges.designate;
 
     // Add all always-accumulate mappings

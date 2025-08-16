@@ -11,18 +11,15 @@ const DecodingContext = state_decoding.DecodingContext;
 const jam_params = @import("../jam_params.zig");
 
 pub fn decode(
+    comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
     context: *DecodingContext,
     reader: anytype,
-) !Chi {
+) !Chi(params.core_count) {
     try context.push(.{ .component = "chi" });
     defer context.pop();
 
-    // TODO: Chi should store core_count when constructed
-    // For now, use TINY_PARAMS core count
-    const core_count = jam_params.TINY_PARAMS.core_count;
-
-    var chi = Chi.init(allocator);
+    var chi = try Chi(params.core_count).init(allocator);
     errdefer chi.deinit();
 
     // Read manager index
@@ -35,16 +32,12 @@ pub fn decode(
     // Read assigners - fixed-size array (one per core)
     try context.push(.{ .field = "assign" });
     var i: usize = 0;
-    while (i < core_count) : (i += 1) {
+    while (i < params.core_count) : (i += 1) {
         const assigner_idx = reader.readInt(u32, .little) catch |err| {
             return context.makeError(error.EndOfStream, "failed to read assigner index {}: {s}", .{ i, @errorName(err) });
         };
-        // Only add non-zero assigners to the list
-        if (assigner_idx != 0) {
-            chi.assign.append(allocator, assigner_idx) catch |err| {
-                return context.makeError(error.OutOfMemory, "failed to append assigner: {s}", .{@errorName(err)});
-            };
-        }
+        // Assign must have exactly C elements, including 0 values
+        chi.assign[i] = assigner_idx;
     }
     context.pop();
 

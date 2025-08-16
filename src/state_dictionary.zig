@@ -493,7 +493,7 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         const chi_key = state_keys.constructStateComponentKey(12);
         var chi_managed = try getOrInitManaged(allocator, &state.chi, .{allocator});
         defer chi_managed.deinit(allocator);
-        const chi_value = try encodeAndOwnSlice(allocator, state_encoder.encodeChi, .{chi_managed.ptr});
+        const chi_value = try encodeAndOwnSlice(allocator, state_encoder.encodeChi, .{ params, chi_managed.ptr });
         try map.put(chi_key, .{
             .key = chi_key,
             .value = chi_value,

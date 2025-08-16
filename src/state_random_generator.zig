@@ -339,17 +339,17 @@ pub const RandomStateGenerator = struct {
     /// Generate random chi (privileged services) data
     fn generateRandomChi(
         self: *RandomStateGenerator,
-        comptime _: Params,
-        chi: *jamstate.Chi,
+        comptime params: Params,
+        chi: *jamstate.Chi(params.core_count),
     ) !void {
         // Generate privileged service indices (30% chance of being 0/unassigned)
         chi.manager = if (self.rng.int(u8) % 10 < 3) 0 else self.rng.intRangeAtMost(u32, 1, 1000);
         
         // Generate assign list - must be exactly core_count entries
-        // TODO: This needs to be updated when we support different params configurations
-        const TINY_CORE_COUNT = 2; // From TINY_PARAMS
-        for (0..TINY_CORE_COUNT) |_| {
-            try chi.assign.append(chi.allocator, self.rng.intRangeAtMost(u32, 1, 1000));
+        // Chi.assign is now a fixed array
+        for (&chi.assign, 0..) |*assign, i| {
+            _ = i;
+            assign.* = self.rng.intRangeAtMost(u32, 0, 1000); // Include 0 as possible value
         }
         
         chi.designate = if (self.rng.int(u8) % 10 < 3) 0 else self.rng.intRangeAtMost(u32, 1, 1000);

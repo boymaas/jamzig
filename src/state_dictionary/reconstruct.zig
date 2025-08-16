@@ -129,7 +129,7 @@ pub fn reconstructState(
                 12 => {
                     entry_span.debug("Decoding chi component (id={d})", .{key[0]});
                     var f = fbs(dict_entry.value);
-                    jam_state.chi = try state_decoding.chi.decode(allocator, &decoding_context, f.reader());
+                    jam_state.chi = try state_decoding.chi.decode(params, allocator, &decoding_context, f.reader());
                 },
                 13 => {
                     entry_span.debug("Decoding pi component (id={d})", .{key[0]});

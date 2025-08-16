@@ -15,7 +15,7 @@ pub fn AccumulationContext(params: Params) type {
         service_accounts: DeltaSnapshot, // d ∈ D⟨N_S → A⟩
         validator_keys: CopyOnWrite(state.Iota), // i ∈ ⟦K⟧_V
         authorizer_queue: CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)), // q ∈ _C⟦H⟧^Q_H_C
-        privileges: CopyOnWrite(state.Chi), // x ∈ (N_S, N_S, N_S, D⟨N_S → N_G⟩)
+        privileges: CopyOnWrite(state.Chi(params.core_count)), // x ∈ (N_S, N_S, N_S, D⟨N_S → N_G⟩)
         time: *const params.Time(),
 
         // Additional context for fetch selectors (JAM graypaper §1.7.2)
@@ -25,7 +25,7 @@ pub fn AccumulationContext(params: Params) type {
             service_accounts: *state.Delta,
             validator_keys: *state.Iota,
             authorizer_queue: *state.Phi(params.core_count, params.max_authorizations_queue_items),
-            privileges: *state.Chi,
+            privileges: *state.Chi(params.core_count),
             time: *const params.Time(),
             entropy: types.Entropy,
         };
@@ -35,7 +35,7 @@ pub fn AccumulationContext(params: Params) type {
                 .service_accounts = DeltaSnapshot.init(args.service_accounts),
                 .validator_keys = CopyOnWrite(state.Iota).init(allocator, args.validator_keys),
                 .authorizer_queue = CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)).init(allocator, args.authorizer_queue),
-                .privileges = CopyOnWrite(state.Chi).init(allocator, args.privileges),
+                .privileges = CopyOnWrite(state.Chi(params.core_count)).init(allocator, args.privileges),
                 .time = args.time,
                 .entropy = args.entropy,
             };

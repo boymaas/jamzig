@@ -55,7 +55,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// χ: Privileged service identities, which may have special roles within the protocol.
         /// Manipulated in: src/services.zig
-        chi: ?Chi = null,
+        chi: ?Chi(params.core_count) = null,
 
         /// ψ: Judgement state, tracking disputes or reports about validators or state transitions.
         /// Manipulated in: src/disputes.zig
@@ -104,7 +104,7 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize Chi component
         pub fn initChi(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            self.chi = Chi.init(allocator);
+            self.chi = try Chi(params.core_count).init(allocator);
         }
 
         /// Initialize Psi component
