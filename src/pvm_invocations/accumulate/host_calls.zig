@@ -284,17 +284,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return .play;
             }
 
-            // Check manager and validator service IDs are valid
-            // NOTE: this is not defined in the graypaper, only if the values are in the u32 domain. As such
-            // disabled this check.
-            //
-            // if ((!ctx_regular.context.service_accounts.contains(manager_service_id)) or
-            //     (!ctx_regular.context.service_accounts.contains(validator_service_id)))
-            // {
-            //     span.debug("Manager or validator service ID doesn't exist", .{});
-            //     return HostCallError.WHO;
-            // }
-
             // Read assign service IDs from memory
             // Graypaper: 𝐚 = decode_4(memory[a..a+4C]) where C = core_count
             const assign_memory_size = params.core_count * 4; // Each service ID is 4 bytes
@@ -318,13 +307,6 @@ pub fn HostCalls(comptime params: Params) type {
                 const service_id = std.mem.readInt(u32, assign_data.buffer[offset..][0..4], .little);
 
                 span.debug("Assign service {d}: ID={d}", .{ i, service_id });
-
-                // Verify this service exists
-                if (!ctx_regular.context.service_accounts.contains(service_id)) {
-                    span.warn("Assign service ID {d} doesn't exist", .{service_id});
-                    // FIXME: QUESTION not specified in the graypaper but makes sense
-                    // return HostCallError.WHO;
-                }
 
                 // Add to the list
                 assign_services.append(service_id) catch {
@@ -363,14 +345,6 @@ pub fn HostCalls(comptime params: Params) type {
                 const gas_limit = std.mem.readInt(u64, always_accumulate_data.buffer[offset + 4 ..][0..8], .little);
 
                 span.debug("Always-accumulate service {d}: ID={d}, gas={d}", .{ k, service_id, gas_limit });
-
-                // Verify this service exists
-                // TODO: GP This seems not to be explicitly defined in the graypaper
-                if (!ctx_regular.context.service_accounts.contains(service_id)) {
-                    span.warn("Always-accumulate service ID {d} doesn't exist", .{service_id});
-                    // FIXME: QUESTION not specified in the graypaper but makes sense
-                    // return HostCallError.WHO;
-                }
 
                 // Add to the map
                 always_accumulate_services.put(service_id, gas_limit) catch {
