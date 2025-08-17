@@ -1088,12 +1088,19 @@ pub const AssurancesExtrinsic = struct {
 
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
         var cloned_data = try allocator.alloc(AvailAssurance, self.data.len);
-        // FIXME: in case of error below we need to run through and dealloc each allocated
-        // item
         errdefer allocator.free(cloned_data);
 
-        for (self.data, 0..) |assurance, i| {
-            cloned_data[i] = try assurance.deepClone(allocator);
+        var cloned_count: usize = 0;
+        errdefer {
+            // Clean up any successfully cloned items
+            for (cloned_data[0..cloned_count]) |*item| {
+                item.deinit(allocator);
+            }
+        }
+
+        for (self.data) |assurance| {
+            cloned_data[cloned_count] = try assurance.deepClone(allocator);
+            cloned_count += 1;
         }
 
         return @This(){
@@ -1143,9 +1150,17 @@ pub const GuaranteesExtrinsic = struct {
         var cloned_data = try allocator.alloc(ReportGuarantee, self.data.len);
         errdefer allocator.free(cloned_data);
 
-        for (self.data, 0..) |guarantee, i| {
-            // FIXME: in case of errors we need to deallocate what was allocated
-            cloned_data[i] = try guarantee.deepClone(allocator);
+        var cloned_count: usize = 0;
+        errdefer {
+            // Clean up any successfully cloned items
+            for (cloned_data[0..cloned_count]) |*item| {
+                item.deinit(allocator);
+            }
+        }
+
+        for (self.data) |guarantee| {
+            cloned_data[cloned_count] = try guarantee.deepClone(allocator);
+            cloned_count += 1;
         }
 
         return @This(){
