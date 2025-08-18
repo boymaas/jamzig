@@ -52,7 +52,8 @@ pub fn decode(
 
     // Decode state-specific fields by first checking state type (tickets or keys)
     try context.push(.{ .field = "epoch_state" });
-    const state_type = reader.readByte() catch |err| {
+    // Graypaper C.1.4: Read discriminator as natural (variable-length integer)
+    const state_type = codec.readInteger(reader) catch |err| {
         return context.makeError(error.EndOfStream, "failed to read state type: {s}", .{@errorName(err)});
     };
     switch (state_type) {

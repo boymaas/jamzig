@@ -44,8 +44,8 @@ pub fn encode(
     switch (gamma.s) {
         .tickets => |tickets| {
             state_span.debug("Encoding tickets state", .{});
-            // FIXME: C.1.4 Discriminators are encoded as a natural and are encoded immediately prior to the item
-            try codec.serialize(u8, params, writer, 0);
+            // Graypaper C.1.4: Discriminators are encoded as a natural (variable-length integer)
+            try codec.writeInteger(0, writer);
 
             std.debug.assert(tickets.len == params.epoch_length);
             state_span.debug("Encoding {d} tickets", .{tickets.len});
@@ -60,7 +60,8 @@ pub fn encode(
         },
         .keys => |keys| {
             state_span.debug("Encoding keys state", .{});
-            try codec.serialize(u8, params, writer, 1);
+            // Graypaper C.1.4: Discriminator for keys state
+            try codec.writeInteger(1, writer);
 
             std.debug.assert(keys.len == params.epoch_length);
             state_span.debug("Encoding {d} keys", .{keys.len});
