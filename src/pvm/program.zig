@@ -262,7 +262,9 @@ pub const Program = struct {
         span.trace("Computed index: {d} from address {d}/ZA-1, jump destination: {d}", .{ index, address, jump_dest });
 
         // Validate jump destination is in a basic block
-        // FIXME: binary search
+        // NOTE: Linear search is likely faster for small programs (<20 basic blocks) due to cache locality,
+        // but binary search would scale better for complex programs with many blocks.
+        // TODO: Profile with real-world programs to determine if optimization is worthwhile.
         if (std.mem.indexOfScalar(u32, self.basic_blocks, jump_dest) == null) {
             span.trace("Jump destination {d} not found in basic blocks: {any}", .{ jump_dest, self.basic_blocks });
             return error.JumpAddressNotInBasicBlock;
