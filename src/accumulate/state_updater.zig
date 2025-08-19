@@ -138,6 +138,44 @@ pub fn StateUpdater(comptime params: Params) type {
 
             span.debug("Queue updates complete, {d} items remaining", .{queued.items.len});
         }
+
+        /// Updates theta with accumulation outputs from executed services
+        pub fn updateAccumulationOutputs(
+            _: Self,
+            theta: *state.Theta,
+            accumulation_outputs: anytype, // HashSet(ServiceAccumulationOutput)
+        ) !void {
+            const span = trace.span(.update_accumulation_outputs);
+            defer span.deinit();
+
+            span.debug("Updating theta with {d} accumulation outputs", .{accumulation_outputs.count()});
+
+            // Clear existing outputs
+            theta.outputs.clearRetainingCapacity();
+            
+            // Convert ServiceAccumulationOutput to AccumulationOutput and add to theta
+            var iter = accumulation_outputs.iterator();
+            while (iter.next()) |entry| {
+                try theta.outputs.append(.{
+                    .service_id = entry.key_ptr.service_id,
+                    .hash = entry.key_ptr.output,
+                });
+            }
+            
+            // Sort theta outputs by service ID as per graypaper specification
+            std.mem.sort(
+                @import("../accumulation_outputs.zig").AccumulationOutput,
+                theta.outputs.items,
+                {},
+                struct {
+                    fn lessThan(_: void, a: @import("../accumulation_outputs.zig").AccumulationOutput, b: @import("../accumulation_outputs.zig").AccumulationOutput) bool {
+                        return a.service_id < b.service_id;
+                    }
+                }.lessThan,
+            );
+
+            span.debug("Theta updated with {d} sorted outputs", .{theta.outputs.items.len});
+        }
     };
 }
 
