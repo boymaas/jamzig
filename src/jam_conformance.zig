@@ -24,49 +24,41 @@ const SKIPPED_TESTS = [_]SkippedTest{
     },
 };
 
-test "jam-conformance:jamzig" {
-    const allocator = testing.allocator;
-    const jamzig_path = try buildImplementationPath(allocator, "jamzig");
-    defer allocator.free(jamzig_path);
-
-    try runReportsInDirectory(allocator, jamzig_path, "JamZig");
-}
-
-test "jam-conformance:archive" {
+test "jam-conformance:traces" {
     const allocator = testing.allocator;
 
     // Check for environment variable
-    const archive_timestamp = std.process.getEnvVarOwned(allocator, "JAM_CONFORMANCE_ARCHIVE") catch |err| switch (err) {
+    const trace_timestamp = std.process.getEnvVarOwned(allocator, "JAM_CONFORMANCE_ARCHIVE") catch |err| switch (err) {
         error.EnvironmentVariableNotFound => {
-            std.debug.print("Skipping archive test. Set JAM_CONFORMANCE_ARCHIVE=<timestamp> to run a specific archive\n", .{});
+            std.debug.print("Skipping traces test. Set JAM_CONFORMANCE_ARCHIVE=<timestamp> to run a specific trace\n", .{});
             return;
         },
         else => return err,
     };
-    defer allocator.free(archive_timestamp);
+    defer allocator.free(trace_timestamp);
 
     // Check if this test is skipped
-    if (isSkippedTest(archive_timestamp)) |reason| {
-        std.debug.print("\n⏭️  SKIPPED: Test {s} is known to be invalid\n", .{archive_timestamp});
+    if (isSkippedTest(trace_timestamp)) |reason| {
+        std.debug.print("\n⏭️  SKIPPED: Test {s} is known to be invalid\n", .{trace_timestamp});
         std.debug.print("   Reason: {s}\n\n", .{reason});
         return;
     }
 
-    // Build path to specific archive directory
-    const archive_base = try buildArchivePath(allocator);
-    defer allocator.free(archive_base);
+    // Build path to specific trace directory
+    const traces_base = try buildTracesPath(allocator);
+    defer allocator.free(traces_base);
 
-    const specific_archive_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ archive_base, archive_timestamp });
-    defer allocator.free(specific_archive_path);
+    const specific_trace_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ traces_base, trace_timestamp });
+    defer allocator.free(specific_trace_path);
 
     // Check if directory exists
-    var dir = std.fs.cwd().openDir(specific_archive_path, .{}) catch |err| {
-        std.debug.print("Error: Archive directory not found: {s}\n", .{specific_archive_path});
+    var dir = std.fs.cwd().openDir(specific_trace_path, .{}) catch |err| {
+        std.debug.print("Error: Trace directory not found: {s}\n", .{specific_trace_path});
         return err;
     };
     dir.close();
 
-    std.debug.print("Running archive test for: {s}\n", .{archive_timestamp});
+    std.debug.print("Running trace test for: {s}\n", .{trace_timestamp});
 
     // Run test for the specific directory only
     const w3f_loader = parsers.w3f.Loader(FUZZ_PARAMS){};
@@ -76,7 +68,7 @@ test "jam-conformance:archive" {
         FUZZ_PARAMS,
         loader,
         allocator,
-        specific_archive_path,
+        specific_trace_path,
         RunConfig{ .mode = .CONTINOUS_MODE, .quiet = false },
     );
     defer run_result.deinit(allocator);
@@ -84,10 +76,10 @@ test "jam-conformance:archive" {
 
 test "jam-conformance:summary" {
     const allocator = testing.allocator;
-    const archive_path = try buildArchivePath(allocator);
-    defer allocator.free(archive_path);
+    const traces_path = try buildTracesPath(allocator);
+    defer allocator.free(traces_path);
 
-    try runArchiveSummary(allocator, archive_path);
+    try runTraceSummary(allocator, traces_path);
 }
 
 // -- Helper Functions --
@@ -101,59 +93,15 @@ fn isSkippedTest(id: []const u8) ?[]const u8 {
     return null;
 }
 
-fn buildArchivePath(allocator: std.mem.Allocator) ![]u8 {
+fn buildTracesPath(allocator: std.mem.Allocator) ![]u8 {
     const graypaper = version.GRAYPAPER_VERSION;
     const version_str = try std.fmt.allocPrint(allocator, "{d}.{d}.{d}", .{ graypaper.major, graypaper.minor, graypaper.patch });
     defer allocator.free(version_str);
 
-    return try std.fmt.allocPrint(allocator, "src/jam-conformance/fuzz-reports/archive/{s}", .{version_str});
+    return try std.fmt.allocPrint(allocator, "src/jam-conformance/fuzz-reports/{s}/traces", .{version_str});
 }
 
-fn buildImplementationPath(allocator: std.mem.Allocator, impl_name: []const u8) ![]u8 {
-    const graypaper = version.GRAYPAPER_VERSION;
-    const version_str = try std.fmt.allocPrint(allocator, "{d}.{d}.{d}", .{ graypaper.major, graypaper.minor, graypaper.patch });
-    defer allocator.free(version_str);
-
-    return try std.fmt.allocPrint(allocator, "src/jam-conformance/fuzz-reports/{s}/{s}", .{ impl_name, version_str });
-}
-
-fn runReportsInDirectory(allocator: std.mem.Allocator, base_path: []const u8, name: []const u8) !void {
-    const directories = try discoverReportDirectories(allocator, base_path);
-    defer {
-        for (directories.items) |dir| {
-            allocator.free(dir);
-        }
-        directories.deinit();
-    }
-
-    std.debug.print("Running {s} conformance tests from: {s}\n", .{ name, base_path });
-    std.debug.print("Found {d} report directories\n", .{directories.items.len});
-
-    if (directories.items.len == 0) {
-        std.debug.print("No report directories found in {s}\n", .{base_path});
-        return;
-    }
-
-    // Create W3F loader for the traces
-    const w3f_loader = parsers.w3f.Loader(FUZZ_PARAMS){};
-    const loader = w3f_loader.loader();
-
-    // Run traces in each directory
-    for (directories.items, 1..) |dir, idx| {
-        std.debug.print("[{d}/{d}] Running traces in: {s}\n", .{ idx, directories.items.len, dir });
-
-        var run_result = try trace_runner.runTracesInDir(
-            FUZZ_PARAMS,
-            loader,
-            allocator,
-            dir,
-            RunConfig{ .mode = .CONTINOUS_MODE, .quiet = false },
-        );
-        defer run_result.deinit(allocator);
-    }
-}
-
-fn runArchiveSummary(allocator: std.mem.Allocator, base_path: []const u8) !void {
+fn runTraceSummary(allocator: std.mem.Allocator, base_path: []const u8) !void {
     const directories = try discoverReportDirectories(allocator, base_path);
     defer {
         for (directories.items) |dir| {
