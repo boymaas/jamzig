@@ -8,6 +8,7 @@ const services = @import("../services.zig");
 const state_theta = @import("../reports_ready.zig");
 const state_keys = @import("../state_keys.zig");
 const validator_stats = @import("../validator_stats.zig");
+const accumulation_outputs = @import("../accumulation_outputs.zig");
 
 const tv_types = @import("../jamtestvectors/accumulate.zig");
 const jam_types = @import("../jamtestvectors/jam_types.zig");
@@ -62,6 +63,9 @@ pub fn convertTestStateIntoJamState(
         params.validators_count,
         params.core_count,
     );
+
+    // Initialize theta (accumulation outputs) as empty - new in v0.6.7
+    jam_state.theta = accumulation_outputs.Theta.init(allocator);
 
     return jam_state;
 }
