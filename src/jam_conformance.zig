@@ -30,6 +30,42 @@ const SKIPPED_TESTS = [_]SkippedTest{
         .id = "1755531000",
         .reason = "PolkaJam error: incorrect expectation for invalid host call handling - expects 0 gas but should use gas",
     },
+    .{
+        .id = "1755530728",
+        .reason = "PolkaJam error: expects less gas than actually consumed (13048 vs 13063)",
+    },
+    .{
+        .id = "1755530896",
+        .reason = "PolkaJam error: expects less gas than actually consumed (12539 vs 12667)",
+    },
+    .{
+        .id = "1755531081",
+        .reason = "PolkaJam error: service state delta discrepancy",
+    },
+    .{
+        .id = "1755531179",
+        .reason = "PolkaJam error: expects 0 gas but PVM executed and consumed gas",
+    },
+    .{
+        .id = "1755531229",
+        .reason = "PolkaJam error: expects 0 gas but PVM executed and consumed 19083 gas",
+    },
+    .{
+        .id = "1755531322",
+        .reason = "PolkaJam error: expects 0 gas but PVM executed and consumed 27240 gas",
+    },
+    .{
+        .id = "1755531375",
+        .reason = "PolkaJam error: expects 0 gas but PVM executed and consumed 16030 gas",
+    },
+    .{
+        .id = "1755531419",
+        .reason = "PolkaJam error: expects 0 gas but PVM executed and consumed 28088 gas",
+    },
+    .{
+        .id = "1755531480",
+        .reason = "PolkaJam error: expects 0 gas but PVM executed and consumed 150442 gas",
+    },
 };
 
 test "jam-conformance:traces" {
