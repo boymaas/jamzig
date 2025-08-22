@@ -592,12 +592,14 @@ pub const ServiceAccount = struct {
         // Calculate threshold balance a_t
         // Per graypaper: a_t = max(0, B_S + B_I·a_i + B_L·a_o - a_f)
         // Where a_f is the storage_offset (free storage allowance)
-        const billable_bytes = if (self.storage_offset > 0)
-            a_o -| self.storage_offset
+        const base_cost = B_S + B_I * a_i + B_L * a_o;
+        
+        // Subtract free storage allowance if set (a_f > 0), otherwise use base cost
+        // storage_offset == 0 means no free storage, storage_offset > 0 means free storage granted
+        const a_t: Balance = if (self.storage_offset > 0)
+            base_cost -| self.storage_offset  // Saturating subtraction ensures max(0, ...)
         else
-            a_o;
-
-        const a_t: Balance = B_S + B_I * a_i + B_L * billable_bytes;
+            base_cost;
 
         return .{ .a_i = a_i, .a_o = a_o, .a_t = a_t };
     }
@@ -633,12 +635,12 @@ pub const ServiceAccount = struct {
         }
 
         // Calculate threshold balance with potential new values
-        const billable_bytes = if (self.storage_offset > 0)
-            new_a_o -| self.storage_offset
+        // Per graypaper: a_t = max(0, B_S + B_I·a_i + B_L·a_o - a_f)
+        const base_cost = B_S + B_I * new_a_i + B_L * new_a_o;
+        const new_a_t: Balance = if (self.storage_offset > 0)
+            base_cost -| self.storage_offset  // Saturating subtraction ensures max(0, ...)
         else
-            new_a_o;
-
-        const new_a_t: Balance = B_S + B_I * new_a_i + B_L * billable_bytes;
+            base_cost;
 
         // Use NONE constant (2^64 - 1) when no prior value exists
         const NONE = std.math.maxInt(u64) - 0; // ReturnCode.NONE value
@@ -680,12 +682,12 @@ pub const ServiceAccount = struct {
         const new_a_o = self.footprint_bytes - (34 + key.len + old_value.len); // 34 + key length + value length
 
         // Calculate threshold balance with potential new values
-        const billable_bytes = if (self.storage_offset > 0)
-            new_a_o -| self.storage_offset
+        // Per graypaper: a_t = max(0, B_S + B_I·a_i + B_L·a_o - a_f)
+        const base_cost = B_S + B_I * new_a_i + B_L * new_a_o;
+        const new_a_t: Balance = if (self.storage_offset > 0)
+            base_cost -| self.storage_offset  // Saturating subtraction ensures max(0, ...)
         else
-            new_a_o;
-
-        const new_a_t: Balance = B_S + B_I * new_a_i + B_L * billable_bytes;
+            base_cost;
 
         return .{ .a_i = new_a_i, .a_o = new_a_o, .a_t = new_a_t };
     }
