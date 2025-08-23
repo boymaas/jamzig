@@ -144,27 +144,7 @@ pub fn invoke(
         return try AccumulationResult(params).createEmpty(allocator, context, service_id);
     };
 
-    // Now this has some metadata attached to it
-    // TODO: we now have methods to handle this metadata we should use them
-    const CodeWithMetadata = struct {
-        metadata: []const u8,
-        code: []const u8,
-
-        pub fn decode(data: []const u8) !@This() {
-            const result = try codec.decoder.decodeInteger(data);
-            if (result.value + result.bytes_read > data.len) {
-                return error.MetadataSizeTooLarge;
-            }
-            const metadata = data[result.bytes_read..result.value];
-            const code = data[result.bytes_read + result.value ..];
-
-            return .{ .code = code, .metadata = metadata };
-        }
-    };
-
-    const code_with_metadata = try CodeWithMetadata.decode(code_preimage);
-
-    span.debug("Retrieved service code, length: {d} bytes. Metadata: {d} bytes", .{ code_with_metadata.code.len, code_with_metadata.metadata.len });
+    span.debug("Retrieved service code with metadata, total length: {d} bytes", .{code_preimage.len});
 
     span.debug("Starting PVM machine invocation", .{});
     const pvm_span = span.child(.pvm_invocation);
@@ -187,7 +167,7 @@ pub fn invoke(
 
     var result = try pvm_invocation.machineInvocation(
         allocator,
-        code_with_metadata.code,
+        code_preimage, // Pass the code with metadata directly
         5, // Accumulation entry point index per section 9.1
         @intCast(gas_limit),
         args_buffer.items,

@@ -13,15 +13,17 @@ comptime {
 test "pvm:jamduna_service_code:machine_invocation" {
     const allocator = std.testing.allocator;
 
-    const program_code = @embedFile("pvm_test/fixtures/jam_duna_service_code.pvm");
+    const raw_program = @embedFile("pvm_test/fixtures/jam_duna_service_code.pvm");
+
+    // Add empty metadata prefix (encodeInteger(0) = [0x00])
+    const program_code = [_]u8{0x00} ++ raw_program;
 
     var map = pvmlib.PVM.HostCallMap{};
     defer map.deinit(allocator);
-    
+
     // Create HostCallsConfig with empty map and no catchall
     const host_calls_config = pvmlib.PVM.HostCallsConfig{
         .map = map,
-        .catchall = null,
     };
 
     var ctx = .{ .empty = true };
@@ -38,31 +40,6 @@ test "pvm:jamduna_service_code:machine_invocation" {
     defer result.deinit(allocator);
 
     std.debug.print("{}", .{result});
-}
-
-test "pvm:jamduna_service_code" {
-    const allocator = std.testing.allocator;
-    const raw_program = @embedFile("pvm_test/fixtures/jam_duna_service_code.pvm");
-
-    var execution_context = try pvmlib.PVM.ExecutionContext.initStandardProgramCodeFormat(
-        allocator,
-        raw_program,
-        &[_]u8{3} ** 32,
-        std.math.maxInt(u32),
-        false,
-    );
-    defer execution_context.deinit(allocator);
-
-    try execution_context.debugProgram(std.io.getStdErr().writer());
-
-    // execution_context.clearRegisters();
-
-    execution_context.pc = 5; // for accumulate
-    const status = try pvmlib.PVM.basicInvocation(&execution_context);
-
-    if (status.terminal != .halt) {
-        std.debug.print("Expected .halt got {any}\n", .{status});
-    }
 }
 
 test "pvm:simple" {

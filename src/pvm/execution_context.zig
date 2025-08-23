@@ -49,11 +49,10 @@ pub const ExecutionContext = struct {
             return error.MetadataSizeTooLarge;
         }
 
-        // will be optimized out
-        _ = program_blob[result.bytes_read..result.value];
+        // metadata: will be optimized out
+        _ = program_blob[result.bytes_read..][0..result.value];
         const standard_program_format = program_blob[result.bytes_read + result.value ..];
 
-        // TODO: in accumulate we are still doing CodeWithMetadata fix this
         return initStandardProgramCodeFormat(
             allocator,
             standard_program_format,

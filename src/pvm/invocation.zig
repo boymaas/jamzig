@@ -23,11 +23,12 @@ const MachineInvocationResult = struct {
 /// Y: (Y, Y_{:Z_I}) → (Y, regs, ram)?
 /// 
 /// The function takes a program blob (p) and argument data (a) as separate parameters,
-/// where the program blob contains the encoded format: E_3(|o|) ∥ E_3(|w|) ∥ E_2(z) ∥ E_3(s) ∥ o ∥ w ∥ E_4(|c|) ∥ c
+/// where the program blob may optionally contain metadata prefix followed by the standard format:
+/// [optional: E(|metadata|) ∥ metadata] ∥ E_3(|o|) ∥ E_3(|w|) ∥ E_2(z) ∥ E_3(s) ∥ o ∥ w ∥ E_4(|c|) ∥ c
 /// and the argument data is passed separately and limited to Z_I bytes.
 pub fn machineInvocation(
     allocator: std.mem.Allocator,
-    program_code: []const u8,
+    program_code_with_metadata: []const u8,
     pc: u32,
     gas: u32,
     args: []const u8,
@@ -40,10 +41,9 @@ pub fn machineInvocation(
 
     // try to parse the code format. If we run into an error
     // here we should return a panic
-    // TODO: we have now initStandardProgramCodeFormatWithMetaData which we can use
-    var exec_ctx = PVM.ExecutionContext.initStandardProgramCodeFormat(
+    var exec_ctx = PVM.ExecutionContext.initStandardProgramCodeFormatWithMetadata(
         allocator,
-        program_code,
+        program_code_with_metadata,
         args,
         gas,
         true, // enable dynamic allocation by default for machine invocations
