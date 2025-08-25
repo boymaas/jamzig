@@ -48,6 +48,20 @@ The protocol uses a **collect-refine-join-accumulate** model that enables massiv
 - Rust toolchain (beta channel)
 - Cargo for Rust FFI dependencies
 
+### Testing
+
+JAMZIG includes comprehensive testing infrastructure:
+
+- **Unit Tests**: Implementation-specific tests (`zig build test`)
+- **Test Vectors**: Official JAM specification compliance tests (`zig build test-vectors`)
+  - Validates against reference test vectors from the JAM community
+  - Tests both tiny (test) and full (production) parameter sets
+  - Covers all major components: accumulate, safrole, assurances, etc.
+  - Includes W3F trace tests for block sequence validation
+- **JAM Conformance**: Community-validated traces for cross-implementation compatibility
+
+The dedicated `test-vectors` command provides faster compilation by building only test vector code (~25 files) instead of the entire test suite, making it ideal for continuous compliance checking.
+
 ### Commands
 
 ```bash
@@ -59,6 +73,15 @@ zig build test
 
 # Run specific test
 zig build test -Dtest-filter=<test_name>
+
+# Run JAM test vectors for specification compliance
+zig build test-vectors
+
+# Run only tiny parameter test vectors
+zig build test-vectors -Dtest-filter="tiny"
+
+# Run only full parameter test vectors
+zig build test-vectors -Dtest-filter="full"
 
 # Run the node
 zig build run
