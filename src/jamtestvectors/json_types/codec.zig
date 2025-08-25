@@ -93,11 +93,12 @@ pub const WorkItem = struct {
 };
 
 pub const WorkPackage = struct {
-    authorization: HexBytes,
     auth_code_host: ServiceId,
-    authorizer: Authorizer,
+    auth_code_hash: OpaqueHash,
     context: RefineContext,
-    items: []WorkItem, // SIZE(1..4)
+    authorization: HexBytes,
+    authorizer_config: HexBytes,
+    items: []WorkItem, // SIZE(1..16)
 };
 
 pub const WorkExecResult = union(enum(u8)) {

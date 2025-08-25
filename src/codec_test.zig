@@ -64,9 +64,9 @@ test "codec: decode work_item" {
 }
 
 // TODO: Fix work_package codec test - field order/encoding issue
-// test "codec: decode work_package" {
-//     try testDecodeAndCompare(.{ .name = "work_package", .domain_type = "WorkPackage" });
-// }
+test "codec: decode work_package" {
+    try testDecodeAndCompare(.{ .name = "work_package", .domain_type = "WorkPackage" });
+}
 
 test "codec: decode work_report" {
     try testDecodeAndCompare(.{ .name = "work_report", .domain_type = "WorkReport" });

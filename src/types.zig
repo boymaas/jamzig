@@ -163,10 +163,11 @@ pub const WorkItem = struct {
 
 pub const WorkPackage = struct {
     auth_code_host: ServiceId,
-    authorizer: Authorizer,
+    auth_code_hash: OpaqueHash,
     context: RefineContext,
     authorization: []u8,
-    items: []WorkItem, // SIZE(1..4)
+    authorizer_config: []u8,
+    items: []WorkItem, // SIZE(1..16)
 
     /// Validates WorkPackage constraints according to JAM 0.6.6 specification
     pub fn validate(self: *const @This(), comptime params: @import("jam_params.zig").Params) !void {
@@ -183,7 +184,7 @@ pub const WorkPackage = struct {
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.authorization);
-        self.authorizer.deinit(allocator);
+        allocator.free(self.authorizer_config);
         self.context.deinit(allocator);
         for (self.items) |*item| {
             item.deinit(allocator);
@@ -197,14 +198,14 @@ pub const WorkPackage = struct {
 
         // Encode auth_code_host
         try codec.serialize(ServiceId, params, writer, self.auth_code_host);
-        // Encode auth-code-hash (from authorizer)
-        try codec.serialize(OpaqueHash, params, writer, self.authorizer.code_hash);
+        // Encode auth-code-hash
+        try codec.serialize(OpaqueHash, params, writer, self.auth_code_hash);
         // Encode context
         try codec.serialize(RefineContext, params, writer, self.context);
         // Encode authorization
         try codec.serialize(@TypeOf(self.authorization), params, writer, self.authorization);
-        // Encode authorizer-config (from authorizer.params)
-        try codec.serialize(@TypeOf(self.authorizer.params), params, writer, self.authorizer.params);
+        // Encode authorizer-config
+        try codec.serialize(@TypeOf(self.authorizer_config), params, writer, self.authorizer_config);
         // Encode items
         try codec.serialize(@TypeOf(self.items), params, writer, self.items);
     }
@@ -216,20 +217,14 @@ pub const WorkPackage = struct {
 
         // Decode auth_code_host
         self.auth_code_host = try codec.deserializeAlloc(ServiceId, params, allocator, reader);
-        // Decode auth-code-hash and authorizer-config into authorizer
-        const auth_code_hash = try codec.deserializeAlloc(OpaqueHash, params, allocator, reader);
-        // Decode context first (before authorization)
+        // Decode auth-code-hash
+        self.auth_code_hash = try codec.deserializeAlloc(OpaqueHash, params, allocator, reader);
+        // Decode context
         self.context = try codec.deserializeAlloc(RefineContext, params, allocator, reader);
         // Decode authorization
         self.authorization = try codec.deserializeAlloc(@TypeOf(self.authorization), params, allocator, reader);
         // Decode authorizer-config
-        const authorizer_params = try codec.deserializeAlloc([]u8, params, allocator, reader);
-
-        self.authorizer = .{
-            .code_hash = auth_code_hash,
-            .params = authorizer_params,
-        };
-
+        self.authorizer_config = try codec.deserializeAlloc([]u8, params, allocator, reader);
         // Decode items
         self.items = try codec.deserializeAlloc([]WorkItem, params, allocator, reader);
 
