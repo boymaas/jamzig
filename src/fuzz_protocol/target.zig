@@ -100,15 +100,47 @@ pub const TargetServer = struct {
 
         // Accept connections loop
         while (true) {
+            // Check shutdown state at beginning of each loop iteration
+            if (self.server_state == .shutting_down) {
+                span.debug("Server shutting down", .{});
+                break;
+            }
+
             span.debug("Server bound and listening on Unix socket", .{});
 
-            // TODO: Set a timeout for accept to allow periodic shutdown checks
-            // Note: Unix sockets don't support timeouts directly, so we'll accept this limitation
+            // Use poll to check for incoming connections with timeout
+            // This allows periodic shutdown checks every 100ms
+            var poll_fds = [_]std.posix.pollfd{
+                .{
+                    .fd = server_socket.stream.handle,
+                    .events = std.posix.POLL.IN,
+                    .revents = 0,
+                },
+            };
+
+            const poll_result = std.posix.poll(&poll_fds, 100) catch |err| {
+                span.err("Poll error: {s}", .{@errorName(err)});
+                continue;
+            };
+
+            // Check shutdown state again after poll
+            if (self.server_state == .shutting_down) {
+                span.debug("Server shutting down", .{});
+                break;
+            }
+
+            // If poll timed out (no connections ready), continue loop to check shutdown state
+            if (poll_result == 0) {
+                continue;
+            }
+
+            // Check if socket is ready for reading (incoming connection)
+            if (poll_fds[0].revents & std.posix.POLL.IN == 0) {
+                continue;
+            }
+
+            // Now we know a connection is ready, so accept() won't block
             const connection = server_socket.accept() catch |err| {
-                if (self.server_state == .shutting_down) {
-                    span.debug("Server shutting down", .{});
-                    break;
-                }
                 span.err("Failed to accept connection: {s}", .{@errorName(err)});
                 continue;
             };
