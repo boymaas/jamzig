@@ -84,6 +84,8 @@ pub const ProcessAccumulationResult = struct {
 /// - Resultant deferred transfers
 /// - Accumulation output pairings
 pub fn outerAccumulation(
+    comptime IOExecutor: type,
+    io_executor: *IOExecutor,
     comptime params: @import("../jam_params.zig").Params,
     allocator: std.mem.Allocator,
     context: *const AccumulationContext(params),
@@ -142,6 +144,8 @@ pub fn outerAccumulation(
 
         // Process reports in parallel
         var parallelized_result = try parallelizedAccumulation(
+            IOExecutor,
+            io_executor,
             params,
             allocator,
             context,
@@ -294,6 +298,8 @@ pub fn ParallelizedAccumulationResult(params: jam_params.Params) type {
 /// - Resultant deferred transfers
 /// - Accumulation output pairings
 pub fn parallelizedAccumulation(
+    comptime IOExecutor: type,
+    io_executor: *IOExecutor,
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
     context: *const AccumulationContext(params),
@@ -321,18 +327,15 @@ pub fn parallelizedAccumulation(
     var service_results = std.AutoHashMap(types.ServiceId, AccumulationResult(params)).init(allocator);
     errdefer meta.deinit.deinitHashMapValuesAndMap(allocator, service_results);
 
-    // Process each service in parallel (in a real implementation)
-    // Here we process them sequentially but could be parallelized
-    //
-    // Process each service, in order of insertion
-    for (service_ids.keys()) |service_id| {
-        // Get operands if we have them, privileged_services do not have them
+    // Process services using IO executor (parallel or sequential based on compile-time type)
+    if (service_ids.count() == 0) {
+        // No services to process
+    } else if (service_ids.count() == 1) {
+        // Single service - no need for parallelization overhead
+        const service_id = service_ids.keys()[0];
         const maybe_operands = service_operands.getOperands(service_id);
         const context_snapshot = try context.deepClone();
-
-        // Process this service
-        // TODO: https://github.com/zig-gamedev/zjobs maybe of interest
-        // NOTE: Each service needs its own context copy for parallelization
+        
         const result = try singleServiceAccumulation(
             params,
             allocator,
@@ -340,8 +343,57 @@ pub fn parallelizedAccumulation(
             service_id,
             maybe_operands,
         );
-        // Don't defer deinit since we're moving ownership to service_results
         try service_results.put(service_id, result);
+    } else {
+        // Multiple services - use IO executor for potential parallelization
+        var task_group = io_executor.createGroup();
+        
+        // We need a thread-safe way to collect results
+        // Use a mutex to protect the service_results map
+        var results_mutex = std.Thread.Mutex{};
+        
+        // Create task context structure for parallel execution
+        const TaskContext = struct {
+            allocator: std.mem.Allocator,
+            context: *const AccumulationContext(params),
+            service_operands: *ServiceAccumulationOperandsMap,
+            service_results: *std.AutoHashMap(types.ServiceId, AccumulationResult(params)),
+            results_mutex: *std.Thread.Mutex,
+            
+            fn processService(self: @This(), service_id: types.ServiceId) !void {
+                const maybe_operands = self.service_operands.getOperands(service_id);
+                const context_snapshot = try self.context.deepClone();
+                
+                const result = try singleServiceAccumulation(
+                    params, // Use the comptime params from the outer function
+                    self.allocator,
+                    context_snapshot,
+                    service_id,
+                    maybe_operands,
+                );
+                
+                // Thread-safe insertion into results map
+                self.results_mutex.lock();
+                defer self.results_mutex.unlock();
+                try self.service_results.put(service_id, result);
+            }
+        };
+        
+        const task_context = TaskContext{
+            .allocator = allocator,
+            .context = context,
+            .service_operands = &service_operands,
+            .service_results = &service_results,
+            .results_mutex = &results_mutex,
+        };
+        
+        // Spawn tasks for each service
+        for (service_ids.keys()) |service_id| {
+            try task_group.spawn(TaskContext.processService, .{ task_context, service_id });
+        }
+        
+        // Wait for all parallel tasks to complete
+        task_group.wait();
     }
 
     // Return collected results
@@ -393,6 +445,8 @@ pub fn singleServiceAccumulation(
 /// Main execution entry point for accumulation
 /// This coordinates the execution of work reports through the PVM
 pub fn executeAccumulation(
+    comptime IOExecutor: type,
+    io_executor: *IOExecutor,
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
     stx: *state_delta.StateTransition(params),
@@ -420,6 +474,8 @@ pub fn executeAccumulation(
 
     // Execute work reports scheduled for accumulation
     return try outerAccumulation(
+        IOExecutor,
+        io_executor,
         params,
         allocator,
         &accumulation_context,

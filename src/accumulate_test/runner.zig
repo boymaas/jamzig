@@ -39,7 +39,11 @@ pub fn processAccumulationReports(
     );
 
     // Process the newly available reports using STF function
+    const io = @import("../io.zig");
+    var sequential_executor = io.SequentialExecutor.init();
     var results = try @import("../stf/accumulate.zig").transition(
+        io.SequentialExecutor,
+        &sequential_executor,
         params,
         allocator,
         &stx,

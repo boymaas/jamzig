@@ -16,10 +16,11 @@ pub const ValidationError = @import("header_validator.zig").HeaderValidationErro
 pub const ValidationConfig = @import("header_validator.zig").ValidationConfig;
 
 /// Unified block importer with state-based validation
-pub fn BlockImporter(comptime params: jam_params.Params) type {
+pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Params) type {
     return struct {
         allocator: std.mem.Allocator,
         header_validator: HeaderValidator(params),
+        io_executor: *IOExecutor,
 
         const Self = @This();
 
@@ -43,17 +44,19 @@ pub fn BlockImporter(comptime params: jam_params.Params) type {
             }
         };
 
-        pub fn init(allocator: std.mem.Allocator) Self {
+        pub fn init(io_executor: *IOExecutor, allocator: std.mem.Allocator) Self {
             return .{
                 .allocator = allocator,
                 .header_validator = HeaderValidator(params).init(allocator),
+                .io_executor = io_executor,
             };
         }
 
-        pub fn initWithConfig(allocator: std.mem.Allocator, config: ValidationConfig) Self {
+        pub fn initWithConfig(io_executor: *IOExecutor, allocator: std.mem.Allocator, config: ValidationConfig) Self {
             return .{
                 .allocator = allocator,
                 .header_validator = HeaderValidator(params).initWithConfig(allocator, config),
+                .io_executor = io_executor,
             };
         }
 
@@ -81,6 +84,8 @@ pub fn BlockImporter(comptime params: jam_params.Params) type {
 
             // Step 2: Apply state transition
             const state_transition = try stf.stateTransition(
+                IOExecutor,
+                self.io_executor,
                 params,
                 self.allocator,
                 current_state,

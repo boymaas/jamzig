@@ -296,6 +296,24 @@ pub fn build(b: *std.Build) !void {
     test_ffi_step.dependOn(crypto_tests);
     test_ffi_step.dependOn(reed_solomon_tests);
     test_ffi_step.dependOn(polkavm_tests);
+
+    // Add block import benchmark step
+    const bench_block_import = b.addExecutable(.{
+        .name = "bench-block-import",
+        .root_source_file = b.path("src/bench_block_import.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    
+    bench_block_import.root_module.addOptions("build_options", testing_build_options);
+    bench_block_import.root_module.addImport("pretty", pretty_module);
+    bench_block_import.root_module.addImport("diffz", diffz_module);
+    bench_block_import.linkLibCpp();
+    rust_deps.staticallyLinkTo(bench_block_import);
+    
+    const run_bench_block_import = b.addRunArtifact(bench_block_import);
+    const bench_block_import_step = b.step("bench-block-import", "Run block import benchmarks");
+    bench_block_import_step.dependOn(&run_bench_block_import.step);
 }
 
 const RustDeps = struct {
