@@ -38,7 +38,8 @@ test "sequoia: State transition with sequoia-generated blocks" {
 
     // Use sequential executor for compatibility with existing test
     const io = @import("io.zig");
-    var sequential_executor = io.SequentialExecutor.init();
+    var sequential_executor = io.SequentialExecutor.init(testing.allocator);
+    defer sequential_executor.deinit();
     var block_importer = block_import.BlockImporter(io.SequentialExecutor, jam_params.TINY_PARAMS).init(
         &sequential_executor,
         allocator
@@ -95,7 +96,8 @@ test "IO executor integration: sequential vs parallel execution" {
     
     // Test with sequential executor
     {
-        var sequential_executor = io.SequentialExecutor.init();
+        var sequential_executor = io.SequentialExecutor.init(testing.allocator);
+    defer sequential_executor.deinit();
         var seq_importer = block_import.BlockImporter(io.SequentialExecutor, jam_params.TINY_PARAMS).init(
             &sequential_executor,
             allocator

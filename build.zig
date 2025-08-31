@@ -61,6 +61,14 @@ pub fn build(b: *std.Build) !void {
         .conformance_params = base_config.conformance_params,
     };
 
+    // Create benchmark configuration optimized for performance - no debugging
+    const bench_config = BuildConfig{
+        .tracing_scopes = &[_][]const u8{}, // No tracing scopes
+        .tracing_level = "",                 // No tracing level
+        .tracing_mode = .disabled,           // Compile out all tracing
+        .conformance_params = base_config.conformance_params,
+    };
+
     // Create build options objects
     const build_options = b.addOptions();
     applyBuildConfig(build_options, base_config);
@@ -73,6 +81,9 @@ pub fn build(b: *std.Build) !void {
 
     const testing_build_options = b.addOptions();
     applyBuildConfig(testing_build_options, testing_config);
+
+    const bench_build_options = b.addOptions();
+    applyBuildConfig(bench_build_options, bench_config);
 
     // Dependencies
     const dep_opts = .{ .target = target, .optimize = optimize };
@@ -305,7 +316,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = .ReleaseFast,
     });
     
-    bench_block_import.root_module.addOptions("build_options", testing_build_options);
+    bench_block_import.root_module.addOptions("build_options", bench_build_options);
     bench_block_import.root_module.addImport("pretty", pretty_module);
     bench_block_import.root_module.addImport("diffz", diffz_module);
     bench_block_import.linkLibCpp();

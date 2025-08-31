@@ -13,6 +13,7 @@ const tracing = @import("../tracing.zig");
 const trace = tracing.scoped(.trace_runner);
 
 const block_import = @import("../block_import.zig");
+const io = @import("../io.zig");
 
 // W3F Traces Tests
 
@@ -24,7 +25,7 @@ pub const RunConfig = struct {
 pub const RunResult = struct {
     had_no_op_blocks: bool = false,
     no_op_exceptions: []const u8 = "",
-    
+
     pub fn deinit(self: *RunResult, allocator: std.mem.Allocator) void {
         if (self.no_op_exceptions.len > 0) {
             allocator.free(self.no_op_exceptions);
@@ -33,6 +34,8 @@ pub const RunResult = struct {
 };
 
 pub fn runTracesInDir(
+    comptime IOExecutor: type,
+    executor: *IOExecutor,
     comptime params: jam_params.Params,
     loader: trace_runner.Loader,
     allocator: std.mem.Allocator,
@@ -71,7 +74,7 @@ pub fn runTracesInDir(
     }
 
     // Initialize block importer
-    var importer = block_import.BlockImporter(params).init(allocator);
+    var importer = block_import.BlockImporter(IOExecutor, params).init(executor, allocator);
 
     var current_state: ?state.JamState(params) = null;
     defer {
@@ -80,7 +83,7 @@ pub fn runTracesInDir(
 
     // Track last post-state root to verify trace continuity
     var last_post_state_root: ?[32]u8 = null;
-    
+
     // Track no-op blocks for result
     var result = RunResult{};
     var no_op_exceptions = std.ArrayList(u8).init(allocator);
@@ -219,7 +222,7 @@ pub fn runTracesInDir(
                     std.debug.print("Error: {s}\n", .{@errorName(err)});
                     std.debug.print("Verifying state remained unchanged...\n", .{});
                 }
-                
+
                 // Track this no-op block and its exception
                 result.had_no_op_blocks = true;
                 if (no_op_exceptions.items.len > 0) {
@@ -288,7 +291,7 @@ pub fn runTracesInDir(
                             }
                             try no_op_exceptions.appendSlice(@errorName(retry_err));
                         }
-                        
+
                         const current_root = try current_state.?.buildStateRoot(allocator);
                         if (std.mem.eql(u8, &expected_post_root, &current_root)) {
                             if (!config.quiet) {
@@ -405,11 +408,11 @@ pub fn runTracesInDir(
         // Save this post-state root for next iteration's continuity check
         last_post_state_root = expected_post_root;
     }
-    
+
     // Build final result
     if (no_op_exceptions.items.len > 0) {
         result.no_op_exceptions = try no_op_exceptions.toOwnedSlice();
     }
-    
+
     return result;
 }

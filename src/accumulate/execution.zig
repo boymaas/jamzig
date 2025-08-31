@@ -165,23 +165,26 @@ pub fn outerAccumulation(
         var batch_gas_used: types.Gas = 0;
         var result_it = parallelized_result.iterator();
         while (result_it.next()) |entry| {
+            const service_id = entry.key_ptr.*;
+            const result = entry.value_ptr;
+
             // Apply provided preimages
-            try entry.dimension().applyProvidedPreimages(context.time.current_slot);
+            try result.collapsed_dimension.applyProvidedPreimages(context.time.current_slot);
 
             // Append transfers directly
-            try transfers.appendSlice(entry.transfers());
+            try transfers.appendSlice(result.transfers);
 
             // Add accumulation output to our output set if present
-            if (entry.output()) |output| {
-                try accumulation_outputs.add(allocator, .{ .service_id = entry.service_id, .output = output });
+            if (result.accumulation_output) |output| {
+                try accumulation_outputs.add(allocator, .{ .service_id = service_id, .output = output });
             }
 
             // Aggregate gas used for this service
-            const current_gas = gas_used_per_service.get(entry.service_id) orelse 0;
-            try gas_used_per_service.put(entry.service_id, current_gas + entry.gasUsed());
+            const current_gas = gas_used_per_service.get(service_id) orelse 0;
+            try gas_used_per_service.put(service_id, current_gas + result.gas_used);
 
             // Track total gas for this batch
-            batch_gas_used += entry.gasUsed();
+            batch_gas_used += result.gas_used;
         }
 
         span.debug("Applied state changes for all services", .{});
@@ -219,72 +222,25 @@ pub fn ParallelizedAccumulationResult(params: jam_params.Params) type {
     return struct {
         service_results: std.AutoHashMap(types.ServiceId, AccumulationResult(params)),
 
-        /// Custom iterator with clean accessors for service results
-        pub const ServiceResultIterator = struct {
-            inner: std.AutoHashMap(types.ServiceId, AccumulationResult(params)).Iterator,
-            current: ?Entry = null,
-
-            pub const Entry = struct {
-                service_id: types.ServiceId,
-                result: *AccumulationResult(params),
-
-                // Inline accessors
-                pub inline fn transfers(self: Entry) []DeferredTransfer {
-                    return self.result.transfers;
-                }
-
-                pub inline fn gasUsed(self: Entry) types.Gas {
-                    return self.result.gas_used;
-                }
-
-                pub inline fn output(self: Entry) ?types.AccumulateOutput {
-                    return self.result.accumulation_output;
-                }
-
-                pub inline fn dimension(self: Entry) @TypeOf(self.result.collapsed_dimension) {
-                    return self.result.collapsed_dimension;
-                }
-            };
-
-            pub fn next(self: *@This()) ?Entry {
-                if (self.inner.next()) |entry| {
-                    self.current = Entry{
-                        .service_id = entry.key_ptr.*,
-                        .result = entry.value_ptr,
-                    };
-                    return self.current;
-                }
-                return null;
-            }
-        };
-
-        /// Returns a custom iterator over the service results
-        pub fn iterator(self: *@This()) ServiceResultIterator {
-            return ServiceResultIterator{
-                .inner = self.service_results.iterator(),
-            };
+        /// Returns standard HashMap iterator for direct access
+        pub fn iterator(self: *@This()) std.AutoHashMap(types.ServiceId, AccumulationResult(params)).Iterator {
+            return self.service_results.iterator();
         }
-
-        // Note: collectTransfers and totalGasUsed methods removed
-        // These operations are now performed inline during iteration in outerAccumulation
 
         /// Apply context changes from all service dimensions
         pub fn applyContextChanges(self: *@This()) !void {
-            var it = self.iterator();
+            var it = self.service_results.iterator();
             while (it.next()) |entry| {
-                try entry.dimension().commit();
+                try entry.value_ptr.collapsed_dimension.commit();
             }
         }
 
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-            // Clean up service results
-            var it = self.iterator();
+            var it = self.service_results.iterator();
             while (it.next()) |entry| {
-                entry.result.deinit(allocator);
+                entry.value_ptr.deinit(allocator);
             }
             self.service_results.deinit();
-
-            // Mark as undefined to prevent use-after-free
             self.* = undefined;
         }
     };
@@ -327,73 +283,109 @@ pub fn parallelizedAccumulation(
     var service_results = std.AutoHashMap(types.ServiceId, AccumulationResult(params)).init(allocator);
     errdefer meta.deinit.deinitHashMapValuesAndMap(allocator, service_results);
 
-    // Process services using IO executor (parallel or sequential based on compile-time type)
+    // Smart parallelization decision based on workload complexity
+    const PARALLEL_SERVICE_THRESHOLD = 3; // Break-even point from benchmarks
+    const PARALLEL_GAS_THRESHOLD = params.gas_alloc_accumulation / 5; // 20% of total gas
+
+    // Calculate total work complexity
+    var total_gas_complexity: u64 = 0;
+    var service_it = service_ids.iterator();
+    while (service_it.next()) |entry| {
+        const service_id = entry.key_ptr.*;
+        if (service_operands.getOperands(service_id)) |operands| {
+            total_gas_complexity += operands.calcGasLimit();
+        }
+    }
+
+    const use_parallel = service_ids.count() >= PARALLEL_SERVICE_THRESHOLD or
+        total_gas_complexity >= PARALLEL_GAS_THRESHOLD;
+
+    span.debug("Parallelization decision: services={d}, gas_complexity={d}, use_parallel={}", .{ service_ids.count(), total_gas_complexity, use_parallel });
+
+    // Process services using either sequential or parallel execution
     if (service_ids.count() == 0) {
         // No services to process
-    } else if (service_ids.count() == 1) {
-        // Single service - no need for parallelization overhead
-        const service_id = service_ids.keys()[0];
-        const maybe_operands = service_operands.getOperands(service_id);
-        const context_snapshot = try context.deepClone();
-        
-        const result = try singleServiceAccumulation(
-            params,
-            allocator,
-            context_snapshot,
-            service_id,
-            maybe_operands,
-        );
-        try service_results.put(service_id, result);
+    } else if (!use_parallel) {
+        // Use optimized sequential processing - avoids thread coordination overhead
+        for (service_ids.keys()) |service_id| {
+            const maybe_operands = service_operands.getOperands(service_id);
+            const context_snapshot = try context.deepClone();
+
+            const result = try singleServiceAccumulation(
+                params,
+                allocator,
+                context_snapshot,
+                service_id,
+                maybe_operands,
+            );
+            try service_results.put(service_id, result);
+        }
     } else {
-        // Multiple services - use IO executor for potential parallelization
+        // Use parallel processing for high-complexity workloads - lock-free implementation
         var task_group = io_executor.createGroup();
-        
-        // We need a thread-safe way to collect results
-        // Use a mutex to protect the service_results map
-        var results_mutex = std.Thread.Mutex{};
-        
-        // Create task context structure for parallel execution
+
+        // Pre-allocate results array (lock-free, no hashmap needed)
+        const ResultSlot = struct {
+            service_id: types.ServiceId,
+            result: ?AccumulationResult(params) = null,
+        };
+
+        var results_array = try allocator.alloc(ResultSlot, service_ids.count());
+        defer allocator.free(results_array);
+
+        // Initialize result slots with service IDs
+        for (service_ids.keys(), 0..) |service_id, index| {
+            results_array[index] = ResultSlot{ .service_id = service_id };
+        }
+
+        // Task context - no hashmap, direct array access
         const TaskContext = struct {
             allocator: std.mem.Allocator,
             context: *const AccumulationContext(params),
             service_operands: *ServiceAccumulationOperandsMap,
-            service_results: *std.AutoHashMap(types.ServiceId, AccumulationResult(params)),
-            results_mutex: *std.Thread.Mutex,
-            
-            fn processService(self: @This(), service_id: types.ServiceId) !void {
+            results_array: []ResultSlot,
+
+            fn processServiceAtIndex(self: @This(), index: usize) !void {
+                const service_id = self.results_array[index].service_id;
                 const maybe_operands = self.service_operands.getOperands(service_id);
-                const context_snapshot = try self.context.deepClone();
-                
+
+                var context_snapshot = try self.context.deepClone();
+                defer context_snapshot.deinit();
+
                 const result = try singleServiceAccumulation(
-                    params, // Use the comptime params from the outer function
+                    params,
                     self.allocator,
                     context_snapshot,
                     service_id,
                     maybe_operands,
                 );
-                
-                // Thread-safe insertion into results map
-                self.results_mutex.lock();
-                defer self.results_mutex.unlock();
-                try self.service_results.put(service_id, result);
+
+                // Direct array access - no mutex, no hashmap
+                self.results_array[index].result = result;
             }
         };
-        
+
         const task_context = TaskContext{
             .allocator = allocator,
             .context = context,
             .service_operands = &service_operands,
-            .service_results = &service_results,
-            .results_mutex = &results_mutex,
+            .results_array = results_array,
         };
-        
-        // Spawn tasks for each service
-        for (service_ids.keys()) |service_id| {
-            try task_group.spawn(TaskContext.processService, .{ task_context, service_id });
+
+        // Spawn tasks with direct array indices
+        for (0..service_ids.count()) |index| {
+            try task_group.spawn(TaskContext.processServiceAtIndex, .{ task_context, index });
         }
-        
+
         // Wait for all parallel tasks to complete
         task_group.wait();
+
+        // Collect results into final map (only at the end)
+        for (results_array) |slot| {
+            if (slot.result) |result| {
+                try service_results.put(slot.service_id, result);
+            }
+        }
     }
 
     // Return collected results

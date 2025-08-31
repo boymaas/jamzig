@@ -6,6 +6,7 @@ pub const runTracesInDir = @import("trace_runner/runner.zig").runTracesInDir;
 pub const RunConfig = @import("trace_runner/runner.zig").RunConfig;
 
 const jam_params = @import("jam_params.zig");
+const io = @import("io.zig");
 
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.jamtestvectors);
@@ -18,7 +19,11 @@ pub const W3F_PARAMS = jam_params.TINY_PARAMS;
 test "w3f:traces:fallback" {
     const allocator = std.testing.allocator;
     const loader = W3fLoader(W3F_PARAMS){};
+    var sequential_executor = io.SequentialExecutor.init(allocator);
+    defer sequential_executor.deinit();
     var result = try runTracesInDir(
+        io.SequentialExecutor,
+        &sequential_executor,
         W3F_PARAMS,
         loader.loader(),
         allocator,
@@ -31,7 +36,11 @@ test "w3f:traces:fallback" {
 test "w3f:traces:safrole" {
     const allocator = std.testing.allocator;
     const loader = W3fLoader(W3F_PARAMS){};
+    var sequential_executor = io.SequentialExecutor.init(allocator);
+    defer sequential_executor.deinit();
     var result = try runTracesInDir(
+        io.SequentialExecutor,
+        &sequential_executor,
         W3F_PARAMS,
         loader.loader(),
         allocator,
@@ -44,7 +53,11 @@ test "w3f:traces:safrole" {
 test "w3f:traces:preimages_normal" {
     const allocator = std.testing.allocator;
     const loader = W3fLoader(W3F_PARAMS){};
+    var sequential_executor = io.SequentialExecutor.init(allocator);
+    defer sequential_executor.deinit();
     var result = try runTracesInDir(
+        io.SequentialExecutor,
+        &sequential_executor,
         W3F_PARAMS,
         loader.loader(),
         allocator,
@@ -57,7 +70,11 @@ test "w3f:traces:preimages_normal" {
 test "w3f:traces:preimages_light" {
     const allocator = std.testing.allocator;
     const loader = W3fLoader(W3F_PARAMS){};
+    var sequential_executor = io.SequentialExecutor.init(allocator);
+    defer sequential_executor.deinit();
     var result = try runTracesInDir(
+        io.SequentialExecutor,
+        &sequential_executor,
         W3F_PARAMS,
         loader.loader(),
         allocator,
@@ -70,11 +87,15 @@ test "w3f:traces:preimages_light" {
 test "w3f:traces:storage" {
     const allocator = std.testing.allocator;
     const loader = W3fLoader(W3F_PARAMS){};
+    var sequential_executor = io.SequentialExecutor.init(allocator);
+    defer sequential_executor.deinit();
     var result = try runTracesInDir(
+        io.SequentialExecutor,
+        &sequential_executor,
         W3F_PARAMS,
         loader.loader(),
         allocator,
-        "src/jamtestvectors/data/traces/preimages_light",
+        "src/jamtestvectors/data/traces/storage",
         RunConfig{ .mode = .CONTINOUS_MODE },
     );
     defer result.deinit(allocator);
@@ -83,11 +104,15 @@ test "w3f:traces:storage" {
 test "w3f:traces:storage_light" {
     const allocator = std.testing.allocator;
     const loader = W3fLoader(W3F_PARAMS){};
+    var sequential_executor = io.SequentialExecutor.init(allocator);
+    defer sequential_executor.deinit();
     var result = try runTracesInDir(
+        io.SequentialExecutor,
+        &sequential_executor,
         W3F_PARAMS,
         loader.loader(),
         allocator,
-        "src/jamtestvectors/data/traces/preimages_light",
+        "src/jamtestvectors/data/traces/storage_light",
         RunConfig{ .mode = .CONTINOUS_MODE },
     );
     defer result.deinit(allocator);

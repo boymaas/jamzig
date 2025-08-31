@@ -1,45 +1,66 @@
-//! IO Executor abstraction for parallel and sequential task execution
-//! Provides a unified interface for running groups of tasks with proper synchronization
-
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-/// Thread pool task group for parallel execution
 pub const ThreadPoolTaskGroup = struct {
     pool: *std.Thread.Pool,
     wg: std.Thread.WaitGroup,
+    error_list: std.ArrayList(anyerror),
+    error_mutex: std.Thread.Mutex,
+    allocator: Allocator,
 
-    /// Spawn a task in this group
+    pub fn deinit(self: *ThreadPoolTaskGroup) void {
+        self.error_list.deinit();
+        self.* = undefined;
+    }
+
     pub fn spawn(self: *ThreadPoolTaskGroup, comptime func: anytype, args: anytype) !void {
-        // Increment wait group BEFORE spawning
         self.wg.start();
-
-        // Spawn with wrapper that ensures finish() is called
         const Wrapper = struct {
-            fn run(wg: *std.Thread.WaitGroup, f: @TypeOf(func), a: @TypeOf(args)) void {
-                defer wg.finish();
-                @call(.auto, f, a) catch |err| {
-                    // Log the error but don't propagate it since this is a fire-and-forget task
-                    std.log.err("Task failed with error: {}", .{err});
-                };
+            fn run(group: *ThreadPoolTaskGroup, f: @TypeOf(func), a: @TypeOf(args)) void {
+                defer group.wg.finish();
+
+                const ResultType = @typeInfo(@TypeOf(f)).@"fn".return_type orelse @TypeOf(void);
+                const is_error_union = @typeInfo(ResultType) == .error_union;
+                if (is_error_union) {
+                    @call(.auto, f, a) catch |err| {
+                        {
+                            group.error_mutex.lock();
+                            defer group.error_mutex.unlock();
+                            group.error_list.append(err) catch {}; // best effort
+                        }
+                        std.log.err("Task failed with error: {}", .{err});
+                    };
+                } else {
+                    @call(.auto, f, a);
+                }
             }
         };
 
-        try self.pool.spawn(Wrapper.run, .{ &self.wg, func, args });
+        try self.pool.spawn(Wrapper.run, .{ self, func, args });
     }
 
-    /// Wait for all tasks in this group to complete
     pub fn wait(self: *ThreadPoolTaskGroup) void {
         self.wg.wait();
     }
+
+    pub fn waitAndCheckErrors(self: *ThreadPoolTaskGroup) !void {
+        self.wg.wait();
+
+        self.error_mutex.lock();
+        defer self.error_mutex.unlock();
+
+        if (self.error_list.items.len > 0) {
+            const first_error = self.error_list.items[0];
+            std.log.err("Found {} errors during parallel execution", .{self.error_list.items.len});
+            return first_error;
+        }
+    }
 };
 
-/// Thread pool executor for parallel task execution
 pub const ThreadPoolExecutor = struct {
     pool: *std.Thread.Pool,
     allocator: Allocator,
 
-    /// Initialize with specified thread count (null = CPU core count)
     pub fn init(allocator: Allocator, thread_count: ?usize) !ThreadPoolExecutor {
         const pool = try allocator.create(std.Thread.Pool);
         errdefer allocator.destroy(pool);
@@ -55,51 +76,77 @@ pub const ThreadPoolExecutor = struct {
         };
     }
 
-    /// Clean up the thread pool
     pub fn deinit(self: *ThreadPoolExecutor) void {
         self.pool.deinit();
         self.allocator.destroy(self.pool);
     }
 
-    /// Create a new task group
     pub fn createGroup(self: *ThreadPoolExecutor) ThreadPoolTaskGroup {
         return .{
             .pool = self.pool,
             .wg = std.Thread.WaitGroup{},
+            .error_list = std.ArrayList(anyerror).init(self.allocator),
+            .error_mutex = std.Thread.Mutex{},
+            .allocator = self.allocator,
         };
     }
 };
 
-/// Sequential task group for testing - executes tasks immediately
 pub const SequentialTaskGroup = struct {
-    /// Spawn (execute immediately) a task
-    pub fn spawn(self: *SequentialTaskGroup, comptime func: anytype, args: anytype) !void {
-        _ = self;
-        try @call(.auto, func, args);
+    error_list: std.ArrayList(anyerror),
+    allocator: Allocator,
+
+    pub fn deinit(self: *SequentialTaskGroup) void {
+        self.error_list.deinit();
+        self.* = undefined;
     }
 
-    /// No-op for sequential execution (tasks already completed)
+    pub fn spawn(self: *SequentialTaskGroup, comptime func: anytype, args: anytype) !void {
+        const ResultType = @TypeOf(@call(.auto, func, args));
+        const is_error_union = @typeInfo(ResultType) == .error_union;
+        if (is_error_union) {
+            @call(.auto, func, args) catch |err| {
+                self.error_list.append(err) catch {};
+                std.log.err("Task failed with error: {}", .{err});
+            };
+        } else {
+            @call(.auto, func, args);
+        }
+    }
+
     pub fn wait(self: *SequentialTaskGroup) void {
         _ = self;
     }
+
+    pub fn waitAndCheckErrors(self: *SequentialTaskGroup) !void {
+        if (self.error_list.items.len > 0) {
+            const first_error = self.error_list.items[0];
+            std.log.err("Found {} errors during sequential execution", .{self.error_list.items.len});
+            return first_error;
+        }
+    }
 };
 
-/// Sequential executor for testing
 pub const SequentialExecutor = struct {
-    /// Initialize a sequential executor
-    pub fn init() SequentialExecutor {
-        return .{};
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator) SequentialExecutor {
+        return .{ .allocator = allocator };
     }
 
-    /// Create a new task group
+    pub fn deinit(self: *SequentialExecutor) void {
+        self.* = undefined;
+    }
+
     pub fn createGroup(self: *SequentialExecutor) SequentialTaskGroup {
-        _ = self;
-        return .{};
+        return .{
+            .error_list = std.ArrayList(anyerror).init(self.allocator),
+            .allocator = self.allocator,
+        };
     }
 };
 
-// Tests
-test "ThreadPoolExecutor basic functionality" {
+test "thread_pool_executor" {
     const allocator = std.testing.allocator;
 
     var executor = try ThreadPoolExecutor.init(allocator, 2);
@@ -108,6 +155,7 @@ test "ThreadPoolExecutor basic functionality" {
     var counter = std.atomic.Value(i32).init(0);
 
     var group = executor.createGroup();
+    defer group.deinit();
 
     const incrementTask = struct {
         fn increment(c: *std.atomic.Value(i32)) void {
@@ -115,23 +163,25 @@ test "ThreadPoolExecutor basic functionality" {
         }
     }.increment;
 
-    // Spawn multiple tasks
     try group.spawn(incrementTask, .{&counter});
     try group.spawn(incrementTask, .{&counter});
     try group.spawn(incrementTask, .{&counter});
 
-    // Wait for all to complete
     group.wait();
 
     try std.testing.expectEqual(@as(i32, 3), counter.load(.monotonic));
 }
 
-test "SequentialExecutor basic functionality" {
-    var executor = SequentialExecutor.init();
+test "sequential_executor" {
+    const allocator = std.testing.allocator;
+
+    var executor = SequentialExecutor.init(allocator);
+    defer executor.deinit();
 
     var counter: i32 = 0;
 
     var group = executor.createGroup();
+    defer group.deinit();
 
     const incrementTask = struct {
         fn increment(c: *i32) void {
@@ -139,18 +189,16 @@ test "SequentialExecutor basic functionality" {
         }
     }.increment;
 
-    // Spawn (execute) multiple tasks
     try group.spawn(incrementTask, .{&counter});
     try group.spawn(incrementTask, .{&counter});
     try group.spawn(incrementTask, .{&counter});
 
-    // Wait is a no-op for sequential
     group.wait();
 
     try std.testing.expectEqual(@as(i32, 3), counter);
 }
 
-test "Multiple task groups can run independently" {
+test "multiple_task_groups" {
     const allocator = std.testing.allocator;
 
     var executor = try ThreadPoolExecutor.init(allocator, 4);
@@ -159,9 +207,10 @@ test "Multiple task groups can run independently" {
     var counter1 = std.atomic.Value(i32).init(0);
     var counter2 = std.atomic.Value(i32).init(0);
 
-    // Create two independent task groups
     var group1 = executor.createGroup();
+    defer group1.deinit();
     var group2 = executor.createGroup();
+    defer group2.deinit();
 
     const incrementTask = struct {
         fn increment(c: *std.atomic.Value(i32)) void {
@@ -169,18 +218,61 @@ test "Multiple task groups can run independently" {
         }
     }.increment;
 
-    // Spawn tasks in both groups
     try group1.spawn(incrementTask, .{&counter1});
     try group1.spawn(incrementTask, .{&counter1});
 
     try group2.spawn(incrementTask, .{&counter2});
     try group2.spawn(incrementTask, .{&counter2});
     try group2.spawn(incrementTask, .{&counter2});
-
-    // Wait for each group independently
     group1.wait();
     try std.testing.expectEqual(@as(i32, 2), counter1.load(.monotonic));
 
     group2.wait();
     try std.testing.expectEqual(@as(i32, 3), counter2.load(.monotonic));
+}
+
+test "error_handling" {
+    const allocator = std.testing.allocator;
+
+    const TestError = error{TaskFailed};
+
+    const failingTask = struct {
+        fn fail() TestError!void {
+            return TestError.TaskFailed;
+        }
+    }.fail;
+
+    const succeedingTask = struct {
+        fn succeed() void {}
+    }.succeed;
+
+    // Test ThreadPoolExecutor error collection
+    {
+        var executor = try ThreadPoolExecutor.init(allocator, 2);
+        defer executor.deinit();
+
+        var group = executor.createGroup();
+        defer group.deinit();
+
+        try group.spawn(failingTask, .{});
+        try group.spawn(succeedingTask, .{});
+        try group.spawn(failingTask, .{});
+
+        try std.testing.expectError(TestError.TaskFailed, group.waitAndCheckErrors());
+    }
+
+    // Test SequentialExecutor error collection
+    {
+        var executor = SequentialExecutor.init(allocator);
+        defer executor.deinit();
+
+        var group = executor.createGroup();
+        defer group.deinit();
+
+        try group.spawn(failingTask, .{});
+        try group.spawn(succeedingTask, .{});
+        try group.spawn(failingTask, .{});
+
+        try std.testing.expectError(TestError.TaskFailed, group.waitAndCheckErrors());
+    }
 }
