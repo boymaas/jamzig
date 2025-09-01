@@ -2,6 +2,7 @@ const std = @import("std");
 const clap = @import("clap");
 const tracing = @import("tracing.zig");
 
+const io = @import("io.zig");
 const Fuzzer = @import("fuzz_protocol/fuzzer.zig").Fuzzer;
 const report = @import("fuzz_protocol/report.zig");
 const jam_params = @import("jam_params.zig");
@@ -137,7 +138,7 @@ pub fn main() !void {
     std.posix.sigaction(std.posix.SIG.TERM, &sigaction, null);
 
     // Create and run fuzzer
-    var fuzzer = try Fuzzer.create(allocator, seed, socket_path);
+    var fuzzer = try Fuzzer(io.ThreadPoolExecutor).create(allocator, seed, socket_path);
     defer fuzzer.destroy();
 
     std.debug.print("Connecting to target at {s}...\n", .{socket_path});

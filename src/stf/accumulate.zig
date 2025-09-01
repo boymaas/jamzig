@@ -50,8 +50,10 @@ fn updateLastAccumulationSlot(
 pub const AccumulateResult = accumulate.ProcessAccumulationResult;
 
 pub fn transition(
+    comptime IOExecutor: type,
+    io_executor: *IOExecutor,
     comptime params: Params,
-    _: std.mem.Allocator,
+    allocator: std.mem.Allocator,
     stx: *StateTransition(params),
     reports: []types.WorkReport,
 ) !AccumulateResult {
@@ -60,7 +62,10 @@ pub fn transition(
 
     // Process the newly available reports
     const result = try accumulate.processAccumulationReports(
+        IOExecutor,
+        io_executor,
         params,
+        allocator,
         stx,
         reports,
     );

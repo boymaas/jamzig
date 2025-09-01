@@ -1,6 +1,8 @@
 const std = @import("std");
 const testing = std.testing;
-const FuzzTargetServerInThread = @import("../target_manager.zig").FuzzTargetInThread;
+const io = @import("../../io.zig");
+const target_manager = @import("../target_manager.zig");
+const FuzzTargetServerInThread = target_manager.FuzzTargetInThread(io.SequentialExecutor);
 const RestartBehavior = @import("../target.zig").RestartBehavior;
 
 const trace = @import("../../tracing.zig").scoped(.fuzz_protocol);
@@ -12,7 +14,10 @@ test "target_manager_initialization" {
     const allocator = testing.allocator;
     const socket_path = "/tmp/test_target_manager_init.sock";
 
-    var manager = FuzzTargetServerInThread.init(allocator, socket_path, .exit_on_disconnect);
+    // Create executor for the target manager
+    var executor = io.SequentialExecutor.init(allocator);
+    defer executor.deinit();
+    var manager = FuzzTargetServerInThread.init(&executor, allocator, socket_path, .exit_on_disconnect);
     defer manager.join();
 
     // Verify initialization

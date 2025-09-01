@@ -30,7 +30,10 @@ const trace = @import("tracing.zig").scoped(.accumulate);
 /// Main entry point for processing work reports according to JAM §12.1
 /// Coordinates the full accumulation pipeline through specialized modules
 pub fn processAccumulationReports(
+    comptime IOExecutor: type,
+    io_executor: *IOExecutor,
     comptime params: Params,
+    allocator: std.mem.Allocator,
     stx: *state_delta.StateTransition(params),
     reports: []types.WorkReport,
 ) !ProcessAccumulationResult {
@@ -38,8 +41,6 @@ pub fn processAccumulationReports(
     defer span.deinit();
 
     span.debug("Starting accumulation process with {d} reports", .{reports.len});
-
-    const allocator = stx.allocator;
 
     // Initialize state components
     const xi = try stx.ensure(.xi_prime);
@@ -67,6 +68,8 @@ pub fn processAccumulationReports(
     // Step 3: Execute accumulation
     const accumulatable = prepared.accumulatable_buffer.items;
     var execution_result = try @import("accumulate/execution.zig").executeAccumulation(
+        IOExecutor,
+        io_executor,
         params,
         allocator,
         stx,

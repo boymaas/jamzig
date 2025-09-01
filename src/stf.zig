@@ -19,6 +19,8 @@ const StateTransition = state_delta.StateTransition;
 const trace = tracing.scoped(.stf);
 
 pub fn stateTransition(
+    comptime IOExecutor: type,
+    io_executor: *IOExecutor,
     comptime params: Params,
     allocator: Allocator,
     current_state: *const JamState(params),
@@ -103,6 +105,8 @@ pub fn stateTransition(
     defer @import("meta.zig").deinit.deinitEntriesAndFreeSlice(allocator, ready_reports);
 
     var accumulate_result = try accumulate.transition(
+        IOExecutor,
+        io_executor,
         params,
         allocator,
         stx,

@@ -4,10 +4,13 @@ const net = std.net;
 
 const jam_params = @import("../../jam_params.zig");
 
-const FuzzTargetInThread = @import("../target_manager.zig").FuzzTargetInThread;
+const target_manager = @import("../target_manager.zig");
+const FuzzTargetInThread = target_manager.FuzzTargetInThread;
 const RestartBehavior = @import("../target.zig").RestartBehavior;
 
-const Fuzzer = @import("../fuzzer.zig").Fuzzer;
+const io = @import("../../io.zig");
+const fuzzer_mod = @import("../fuzzer.zig");
+const Fuzzer = fuzzer_mod.Fuzzer(io.ThreadPoolExecutor);
 const messages = @import("../messages.zig");
 const report = @import("../report.zig");
 
@@ -41,11 +44,14 @@ test "fuzzer_basic_cycle" {
     const seed: u64 = 54321;
 
     // Start the target server in the background
-    var target_manager = FuzzTargetInThread.init(allocator, socket_path, .exit_on_disconnect);
-    defer target_manager.join();
+    // Create executor for the target manager
+    var executor = io.SequentialExecutor.init(allocator);
+    defer executor.deinit();
+    var target_mgr = FuzzTargetInThread(io.SequentialExecutor).init(&executor, allocator, socket_path, .exit_on_disconnect);
+    defer target_mgr.join();
 
     // Start the fuzz target
-    try target_manager.start();
+    try target_mgr.start();
 
     var fuzzer = try Fuzzer.create(allocator, seed, socket_path);
     defer fuzzer.destroy();
