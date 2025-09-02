@@ -245,9 +245,9 @@ pub const Memory = struct {
     last_violation: ?ViolationInfo,
     allocator: Allocator,
     input_size_in_bytes: u32,
-    read_only_size_in_pages: u16,
-    stack_size_in_pages: u16,
-    heap_size_in_pages: u16,
+    read_only_size_in_pages: u32,
+    stack_size_in_pages: u32,
+    heap_size_in_pages: u32,
     heap_top: u32 = 0, // Current top of the heap
 
     // Controls whether dynamic memory allocation is allowed beyond the initial heap size
@@ -255,7 +255,7 @@ pub const Memory = struct {
 
     // Artificial limit on how many allocations we allow
     // mainly for the fuzzer, this is not in the spec
-    heap_allocation_limit: ?u16 = null,
+    heap_allocation_limit: ?u32 = null,
 
     // Memory layout constants
     pub const Z_Z: u32 = 0x10000; // 2^16 = 65,536 - Major zone size
@@ -468,7 +468,7 @@ pub const Memory = struct {
     pub fn initWithCapacity(
         allocator: Allocator,
         read_only_size_in_bytes: usize,
-        heap_size_in_pages: u16,
+        heap_size_in_pages: u32,
         input_size_in_bytes: usize,
         stack_size_in_bytes: usize,
         dynamic_allocation: bool,
@@ -483,7 +483,7 @@ pub const Memory = struct {
 
         // Calculate section sizes
         const read_only_aligned_size_in_bytes = try alignToPageSize(read_only_size_in_bytes);
-        const heap_aligned_size_in_bytes = @as(usize, heap_size_in_pages * Z_P);
+        const heap_aligned_size_in_bytes = @as(usize, @as(u32, heap_size_in_pages) * Z_P);
         const stack_aligned_size_in_bytes = try alignToPageSize(stack_size_in_bytes);
 
         // Verify memory limits
@@ -530,7 +530,7 @@ pub const Memory = struct {
         read_write: []const u8,
         input: []const u8,
         stack_size_in_bytes: u24,
-        heap_size_in_pages: u16,
+        heap_size_in_pages: u32,
         dynamic_allocation: bool,
     ) !Memory {
         const span = trace.span(.memory_init);
@@ -541,8 +541,8 @@ pub const Memory = struct {
         span.trace("Stack size: {d} bytes, Heap size: {d} pages", .{ stack_size_in_bytes, heap_size_in_pages });
 
         // Calculate section sizes rounded to page boundaries
-        const ro_pages: u16 = @intCast(try sizeInBytesToPages(read_only.len));
-        const heap_pages: u16 = @intCast(heap_size_in_pages + try sizeInBytesToPages(read_write.len));
+        const ro_pages: u32 = @intCast(try sizeInBytesToPages(read_only.len));
+        const heap_pages: u32 = @intCast(heap_size_in_pages + try sizeInBytesToPages(read_write.len));
         span.debug("Calculated pages - Read-only: {d}, Heap: {d}", .{ ro_pages, heap_pages });
 
         // Initialize the memory system with the calculated capacities

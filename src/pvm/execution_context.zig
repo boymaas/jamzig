@@ -99,7 +99,7 @@ pub const ExecutionContext = struct {
         span.debug("Header parsed: RO={d} bytes, RW={d} bytes, heap={d} pages, stack={d} bytes", .{
             read_only_size_in_bytes,
             read_write_size_in_bytes,
-            heap_size_in_pages,
+            @as(u32, heap_size_in_pages),
             stack_size_in_bytes,
         });
 
@@ -158,7 +158,7 @@ pub const ExecutionContext = struct {
             read_write_data,
             input,
             stack_size_in_bytes,
-            heap_size_in_pages,
+            @as(u32, heap_size_in_pages),
             max_gas,
             dynamic_allocation,
         );
@@ -168,7 +168,7 @@ pub const ExecutionContext = struct {
         allocator: Allocator,
         raw_program: []const u8,
         stack_size_in_bytes: u24,
-        heap_size_in_pages: u16,
+        heap_size_in_pages: u32,
         max_gas: u32,
         dynamic_allocation: bool,
     ) !ExecutionContext {
@@ -178,7 +178,7 @@ pub const ExecutionContext = struct {
         span.trace("Program size: {d} bytes, stack: {d} bytes, heap: {d} pages", .{
             raw_program.len,
             stack_size_in_bytes,
-            heap_size_in_pages,
+            @as(u32, heap_size_in_pages),
         });
 
         return try initWithMemorySegments(
@@ -188,7 +188,7 @@ pub const ExecutionContext = struct {
             &[_]u8{},
             &[_]u8{},
             stack_size_in_bytes,
-            heap_size_in_pages,
+            @as(u32, heap_size_in_pages),
             max_gas,
             dynamic_allocation,
         );
@@ -202,7 +202,7 @@ pub const ExecutionContext = struct {
         read_write: []const u8,
         input: []const u8,
         stack_size_in_bytes: u24,
-        heap_size_in_pages: u16,
+        heap_size_in_pages: u32,
         max_gas: u32,
         dynamic_allocation: bool,
     ) !ExecutionContext {
@@ -224,7 +224,7 @@ pub const ExecutionContext = struct {
             read_write,
             input,
             stack_size_in_bytes,
-            heap_size_in_pages,
+            @as(u32, heap_size_in_pages),
             dynamic_allocation,
         );
         errdefer {
