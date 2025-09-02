@@ -22,6 +22,7 @@ pub const TrackingAllocator = struct {
     pub fn deinit(self: *TrackingAllocator) void {
         self.freeAllAllocations();
         self.allocations.deinit();
+        self.* = undefined;
     }
 
     pub fn allocator(self: *TrackingAllocator) std.mem.Allocator {

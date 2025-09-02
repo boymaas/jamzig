@@ -83,6 +83,7 @@ pub const ThreadPoolExecutor = struct {
     pub fn deinit(self: *ThreadPoolExecutor) void {
         self.pool.deinit();
         self.allocator.destroy(self.pool);
+        self.* = undefined;
     }
 
     pub fn createGroup(self: *ThreadPoolExecutor) ThreadPoolTaskGroup {

@@ -255,7 +255,10 @@ pub const ServerThread = struct {
         self.stop.deinit();
         self.wakeup.deinit();
         self.loop.deinit();
-        self.alloc.destroy(self);
+
+        const alloc = self.alloc;
+        self.* = undefined;
+        alloc.destroy(self);
     }
 
     pub fn threadMain(self: *ServerThread) void {

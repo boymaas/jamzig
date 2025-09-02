@@ -267,6 +267,7 @@ const TicketRegistry = struct {
     pub fn deinit(self: *TicketRegistry) void {
         self.current.deinit();
         self.previous.deinit();
+        self.* = undefined;
     }
 
     pub fn rotateRegistries(self: *TicketRegistry) void {

@@ -42,6 +42,7 @@ pub const DecodingContext = struct {
     pub fn deinit(self: *DecodingContext) void {
         self.clearError();
         self.path.deinit();
+        self.* = undefined;
     }
 
     /// Push a new segment to the path

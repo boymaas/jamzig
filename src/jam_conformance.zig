@@ -52,6 +52,7 @@ const TraceDir = struct {
             allocator.free(timestamp);
         }
         self.timestamps.deinit();
+        self.* = undefined;
     }
 };
 
@@ -77,6 +78,7 @@ const TraceCollection = struct {
             dir.deinit(self.allocator);
         }
         self.dirs.deinit();
+        self.* = undefined;
     }
 
     pub fn discover(self: *TraceCollection, paths: []const PathConfig) !void {

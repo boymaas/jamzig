@@ -260,7 +260,9 @@ pub const JamSnpServer = struct {
         }
 
         span.trace("Destroying JamSnpServer object", .{});
-        self.allocator.destroy(self);
+        const alloc = self.allocator;
+        self.* = undefined;
+        alloc.destroy(self);
 
         span.trace("JamSnpServer deinitialization complete", .{});
     }

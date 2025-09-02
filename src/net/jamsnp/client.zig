@@ -371,7 +371,9 @@ pub const JamSnpClient = struct {
 
         // Destroy the client object itself LAST
         span.trace("Destroying JamSnpClient object", .{});
-        self.allocator.destroy(self);
+        const alloc = self.allocator;
+        self.* = undefined;
+        alloc.destroy(self);
 
         span.trace("JamSnpClient deinitialization complete", .{});
     }

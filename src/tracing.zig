@@ -106,6 +106,7 @@ const RuntimeTracingConfig = if (tracing_mode == .runtime) struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.config.deinit();
+        self.* = undefined;
     }
 
     pub fn setScope(self: *RuntimeTracingConfig, scope_name: []const u8, level: ?LogLevel) !void {
