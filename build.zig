@@ -48,8 +48,8 @@ pub fn build(b: *std.Build) !void {
     // Create target-specific optimized configuration with disabled tracing
     const target_config = BuildConfig{
         .tracing_scopes = &[_][]const u8{}, // Empty - no tracing scopes
-        .tracing_level = "",                 // No default level  
-        .tracing_mode = .disabled,           // Compile out all tracing
+        .tracing_level = "", // No default level
+        .tracing_mode = .disabled, // Compile out all tracing
         .conformance_params = base_config.conformance_params,
     };
 
@@ -64,8 +64,8 @@ pub fn build(b: *std.Build) !void {
     // Create benchmark configuration optimized for performance - no debugging
     const bench_config = BuildConfig{
         .tracing_scopes = &[_][]const u8{}, // No tracing scopes
-        .tracing_level = "",                 // No tracing level
-        .tracing_mode = .disabled,           // Compile out all tracing
+        .tracing_level = "", // No tracing level
+        .tracing_mode = .disabled, // Compile out all tracing
         .conformance_params = base_config.conformance_params,
     };
 
@@ -277,6 +277,7 @@ pub fn build(b: *std.Build) !void {
     test_vectors.root_module.addImport("pretty", pretty_module);
     test_vectors.root_module.addImport("diffz", diffz_module);
     test_vectors.root_module.addImport("tmpfile", tmpfile_module);
+
     test_vectors.root_module.addImport("uuid", uuid_module);
     test_vectors.root_module.addImport("xev", xev_mod);
     test_vectors.root_module.addImport("network", zig_network_mod);
@@ -315,13 +316,13 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = .ReleaseFast,
     });
-    
+
     bench_block_import.root_module.addOptions("build_options", bench_build_options);
     bench_block_import.root_module.addImport("pretty", pretty_module);
     bench_block_import.root_module.addImport("diffz", diffz_module);
     bench_block_import.linkLibCpp();
     rust_deps.staticallyLinkTo(bench_block_import);
-    
+
     const run_bench_block_import = b.addRunArtifact(bench_block_import);
     const bench_block_import_step = b.step("bench-block-import", "Run block import benchmarks");
     bench_block_import_step.dependOn(&run_bench_block_import.step);

@@ -82,6 +82,10 @@ const TypeMapping = struct {
     pub fn WorkReport(allocator: Allocator, from: tv_lib_codec.WorkReport) !lib_codec.WorkReport {
         return try convertWorkReport(allocator, from);
     }
+
+    pub fn WorkResult(allocator: Allocator, from: tv_lib_codec.WorkResult) !lib_codec.WorkResult {
+        return try convertWorkResult(allocator, from);
+    }
 };
 
 /// Convert a `testvecor.Header` to a `codec.Header`.
@@ -178,6 +182,13 @@ fn convertWorkItem(allocator: Allocator, from: tv_lib_codec.WorkItem) !lib_codec
 }
 
 fn convertWorkReport(allocator: Allocator, from: tv_lib_codec.WorkReport) !lib_codec.WorkReport {
+    const results = try allocator.alloc(lib_codec.WorkResult, from.results.len);
+    errdefer allocator.free(results);
+    
+    for (from.results, results) |f, *r| {
+        r.* = try convertWorkResult(allocator, f);
+    }
+    
     return lib_codec.WorkReport{
         .package_spec = try convert(tv_lib_codec.WorkPackageSpec, lib_codec.WorkPackageSpec, allocator, from.package_spec),
         .context = try convert(
@@ -191,6 +202,25 @@ fn convertWorkReport(allocator: Allocator, from: tv_lib_codec.WorkReport) !lib_c
         .auth_gas_used = lib_codec.VarInt(lib_codec.Gas).init(from.auth_gas_used),
         .auth_output = try allocator.dupe(u8, from.auth_output.bytes),
         .segment_root_lookup = try convert(tv_lib_codec.SegmentRootLookup, lib_codec.SegmentRootLookup, allocator, from.segment_root_lookup),
-        .results = try convert([]tv_lib_codec.WorkResult, []lib_codec.WorkResult, allocator, from.results),
+        .results = results,
+    };
+}
+
+fn convertWorkResult(allocator: Allocator, from: tv_lib_codec.WorkResult) !lib_codec.WorkResult {
+    const VarInt = lib_codec.VarInt;
+    
+    return lib_codec.WorkResult{
+        .service_id = from.service_id,
+        .code_hash = from.code_hash.bytes,
+        .payload_hash = from.payload_hash.bytes,
+        .accumulate_gas = from.accumulate_gas,
+        .result = try convert(tv_lib_codec.WorkExecResult, lib_codec.WorkExecResult, allocator, from.result),
+        .refine_load = lib_codec.RefineLoad{
+            .gas_used = VarInt(lib_codec.Gas).init(from.refine_load.gas_used),
+            .imports = VarInt(u16).init(from.refine_load.imports),
+            .extrinsic_count = VarInt(u16).init(from.refine_load.extrinsic_count),
+            .extrinsic_size = VarInt(u32).init(from.refine_load.extrinsic_size),
+            .exports = VarInt(u16).init(from.refine_load.exports),
+        },
     };
 }

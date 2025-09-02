@@ -192,44 +192,6 @@ pub const WorkPackage = struct {
         allocator.free(self.items);
         self.* = undefined;
     }
-
-    pub fn encode(self: *const @This(), comptime params: anytype, writer: anytype) !void {
-        const codec = @import("codec.zig");
-
-        // Encode auth_code_host
-        try codec.serialize(ServiceId, params, writer, self.auth_code_host);
-        // Encode auth-code-hash
-        try codec.serialize(OpaqueHash, params, writer, self.auth_code_hash);
-        // Encode context
-        try codec.serialize(RefineContext, params, writer, self.context);
-        // Encode authorization
-        try codec.serialize(@TypeOf(self.authorization), params, writer, self.authorization);
-        // Encode authorizer-config
-        try codec.serialize(@TypeOf(self.authorizer_config), params, writer, self.authorizer_config);
-        // Encode items
-        try codec.serialize(@TypeOf(self.items), params, writer, self.items);
-    }
-
-    pub fn decode(comptime params: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
-        const codec = @import("codec.zig");
-
-        var self: @This() = undefined;
-
-        // Decode auth_code_host
-        self.auth_code_host = try codec.deserializeAlloc(ServiceId, params, allocator, reader);
-        // Decode auth-code-hash
-        self.auth_code_hash = try codec.deserializeAlloc(OpaqueHash, params, allocator, reader);
-        // Decode context
-        self.context = try codec.deserializeAlloc(RefineContext, params, allocator, reader);
-        // Decode authorization
-        self.authorization = try codec.deserializeAlloc(@TypeOf(self.authorization), params, allocator, reader);
-        // Decode authorizer-config
-        self.authorizer_config = try codec.deserializeAlloc([]u8, params, allocator, reader);
-        // Decode items
-        self.items = try codec.deserializeAlloc([]WorkItem, params, allocator, reader);
-
-        return self;
-    }
 };
 
 /// Work execution result as defined in JAM graypaper
@@ -345,42 +307,11 @@ pub const WorkExecResult = union(enum(u8)) {
 };
 
 pub const RefineLoad = struct {
-    gas_used: U64,
-    imports: U16,
-    extrinsic_count: U16,
-    extrinsic_size: U32,
-    exports: U16,
-
-    pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
-        const codec = @import("codec.zig");
-
-        // Encode each field using variable-length integer encoding
-        try codec.writeInteger(self.gas_used, writer);
-        try codec.writeInteger(self.imports, writer);
-        try codec.writeInteger(self.extrinsic_count, writer);
-        try codec.writeInteger(self.extrinsic_size, writer);
-        try codec.writeInteger(self.exports, writer);
-    }
-
-    pub fn decode(_: anytype, reader: anytype, _: std.mem.Allocator) !@This() {
-        const codec = @import("codec.zig");
-
-        // Read each field using variable-length integer decoding
-        // and truncate to the appropriate size
-        const gas_used = try codec.readInteger(reader);
-        const imports = @as(U16, @truncate(try codec.readInteger(reader)));
-        const extrinsic_count = @as(U16, @truncate(try codec.readInteger(reader)));
-        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
-        const exports = @as(U16, @truncate(try codec.readInteger(reader)));
-
-        return @This(){
-            .gas_used = gas_used,
-            .imports = imports,
-            .extrinsic_count = extrinsic_count,
-            .extrinsic_size = extrinsic_size,
-            .exports = exports,
-        };
-    }
+    gas_used: VarInt(U64),
+    imports: VarInt(U16),
+    extrinsic_count: VarInt(U16),
+    extrinsic_size: VarInt(U32),
+    exports: VarInt(U16),
 };
 
 pub const WorkResult = struct {
@@ -461,28 +392,6 @@ pub const SegmentRootLookupItem = struct {
 };
 
 pub const SegmentRootLookup = []SegmentRootLookupItem;
-
-// TODO: since these are varint encoded, I wrapped them, maybe adapt codec
-// to create a special type indicating they are varint
-pub const WorkReportStats = struct {
-    auth_gas_used: Gas,
-
-    pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
-        const codec = @import("codec.zig");
-
-        try codec.writeInteger(self.auth_gas_used, writer);
-    }
-
-    pub fn decode(_: anytype, reader: anytype, _: std.mem.Allocator) !@This() {
-        const codec = @import("codec.zig");
-
-        const auth_gas_used = try codec.readInteger(reader);
-
-        return .{
-            .auth_gas_used = auth_gas_used,
-        };
-    }
-};
 
 pub const WorkReport = struct {
     package_spec: WorkPackageSpec,

@@ -93,11 +93,11 @@ pub fn transitionWithInput(
         const report = guarantee.report;
 
         for (report.results) |r| {
-            core_stats.gas_used += r.refine_load.gas_used;
-            core_stats.imports += r.refine_load.imports;
-            core_stats.extrinsic_count += r.refine_load.extrinsic_count;
-            core_stats.extrinsic_size += r.refine_load.extrinsic_size;
-            core_stats.exports += r.refine_load.exports;
+            core_stats.gas_used += r.refine_load.gas_used.value;
+            core_stats.imports += r.refine_load.imports.value;
+            core_stats.extrinsic_count += r.refine_load.extrinsic_count.value;
+            core_stats.extrinsic_size += r.refine_load.extrinsic_size.value;
+            core_stats.exports += r.refine_load.exports.value;
         }
 
         core_stats.bundle_size += report.package_spec.length;
@@ -165,12 +165,12 @@ pub fn transitionWithInput(
             // Eq 13.12 part 1: refinement_count
             service_stats.refinement_count += 1;
             // Eq 13.12 part 2: refinement_gas_used
-            service_stats.refinement_gas_used += result.refine_load.gas_used;
+            service_stats.refinement_gas_used += result.refine_load.gas_used.value;
             // Eq 13.13: imports, extrinsic_count, extrinsic_size, exports
-            service_stats.imports += result.refine_load.imports;
-            service_stats.extrinsic_count += result.refine_load.extrinsic_count;
-            service_stats.extrinsic_size += result.refine_load.extrinsic_size;
-            service_stats.exports += result.refine_load.exports;
+            service_stats.imports += result.refine_load.imports.value;
+            service_stats.extrinsic_count += result.refine_load.extrinsic_count.value;
+            service_stats.extrinsic_size += result.refine_load.extrinsic_size.value;
+            service_stats.exports += result.refine_load.exports.value;
         }
     }
 
