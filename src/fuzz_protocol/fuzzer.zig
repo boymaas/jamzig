@@ -107,9 +107,8 @@ pub fn Fuzzer(comptime IOExecutor: type) type {
             fuzzer.latest_block = genesis_block;
 
             // Process the genesis block with block importer to get proper header and state
-            var import_result = try fuzzer.block_importer.importBlock(
+            var import_result = try fuzzer.block_importer.importBlockBuildingRoot(
                 fuzzer.current_jam_state,
-                null, // TODO: cache the state root here?
                 &genesis_block,
             );
             defer import_result.deinit();
@@ -293,9 +292,8 @@ pub fn Fuzzer(comptime IOExecutor: type) type {
             span.debug("Processing block locally", .{});
 
             // Use block importer to process the block
-            var import_result = try self.block_importer.importBlock(
+            var import_result = try self.block_importer.importBlockBuildingRoot(
                 self.current_jam_state,
-                null, // TODO: cache the state root here?
                 &block,
             );
             defer import_result.deinit();

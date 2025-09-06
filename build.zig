@@ -314,7 +314,7 @@ pub fn build(b: *std.Build) !void {
         .name = "bench-block-import",
         .root_source_file = b.path("src/bench_block_import.zig"),
         .target = target,
-        .optimize = .ReleaseFast,
+        .optimize = optimize,
     });
 
     bench_block_import.root_module.addOptions("build_options", bench_build_options);

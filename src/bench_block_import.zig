@@ -194,7 +194,7 @@ fn executeBenchmarkBatch(comptime IOExecutor: type, context: BenchmarkContext(IO
     var successful_runs: usize = 0;
     var run_idx: usize = 0;
 
-    var cached_state_root: ?types.StateRoot = null;
+    var cached_state_root = try jam_state.buildStateRoot(context.allocator);
 
     while (successful_runs < context.config.iterations) : (run_idx += 1) {
         if (run_idx > context.config.iterations * 10) {
@@ -215,11 +215,14 @@ fn executeBenchmarkBatch(comptime IOExecutor: type, context: BenchmarkContext(IO
             cached_state_root = try jam_state.buildStateRoot(context.allocator);
         }
 
-        var importer = block_import.BlockImporter(IOExecutor, jamtestvectors.W3F_PARAMS).init(context.executor, context.allocator);
+        var importer = block_import.BlockImporter(
+            IOExecutor,
+            jamtestvectors.W3F_PARAMS,
+        ).init(context.executor, context.allocator);
 
         const start = std.time.nanoTimestamp();
 
-        var result = try importer.importBlock(&jam_state, cached_state_root, transition.block());
+        var result = try importer.importBlockWithCachedRoot(&jam_state, cached_state_root, transition.block());
 
         try result.commit();
         result.deinit();

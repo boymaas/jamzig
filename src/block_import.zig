@@ -60,25 +60,40 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
             };
         }
 
-        /// Import a block with state-based validation and state transition
-        pub fn importBlock(
+        /// Import a block building the state root for validation
+        pub fn importBlockBuildingRoot(
             self: *Self,
             current_state: *const JamState(params),
-            current_state_root_cached: ?types.StateRoot,
             block: *const types.Block,
         ) !ImportResult {
-            const span = trace.span(.import_block);
+            const span = trace.span(.import_block_building_root);
             defer span.deinit();
 
-            // Get current state root efficiently: use cached value if available, otherwise compute
-            const current_state_root =
-                current_state_root_cached orelse try current_state.buildStateRoot(self.allocator);
+            // Build current state root for validation
+            const current_state_root = try current_state.buildStateRoot(self.allocator);
 
-            // Step 1: Validate header using the header validator
+            return self.importBlockWithCachedRoot(
+                current_state,
+                current_state_root,
+                block,
+            );
+        }
+
+        /// Import a block using a cached state root for validation
+        pub fn importBlockWithCachedRoot(
+            self: *Self,
+            current_state: *const JamState(params),
+            cached_state_root: types.StateRoot,
+            block: *const types.Block,
+        ) !ImportResult {
+            const span = trace.span(.import_block_with_cached_root);
+            defer span.deinit();
+
+            // Step 1: Validate header using the cached state root
             const validation_result = try self.header_validator.validateHeader(
                 current_state,
                 &block.header,
-                current_state_root,
+                cached_state_root,
                 &block.extrinsic,
             );
 

@@ -211,9 +211,8 @@ pub fn runTracesInDir(
             std.debug.print("This block is expected to produce no state changes\n", .{});
         }
 
-        var import_result = importer.importBlock(
+        var import_result = importer.importBlockBuildingRoot(
             &current_state.?,
-            null, // TODO: cache current state root?
             state_transition.block(),
         ) catch |err| {
             // Check if this is expected for a no-op block
@@ -274,9 +273,8 @@ pub fn runTracesInDir(
                 defer tracing.runtime.disableScope("block_import") catch {};
 
                 // Retry the import with tracing
-                var retry_result = importer.importBlock(
+                var retry_result = importer.importBlockBuildingRoot(
                     &current_state.?,
-                    null,
                     state_transition.block(),
                 ) catch |retry_err| {
                     if (!config.quiet) {

@@ -283,9 +283,9 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                     span.trace("{}", .{types.fmt.format(block)});
 
                     // Use unified block importer with validation
-                    var result = self.block_importer.importBlock(
+                    var result = self.block_importer.importBlockWithCachedRoot(
                         &self.current_state.?,
-                        self.current_state_root, // CACHED value if available
+                        self.current_state_root.?, // CACHED value (required)
                         &block,
                     ) catch |err| {
                         std.debug.print("Failed to import block: {s}. State remains unchanged.\n", .{@errorName(err)});
