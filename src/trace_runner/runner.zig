@@ -213,6 +213,7 @@ pub fn runTracesInDir(
 
         var import_result = importer.importBlock(
             &current_state.?,
+            null, // TODO: cache current state root?
             state_transition.block(),
         ) catch |err| {
             // Check if this is expected for a no-op block
@@ -275,6 +276,7 @@ pub fn runTracesInDir(
                 // Retry the import with tracing
                 var retry_result = importer.importBlock(
                     &current_state.?,
+                    null,
                     state_transition.block(),
                 ) catch |retry_err| {
                     if (!config.quiet) {

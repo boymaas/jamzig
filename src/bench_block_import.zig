@@ -194,6 +194,8 @@ fn executeBenchmarkBatch(comptime IOExecutor: type, context: BenchmarkContext(IO
     var successful_runs: usize = 0;
     var run_idx: usize = 0;
 
+    var cached_state_root: ?types.StateRoot = null;
+
     while (successful_runs < context.config.iterations) : (run_idx += 1) {
         if (run_idx > context.config.iterations * 10) {
             std.debug.print("  Warning: Too many failures, stopping at {} successful runs\n", .{successful_runs});
@@ -210,25 +212,19 @@ fn executeBenchmarkBatch(comptime IOExecutor: type, context: BenchmarkContext(IO
             defer dict.deinit();
 
             jam_state = try state_dict.reconstruct.reconstructState(jamtestvectors.W3F_PARAMS, context.allocator, &dict);
+            cached_state_root = try jam_state.buildStateRoot(context.allocator);
         }
 
         var importer = block_import.BlockImporter(IOExecutor, jamtestvectors.W3F_PARAMS).init(context.executor, context.allocator);
 
         const start = std.time.nanoTimestamp();
 
-        var result = importer.importBlock(&jam_state, transition.block()) catch {
-            jam_state.deinit(context.allocator);
-            jam_state = try state.JamState(jamtestvectors.W3F_PARAMS).init(context.allocator);
-
-            var dict = try transition.preStateAsMerklizationDict(arena);
-            defer dict.deinit();
-
-            jam_state = try state_dict.reconstruct.reconstructState(jamtestvectors.W3F_PARAMS, context.allocator, &dict);
-            continue;
-        };
+        var result = try importer.importBlock(&jam_state, cached_state_root, transition.block());
 
         try result.commit();
         result.deinit();
+
+        cached_state_root = try jam_state.buildStateRoot(context.allocator);
 
         const end = std.time.nanoTimestamp();
         times[successful_runs] = @intCast(end - start);
@@ -447,9 +443,10 @@ pub fn main() !void {
     else
         100;
 
-    const trace_filter = if (args.next()) |filter_arg| 
+    const trace_filter = if (args.next()) |filter_arg|
         if (filter_arg.len > 0) filter_arg else null
-    else null;
+    else
+        null;
 
     if (trace_filter) |filter| {
         std.debug.print("Running {} iterations for trace: {s}\n", .{ iterations, filter });
@@ -461,6 +458,6 @@ pub fn main() !void {
         .iterations = iterations,
         .trace_filter = trace_filter,
     };
-    
+
     try benchmarkBlockImportWithConfig(io.ThreadPoolExecutor, allocator, config, &executor);
 }

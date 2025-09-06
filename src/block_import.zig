@@ -64,13 +64,15 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
         pub fn importBlock(
             self: *Self,
             current_state: *const JamState(params),
+            current_state_root_cached: ?types.StateRoot,
             block: *const types.Block,
         ) !ImportResult {
             const span = trace.span(.import_block);
             defer span.deinit();
 
-            // Build current state root for validation
-            const current_state_root = try current_state.buildStateRoot(self.allocator);
+            // Get current state root efficiently: use cached value if available, otherwise compute
+            const current_state_root =
+                current_state_root_cached orelse try current_state.buildStateRoot(self.allocator);
 
             // Step 1: Validate header using the header validator
             const validation_result = try self.header_validator.validateHeader(

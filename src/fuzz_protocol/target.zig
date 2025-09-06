@@ -285,6 +285,7 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                     // Use unified block importer with validation
                     var result = self.block_importer.importBlock(
                         &self.current_state.?,
+                        self.current_state_root, // CACHED value if available
                         &block,
                     ) catch |err| {
                         std.debug.print("Failed to import block: {s}. State remains unchanged.\n", .{@errorName(err)});

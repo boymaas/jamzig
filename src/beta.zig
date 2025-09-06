@@ -47,6 +47,20 @@ pub const Beta = struct {
         self.recent_history.updateParentBlockStateRoot(parent_state_root);
     }
 
+    /// Get the state root of the most recent block in recent history
+    /// Returns null if no valid cached state root is available
+    pub fn getLastBlockStateRoot(self: *const Beta) ?types.StateRoot {
+        if (self.recent_history.blocks.items.len > 0) {
+            const last_block = self.recent_history.blocks.items[self.recent_history.blocks.items.len - 1];
+            // Check if we have a valid (non-zero) state root
+            const zero_hash = std.mem.zeroes(types.StateRoot);
+            if (!std.mem.eql(u8, &last_block.state_root, &zero_hash)) {
+                return last_block.state_root;
+            }
+        }
+        return null; // No valid cached state root available
+    }
+
     /// Get block info by hash from recent history
     pub fn getBlockInfoByHash(self: *const Beta, hash: types.Hash) ?RecentHistory.BlockInfo {
         return self.recent_history.getBlockInfoByHash(hash);
