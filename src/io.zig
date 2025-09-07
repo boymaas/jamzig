@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const tracy = @import("tracy");
 
 pub const ThreadPoolTaskGroup = struct {
     pool: *std.Thread.Pool,
@@ -18,6 +19,11 @@ pub const ThreadPoolTaskGroup = struct {
         const Wrapper = struct {
             fn run(group: *ThreadPoolTaskGroup, f: @TypeOf(func), a: @TypeOf(args)) void {
                 defer group.wg.finish();
+
+                // Set thread name for Tracy profiling (once per thread)
+                const thread_name_z = std.fmt.allocPrintZ(std.heap.page_allocator, "Worker-{d}", .{std.Thread.getCurrentId()}) catch "JAM-Worker";
+                defer if (!std.mem.eql(u8, thread_name_z, "JAM-Worker")) std.heap.page_allocator.free(thread_name_z);
+                tracy.SetThreadName(thread_name_z);
 
                 const ResultType = @typeInfo(@TypeOf(f)).@"fn".return_type orelse @TypeOf(void);
                 const is_error_union = @typeInfo(ResultType) == .error_union;

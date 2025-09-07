@@ -10,6 +10,7 @@ const BuildConfig = struct {
     tracing_level: []const u8,
     tracing_mode: TracingMode,
     conformance_params: ?ConformanceParams = null,
+    enable_tracy: bool = false,
 };
 
 // Helper function to apply build configuration to options
@@ -17,8 +18,23 @@ fn applyBuildConfig(options: *std.Build.Step.Options, config: BuildConfig) void 
     options.addOption([]const []const u8, "enable_tracing_scopes", config.tracing_scopes);
     options.addOption([]const u8, "enable_tracing_level", config.tracing_level);
     options.addOption(@TypeOf(config.tracing_mode), "tracing_mode", config.tracing_mode);
+    options.addOption(bool, "enable_tracy", config.enable_tracy);
     if (config.conformance_params) |conformance_params| {
         options.addOption(ConformanceParams, "conformance_params", conformance_params);
+    }
+}
+
+// Helper function to configure tracy for an executable, it either adds the library and the real root module or a noop module
+fn configureTracy(b: *std.Build, exe: *std.Build.Step.Compile, tracy_enabled: bool, tracy_dep: anytype) void {
+    const tracy_mod = if (tracy_enabled)
+        tracy_dep.module("root")
+    else
+        b.createModule(.{
+            .root_source_file = b.path("src/tracy_noop.zig"),
+        });
+    exe.root_module.addImport("tracy", tracy_mod);
+    if (tracy_enabled) {
+        exe.linkLibrary(tracy_dep.artifact("tracy"));
     }
 }
 
@@ -35,6 +51,7 @@ pub fn build(b: *std.Build) !void {
         .tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{},
         .tracing_mode = b.option(TracingMode, "tracing-mode", "Tracing compilation mode (disabled/compile_time/runtime)") orelse .compile_time,
         .conformance_params = b.option(ConformanceParams, "conformance-params", "JAM protocol parameters for conformance testing (tiny/full)") orelse .tiny,
+        .enable_tracy = b.option(bool, "enable-tracy", "Enable Tracy profiler") orelse false,
     };
 
     // Create conformance configuration with runtime tracing
@@ -43,6 +60,7 @@ pub fn build(b: *std.Build) !void {
         .tracing_level = base_config.tracing_level,
         .tracing_mode = .runtime, // Force runtime tracing for conformance tools
         .conformance_params = base_config.conformance_params,
+        .enable_tracy = base_config.enable_tracy,
     };
 
     // Create target-specific optimized configuration with disabled tracing
@@ -51,6 +69,7 @@ pub fn build(b: *std.Build) !void {
         .tracing_level = "", // No default level
         .tracing_mode = .disabled, // Compile out all tracing
         .conformance_params = base_config.conformance_params,
+        .enable_tracy = base_config.enable_tracy,
     };
 
     // Create conformance configuration with runtime tracing
@@ -59,6 +78,7 @@ pub fn build(b: *std.Build) !void {
         .tracing_level = base_config.tracing_level,
         .tracing_mode = .runtime, // Force runtime tracing for conformance tools
         .conformance_params = base_config.conformance_params,
+        .enable_tracy = false, // Disable tracy for tests
     };
 
     // Create benchmark configuration optimized for performance - no debugging
@@ -67,6 +87,7 @@ pub fn build(b: *std.Build) !void {
         .tracing_level = "", // No tracing level
         .tracing_mode = .disabled, // Compile out all tracing
         .conformance_params = base_config.conformance_params,
+        .enable_tracy = base_config.enable_tracy, // Allow tracy for benchmarking
     };
 
     // Create build options objects
@@ -109,6 +130,15 @@ pub fn build(b: *std.Build) !void {
     const base32_dep = b.dependency("base32", dep_opts);
     const base32_mod = base32_dep.module("base32");
 
+    // Tracy Profiler
+    const tracy_dep = b.dependency("tracy", .{
+        .target = target,
+        .optimize = optimize,
+        .enable_ztracy = true,
+        .enable_fibers = false, // Not needed - using real threads
+        .on_demand = false, // Always on when enabled
+    });
+
     // Rest of the existing build.zig implementation...
     var rust_deps = try buildRustDependencies(b, target, optimize);
     defer rust_deps.deinit();
@@ -130,6 +160,7 @@ pub fn build(b: *std.Build) !void {
     jamzig_exe.root_module.addImport("lsquic", lsquic_mod);
     jamzig_exe.root_module.addImport("ssl", ssl_mod);
     jamzig_exe.root_module.addImport("base32", base32_mod);
+    configureTracy(b, jamzig_exe, base_config.enable_tracy, tracy_dep);
 
     b.installArtifact(jamzig_exe);
 
@@ -142,6 +173,7 @@ pub fn build(b: *std.Build) !void {
 
     pvm_fuzzer.root_module.addOptions("build_options", build_options);
     pvm_fuzzer.root_module.addImport("clap", clap_module);
+    configureTracy(b, pvm_fuzzer, base_config.enable_tracy, tracy_dep);
     pvm_fuzzer.linkLibCpp();
     try rust_deps.staticallyLinkDepTo("polkavm_ffi", pvm_fuzzer);
     b.installArtifact(pvm_fuzzer);
@@ -157,6 +189,7 @@ pub fn build(b: *std.Build) !void {
     });
     jam_conformance_fuzzer.root_module.addOptions("build_options", conformance_build_options);
     jam_conformance_fuzzer.root_module.addImport("clap", clap_module);
+    configureTracy(b, jam_conformance_fuzzer, conformance_config.enable_tracy, tracy_dep);
     jam_conformance_fuzzer.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_fuzzer);
     b.installArtifact(jam_conformance_fuzzer);
@@ -169,6 +202,7 @@ pub fn build(b: *std.Build) !void {
     });
     jam_conformance_target.root_module.addOptions("build_options", target_build_options);
     jam_conformance_target.root_module.addImport("clap", clap_module);
+    configureTracy(b, jam_conformance_target, target_config.enable_tracy, tracy_dep);
     jam_conformance_target.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_target);
     b.installArtifact(jam_conformance_target);
@@ -320,6 +354,7 @@ pub fn build(b: *std.Build) !void {
     bench_block_import.root_module.addOptions("build_options", bench_build_options);
     bench_block_import.root_module.addImport("pretty", pretty_module);
     bench_block_import.root_module.addImport("diffz", diffz_module);
+    configureTracy(b, bench_block_import, bench_config.enable_tracy, tracy_dep);
     bench_block_import.linkLibCpp();
     rust_deps.staticallyLinkTo(bench_block_import);
     b.installArtifact(bench_block_import);
@@ -339,6 +374,7 @@ pub fn build(b: *std.Build) !void {
     bench_target_trace.root_module.addOptions("build_options", bench_build_options);
     bench_target_trace.root_module.addImport("pretty", pretty_module);
     bench_target_trace.root_module.addImport("diffz", diffz_module);
+    configureTracy(b, bench_target_trace, bench_config.enable_tracy, tracy_dep);
     bench_target_trace.linkLibCpp();
     rust_deps.staticallyLinkTo(bench_target_trace);
     b.installArtifact(bench_target_trace);

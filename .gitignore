@@ -3,3 +3,8 @@ zig-cache
 .zig-cache
 ffi/rust/crypto/target
 build-outputs
+
+# Tracy profiling files
+*.tracy
+profiles/captures/
+build.log
