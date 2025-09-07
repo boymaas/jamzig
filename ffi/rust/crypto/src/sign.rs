@@ -255,12 +255,13 @@ pub unsafe extern "C" fn bandersnatch_output_hash(
 
   let signature = std::slice::from_raw_parts(signature, SIGNATURE_LENGTH);
 
-  let signature =
-    if let Ok(s) = BandersnatchSignature::deserialize_compressed(signature) {
-      s
-    } else {
-      return -1;
-    };
+  let signature = if let Ok(s) =
+    BandersnatchSignature::deserialize_compressed_unchecked(signature)
+  {
+    s
+  } else {
+    return -1;
+  };
 
   let output_hash = signature.output.hash();
   std::ptr::copy_nonoverlapping(

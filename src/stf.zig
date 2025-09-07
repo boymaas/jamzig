@@ -29,7 +29,7 @@ pub fn stateTransition(
 ) !*StateTransition(params) {
     const span = trace.span(.state_transition);
     defer span.deinit();
-    
+
     const tracy_zone = tracy.ZoneN(@src(), "stf_state_transition");
     defer tracy_zone.End();
 
@@ -60,11 +60,14 @@ pub fn stateTransition(
     {
         const eta_zone = tracy.ZoneN(@src(), "stf_eta_transition");
         defer eta_zone.End();
-        try eta.transition(
-            params,
-            stx,
-            try block.header.getEntropy(),
-        );
+
+        const entropy = blk: {
+            const entropy_zone = tracy.ZoneN(@src(), "get_entropy");
+            defer entropy_zone.End();
+            break :blk try block.header.getEntropy();
+        };
+
+        try eta.transition(params, stx, entropy);
     }
 
     {
