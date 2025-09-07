@@ -1,0 +1,61 @@
+{
+  "timestamp": 1757259413,
+  "git_commit": "5cfc7216",
+  "params": "tiny",
+  "results": [
+    {
+      "trace_name": "fallback",
+      "iterations": 100,
+      "min_ns": 488634,
+      "max_ns": 15813999,
+      "median_ns": 568107,
+      "mean_ns": 1372335,
+      "stddev_ns": 2785308
+    },
+    {
+      "trace_name": "safrole",
+      "iterations": 100,
+      "min_ns": 475628,
+      "max_ns": 11322958,
+      "median_ns": 4355918,
+      "mean_ns": 5174879,
+      "stddev_ns": 3934816
+    },
+    {
+      "trace_name": "preimages",
+      "iterations": 100,
+      "min_ns": 662003,
+      "max_ns": 17548938,
+      "median_ns": 3204948,
+      "mean_ns": 3874780,
+      "stddev_ns": 3302324
+    },
+    {
+      "trace_name": "preimages_light",
+      "iterations": 100,
+      "min_ns": 643161,
+      "max_ns": 13771423,
+      "median_ns": 2557430,
+      "mean_ns": 2920914,
+      "stddev_ns": 2840082
+    },
+    {
+      "trace_name": "storage",
+      "iterations": 100,
+      "min_ns": 631948,
+      "max_ns": 51724862,
+      "median_ns": 12633625,
+      "mean_ns": 14484990,
+      "stddev_ns": 13094837
+    },
+    {
+      "trace_name": "storage_light",
+      "iterations": 100,
+      "min_ns": 597057,
+      "max_ns": 26242225,
+      "median_ns": 4508632,
+      "mean_ns": 5681897,
+      "stddev_ns": 5083649
+    }
+  ]
+}
