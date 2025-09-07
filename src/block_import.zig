@@ -20,7 +20,7 @@ pub const ValidationConfig = @import("header_validator.zig").ValidationConfig;
 pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Params) type {
     return struct {
         allocator: std.mem.Allocator,
-        header_validator: HeaderValidator(params),
+        header_validator: HeaderValidator(IOExecutor, params),
         executor: *IOExecutor,
 
         const Self = @This();
@@ -48,7 +48,7 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
         pub fn init(executor: *IOExecutor, allocator: std.mem.Allocator) Self {
             return .{
                 .allocator = allocator,
-                .header_validator = HeaderValidator(params).init(allocator),
+                .header_validator = HeaderValidator(IOExecutor, params).init(allocator, executor),
                 .executor = executor,
             };
         }
@@ -56,7 +56,7 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
         pub fn initWithConfig(executor: *IOExecutor, allocator: std.mem.Allocator, config: ValidationConfig) Self {
             return .{
                 .allocator = allocator,
-                .header_validator = HeaderValidator(params).initWithConfig(allocator, config),
+                .header_validator = HeaderValidator(IOExecutor, params).initWithConfig(allocator, executor, config),
                 .executor = executor,
             };
         }
@@ -93,13 +93,14 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
             const span = trace.span(.import_block_with_cached_root);
             defer span.deinit();
 
+            // Frame per block
             const tracy_zone = tracy.ZoneN(@src(), "block_import_with_cached_root");
             defer tracy_zone.End();
-            defer tracy.FrameMarkNamed("Block"); // Frame per block
+            defer tracy.FrameMarkNamed("Block");
 
             // Step 1: Validate header using the cached state root
             const validation_result = blk: {
-                const header_zone = tracy.ZoneN(@src(), "block_validate");
+                const header_zone = tracy.ZoneN(@src(), "validate_header");
                 defer header_zone.End();
                 break :blk try self.header_validator.validateHeader(
                     current_state,

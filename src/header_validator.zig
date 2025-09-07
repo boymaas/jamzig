@@ -4,9 +4,11 @@ const jam_params = @import("jam_params.zig");
 const JamState = @import("state.zig").JamState;
 const codec = @import("codec.zig");
 const crypto = @import("crypto.zig");
+const io = @import("io.zig");
 
 const tracing = @import("tracing.zig");
 const trace = tracing.scoped(.stf);
+const tracy = @import("tracy");
 
 // Constants for seal contexts
 const SEAL_CONTEXT_TICKET = "jam_ticket_seal";
@@ -89,25 +91,50 @@ pub const ValidationResult = struct {
 };
 
 /// Header validator with state-based validation
-pub fn HeaderValidator(comptime params: jam_params.Params) type {
+pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Params) type {
     return struct {
         allocator: std.mem.Allocator,
         config: ValidationConfig,
+        executor: *IOExecutor,
 
         const Self = @This();
 
-        pub fn init(allocator: std.mem.Allocator) Self {
+        pub fn init(allocator: std.mem.Allocator, executor: *IOExecutor) Self {
             return .{
                 .allocator = allocator,
                 .config = ValidationConfig{},
+                .executor = executor,
             };
         }
 
-        pub fn initWithConfig(allocator: std.mem.Allocator, config: ValidationConfig) Self {
+        pub fn initWithConfig(allocator: std.mem.Allocator, executor: *IOExecutor, config: ValidationConfig) Self {
             return .{
                 .allocator = allocator,
                 .config = config,
+                .executor = executor,
             };
+        }
+
+        /// Worker function for parallel seal validation
+        fn validateSealWorker(
+            self: *Self,
+            ctx: SealContext,
+        ) !void {
+            const zone = tracy.ZoneN(@src(), "seal_verify_signature_worker");
+            defer zone.End();
+            try self.validateSeal(ctx);
+        }
+
+        /// Worker function for parallel entropy source validation
+        fn validateEntropySourceWorker(
+            self: *Self,
+            header: *const types.Header,
+            author_key: types.BandersnatchPublic,
+            sealed_with_tickets: bool,
+        ) !void {
+            const zone = tracy.ZoneN(@src(), "entropy_source_worker");
+            defer zone.End();
+            try self.validateEntropySource(header, author_key, sealed_with_tickets);
         }
 
         /// Main entry point for header validation
@@ -124,38 +151,83 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
             // Ensure state is initialized (only debugbuilds)
             _ = try state.debugCheckIfFullyInitialized();
 
-            // Phase 1: Structural validation
-            try self.validateStructuralConstraints(state, header, current_state_root, extrinsics);
-
-            // Phase 2: Timing validation
-            try self.validateTimingConstraints(state, header);
-
-            // Phase 3: Author validation
-            const author_key = try self.validateAuthorConstraints(state, header);
-
-            // Phase 4: Marker timing validation
-            try self.validateMarkerTiming(state, header);
-
-            // Phase 5: Determine ticket availability
-            var tickets = try self.resolveTickets(state, header);
-            defer tickets.deinit(self.allocator);
-
-            // Phase 6: Select appropriate entropy
-            const entropy = self.selectEntropy(state, header);
-
-            // Phase 7: Validate seal
-            const seal_context = SealContext{
-                .header = header,
-                .author_key = author_key,
-                .entropy = entropy,
-                .tickets = tickets.tickets,
-                .context_prefix = if (tickets.tickets != null) SEAL_CONTEXT_TICKET else SEAL_CONTEXT_FALLBACK,
+            // Phase:  Select appropriate entropy
+            const entropy = blk: {
+                const entropy_zone = tracy.ZoneN(@src(), "select_entropy");
+                defer entropy_zone.End();
+                break :blk self.selectEntropy(state, header);
             };
 
-            try self.validateSeal(seal_context);
+            // Phase: Author validation
+            const author_key = blk: {
+                const author_zone = tracy.ZoneN(@src(), "author_constraints");
+                defer author_zone.End();
+                break :blk try self.validateAuthorConstraints(state, header);
+            };
 
-            // Phase 8: Validate entropy source
-            try self.validateEntropySource(header, author_key, tickets.tickets != null);
+            // Phase: Determine ticket availability
+            var tickets = blk: {
+                const tickets_zone = tracy.ZoneN(@src(), "resolve_tickets");
+                defer tickets_zone.End();
+                break :blk try self.resolveTickets(state, header);
+            };
+            defer tickets.deinit(self.allocator);
+
+            // Parallel signature verification using WorkGroup
+            // Create WorkGroup for parallel execution
+            var work_group = self.executor.createGroup();
+            defer work_group.deinit();
+            {
+                const parallel_zone = tracy.ZoneN(@src(), "parallel_signature_verification");
+                defer parallel_zone.End();
+
+                // Prepare seal context (moved from phase 7)
+                const seal_context = SealContext{
+                    .header = header,
+                    .author_key = author_key,
+                    .entropy = entropy,
+                    .tickets = tickets.tickets,
+                    .context_prefix = if (tickets.tickets != null) SEAL_CONTEXT_TICKET else SEAL_CONTEXT_FALLBACK,
+                };
+
+                // Spawn seal verification task
+                try work_group.spawn(validateSealWorker, .{
+                    self,
+                    seal_context,
+                });
+
+                // Spawn entropy verification task
+                try work_group.spawn(validateEntropySourceWorker, .{
+                    self,
+                    header,
+                    author_key,
+                    tickets.tickets != null,
+                });
+            }
+
+            // Phase: Structural validation
+            {
+                const structural_zone = tracy.ZoneN(@src(), "structural_constraints");
+                defer structural_zone.End();
+                try self.validateStructuralConstraints(state, header, current_state_root, extrinsics);
+            }
+
+            // Phase: Timing validation
+            {
+                const timing_zone = tracy.ZoneN(@src(), "timing_constraints");
+                defer timing_zone.End();
+                try self.validateTimingConstraints(state, header);
+            }
+
+            // Phase: Marker timing validation
+            {
+                const marker_zone = tracy.ZoneN(@src(), "marker_timing");
+                defer marker_zone.End();
+                try self.validateMarkerTiming(state, header);
+            }
+
+            // Wait for both tasks and propagate any errors (fail-fast built into WorkGroup)
+            try work_group.waitAndCheckErrors();
 
             return ValidationResult{
                 .success = true,
@@ -176,34 +248,46 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
             defer span.deinit();
 
             // Validate parent hash
-            if (state.beta) |beta| {
-                const last_block_hash = beta.getLastBlockHash();
-                if (!std.mem.eql(u8, &header.parent, &last_block_hash)) {
-                    span.err("Parent hash mismatch: header={s}, state={s}", .{
-                        std.fmt.fmtSliceHexLower(&header.parent),
-                        std.fmt.fmtSliceHexLower(&last_block_hash),
-                    });
-                    return HeaderValidationError.InvalidParentHash;
+            {
+                const parent_zone = tracy.ZoneN(@src(), "parent_hash");
+                defer parent_zone.End();
+                if (state.beta) |beta| {
+                    const last_block_hash = beta.getLastBlockHash();
+                    if (!std.mem.eql(u8, &header.parent, &last_block_hash)) {
+                        span.err("Parent hash mismatch: header={s}, state={s}", .{
+                            std.fmt.fmtSliceHexLower(&header.parent),
+                            std.fmt.fmtSliceHexLower(&last_block_hash),
+                        });
+                        return HeaderValidationError.InvalidParentHash;
+                    }
                 }
             }
 
             // Validate prior state root
-            if (!std.mem.eql(u8, &header.parent_state_root, &current_state_root)) {
-                span.err("Prior state root mismatch: header={s}, computed={s}", .{
-                    std.fmt.fmtSliceHexLower(&header.parent_state_root),
-                    std.fmt.fmtSliceHexLower(&current_state_root),
-                });
-                return HeaderValidationError.InvalidPriorStateRoot;
+            {
+                const state_root_zone = tracy.ZoneN(@src(), "prior_state_root");
+                defer state_root_zone.End();
+                if (!std.mem.eql(u8, &header.parent_state_root, &current_state_root)) {
+                    span.err("Prior state root mismatch: header={s}, computed={s}", .{
+                        std.fmt.fmtSliceHexLower(&header.parent_state_root),
+                        std.fmt.fmtSliceHexLower(&current_state_root),
+                    });
+                    return HeaderValidationError.InvalidPriorStateRoot;
+                }
             }
 
             // Validate extrinsic hash
-            const computed_hash = try extrinsics.calculateHash(params, self.allocator);
-            if (!std.mem.eql(u8, &header.extrinsic_hash, &computed_hash)) {
-                span.err("Extrinsic hash mismatch: header={s}, computed={s}", .{
-                    std.fmt.fmtSliceHexLower(&header.extrinsic_hash),
-                    std.fmt.fmtSliceHexLower(&computed_hash),
-                });
-                return HeaderValidationError.InvalidExtrinsicHash;
+            {
+                const extrinsic_zone = tracy.ZoneN(@src(), "extrinsic_hash");
+                defer extrinsic_zone.End();
+                const computed_hash = try extrinsics.calculateHash(params, self.allocator);
+                if (!std.mem.eql(u8, &header.extrinsic_hash, &computed_hash)) {
+                    span.err("Extrinsic hash mismatch: header={s}, computed={s}", .{
+                        std.fmt.fmtSliceHexLower(&header.extrinsic_hash),
+                        std.fmt.fmtSliceHexLower(&computed_hash),
+                    });
+                    return HeaderValidationError.InvalidExtrinsicHash;
+                }
             }
         }
 
@@ -374,70 +458,88 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
             defer span.deinit();
 
             // Serialize unsigned header
-            const unsigned_header = types.HeaderUnsigned.fromHeaderShared(ctx.header);
-            const unsigned_header_bytes = try codec.serializeAlloc(
-                types.HeaderUnsigned,
-                params,
-                self.allocator,
-                unsigned_header,
-            );
+            const unsigned_header_bytes = blk: {
+                const serialize_zone = tracy.ZoneN(@src(), "seal_serialize_header");
+                defer serialize_zone.End();
+                const unsigned_header = types.HeaderUnsigned.fromHeaderShared(ctx.header);
+                break :blk try codec.serializeAlloc(
+                    types.HeaderUnsigned,
+                    params,
+                    self.allocator,
+                    unsigned_header,
+                );
+            };
             defer self.allocator.free(unsigned_header_bytes);
 
             // Extract seal signature
-            const seal_signature = crypto.bandersnatch.Bandersnatch.Signature.fromBytes(ctx.header.seal);
+            const seal_signature = blk: {
+                const extract_zone = tracy.ZoneN(@src(), "seal_extract_signature");
+                defer extract_zone.End();
+                break :blk crypto.bandersnatch.Bandersnatch.Signature.fromBytes(ctx.header.seal);
+            };
 
             // Build context buffer
-            var context_buf: [MAX_CONTEXT_BUFFER_SIZE]u8 = undefined;
-            var context_len: usize = 0;
+            const context_bytes = blk: {
+                const context_zone = tracy.ZoneN(@src(), "seal_build_context");
+                defer context_zone.End();
+                var context_buf: [MAX_CONTEXT_BUFFER_SIZE]u8 = undefined;
+                var context_len: usize = 0;
 
-            // Add context prefix
-            @memcpy(context_buf[context_len .. context_len + ctx.context_prefix.len], ctx.context_prefix);
-            context_len += ctx.context_prefix.len;
+                // Add context prefix
+                @memcpy(context_buf[context_len .. context_len + ctx.context_prefix.len], ctx.context_prefix);
+                context_len += ctx.context_prefix.len;
 
-            // Add entropy
-            @memcpy(context_buf[context_len .. context_len + 32], &ctx.entropy);
-            context_len += 32;
+                // Add entropy
+                @memcpy(context_buf[context_len .. context_len + 32], &ctx.entropy);
+                context_len += 32;
 
-            // Handle ticket-specific validation
-            if (ctx.tickets) |ticket_bodies| {
-                const slot_in_epoch = ctx.header.slot % params.epoch_length;
-                const ticket = ticket_bodies[slot_in_epoch];
+                // Handle ticket-specific validation
+                if (ctx.tickets) |ticket_bodies| {
+                    const ticket_zone = tracy.ZoneN(@src(), "seal_validate_ticket");
+                    defer ticket_zone.End();
+                    const slot_in_epoch = ctx.header.slot % params.epoch_length;
+                    const ticket = ticket_bodies[slot_in_epoch];
 
-                // Verify VRF output matches ticket ID
-                const seal_vrf_output = seal_signature.outputHash() catch {
-                    span.err("Failed to extract VRF output from seal", .{});
-                    return HeaderValidationError.TicketSealVerificationFailed;
-                };
+                    // Verify VRF output matches ticket ID
+                    const seal_vrf_output = seal_signature.outputHash() catch {
+                        span.err("Failed to extract VRF output from seal", .{});
+                        return HeaderValidationError.TicketSealVerificationFailed;
+                    };
 
-                if (!std.mem.eql(u8, &ticket.id, &seal_vrf_output)) {
-                    span.err("Ticket ID mismatch: Ticket ID={s}, VRF output={s}", .{
-                        std.fmt.fmtSliceHexLower(&ticket.id),
-                        std.fmt.fmtSliceHexLower(&seal_vrf_output),
-                    });
-                    return HeaderValidationError.InvalidTicketId;
+                    if (!std.mem.eql(u8, &ticket.id, &seal_vrf_output)) {
+                        span.err("Ticket ID mismatch: Ticket ID={s}, VRF output={s}", .{
+                            std.fmt.fmtSliceHexLower(&ticket.id),
+                            std.fmt.fmtSliceHexLower(&seal_vrf_output),
+                        });
+                        return HeaderValidationError.InvalidTicketId;
+                    }
+
+                    // Add ticket attempt to context
+                    context_buf[context_len] = ticket.attempt;
+                    context_len += 1;
                 }
 
-                // Add ticket attempt to context
-                context_buf[context_len] = ticket.attempt;
-                context_len += 1;
-            }
-
-            const context_bytes = context_buf[0..context_len];
+                break :blk context_buf[0..context_len];
+            };
 
             // Verify signature
-            const public_key = crypto.bandersnatch.Bandersnatch.PublicKey.fromBytes(ctx.author_key);
-            _ = seal_signature.verify(
-                context_bytes,
-                unsigned_header_bytes,
-                public_key,
-            ) catch {
-                const err = if (ctx.tickets != null)
-                    HeaderValidationError.TicketSealVerificationFailed
-                else
-                    HeaderValidationError.FallbackSealVerificationFailed;
-                span.err("{s} seal verification failed", .{ctx.context_prefix});
-                return err;
-            };
+            {
+                const verify_zone = tracy.ZoneN(@src(), "seal_verify_signature");
+                defer verify_zone.End();
+                const public_key = crypto.bandersnatch.Bandersnatch.PublicKey.fromBytes(ctx.author_key);
+                _ = seal_signature.verify(
+                    context_bytes,
+                    unsigned_header_bytes,
+                    public_key,
+                ) catch {
+                    const err = if (ctx.tickets != null)
+                        HeaderValidationError.TicketSealVerificationFailed
+                    else
+                        HeaderValidationError.FallbackSealVerificationFailed;
+                    span.err("{s} seal verification failed", .{ctx.context_prefix});
+                    return err;
+                };
+            }
 
             span.debug("Seal verification successful (mode: {s})", .{ctx.context_prefix});
         }
@@ -455,35 +557,47 @@ pub fn HeaderValidator(comptime params: jam_params.Params) type {
             defer span.deinit();
 
             // Parse seal signature to get VRF output
-            const seal_signature = crypto.bandersnatch.Bandersnatch.Signature.fromBytes(header.seal);
-            const seal_output_hash = seal_signature.outputHash() catch {
-                span.err("Failed to extract seal output hash", .{});
-                return HeaderValidationError.InvalidEntropySource;
+            const seal_output_hash = blk: {
+                const extract_zone = tracy.ZoneN(@src(), "entropy_extract_seal_output");
+                defer extract_zone.End();
+                const seal_signature = crypto.bandersnatch.Bandersnatch.Signature.fromBytes(header.seal);
+                break :blk seal_signature.outputHash() catch {
+                    span.err("Failed to extract seal output hash", .{});
+                    return HeaderValidationError.InvalidEntropySource;
+                };
             };
 
             // Build context: ENTROPY_CONTEXT ⌢ Y(Hs)
-            var context_buf: [MAX_CONTEXT_BUFFER_SIZE]u8 = undefined;
-            var context_len: usize = 0;
+            const context_bytes = blk: {
+                const context_zone = tracy.ZoneN(@src(), "entropy_build_context");
+                defer context_zone.End();
+                var context_buf: [MAX_CONTEXT_BUFFER_SIZE]u8 = undefined;
+                var context_len: usize = 0;
 
-            @memcpy(context_buf[context_len .. context_len + ENTROPY_CONTEXT.len], ENTROPY_CONTEXT);
-            context_len += ENTROPY_CONTEXT.len;
+                @memcpy(context_buf[context_len .. context_len + ENTROPY_CONTEXT.len], ENTROPY_CONTEXT);
+                context_len += ENTROPY_CONTEXT.len;
 
-            @memcpy(context_buf[context_len .. context_len + 32], &seal_output_hash);
-            context_len += 32;
+                @memcpy(context_buf[context_len .. context_len + 32], &seal_output_hash);
+                context_len += 32;
 
-            const context_bytes = context_buf[0..context_len];
+                break :blk context_buf[0..context_len];
+            };
 
             // Verify entropy source signature
-            const entropy_signature = crypto.bandersnatch.Bandersnatch.Signature.fromBytes(header.entropy_source);
-            const public_key = crypto.bandersnatch.Bandersnatch.PublicKey.fromBytes(author_key);
-            _ = entropy_signature.verify(
-                context_bytes,
-                &[_]u8{}, // Empty message for VRF
-                public_key,
-            ) catch {
-                span.err("Entropy source verification failed", .{});
-                return HeaderValidationError.EntropySourceVerificationFailed;
-            };
+            {
+                const verify_zone = tracy.ZoneN(@src(), "entropy_verify_signature");
+                defer verify_zone.End();
+                const entropy_signature = crypto.bandersnatch.Bandersnatch.Signature.fromBytes(header.entropy_source);
+                const public_key = crypto.bandersnatch.Bandersnatch.PublicKey.fromBytes(author_key);
+                _ = entropy_signature.verify(
+                    context_bytes,
+                    &[_]u8{}, // Empty message for VRF
+                    public_key,
+                ) catch {
+                    span.err("Entropy source verification failed", .{});
+                    return HeaderValidationError.EntropySourceVerificationFailed;
+                };
+            }
 
             span.debug("Entropy source verification successful", .{});
         }
