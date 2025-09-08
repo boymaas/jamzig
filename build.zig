@@ -30,7 +30,7 @@ fn configureTracing(b: *std.Build, exe: *std.Build.Step.Compile, config: BuildCo
     const tracing_options = b.addOptions();
     tracing_options.addOption([]const []const u8, "enable_tracing_scopes", config.tracing_scopes);
     tracing_options.addOption([]const u8, "enable_tracing_level", config.tracing_level);
-    
+
     const tracing_mod = switch (config.tracing_mode) {
         .disabled => b.createModule(.{
             .root_source_file = b.path("src/tracing_noop.zig"),
@@ -60,15 +60,15 @@ fn configureTracing(b: *std.Build, exe: *std.Build.Step.Compile, config: BuildCo
 // Helper function to configure tracy for an executable using ztracy's built-in stubs
 fn configureTracy(b: *std.Build, exe: *std.Build.Step.Compile, config: BuildConfig, tracy_dep: anytype) void {
     const tracy_needed = config.enable_tracy or config.tracing_mode == .tracy;
-    
+
     // Create ztracy options module to control enable/disable
     const ztracy_options = b.addOptions();
     ztracy_options.addOption(bool, "enable_ztracy", tracy_needed);
-    
+
     // Always use ztracy module - it handles stubs internally based on enable_ztracy option
     const tracy_mod = tracy_dep.module("root");
     tracy_mod.addImport("ztracy_options", ztracy_options.createModule());
-    
+
     exe.root_module.addImport("tracy", tracy_mod);
     if (tracy_needed) {
         exe.linkLibrary(tracy_dep.artifact("tracy"));
@@ -98,6 +98,24 @@ pub fn build(b: *std.Build) !void {
     };
 
     // Create conformance configuration with runtime tracing
+    const testing_config = BuildConfig{
+        .tracing_scopes = base_config.tracing_scopes,
+        .tracing_level = base_config.tracing_level,
+        .tracing_mode = base_config.tracing_mode,
+        .conformance_params = base_config.conformance_params,
+        .enable_tracy = false, // Disable tracy for tests
+    };
+
+    // Create benchmark configuration - respects user's tracing settings
+    const bench_config = BuildConfig{
+        .tracing_scopes = base_config.tracing_scopes, // Use user's tracing scopes
+        .tracing_level = base_config.tracing_level, // Use user's tracing level
+        .tracing_mode = base_config.tracing_mode, // Use user's tracing mode
+        .conformance_params = base_config.conformance_params,
+        .enable_tracy = base_config.enable_tracy, // Allow tracy for benchmarking
+    };
+
+    // Create conformance configuration with runtime tracing
     const conformance_config = BuildConfig{
         .tracing_scopes = base_config.tracing_scopes,
         .tracing_level = base_config.tracing_level,
@@ -113,24 +131,6 @@ pub fn build(b: *std.Build) !void {
         .tracing_mode = .disabled, // Compile out all tracing
         .conformance_params = base_config.conformance_params,
         .enable_tracy = base_config.enable_tracy,
-    };
-
-    // Create conformance configuration with runtime tracing
-    const testing_config = BuildConfig{
-        .tracing_scopes = base_config.tracing_scopes,
-        .tracing_level = base_config.tracing_level,
-        .tracing_mode = .runtime, // Force runtime tracing for conformance tools
-        .conformance_params = base_config.conformance_params,
-        .enable_tracy = false, // Disable tracy for tests
-    };
-
-    // Create benchmark configuration - respects user's tracing settings
-    const bench_config = BuildConfig{
-        .tracing_scopes = base_config.tracing_scopes, // Use user's tracing scopes
-        .tracing_level = base_config.tracing_level, // Use user's tracing level
-        .tracing_mode = base_config.tracing_mode, // Use user's tracing mode
-        .conformance_params = base_config.conformance_params,
-        .enable_tracy = base_config.enable_tracy, // Allow tracy for benchmarking
     };
 
     // Create build options objects
