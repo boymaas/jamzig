@@ -44,10 +44,14 @@ pub const TracingScope = struct {
 };
 
 pub const Span = struct {
+    scope: []const u8 = "",
+    operation: []const u8 = "",
+
     const Self = @This();
 
-    pub fn init(name: []const u8) Self {
-        _ = name;
+    pub fn init(scope: []const u8, operation: []const u8) Self {
+        _ = scope;
+        _ = operation;
         return Self{};
     }
 

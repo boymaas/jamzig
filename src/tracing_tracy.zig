@@ -6,7 +6,7 @@ const config_mod = @import("tracing/config.zig");
 pub const LogLevel = config_mod.LogLevel;
 
 // Global config instance for Tracy mode
-var config: config_mod.BuildConfig = undefined;
+var config: config_mod.Config = undefined;
 
 pub const TracingScope = struct {
     name: []const u8,
@@ -20,34 +20,40 @@ pub const TracingScope = struct {
     }
 
     pub fn span(comptime self: *const Self, operation: @Type(.enum_literal)) Span {
-        _ = operation; // Ignore operation name for now
-        return Span.init(self.name);
+        return Span.init(self.name, @tagName(operation));
     }
 };
 
 pub const Span = struct {
-    name: []const u8,
+    scope: []const u8,
+    operation: []const u8,
     tracy_zone: tracy.ZoneCtx,
     min_level: LogLevel,
     active: bool,
 
-    pub fn init(name: []const u8) Span {
-        const min_level = config.getLevel(name);
+    pub fn init(scope: []const u8, operation: []const u8) Span {
+        const min_level = config.getLevel(scope);
+        // Create null-terminated string for Tracy using operation name only
+        var operation_buf: [64]u8 = undefined;
+        const len = @min(operation.len, operation_buf.len - 1);
+        @memcpy(operation_buf[0..len], operation[0..len]);
+        operation_buf[len] = 0;
+
         return Span{
-            .name = name,
-            .tracy_zone = tracy.ZoneN(@src(), name.ptr),
+            .scope = scope,
+            .operation = operation,
+            .tracy_zone = tracy.ZoneN(@src(), @ptrCast(operation_buf[0..len :0])),
             .min_level = min_level,
             .active = true,
         };
     }
 
     pub fn child(self: *const Span, operation: @Type(.enum_literal)) Span {
-        _ = operation; // Ignore operation name for now  
-        return Span.init(self.name);
+        return Span.init(self.scope, @tagName(operation));
     }
 
     pub fn deinit(self: *const Span) void {
-        @constCast(&self.tracy_zone).End();
+        self.tracy_zone.End();
     }
 
     pub inline fn trace(self: *const Span, comptime fmt: []const u8, args: anytype) void {
@@ -72,7 +78,7 @@ pub const Span = struct {
 
     inline fn log(self: *const Span, level: LogLevel, comptime fmt: []const u8, args: anytype) void {
         if (!self.active or @intFromEnum(level) < @intFromEnum(self.min_level)) return;
-        
+
         var message_buf: [1024]u8 = undefined;
         const message = std.fmt.bufPrint(&message_buf, fmt, args) catch "formatting error";
         tracy.Message(message);
@@ -81,7 +87,7 @@ pub const Span = struct {
 
 // Module initialization
 pub fn init(allocator: std.mem.Allocator) void {
-    config = config_mod.BuildConfig.init(allocator);
+    config = config_mod.Config.init(allocator);
 }
 
 pub fn deinit() void {
@@ -112,3 +118,4 @@ pub fn findScope(name: []const u8) ?LogLevel {
 pub fn scoped(comptime scope: @Type(.enum_literal)) TracingScope {
     return comptime TracingScope.init(scope);
 }
+

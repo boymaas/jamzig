@@ -1,0 +1,16 @@
+{
+  "timestamp": 1757338533,
+  "git_commit": "f0203f59",
+  "params": "tiny",
+  "results": [
+    {
+      "trace_name": "preimages",
+      "iterations": 100,
+      "min_ns": 19236679,
+      "max_ns": 778724485,
+      "median_ns": 160659888,
+      "mean_ns": 209949908,
+      "stddev_ns": 191337705
+    }
+  ]
+}
