@@ -3,18 +3,22 @@ const std = @import("std");
 
 // Define LogLevel inline to avoid module conflicts
 pub const LogLevel = enum {
-    trace, debug, info, warn, err,
-    
+    trace,
+    debug,
+    info,
+    warn,
+    err,
+
     pub fn symbol(self: LogLevel) []const u8 {
         return switch (self) {
             .trace => "•",
-            .debug => "○", 
+            .debug => "○",
             .info => "→",
             .warn => "⚠",
             .err => "✖",
         };
     }
-    
+
     pub fn fromString(str: []const u8) !LogLevel {
         inline for (@typeInfo(LogLevel).@"enum".fields) |field| {
             if (std.mem.eql(u8, str, field.name)) {
@@ -104,11 +108,14 @@ pub fn deinit() void {}
 
 // Configuration API (all no-ops)
 pub fn setScope(_: []const u8, _: LogLevel) !void {}
-pub fn disableScope(_: []const u8) !void {}
+pub fn disableScope(_: []const u8) void {}
 pub fn setDefaultLevel(_: LogLevel) void {}
 pub fn reset() void {}
-pub fn findScope(_: []const u8) ?LogLevel { return null; }
+pub fn findScope(_: []const u8) ?LogLevel {
+    return null;
+}
 
 pub fn scoped(comptime scope: @Type(.enum_literal)) TracingScope {
     return comptime TracingScope.init(scope);
 }
+
