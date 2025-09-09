@@ -15,33 +15,105 @@ pub const Error = error{
     SliceTooShort,
 };
 
-/// Takes a byte slice containing instruction opcode and arguments. Slice length determines argument size.
-pub fn decodeInstruction(bytes: []const u8) Error!InstructionWithArgs {
-    const inst = std.meta.intToEnum(Instruction, bytes[0]) catch {
-        // std.debug.print("Error decoding instruction at pc {}: code 0x{X:0>2} ({d})\n", .{ pc, self.getCodeAt(pc), self.getCodeAt(pc) });
-        return Error.InvalidInstruction;
-    };
+const DecoderDispatchEntry = struct {
+    instruction: Instruction,
+    decoder: *const fn (bytes: []const u8) Error!InstructionArgs,
+};
 
-    const inst_type = InstructionType.lookUp(inst);
-    const inst_args = switch (inst_type) {
-        .NoArgs => InstructionArgs{ .NoArgs = .{ .no_of_bytes_to_skip = 0 } },
-        .OneImm => InstructionArgs{ .OneImm = try decodeOneImm(bytes[1..]) },
-        .OneOffset => InstructionArgs{ .OneOffset = try decodeOneOffset(bytes[1..]) },
-        .OneRegOneImm => InstructionArgs{ .OneRegOneImm = try decodeOneRegOneImm(bytes[1..]) },
-        .OneRegOneImmOneOffset => InstructionArgs{ .OneRegOneImmOneOffset = try decodeOneRegOneImmOneOffset(bytes[1..]) },
-        .OneRegOneExtImm => InstructionArgs{ .OneRegOneExtImm = try decodeOneRegOneExtImm(bytes[1..]) },
-        .OneRegTwoImm => InstructionArgs{ .OneRegTwoImm = try decodeOneRegTwoImm(bytes[1..]) },
-        .ThreeReg => InstructionArgs{ .ThreeReg = try decodeThreeReg(bytes[1..]) },
-        .TwoImm => InstructionArgs{ .TwoImm = try decodeTwoImm(bytes[1..]) },
-        .TwoReg => InstructionArgs{ .TwoReg = try decodeTwoReg(bytes[1..]) },
-        .TwoRegOneImm => InstructionArgs{ .TwoRegOneImm = try decodeTwoRegOneImm(bytes[1..]) },
-        .TwoRegOneOffset => InstructionArgs{ .TwoRegOneOffset = try decodeTwoRegOneOffset(bytes[1..]) },
-        .TwoRegTwoImm => InstructionArgs{ .TwoRegTwoImm = try decodeTwoRegTwoImm(bytes[1..]) },
-    };
+// Wrapper functions that return InstructionArgs directly
+fn decodeNoArgsWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .NoArgs = try decodeNoArgs(bytes) };
+}
+
+fn decodeOneImmWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .OneImm = try decodeOneImm(bytes) };
+}
+
+fn decodeTwoImmWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .TwoImm = try decodeTwoImm(bytes) };
+}
+
+fn decodeOneOffsetWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .OneOffset = try decodeOneOffset(bytes) };
+}
+
+fn decodeOneRegOneImmWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .OneRegOneImm = try decodeOneRegOneImm(bytes) };
+}
+
+fn decodeOneRegTwoImmWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .OneRegTwoImm = try decodeOneRegTwoImm(bytes) };
+}
+
+fn decodeOneRegOneImmOneOffsetWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .OneRegOneImmOneOffset = try decodeOneRegOneImmOneOffset(bytes) };
+}
+
+fn decodeOneRegOneExtImmWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .OneRegOneExtImm = try decodeOneRegOneExtImm(bytes) };
+}
+
+fn decodeTwoRegWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .TwoReg = try decodeTwoReg(bytes) };
+}
+
+fn decodeTwoRegOneImmWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .TwoRegOneImm = try decodeTwoRegOneImm(bytes) };
+}
+
+fn decodeTwoRegOneOffsetWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .TwoRegOneOffset = try decodeTwoRegOneOffset(bytes) };
+}
+
+fn decodeTwoRegTwoImmWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .TwoRegTwoImm = try decodeTwoRegTwoImm(bytes) };
+}
+
+fn decodeThreeRegWrapper(bytes: []const u8) Error!InstructionArgs {
+    return InstructionArgs{ .ThreeReg = try decodeThreeReg(bytes) };
+}
+
+// Generate dispatch table at comptime
+const DECODER_DISPATCH = blk: {
+    @setEvalBranchQuota(50000);
+    var table: [256]?DecoderDispatchEntry = [_]?DecoderDispatchEntry{null} ** 256;
+
+    for (std.meta.fields(Instruction)) |field| {
+        const inst = @field(Instruction, field.name);
+        const opcode = @intFromEnum(inst);
+        const inst_type = InstructionType.lookUp(inst);
+
+        table[opcode] = DecoderDispatchEntry{
+            .instruction = inst,
+            .decoder = switch (inst_type) {
+                .NoArgs => decodeNoArgsWrapper,
+                .OneImm => decodeOneImmWrapper,
+                .OneOffset => decodeOneOffsetWrapper,
+                .OneRegOneImm => decodeOneRegOneImmWrapper,
+                .OneRegOneImmOneOffset => decodeOneRegOneImmOneOffsetWrapper,
+                .OneRegOneExtImm => decodeOneRegOneExtImmWrapper,
+                .OneRegTwoImm => decodeOneRegTwoImmWrapper,
+                .ThreeReg => decodeThreeRegWrapper,
+                .TwoImm => decodeTwoImmWrapper,
+                .TwoReg => decodeTwoRegWrapper,
+                .TwoRegOneImm => decodeTwoRegOneImmWrapper,
+                .TwoRegOneOffset => decodeTwoRegOneOffsetWrapper,
+                .TwoRegTwoImm => decodeTwoRegTwoImmWrapper,
+            },
+        };
+    }
+
+    break :blk table;
+};
+
+pub fn decodeInstructionFast(bytes: []const u8) Error!InstructionWithArgs {
+    const opcode = bytes[0];
+    const entry = DECODER_DISPATCH[opcode] orelse return Error.InvalidInstruction;
+    const args = try entry.decoder(bytes[1..]);
 
     return InstructionWithArgs{
-        .instruction = inst,
-        .args = inst_args,
+        .instruction = entry.instruction,
+        .args = args,
     };
 }
 
@@ -56,7 +128,7 @@ inline fn getLowNibble(byte: u8) u4 {
 
 pub fn decodeNoArgs(bytes: []const u8) Error!InstructionArgs.NoArgsType {
     if (bytes.len != 0) return Error.SliceTooShort;
-    return .{ .no_of_bytes_to_skip = 1 };
+    return .{ .no_of_bytes_to_skip = 0 };
 }
 
 pub fn decodeOneImm(bytes: []const u8) Error!InstructionArgs.OneImmType {

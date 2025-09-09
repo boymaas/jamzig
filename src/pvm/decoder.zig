@@ -34,97 +34,10 @@ pub const Decoder = struct {
     }
 
     pub fn decodeInstruction(self: *const Decoder, pc: u32) Error!InstructionWithArgs {
-        const inst = std.meta.intToEnum(Instruction, self.getCodeAt(pc)) catch {
-            // std.debug.print("Error decoding instruction at pc {}: code 0x{X:0>2} ({d})\n", .{ pc, self.getCodeAt(pc), self.getCodeAt(pc) });
-            return Error.InvalidInstruction;
-        };
+        const inst_length = self.skip_l(pc + 1);
+        const bytes_slice = try self.getCodeSliceAt(pc, inst_length + 1);
 
-        const args_type = InstructionType.lookUp(inst);
-        const args = switch (args_type) {
-            .NoArgs => InstructionArgs{ .NoArgs = .{ .no_of_bytes_to_skip = 0 } },
-            .OneImm => InstructionArgs{ .OneImm = try self.decodeOneImm(pc + 1) },
-            .OneOffset => InstructionArgs{ .OneOffset = try self.decodeOneOffset(pc + 1) },
-            .OneRegOneImm => InstructionArgs{ .OneRegOneImm = try self.decodeOneRegOneImm(pc + 1) },
-            .OneRegOneImmOneOffset => InstructionArgs{ .OneRegOneImmOneOffset = try self.decodeOneRegOneImmOneOffset(pc + 1) },
-            .OneRegOneExtImm => InstructionArgs{ .OneRegOneExtImm = try self.decodeOneRegOneExtImm(pc + 1) },
-            .OneRegTwoImm => InstructionArgs{ .OneRegTwoImm = try self.decodeOneRegTwoImm(pc + 1) },
-            .ThreeReg => InstructionArgs{ .ThreeReg = try self.decodeThreeReg(pc + 1) },
-            .TwoImm => InstructionArgs{ .TwoImm = try self.decodeTwoImm(pc + 1) },
-            .TwoReg => InstructionArgs{ .TwoReg = try self.decodeTwoReg(pc + 1) },
-            .TwoRegOneImm => InstructionArgs{ .TwoRegOneImm = try self.decodeTwoRegOneImm(pc + 1) },
-            .TwoRegOneOffset => InstructionArgs{ .TwoRegOneOffset = try self.decodeTwoRegOneOffset(pc + 1) },
-            .TwoRegTwoImm => InstructionArgs{ .TwoRegTwoImm = try self.decodeTwoRegTwoImm(pc + 1) },
-        };
-
-        return InstructionWithArgs{
-            .instruction = inst,
-            .args = args,
-        };
-    }
-
-    fn decodeOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneImmType {
-        const l = @min(4, self.skip_l(pc));
-        return try decoder.decodeOneImm(
-            (try self.getCodeSliceAt(
-                pc,
-                l,
-            )).asSlice(),
-        );
-    }
-
-    fn decodeTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoImmType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeTwoImm(bytes);
-    }
-
-    fn decodeOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.OneOffsetType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeOneOffset(bytes);
-    }
-
-    fn decodeOneRegOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneImmType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeOneRegOneImm(bytes);
-    }
-
-    fn decodeOneRegTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegTwoImmType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeOneRegTwoImm(bytes);
-    }
-
-    fn decodeOneRegOneImmOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneImmOneOffsetType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeOneRegOneImmOneOffset(bytes);
-    }
-
-    fn decodeOneRegOneExtImm(self: *const Decoder, pc: u32) Error!InstructionArgs.OneRegOneExtImmType {
-        const bytes = (try self.getCodeSliceAt(pc, 10)).asSlice(); // 1 byte opcode + 1 byte reg + 8 bytes immediate
-        return try decoder.decodeOneRegOneExtImm(bytes);
-    }
-
-    fn decodeTwoReg(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeTwoReg(bytes);
-    }
-
-    fn decodeTwoRegOneImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegOneImmType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeTwoRegOneImm(bytes);
-    }
-
-    fn decodeTwoRegOneOffset(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegOneOffsetType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeTwoRegOneOffset(bytes);
-    }
-
-    fn decodeTwoRegTwoImm(self: *const Decoder, pc: u32) Error!InstructionArgs.TwoRegTwoImmType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeTwoRegTwoImm(bytes);
-    }
-
-    fn decodeThreeReg(self: *const Decoder, pc: u32) Error!InstructionArgs.ThreeRegType {
-        const bytes = (try self.getCodeSliceAt(pc, self.skip_l(pc))).asSlice();
-        return try decoder.decodeThreeReg(bytes);
+        return try decoder.decodeInstructionFast(bytes_slice.asSlice());
     }
 
     /// (215)@0.3.8 Skip function

@@ -19,7 +19,7 @@ test "encodeInstruction <==> decodeInstruction roundtrip" {
         var rinst = randomInstruction(&random);
 
         const encoded = try encoder.encodeInstructionOwned(&rinst);
-        const decoded = try decoder.decodeInstruction(encoded.asSlice());
+        const decoded = try decoder.decodeInstructionFast(encoded.asSlice());
 
         // set the rinst bytes to skip the same for the comparison, since
         // randomInstruction put this to 0
