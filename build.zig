@@ -25,7 +25,31 @@ fn applyBuildConfig(options: *std.Build.Step.Options, config: BuildConfig) void 
 }
 
 // Helper function to configure tracing module based on tracing mode
-fn configureTracing(b: *std.Build, exe: *std.Build.Step.Compile, config: BuildConfig, tracy_dep: anytype) void {
+fn configureTracingAndTracy(b: *std.Build, exe: *std.Build.Step.Compile, config: BuildConfig, target: anytype, optimize: anytype) void {
+    const tracy_needed = config.enable_tracy or config.tracing_mode == .tracy;
+
+    // Tracy Profiler
+    const tracy_dep = b.dependency("tracy", .{
+        .target = target,
+        .optimize = optimize,
+        .enable_ztracy = tracy_needed,
+        .enable_fibers = false, // Not needed - using real threads
+        .on_demand = false, // Always on when enabled
+    });
+
+    // Create ztracy options module to control enable/disable
+    const ztracy_options = b.addOptions();
+    ztracy_options.addOption(bool, "enable_ztracy", tracy_needed);
+
+    // Always use ztracy module - it handles stubs internally based on enable_ztracy option
+    const tracy_mod = tracy_dep.module("root");
+    tracy_mod.addImport("ztracy_options", ztracy_options.createModule());
+
+    exe.root_module.addImport("tracy", tracy_mod);
+    if (tracy_needed) {
+        exe.linkLibrary(tracy_dep.artifact("tracy"));
+    }
+
     // Create a separate options module for tracing with only the fields it needs
     const tracing_options = b.addOptions();
     tracing_options.addOption([]const []const u8, "enable_tracing_scopes", config.tracing_scopes);
@@ -55,24 +79,6 @@ fn configureTracing(b: *std.Build, exe: *std.Build.Step.Compile, config: BuildCo
         },
     };
     exe.root_module.addImport("tracing", tracing_mod);
-}
-
-// Helper function to configure tracy for an executable using ztracy's built-in stubs
-fn configureTracy(b: *std.Build, exe: *std.Build.Step.Compile, config: BuildConfig, tracy_dep: anytype) void {
-    const tracy_needed = config.enable_tracy or config.tracing_mode == .tracy;
-
-    // Create ztracy options module to control enable/disable
-    const ztracy_options = b.addOptions();
-    ztracy_options.addOption(bool, "enable_ztracy", tracy_needed);
-
-    // Always use ztracy module - it handles stubs internally based on enable_ztracy option
-    const tracy_mod = tracy_dep.module("root");
-    tracy_mod.addImport("ztracy_options", ztracy_options.createModule());
-
-    exe.root_module.addImport("tracy", tracy_mod);
-    if (tracy_needed) {
-        exe.linkLibrary(tracy_dep.artifact("tracy"));
-    }
 }
 
 pub fn build(b: *std.Build) !void {
@@ -173,15 +179,6 @@ pub fn build(b: *std.Build) !void {
     const base32_dep = b.dependency("base32", dep_opts);
     const base32_mod = base32_dep.module("base32");
 
-    // Tracy Profiler
-    const tracy_dep = b.dependency("tracy", .{
-        .target = target,
-        .optimize = optimize,
-        .enable_ztracy = true,
-        .enable_fibers = false, // Not needed - using real threads
-        .on_demand = false, // Always on when enabled
-    });
-
     // Rest of the existing build.zig implementation...
     var rust_deps = try buildRustDependencies(b, target, optimize);
     defer rust_deps.deinit();
@@ -203,8 +200,7 @@ pub fn build(b: *std.Build) !void {
     jamzig_exe.root_module.addImport("lsquic", lsquic_mod);
     jamzig_exe.root_module.addImport("ssl", ssl_mod);
     jamzig_exe.root_module.addImport("base32", base32_mod);
-    configureTracing(b, jamzig_exe, base_config, tracy_dep);
-    configureTracy(b, jamzig_exe, base_config, tracy_dep);
+    configureTracingAndTracy(b, jamzig_exe, base_config, target, optimize);
 
     b.installArtifact(jamzig_exe);
 
@@ -217,8 +213,7 @@ pub fn build(b: *std.Build) !void {
 
     pvm_fuzzer.root_module.addOptions("build_options", build_options);
     pvm_fuzzer.root_module.addImport("clap", clap_module);
-    configureTracing(b, pvm_fuzzer, base_config, tracy_dep);
-    configureTracy(b, pvm_fuzzer, base_config, tracy_dep);
+    configureTracingAndTracy(b, pvm_fuzzer, base_config, target, optimize);
     pvm_fuzzer.linkLibCpp();
     try rust_deps.staticallyLinkDepTo("polkavm_ffi", pvm_fuzzer);
     b.installArtifact(pvm_fuzzer);
@@ -234,8 +229,7 @@ pub fn build(b: *std.Build) !void {
     });
     jam_conformance_fuzzer.root_module.addOptions("build_options", conformance_build_options);
     jam_conformance_fuzzer.root_module.addImport("clap", clap_module);
-    configureTracing(b, jam_conformance_fuzzer, conformance_config, tracy_dep);
-    configureTracy(b, jam_conformance_fuzzer, conformance_config, tracy_dep);
+    configureTracingAndTracy(b, jam_conformance_fuzzer, conformance_config, target, optimize);
     jam_conformance_fuzzer.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_fuzzer);
     b.installArtifact(jam_conformance_fuzzer);
@@ -248,8 +242,7 @@ pub fn build(b: *std.Build) !void {
     });
     jam_conformance_target.root_module.addOptions("build_options", target_build_options);
     jam_conformance_target.root_module.addImport("clap", clap_module);
-    configureTracing(b, jam_conformance_target, target_config, tracy_dep);
-    configureTracy(b, jam_conformance_target, target_config, tracy_dep);
+    configureTracingAndTracy(b, jam_conformance_target, target_config, target, optimize);
     jam_conformance_target.linkLibCpp();
     rust_deps.staticallyLinkTo(jam_conformance_target);
     b.installArtifact(jam_conformance_target);
@@ -327,8 +320,7 @@ pub fn build(b: *std.Build) !void {
 
     // Statically link our rust_deps to the unit tests
     rust_deps.staticallyLinkTo(unit_tests);
-    configureTracing(b, unit_tests, testing_config, tracy_dep);
-    configureTracy(b, unit_tests, testing_config, tracy_dep);
+    configureTracingAndTracy(b, unit_tests, testing_config, target, optimize);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
@@ -371,8 +363,7 @@ pub fn build(b: *std.Build) !void {
 
     // Statically link our rust_deps to the test vectors
     rust_deps.staticallyLinkTo(test_vectors);
-    configureTracing(b, test_vectors, testing_config, tracy_dep);
-    configureTracy(b, test_vectors, testing_config, tracy_dep);
+    configureTracingAndTracy(b, test_vectors, testing_config, target, optimize);
 
     const run_test_vectors = b.addRunArtifact(test_vectors);
     if (b.args) |args| {
@@ -405,8 +396,7 @@ pub fn build(b: *std.Build) !void {
     bench_block_import.root_module.addOptions("build_options", bench_build_options);
     bench_block_import.root_module.addImport("pretty", pretty_module);
     bench_block_import.root_module.addImport("diffz", diffz_module);
-    configureTracing(b, bench_block_import, bench_config, tracy_dep);
-    configureTracy(b, bench_block_import, bench_config, tracy_dep);
+    configureTracingAndTracy(b, bench_block_import, bench_config, target, optimize);
     bench_block_import.linkLibCpp();
     rust_deps.staticallyLinkTo(bench_block_import);
     b.installArtifact(bench_block_import);
@@ -426,8 +416,7 @@ pub fn build(b: *std.Build) !void {
     bench_target_trace.root_module.addOptions("build_options", bench_build_options);
     bench_target_trace.root_module.addImport("pretty", pretty_module);
     bench_target_trace.root_module.addImport("diffz", diffz_module);
-    configureTracing(b, bench_target_trace, bench_config, tracy_dep);
-    configureTracy(b, bench_target_trace, bench_config, tracy_dep);
+    configureTracingAndTracy(b, bench_target_trace, bench_config, target, optimize);
     bench_target_trace.linkLibCpp();
     rust_deps.staticallyLinkTo(bench_target_trace);
     b.installArtifact(bench_target_trace);
