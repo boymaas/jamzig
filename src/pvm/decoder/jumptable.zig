@@ -20,7 +20,7 @@ pub const JumpTable = struct {
         while (i < bytes.len) : (i += item_length) {
             const idx = i / item_length;
             const value = readPackedU32(bytes[i..][0..item_length]);
-            span.debug("index {d}: {d}", .{ idx, value });
+            // span.debug("index {d}: {d}", .{ idx, value });
             indices[idx] = value;
         }
 

@@ -94,7 +94,7 @@ pub const PVMFixture = struct {
             try memory.allocatePagesAt(
                 page.address,
                 page.length / PVM.Memory.Z_P,
-                if (page.is_writable) .ReadWrite else .ReadOnly,
+                page.is_writable,
             );
         }
 
@@ -218,7 +218,7 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
     //       cost of 1 gas unit each (see src/pvm.zig getInstructionGasCost), while host calls
     //       have standardized costs (transfer: 10 + ω_9, others: 10, log: 0 per JIP-1).
     //       The test vectors use expected_gas=0 to maintain compatibility across implementations.
-    //       This should be re-enabled once the JAM community establishes consensus on 
+    //       This should be re-enabled once the JAM community establishes consensus on
     //       per-instruction gas pricing in the Graypaper.
     // if (exec_ctx.gas != test_vector.expected_gas) {
     //     std.debug.print("Gas mismatch: expected {}, got {}\n", .{ test_vector.expected_gas, exec_ctx.gas });

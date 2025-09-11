@@ -396,12 +396,16 @@ pub fn build(b: *std.Build) !void {
     bench_block_import.root_module.addOptions("build_options", bench_build_options);
     bench_block_import.root_module.addImport("pretty", pretty_module);
     bench_block_import.root_module.addImport("diffz", diffz_module);
+    bench_block_import.root_module.addImport("clap", clap_module);
     configureTracingAndTracy(b, bench_block_import, bench_config, target, optimize);
     bench_block_import.linkLibCpp();
     rust_deps.staticallyLinkTo(bench_block_import);
     b.installArtifact(bench_block_import);
 
     const run_bench_block_import = b.addRunArtifact(bench_block_import);
+    if (b.args) |args| {
+        run_bench_block_import.addArgs(args);
+    }
     const bench_block_import_step = b.step("bench-block-import", "Run block import benchmarks");
     bench_block_import_step.dependOn(&run_bench_block_import.step);
 
@@ -422,6 +426,10 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(bench_target_trace);
 
     const run_bench_target_trace = b.addRunArtifact(bench_target_trace);
+
+    if (b.args) |args| {
+        run_bench_target_trace.addArgs(args);
+    }
     const bench_target_trace_step = b.step("bench-target-trace", "Benchmark target processing traces (for profiling)");
     bench_target_trace_step.dependOn(&run_bench_target_trace.step);
 }

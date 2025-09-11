@@ -158,12 +158,13 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             var tickets = try self.resolveTickets(state, header);
             defer tickets.deinit(self.allocator);
 
-            // Parallel signature verification using WorkGroup
-            // Create WorkGroup for parallel execution
-            var work_group = self.executor.createGroup();
-            defer work_group.deinit();
             {
-                // Prepare seal context (moved from phase 7)
+                // Parallel signature verification using WorkGroup
+                // Create WorkGroup for parallel execution
+                var work_group = self.executor.createGroup();
+                defer work_group.deinit();
+
+                // Prepare seal context
                 const seal_context = SealContext{
                     .header = header,
                     .author_key = author_key,
@@ -185,6 +186,13 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                     author_key,
                     tickets.tickets != null,
                 });
+
+                // Wait for both tasks and propagate any errors (fail-fast built into WorkGroup)
+                // NOTE: we cannot optimize this by placeing this below for example structural
+                // validation because we need to ensure both tasks complete before we return otherwise
+                // structural validation could fail and and memory pointed to would be freed. Or we should ensure
+                // contexts are owned copies and we can safely ignore the threads.
+                try work_group.waitAndCheckErrors();
             }
 
             // Phase: Structural validation
@@ -195,9 +203,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
 
             // Phase: Marker timing validation
             try self.validateMarkerTiming(state, header);
-
-            // Wait for both tasks and propagate any errors (fail-fast built into WorkGroup)
-            try work_group.waitAndCheckErrors();
 
             return ValidationResult{
                 .success = true,

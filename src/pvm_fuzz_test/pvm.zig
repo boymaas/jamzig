@@ -45,7 +45,7 @@ pub const TestEnvironment = struct {
         errdefer memory.deinit();
 
         // Allocate a single page at the specified address
-        try memory.allocatePageAt(0x20000, .ReadWrite);
+        try memory.allocatePageAt(0x20000, true); // true = writable
 
         // All zereos
         const registers: [13]u64 = std.mem.zeroes([13]u64);

@@ -134,13 +134,13 @@ pub const Program = struct {
         defer mask_span.deinit();
         mask_span.debug("Mask length: {d} bytes", .{mask_length_in_bytes});
 
-        for (program.mask, 0..) |byte, i| {
+        for (program.mask) |byte| {
             // For each byte, show its bits
             var bit_str: [8]u8 = undefined;
             for (0..8) |bit| {
                 bit_str[bit] = if ((byte >> @intCast(7 - bit)) & 1 == 1) '1' else '0';
             }
-            mask_span.debug("Mask[{d:0>2}]: 0b{s} (0x{x:0>2})", .{ i, bit_str, byte });
+            // mask_span.debug("Mask[{d:0>2}]: 0b{s} (0x{x:0>2})", .{ i, bit_str, byte });
         }
 
         // Create a safe decoder for validation
@@ -261,11 +261,12 @@ pub const Program = struct {
         const jump_dest = self.jump_table.getDestination(index);
         span.trace("Computed index: {d} from address {d}/ZA-1, jump destination: {d}", .{ index, address, jump_dest });
 
-        // Validate jump destination is in a basic block
-        // NOTE: Linear search is likely faster for small programs (<20 basic blocks) due to cache locality,
-        // but binary search would scale better for complex programs with many blocks.
-        // TODO: Profile with real-world programs to determine if optimization is worthwhile.
-        if (std.mem.indexOfScalar(u32, self.basic_blocks, jump_dest) == null) {
+        // Validate jump destination is in a basic block using binary search (basic_blocks is sorted)
+        if (std.sort.binarySearch(u32, self.basic_blocks, jump_dest, struct {
+            fn orderU32(ctx: u32, item: u32) std.math.Order {
+                return std.math.order(ctx, item);
+            }
+        }.orderU32) == null) {
             span.trace("Jump destination {d} not found in basic blocks: {any}", .{ jump_dest, self.basic_blocks });
             return error.JumpAddressNotInBasicBlock;
         }
