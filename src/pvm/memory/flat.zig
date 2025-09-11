@@ -77,7 +77,7 @@ pub const FlatMemory = struct {
         defer span.deinit();
 
         // Convert stack size from bytes to pages
-        const stack_size_in_pages: u16 = try shared.sizeInBytesToPages(stack_size_in_bytes);
+        const stack_size_in_pages = try shared.sizeInBytesToPages(stack_size_in_bytes);
 
         // Create memory with the given data
         var memory = try init(
@@ -106,8 +106,8 @@ pub const FlatMemory = struct {
         allocator: Allocator,
         read_only_size_in_bytes: usize,
         read_write_size_in_bytes: usize,
-        heap_size_in_pages: u16,
-        stack_size_in_pages: u16,
+        heap_size_in_pages: u32,
+        stack_size_in_pages: u32,
         input_data_bytes: []const u8,
         dynamic_allocation_enabled: bool,
     ) !FlatMemory {
@@ -193,27 +193,27 @@ pub const FlatMemory = struct {
     /// Direct memory pointer lookup - O(1) with range checks
     /// Returns either a successful pointer or violation information
     inline fn getMemoryPtr(self: *FlatMemory, address: u32, size: usize, check_write: bool) MemoryAccessResult {
-        // Check stack
+        // Check stack region
         if (address >= self.stack_bottom and address < self.stack_base) {
-            if (size <= self.stack_base - address) {
+            if (address + size <= self.stack_base) {
                 const offset = address - self.stack_bottom;
                 return .{ .success = self.stack_data.ptr + offset };
             }
         }
 
-        // Check heap first (most common case during execution)
-        if (address >= self.heap_base) {
+        // Check heap region
+        if (address >= self.heap_base and address < self.heap_top) {
             // Check for overflow: address + size must not wrap around
-            if (address < self.heap_top and address + size <= self.heap_top) {
+            if (address + size <= self.heap_top) {
                 const offset = address - self.heap_base;
                 return .{ .success = self.heap_data.ptr + offset };
             }
         }
 
         // Check read-only section
-        if (address >= self.read_only_base and self.read_only_size > 0) {
-            const ro_end = self.read_only_base + self.read_only_size;
-            if (address < ro_end and address + size <= ro_end) {
+        const ro_end = self.read_only_base + self.read_only_size;
+        if (address >= self.read_only_base and address < ro_end) {
+            if (address + size <= ro_end) {
                 if (check_write) {
                     const violation = ViolationInfo{
                         .violation_type = .WriteProtection,
@@ -223,15 +223,16 @@ pub const FlatMemory = struct {
                     self.last_violation = violation;
                     return .{ .violation = violation };
                 }
+
                 const offset = address - self.read_only_base;
                 return .{ .success = self.read_only_data.ptr + offset };
             }
         }
 
         // Check input
-        if (address >= self.input_base and self.input_size_in_bytes > 0) {
-            const input_end = self.input_base + self.input_size_in_bytes;
-            if (address < input_end and size <= input_end - address) {
+        const input_end = self.input_base + self.input_size_in_bytes;
+        if (address >= self.input_base and address < input_end) {
+            if (address + size <= input_end) {
                 if (check_write) {
                     const violation = ViolationInfo{
                         .violation_type = .WriteProtection,
@@ -241,6 +242,7 @@ pub const FlatMemory = struct {
                     self.last_violation = violation;
                     return .{ .violation = violation };
                 }
+
                 const offset = address - self.input_base;
                 return .{ .success = self.input_data.ptr + offset };
             }
@@ -249,7 +251,7 @@ pub const FlatMemory = struct {
         // Page fault - address not in any valid region
         const violation = ViolationInfo{
             .violation_type = .NonAllocated,
-            .address = address & ~(Z_P - 1),
+            .address = (address + @as(u32, @intCast(size))) & ~(Z_P - 1),
             .attempted_size = size,
         };
 
@@ -580,11 +582,11 @@ pub const FlatMemory = struct {
     /// - The caller owns the returned memory and must free both the slice and each region's data
     /// - Compatible with both PageTableMemory and FlatMemory implementations
     /// - Maintains the same semantics as PageTableMemory.getMemorySnapshot for cross-checking
-    pub fn getMemorySnapshot(self: *FlatMemory, allocator: Allocator) !MemorySnapShot {
-        var regions = std.ArrayList(MemoryRegion).init(allocator);
+    pub fn getMemorySnapshot(self: *FlatMemory) !MemorySnapShot {
+        var regions = std.ArrayList(MemoryRegion).init(self.allocator);
         errdefer {
             for (regions.items) |region| {
-                allocator.free(region.data);
+                self.allocator.free(region.data);
             }
             regions.deinit();
         }
@@ -621,16 +623,16 @@ pub const FlatMemory = struct {
         }.add;
 
         // Add pages for read-only region
-        try addPagesForSection(&regions, allocator, self.read_only_data, self.read_only_base, false);
+        try addPagesForSection(&regions, self.allocator, self.read_only_data, self.read_only_base, false);
 
         // Add pages for heap region
-        try addPagesForSection(&regions, allocator, self.heap_data, self.heap_base, true);
+        try addPagesForSection(&regions, self.allocator, self.heap_data, self.heap_base, true);
 
         // Add pages for stack region
-        try addPagesForSection(&regions, allocator, self.stack_data, self.stack_bottom, true);
+        try addPagesForSection(&regions, self.allocator, self.stack_data, self.stack_bottom, true);
 
         // Add pages for input region
-        try addPagesForSection(&regions, allocator, self.input_data, self.input_base, false);
+        try addPagesForSection(&regions, self.allocator, self.input_data, self.input_base, false);
 
         return .{ .regions = try regions.toOwnedSlice() };
     }

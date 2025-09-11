@@ -406,7 +406,7 @@ pub const PVMFuzzer = struct {
             }
 
             // Get memory snapshot for FFI setup
-            var memory_snapshot = try exec_ctx.memory.getMemorySnapshot(self.allocator);
+            var memory_snapshot = try exec_ctx.memory.getMemorySnapshot();
             defer memory_snapshot.deinit(self.allocator);
 
             // Setup memory pages for FFI from snapshot
@@ -675,13 +675,13 @@ pub fn compareRegisters(msg: []const u8, our_registers: []const u64, ref_registe
 
 pub fn compareMemoryPages(memory: *PVM.Memory, ref_pages: []const polkavm_ffi.MemoryPage) !void {
     // Get memory snapshot for comparison
-    var memory_snapshot = try memory.getMemorySnapshot(std.testing.allocator);
-    defer memory_snapshot.deinit(std.testing.allocator);
+    var memory_snapshot = try memory.getMemorySnapshot();
+    defer memory_snapshot.deinit(memory.allocator);
 
     // Create a map of our pages by address for quick lookup
-    var our_pages = std.AutoHashMap(u32, types.MemoryRegion).init(std.testing.allocator);
+    var our_pages = std.AutoHashMap(u32, types.MemoryRegion).init(memory.allocator);
     defer our_pages.deinit();
-    
+
     for (memory_snapshot.regions) |region| {
         try our_pages.put(region.address, region);
     }
@@ -691,7 +691,7 @@ pub fn compareMemoryPages(memory: *PVM.Memory, ref_pages: []const polkavm_ffi.Me
         if (our_pages.get(ref_page.address)) |our_region| {
             // Compare page contents
             const ref_data = ref_page.data[0..ref_page.size];
-            
+
             if (!std.mem.eql(u8, ref_data, our_region.data)) {
                 std.debug.print("\nMemory state mismatch detected!\n", .{});
                 std.debug.print("Page address: 0x{X:0>8}\n", .{ref_page.address});

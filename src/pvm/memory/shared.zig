@@ -20,7 +20,7 @@ pub fn HEAP_BASE_ADDRESS(read_only_size_in_bytes: usize) !u32 {
 }
 
 /// Calculate stack bottom address based on stack size
-pub fn STACK_BOTTOM_ADDRESS(stack_size_in_pages: u16) !u32 {
+pub fn STACK_BOTTOM_ADDRESS(stack_size_in_pages: u32) !u32 {
     return STACK_BASE_ADDRESS - (@as(u32, @intCast(stack_size_in_pages)) * Z_P);
 }
 
@@ -41,8 +41,8 @@ pub fn alignToPageSize(size_in_bytes: usize) !u32 {
     return aligned_size;
 }
 
-pub fn sizeInBytesToPages(size: usize) !u16 {
-    const pages: u16 = @intCast(try std.math.divCeil(@TypeOf(size), size, Z_P));
+pub fn sizeInBytesToPages(size: usize) !u32 {
+    const pages: u32 = @intCast(try std.math.divCeil(@TypeOf(size), size, Z_P));
     return pages;
 }
 
