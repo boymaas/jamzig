@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const trace = @import("tracing").scoped(.pvm);
+const types = @import("types.zig");
 
 pub const Memory = struct {
     pub const Page = struct {
@@ -621,18 +622,22 @@ pub const Memory = struct {
     }
 
     /// Allocate a single page at a specific address
-    pub fn allocatePageAt(self: *Memory, address: u32, flags: Page.Flags) !void {
+    pub fn allocatePageAt(self: *Memory, address: u32, writable: bool) !void {
         const span = trace.span(@src(), .memory_allocate_page_at);
         defer span.deinit();
+        const flags = if (writable) .ReadWrite else .ReadOnly;
         span.debug("Allocating single page at address 0x{X:0>8} with flags {s}", .{ address, @tagName(flags) });
         return self.allocatePagesAt(address, 1, flags);
     }
 
     /// Allocate multiple contiguous pages starting at a specific address
     /// Address must be page aligned
-    pub fn allocatePagesAt(self: *Memory, address: u32, num_pages: usize, flags: Page.Flags) !void {
+    pub fn allocatePagesAt(self: *Memory, address: u32, num_pages: usize, writeable: bool) !void {
         const span = trace.span(@src(), .memory_allocate_pages_at);
         defer span.deinit();
+
+        const flags = if (writeable) .ReadWrite else .ReadOnly;
+
         span.debug("Allocating {d} contiguous pages at address 0x{X:0>8} with flags {s}", .{ num_pages, address, @tagName(flags) });
 
         // Ensure address is page aligned
@@ -1261,6 +1266,42 @@ pub const Memory = struct {
 
     pub fn writeU64(self: *Memory, address: u32, value: u64) !void {
         return self.writeInt(u64, address, value);
+    }
+
+    /// Returns a snapshot of memory organized as individual pages.
+    /// Each returned region represents exactly one page (Z_P = 4KB) of memory.
+    /// The caller owns the returned memory and must free it.
+    pub fn getMemorySnapshot(self: *Memory, allocator: Allocator) !types.MemorySnapShot {
+        const span = trace.span(@src(), .memory_snapshot);
+        defer span.deinit();
+        span.debug("Creating memory snapshot with {d} pages", .{self.page_table.pages.items.len});
+
+        var regions = std.ArrayList(types.MemoryRegion).init(allocator);
+        errdefer {
+            for (regions.items) |region| {
+                allocator.free(region.data);
+            }
+            regions.deinit();
+        }
+
+        // Iterate through all pages in the page table
+        for (self.page_table.pages.items) |page| {
+            span.trace("Snapshotting page at address 0x{X:0>8}", .{page.address});
+
+            // Duplicate the page data for the snapshot
+            const page_data = try allocator.dupe(u8, page.data);
+            errdefer allocator.free(page_data);
+
+            // Create memory region for this page
+            try regions.append(.{
+                .address = page.address,
+                .data = page_data,
+                .writable = page.flags == .ReadWrite,
+            });
+        }
+
+        span.debug("Created memory snapshot with {d} regions", .{regions.items.len});
+        return .{ .regions = try regions.toOwnedSlice() };
     }
 
     pub fn deinit(self: *Memory) void {

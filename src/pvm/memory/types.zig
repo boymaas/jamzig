@@ -57,3 +57,26 @@ pub const MemoryAccessResult = union(enum) {
     violation: ViolationInfo,
 };
 
+pub const MemorySnapShot = struct {
+    regions: []MemoryRegion,
+
+    pub fn deinit(self: *MemorySnapShot, allocator: Allocator) void {
+        for (self.regions) |*region| {
+            region.deinit(allocator);
+        }
+        allocator.free(self.regions);
+        self.* = undefined;
+    }
+};
+
+/// Represents a region of memory with address, data, and writability
+pub const MemoryRegion = struct {
+    address: u32,
+    data: []const u8,
+    writable: bool,
+
+    pub fn deinit(self: *MemoryRegion, allocator: Allocator) void {
+        allocator.free(self.data);
+        self.* = undefined;
+    }
+};

@@ -521,24 +521,29 @@ pub const FlatMemory = struct {
     // Test API functions - cleaner interface for test setup and validation
 
     /// Initialize empty memory for testing
-    pub fn initForTesting(allocator: Allocator, dynamic: bool) !FlatMemory {
+    pub fn initEmpty(allocator: Allocator, dynamic: bool) !FlatMemory {
         // Create minimal memory with small sections for testing
         return init(allocator, 0, 0, 0, 0, &[_]u8{}, dynamic);
     }
 
+    /// Allocate a single page at a specific address for testing
+    pub fn allocatePageAt(self: *FlatMemory, address: u32, writable: bool) !void {
+        return self.allocatePagesAt(address, Z_P, writable);
+    }
+
     /// Allocate memory region for testing
-    pub fn allocateTestRegion(self: *FlatMemory, address: u32, size: u32, writable: bool) !void {
+    pub fn allocatePagesAt(self: *FlatMemory, address: u32, size: u32, writable: bool) !void {
         const span = trace.span(@src(), .allocate_test_region);
         defer span.deinit();
         _ = writable;
 
         // Calculate page-aligned size
         const aligned_size = try shared.alignToPageSize(size);
-        std.debug.print("Allocating test region at 0x{X:0>8} of size {d} bytes (aligned to {d} bytes)\n", .{ address, size, aligned_size });
+        span.trace("Allocating test region at 0x{X:0>8} of size {d} bytes (aligned to {d} bytes)\n", .{ address, size, aligned_size });
 
         // Check if the address matches the start of the heap
         if (address == self.read_only_base) {
-            span.debug("Allocating {d} read only pages", .{aligned_size / Z_P});
+            span.trace("Allocating {d} read only pages", .{aligned_size / Z_P});
             const new_data = try self.allocator.realloc(self.read_only_data, aligned_size);
             @memset(new_data, 0);
             self.read_only_data = new_data;
@@ -546,7 +551,7 @@ pub const FlatMemory = struct {
             // There are some addresses requiring multiple heap pages
         } else if (address >= self.heap_base) {
             const pages = ((address + aligned_size) - self.heap_base) / Z_P;
-            span.debug("Allocating {d} heap pages", .{pages});
+            span.trace("Allocating {d} heap pages", .{pages});
             if (pages > 32) {
                 std.debug.panic("allocateTestRegion: too many pages requested to reach address 0x{X:0>8} (max 32 pages)\n", .{address});
             }
@@ -575,7 +580,7 @@ pub const FlatMemory = struct {
     /// - The caller owns the returned memory and must free both the slice and each region's data
     /// - Compatible with both PageTableMemory and FlatMemory implementations
     /// - Maintains the same semantics as PageTableMemory.getMemorySnapshot for cross-checking
-    pub fn getMemorySnapshot(self: *FlatMemory, allocator: Allocator) ![]MemoryRegion {
+    pub fn getMemorySnapshot(self: *FlatMemory, allocator: Allocator) !MemorySnapShot {
         var regions = std.ArrayList(MemoryRegion).init(allocator);
         errdefer {
             for (regions.items) |region| {
@@ -627,18 +632,10 @@ pub const FlatMemory = struct {
         // Add pages for input region
         try addPagesForSection(&regions, allocator, self.input_data, self.input_base, false);
 
-        return regions.toOwnedSlice();
+        return .{ .regions = try regions.toOwnedSlice() };
     }
 
     /// Memory region for testing and comparison
-    pub const MemoryRegion = struct {
-        address: u32,
-        data: []const u8,
-        writable: bool,
-
-        pub fn deinit(self: *MemoryRegion, allocator: Allocator) void {
-            allocator.free(self.data);
-            self.* = undefined;
-        }
-    };
+    pub const MemoryRegion = types.MemoryRegion;
+    pub const MemorySnapShot = types.MemorySnapShot;
 };
