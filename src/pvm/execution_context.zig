@@ -265,15 +265,13 @@ pub const ExecutionContext = struct {
         // Initialize registers according to specification
         // Determine trace mode from tracing scope
         const trace_mode = blk: {
-            if (@hasDecl(@import("tracing"), "boption_scope_configs")) {
-                // Check for pvm_exec=compact
-                if (@import("tracing").findScope("pvm_exec_compact") != null) {
-                    break :blk ExecutionTrace.TraceMode.compact;
-                }
-                // Check for pvm_exec (verbose)
-                if (@import("tracing").findScope("pvm_exec") != null) {
-                    break :blk ExecutionTrace.TraceMode.verbose;
-                }
+            // Check for pvm_exec=compact
+            if (@import("tracing").findScope("pvm_exec_compact") != null) {
+                break :blk ExecutionTrace.TraceMode.compact;
+            }
+            // Check for pvm_exec (verbose)
+            if (@import("tracing").findScope("pvm_exec") != null) {
+                break :blk ExecutionTrace.TraceMode.verbose;
             }
             break :blk ExecutionTrace.TraceMode.disabled;
         };
