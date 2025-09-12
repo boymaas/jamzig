@@ -33,6 +33,7 @@ fn configureTracingAndTracy(b: *std.Build, exe: *std.Build.Step.Compile, config:
         .target = target,
         .optimize = optimize,
         .enable_ztracy = tracy_needed,
+        .callstack = 10,
         .enable_fibers = false, // Not needed - using real threads
         .on_demand = false, // Always on when enabled
     });
