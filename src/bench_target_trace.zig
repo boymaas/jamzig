@@ -17,6 +17,7 @@
 const std = @import("std");
 const net = std.net;
 const types = @import("types.zig");
+const build_tuned_allocator = @import("build_tuned_allocator.zig");
 const target = @import("fuzz_protocol/target.zig");
 const messages = @import("fuzz_protocol/messages.zig");
 const frame = @import("fuzz_protocol/frame.zig");
@@ -201,11 +202,11 @@ fn loadTransitions(context: *TraceClientContext, trace_files: []const []const u8
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var alloc = build_tuned_allocator.BuildTunedAllocator.init();
+    defer alloc.deinit();
     
     // TracyAllocator is a no-op when Tracy is disabled
-    var tracy_alloc = tracy.TracyAllocator.init(gpa.allocator());
+    var tracy_alloc = tracy.TracyAllocator.init(alloc.allocator());
     const allocator = tracy_alloc.allocator();
 
     // Parse args: [iterations] [trace_name]

@@ -2,6 +2,7 @@ const std = @import("std");
 const clap = @import("clap");
 const tracing = @import("tracing");
 const io = @import("io.zig");
+const build_tuned_allocator = @import("build_tuned_allocator.zig");
 
 const target = @import("fuzz_protocol/target.zig");
 const TargetServer = target.TargetServer;
@@ -47,9 +48,9 @@ pub fn main() !void {
     const span = trace.span(@src(), .main);
     defer span.deinit();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var alloc = build_tuned_allocator.BuildTunedAllocator.init();
+    defer alloc.deinit();
+    const allocator = alloc.allocator();
 
     // Parse command line arguments
     const params = comptime clap.parseParamsComptime(

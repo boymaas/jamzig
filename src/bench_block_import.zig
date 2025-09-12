@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const testing = std.testing;
 const clap = @import("clap");
 const types = @import("types.zig");
+const build_tuned_allocator = @import("build_tuned_allocator.zig");
 const block_import = @import("block_import.zig");
 const state = @import("state.zig");
 const jamtestvectors = @import("jamtestvectors.zig");
@@ -529,11 +530,11 @@ fn parseArgs(allocator: std.mem.Allocator) !BenchmarkConfig {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var alloc = build_tuned_allocator.BuildTunedAllocator.init();
+    defer alloc.deinit();
 
     // TracyAllocator is a no-op when Tracy is disabled
-    var tracy_alloc = tracy.TracyAllocator.init(gpa.allocator());
+    var tracy_alloc = tracy.TracyAllocator.init(alloc.allocator());
     const allocator = tracy_alloc.allocator();
 
     const ctx = tracy.ZoneS(@src(), 10);

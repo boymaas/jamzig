@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const clap = @import("clap");
+const build_tuned_allocator = @import("build_tuned_allocator.zig");
 
 const pvm_fuzzer = @import("pvm_test/fuzzer/fuzzer.zig");
 const PVMFuzzer = pvm_fuzzer.PVMFuzzer;
@@ -17,9 +18,9 @@ fn showHelp(params: anytype) !void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var alloc = build_tuned_allocator.BuildTunedAllocator.init();
+    defer alloc.deinit();
+    const allocator = alloc.allocator();
 
     // Arguments parsing
     const params = comptime clap.parseParamsComptime(
