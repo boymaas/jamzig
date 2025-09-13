@@ -6,11 +6,13 @@ const version = @import("../version.zig");
 test "message_encoding_and_decoding" {
     const allocator = testing.allocator;
 
-    // Test PeerInfo message
+    // Test PeerInfo message (v1 format)
     const peer_info = messages.PeerInfo{
-        .name = "test-peer", // NOTE we use a stric string here, no deinit on the Peerinfo or message here
-        .version = version.FUZZ_TARGET_VERSION,
-        .protocol_version = version.PROTOCOL_VERSION,
+        .fuzz_version = 1,
+        .fuzz_features = 0,
+        .jam_version = version.PROTOCOL_VERSION,
+        .app_version = version.FUZZ_TARGET_VERSION,
+        .app_name = "test-peer", // NOTE we use a static string here, no deinit on the Peerinfo or message here
     };
 
     const message = messages.Message{ .peer_info = peer_info };
@@ -26,16 +28,18 @@ test "message_encoding_and_decoding" {
     var decoded = try messages.decodeMessage(allocator, encoded);
     defer decoded.deinit(allocator);
 
-    // Verify decoded message matches original
+    // Verify decoded message matches original (v1 format)
     switch (decoded) {
         .peer_info => |decoded_peer_info| {
-            try testing.expectEqualStrings(peer_info.name, decoded_peer_info.name);
-            try testing.expectEqual(peer_info.version.major, decoded_peer_info.version.major);
-            try testing.expectEqual(peer_info.version.minor, decoded_peer_info.version.minor);
-            try testing.expectEqual(peer_info.version.patch, decoded_peer_info.version.patch);
-            try testing.expectEqual(peer_info.protocol_version.major, decoded_peer_info.protocol_version.major);
-            try testing.expectEqual(peer_info.protocol_version.minor, decoded_peer_info.protocol_version.minor);
-            try testing.expectEqual(peer_info.protocol_version.patch, decoded_peer_info.protocol_version.patch);
+            try testing.expectEqual(peer_info.fuzz_version, decoded_peer_info.fuzz_version);
+            try testing.expectEqual(peer_info.fuzz_features, decoded_peer_info.fuzz_features);
+            try testing.expectEqualStrings(peer_info.app_name, decoded_peer_info.app_name);
+            try testing.expectEqual(peer_info.app_version.major, decoded_peer_info.app_version.major);
+            try testing.expectEqual(peer_info.app_version.minor, decoded_peer_info.app_version.minor);
+            try testing.expectEqual(peer_info.app_version.patch, decoded_peer_info.app_version.patch);
+            try testing.expectEqual(peer_info.jam_version.major, decoded_peer_info.jam_version.major);
+            try testing.expectEqual(peer_info.jam_version.minor, decoded_peer_info.jam_version.minor);
+            try testing.expectEqual(peer_info.jam_version.patch, decoded_peer_info.jam_version.patch);
         },
         else => try testing.expect(false), // Should be peer_info
     }

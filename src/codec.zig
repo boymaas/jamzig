@@ -510,33 +510,41 @@ fn deserializeUnion(comptime T: type, comptime params: anytype, allocator: std.m
         }
         return err;
     };
+
+    // There is always a union tag type available.
+    if (unionInfo.tag_type == null) {
+        union_span.err("Union tag type is null, we need one");
+    }
+    union_span.debug("union_tag_type: {s}", .{@typeName(unionInfo.tag_type.?)});
     union_span.trace("union_tag: {d}", .{tag_value});
 
-    inline for (unionInfo.fields, 0..) |field, idx| {
-        if (tag_value == idx) {
+    const tagTypeInfo = @typeInfo(unionInfo.tag_type.?).@"enum";
+    inline for (unionInfo.fields, tagTypeInfo.fields) |union_field, tag_type_field| {
+        const field_span = union_span.child(@src(), .field);
+        defer field_span.deinit();
+
+        if (tag_value == tag_type_field.value) {
+            field_span.trace("active union_field: {s} = {s}", .{ union_field.name, @typeName(union_field.type) });
+
             if (context) |ctx| {
-                try ctx.push(.{ .union_variant = field.name });
+                try ctx.push(.{ .union_variant = union_field.name });
             }
             errdefer if (context) |ctx| ctx.markError();
             defer if (context) |ctx| ctx.pop();
 
-            const field_span = union_span.child(@src(), .field);
-            defer field_span.deinit();
-            field_span.debug("union_field: {s}", .{field.name});
-
-            if (field.type == void) {
-                return @unionInit(T, field.name, {});
+            if (union_field.type == void) {
+                return @unionInit(T, union_field.name, {});
             } else {
-                field_span.debug("union_field_type: {s}", .{@typeName(field.type)});
+                field_span.debug("union_field_type: {s}", .{@typeName(union_field.type)});
 
-                const field_type = field.type;
-                if (@hasDecl(T, field.name ++ "_size")) {
-                    const slice = try deserializeSizedField(T, field.name, field_type, params, allocator, reader, context);
-                    return @unionInit(T, field.name, slice);
+                const field_type = union_field.type;
+                if (@hasDecl(T, union_field.name ++ "_size")) {
+                    const slice = try deserializeSizedField(T, union_field.name, field_type, params, allocator, reader, context);
+                    return @unionInit(T, union_field.name, slice);
                 }
 
-                const field_value = try deserializeInternal(field.type, params, allocator, reader, context);
-                return @unionInit(T, field.name, field_value);
+                const field_value = try deserializeInternal(union_field.type, params, allocator, reader, context);
+                return @unionInit(T, union_field.name, field_value);
             }
         }
     }
@@ -837,6 +845,13 @@ fn serializePointer(comptime T: type, comptime params: anytype, writer: anytype,
         .slice => {
             ptr_span.debug("slice: len={d}", .{value.len});
             try writeInteger(value.len, writer);
+
+            if (pointerInfo.child == u8) {
+                ptr_span.debug("slice: byte array optimization", .{});
+                ptr_span.trace("bytes: {s}", .{std.fmt.fmtSliceHexLower(value)});
+                try writer.writeAll(value);
+                return;
+            }
 
             for (value, 0..) |item, i| {
                 const item_span = ptr_span.child(@src(), .slice_item);

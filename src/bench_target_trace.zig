@@ -57,11 +57,13 @@ const TraceClientContext = struct {
 
         std.debug.print("Client connected, performing handshake...\n", .{});
 
-        // Send handshake
+        // Send handshake (v1 format)
         const peer_info = messages.PeerInfo{
-            .name = "bench-target-trace",
-            .version = version.FUZZ_TARGET_VERSION,
-            .protocol_version = version.PROTOCOL_VERSION,
+            .fuzz_version = version.FUZZ_PROTOCOL_VERSION,
+            .fuzz_features = version.DEFAULT_FUZZ_FEATURES,
+            .jam_version = version.PROTOCOL_VERSION,
+            .app_version = version.FUZZ_TARGET_VERSION,
+            .app_name = "bench-target-trace",
         };
         const handshake_msg = messages.Message{ .peer_info = peer_info };
 
@@ -107,11 +109,11 @@ const TraceClientContext = struct {
                 defer fuzz_state.deinit(context.allocator);
 
                 const block = first_transition.block();
-                const set_state_msg = messages.Message{ .set_state = .{ .header = block.header, .state = fuzz_state } };
-                const set_state_data = try messages.encodeMessage(context.allocator, set_state_msg);
-                defer context.allocator.free(set_state_data);
+                const initialize_msg = messages.Message{ .initialize = .{ .header = block.header, .keyvals = fuzz_state, .ancestry = messages.Ancestry.Empty } };
+                const initialize_data = try messages.encodeMessage(context.allocator, initialize_msg);
+                defer context.allocator.free(initialize_data);
 
-                try frame.writeFrame(socket, set_state_data);
+                try frame.writeFrame(socket, initialize_data);
                 const state_response = try frame.readFrame(context.allocator, socket);
                 defer context.allocator.free(state_response);
 

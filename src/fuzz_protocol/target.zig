@@ -26,7 +26,7 @@ pub const RestartBehavior = enum {
 pub const ServerState = enum {
     /// Initial state, no connection established
     initial,
-    /// Handshake completed, ready to receive SetState
+    /// Handshake completed, ready to receive Initialize
     handshake_complete,
     /// State initialized, ready for block operations
     ready,
@@ -240,25 +240,31 @@ pub fn TargetServer(comptime IOExecutor: type) type {
 
             switch (message) {
                 .peer_info => |peer_info| {
-                    span.debug("Processing PeerInfo from: {s}", .{peer_info.name});
+                    span.debug("Processing PeerInfo v{d} from: {s}", .{ peer_info.fuzz_version, peer_info.app_name });
+                    span.debug("Remote features: 0x{x}", .{peer_info.fuzz_features});
 
-                    // Respond with our own peer info, need to allocate
-                    // as we are moving ownership to calling scope which will deinit
+                    // Calculate negotiated features (intersection)
+                    const negotiated_features = peer_info.fuzz_features & version.DEFAULT_FUZZ_FEATURES;
+                    span.debug("Negotiated features: 0x{x}", .{negotiated_features});
+
+                    // Respond with our own peer info
                     const our_peer_info = try messages.PeerInfo.buildFromStaticString(
                         self.allocator,
-                        version.TARGET_NAME,
-                        version.FUZZ_TARGET_VERSION,
+                        version.FUZZ_PROTOCOL_VERSION,
+                        version.DEFAULT_FUZZ_FEATURES,
                         version.PROTOCOL_VERSION,
+                        version.FUZZ_TARGET_VERSION,
+                        version.TARGET_NAME,
                     );
 
                     self.server_state = .handshake_complete;
                     return messages.Message{ .peer_info = our_peer_info };
                 },
 
-                .set_state => |set_state| {
+                .initialize => |initialize| {
                     if (self.server_state != .handshake_complete and self.server_state != .ready) return error.HandshakeNotComplete;
 
-                    span.debug("Processing SetState with {d} key-value pairs", .{set_state.state.items.len});
+                    span.debug("Processing Initialize with {d} key-value pairs, ancestry length: {d}", .{ initialize.keyvals.items.len, initialize.ancestry.items.len });
 
                     // Clear current state
                     if (self.current_state) |*s| s.deinit(self.allocator);
@@ -267,7 +273,7 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                     self.current_state = try state_converter.fuzzStateToJamState(
                         messages.FUZZ_PARAMS,
                         self.allocator,
-                        set_state.state,
+                        initialize.keyvals,
                     );
 
                     self.current_state_root = try self.computeStateRoot();
@@ -288,8 +294,10 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                         self.current_state_root.?, // CACHED value (required)
                         &block,
                     ) catch |err| {
-                        std.debug.print("Failed to import block: {s}. State remains unchanged.\n", .{@errorName(err)});
-                        return messages.Message{ .state_root = self.current_state_root.? };
+                        span.err("Failed to import block: {s}. Sending error response.", .{@errorName(err)});
+                        // Allocate error message string
+                        const error_msg = try std.fmt.allocPrint(self.allocator, "Block import failed: {s}", .{@errorName(err)});
+                        return messages.Message{ .@"error" = error_msg };
                     };
                     defer result.deinit();
 
