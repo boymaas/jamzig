@@ -236,8 +236,21 @@ pub fn StateTransition(comptime params: Params) type {
         /// IMPORTANT: This is used for fork detection in the fuzz protocol.
         /// We need to know the resulting state root before deciding whether to commit.
         pub fn computeStateRoot(self: *const Self, allocator: std.mem.Allocator) !types.StateRoot {
-            const state_dict = @import("state_dictionary.zig");
-            return try state_dict.buildStateRootFromDelta(params, allocator, self);
+            // Create a merged view state that points to the right sources without copying
+            var merged_view = State{};
+            // No deinit, as we just want to create a view and then discard it
+
+            // For each field, take from prime if present, otherwise from base
+            inline for (std.meta.fields(State)) |field| {
+                const prime_value = @field(self.prime, field.name);
+                if (prime_value != null) {
+                    @field(merged_view, field.name) = prime_value;
+                } else {
+                    @field(merged_view, field.name) = @field(self.base, field.name);
+                }
+            }
+
+            return try merged_view.buildStateRoot(allocator);
         }
 
         /// frees all owned memory except non-owned self.base
