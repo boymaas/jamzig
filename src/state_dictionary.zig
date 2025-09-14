@@ -614,6 +614,31 @@ pub fn buildStateMerklizationDictionary(
     return try buildStateMerklizationDictionaryWithConfig(params, allocator, state, .{});
 }
 
+/// Builds state root from a StateDelta without creating temporary merged state.
+/// This avoids the expensive clone + merge + discard pattern in computeStateRoot.
+/// Takes from prime if modified, otherwise from base for each state component.
+pub fn buildStateRootFromDelta(
+    comptime params: Params,
+    allocator: std.mem.Allocator,
+    delta: anytype, // StateTransition(params)
+) !types.StateRoot {
+    // Create a merged view state that points to the right sources without copying
+    var merged_view = jamstate.JamState(params){};
+
+    // For each field, take from prime if present, otherwise from base
+    inline for (std.meta.fields(@TypeOf(delta.base.*))) |field| {
+        const prime_value = @field(delta.prime, field.name);
+        if (prime_value != null) {
+            @field(merged_view, field.name) = prime_value;
+        } else {
+            @field(merged_view, field.name) = @field(delta.base, field.name);
+        }
+    }
+
+    // Build state root from the merged view
+    return try merged_view.buildStateRoot(allocator);
+}
+
 // -- Unit tests --
 
 const testing = std.testing;
