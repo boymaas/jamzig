@@ -230,6 +230,21 @@ pub fn StateTransition(comptime params: Params) type {
             try @constCast(self.base).merge(&self.prime, self.allocator);
         }
 
+        /// Compute the state root of the transition result WITHOUT committing changes.
+        /// This creates a temporary merged view of base + prime for root calculation.
+        /// The temporary state is discarded after root computation.
+        ///
+        /// IMPORTANT: This is used for fork detection in the fuzz protocol.
+        /// We need to know the resulting state root before deciding whether to commit.
+        pub fn computeStateRoot(self: *const Self, allocator: std.mem.Allocator) !types.StateRoot {
+            // Create temporary merged state (will be discarded)
+            var temp_state = try @constCast(self).cloneBaseAndMergeWithPrime();
+            defer temp_state.deinit(allocator);
+
+            // Compute state root from the merged view
+            return try temp_state.buildStateRoot(allocator);
+        }
+
         /// frees all owned memory except non-owned self.base
         pub fn deinit(self: *Self) void {
             self.prime.deinit(self.allocator);

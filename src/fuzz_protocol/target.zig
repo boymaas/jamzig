@@ -48,6 +48,11 @@ pub fn TargetServer(comptime IOExecutor: type) type {
         // Block importer
         block_importer: block_import.BlockImporter(IOExecutor, messages.FUZZ_PARAMS),
 
+        // Fork handling state
+        last_block_hash: ?types.Hash = null,
+        parent_block_hash: ?types.Hash = null,
+        pending_result: ?block_import.BlockImporter(IOExecutor, messages.FUZZ_PARAMS).ImportResult = null,
+
         // Server management
         restart_behavior: RestartBehavior = .restart_on_disconnect,
 
@@ -67,6 +72,9 @@ pub fn TargetServer(comptime IOExecutor: type) type {
         pub fn deinit(self: *Self) void {
             // Deinit JAM state
             if (self.current_state) |*s| s.deinit(self.allocator);
+
+            // Clean up pending result
+            if (self.pending_result) |*result| result.deinit();
 
             // Clean up socket file if it exists
             std.fs.deleteFileAbsolute(self.socket_path) catch |err| {
@@ -296,7 +304,56 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                     span.debug("Processing ImportBlock", .{});
                     span.trace("{}", .{types.fmt.format(block)});
 
-                    // Use unified block importer with validation
+                    // Calculate current block hash for fork tracking
+                    const block_hash = try block.header.header_hash(messages.FUZZ_PARAMS, self.allocator);
+
+                    // Fork detection: check if this block's parent matches the last block
+                    const is_fork = if (self.last_block_hash) |last| blk: {
+                        if (std.mem.eql(u8, &block.header.parent, &last)) {
+                            // Sequential block - continues from last block
+                            span.debug("Sequential block detected", .{});
+                            break :blk false;
+                        } else if (self.parent_block_hash) |parent| {
+                            if (std.mem.eql(u8, &block.header.parent, &parent)) {
+                                // Fork - sibling of last block
+                                span.debug("Fork detected: block is sibling of last block", .{});
+                                break :blk true;
+                            } else {
+                                // Invalid - parent doesn't match last or parent
+                                span.err("Invalid block parent: expected {s} or {s}, got {s}", .{
+                                    std.fmt.fmtSliceHexLower(&last),
+                                    std.fmt.fmtSliceHexLower(&parent),
+                                    std.fmt.fmtSliceHexLower(&block.header.parent),
+                                });
+                                const error_msg = try std.fmt.allocPrint(
+                                    self.allocator,
+                                    "Invalid parent hash: not last block or parent",
+                                    .{},
+                                );
+                                return messages.Message{ .@"error" = error_msg };
+                            }
+                        } else {
+                            // No parent tracked yet, assume sequential
+                            break :blk false;
+                        }
+                    } else false;
+
+                    // Handle fork by discarding pending result (state stays at parent)
+                    if (is_fork) {
+                        if (self.pending_result) |*result| {
+                            result.deinit();
+                            self.pending_result = null;
+                        }
+                    } else if (self.pending_result) |*result| {
+                        // Sequential block - commit pending changes from previous block
+                        span.debug("Sequential block: committing pending changes", .{});
+                        try result.commit();
+                        result.deinit();
+                        self.pending_result = null;
+                        self.parent_block_hash = self.last_block_hash;
+                    }
+
+                    // Import new block without committing
                     var result = self.block_importer.importBlockWithCachedRoot(
                         &self.current_state.?,
                         self.current_state_root.?, // CACHED value (required)
@@ -307,11 +364,11 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                         const error_msg = try std.fmt.allocPrint(self.allocator, "Block import failed: {s}", .{@errorName(err)});
                         return messages.Message{ .@"error" = error_msg };
                     };
-                    defer result.deinit();
 
                     span.debug("Block imported successfully, sealed with tickets: {}", .{result.sealed_with_tickets});
 
                     // SET TO TRUE to simulate a failing state transition
+                    // FIXME: remove when done
                     if (false) {
                         var pi_prime: *@import("../state.zig").Pi = result.state_transition.get(.pi_prime) catch |err| {
                             span.err("State transition failed: {s}", .{@errorName(err)});
@@ -320,13 +377,17 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                         pi_prime.current_epoch_stats.items[0].blocks_produced += 1; // Increment epoch stats for testing
                     }
 
-                    // Merge the transition results into our current state
-                    try result.state_transition.mergePrimeOntoBase();
+                    // Compute state root from uncommitted transition
+                    const new_state_root = try result.state_transition.computeStateRoot(self.allocator);
 
-                    // Update our cached state root
-                    self.current_state_root = try self.computeStateRoot();
+                    // Store pending result for potential commit later
+                    self.pending_result = result;
+                    self.current_state_root = new_state_root;
+                    self.last_block_hash = block_hash;
 
-                    return messages.Message{ .state_root = self.current_state_root.? };
+                    span.debug("Block processed, state root: {s}", .{std.fmt.fmtSliceHexLower(&new_state_root)});
+
+                    return messages.Message{ .state_root = new_state_root };
                 },
 
                 .get_state => |header_hash| {

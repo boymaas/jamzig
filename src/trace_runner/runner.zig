@@ -18,7 +18,6 @@ const io = @import("../io.zig");
 // W3F Traces Tests
 
 pub const RunConfig = struct {
-    mode: enum { CONTINOUS_MODE, TRACE_MODE },
     quiet: bool = false,
 };
 
@@ -81,8 +80,9 @@ pub fn runTracesInDir(
         if (current_state) |*cs| cs.deinit(allocator);
     }
 
-    // Track last post-state root to verify trace continuity
-    var last_post_state_root: ?[32]u8 = null;
+    // Track block hashes for fork detection
+    var last_block_hash: ?[32]u8 = null;
+    var last_block_parent_hash: ?[32]u8 = null;
 
     // Track no-op blocks for result
     var result = RunResult{};
@@ -109,31 +109,52 @@ pub fn runTracesInDir(
         // Validator Root Calculations
         try state_transition.validateRoots(allocator);
 
-        // Check trace continuity: compare last post-state root with current pre-state root
-        if (config.mode == .CONTINOUS_MODE) {
-            if (last_post_state_root) |last_root| {
-                const current_pre_root = state_transition.preStateRoot();
-                if (!std.mem.eql(u8, &last_root, &current_pre_root)) {
+        // Single fork detection calculation
+        var is_fork = false;
+        if (last_block_hash) |last_hash| {
+            const current_parent = state_transition.block().header.parent;
+            if (!std.mem.eql(u8, &last_hash, &current_parent)) {
+                // Check if this is a fork (siblings have same parent)
+                if (last_block_parent_hash) |last_parent| {
+                    is_fork = std.mem.eql(u8, &last_parent, &current_parent);
+                }
+                if (!is_fork) {
+                    // Not a fork and not continuous = error
                     if (!config.quiet) {
                         std.debug.print("\x1b[31m=== Trace continuity error ===\x1b[0m\n", .{});
-                        std.debug.print("Last post-state root: {s}\n", .{std.fmt.fmtSliceHexLower(&last_root)});
-                        std.debug.print("Current pre-state root: {s}\n", .{std.fmt.fmtSliceHexLower(&current_pre_root)});
-                        std.debug.print("The traces are not continuous - the previous post-state root doesn't match the current pre-state root!\n", .{});
+                        std.debug.print("Last block hash: {s}\n", .{std.fmt.fmtSliceHexLower(&last_hash)});
+                        std.debug.print("Current block parent: {s}\n", .{std.fmt.fmtSliceHexLower(&current_parent)});
+                        std.debug.print("The blocks are not continuous - the current block's parent doesn't match the last block hash!\n", .{});
                     }
                     return error.TraceContinuityError;
                 }
             }
         }
 
-        // Initialize genesis state if needed, and in TRACE_MODE
+        // Log fork if detected
+        if (is_fork and !config.quiet) {
+            const current_parent = state_transition.block().header.parent;
+            std.debug.print("\x1b[33m=== Fork detected ===\x1b[0m\n", .{});
+            std.debug.print("Current block parent: {s}\n", .{std.fmt.fmtSliceHexLower(&current_parent)});
+            if (last_block_parent_hash) |last_parent| {
+                std.debug.print("Last block parent: {s}\n", .{std.fmt.fmtSliceHexLower(&last_parent)});
+            }
+            std.debug.print("Block is a sibling of the last block (trivial fork)\n", .{});
+        }
+
+        // Initialize genesis state if needed or when fork detected
         // we always initialize current_state to the pre_state of the trace to ensure
         // we can validate the state transition correctly.
-        if (current_state == null or config.mode == .TRACE_MODE) {
+
+        if (current_state == null or is_fork) {
+            if (is_fork and !config.quiet) {
+                std.debug.print("\x1b[33m=== Fork detected - resetting to fork point ===\x1b[0m\n", .{});
+            }
             // std.debug.print("Initializing genesis state...\n", .{});
             var pre_state_dict = try state_transition.preStateAsMerklizationDict(allocator);
             defer pre_state_dict.deinit();
 
-            // If we are in TRACE_MODE, we need to deinit our previous current_state
+            // If we are handling fork, we need to deinit our previous current_state
             if (current_state) |*cs| cs.deinit(allocator);
 
             current_state = try state_dict.reconstruct.reconstructState(
@@ -238,8 +259,6 @@ pub fn runTracesInDir(
                     if (!config.quiet) {
                         std.debug.print("\x1b[32m✓ State correctly remained unchanged (no-op block validated)\x1b[0m\n", .{});
                     }
-                    // Update last_post_state_root for continuity
-                    last_post_state_root = expected_post_root;
                     continue; // Skip to next block
                 } else {
                     if (!config.quiet) {
@@ -296,7 +315,6 @@ pub fn runTracesInDir(
                         if (!config.quiet) {
                             std.debug.print("\x1b[32m✓ State correctly remained unchanged after retry\x1b[0m\n", .{});
                         }
-                        last_post_state_root = expected_post_root;
                         continue;
                     }
                 }
@@ -334,8 +352,6 @@ pub fn runTracesInDir(
                 }
             }
 
-            // Update last_post_state_root for continuity
-            last_post_state_root = expected_post_root;
             continue; // Skip to next block
         }
 
@@ -403,8 +419,11 @@ pub fn runTracesInDir(
             &state_root,
         );
 
-        // Save this post-state root for next iteration's continuity check
-        last_post_state_root = expected_post_root;
+        // Save block hash for next iteration's fork detection
+        // Track parent for fork detection
+        const block_hash = try state_transition.block().header.header_hash(params, allocator);
+        last_block_parent_hash = state_transition.block().header.parent;
+        last_block_hash = block_hash;
     }
 
     // Build final result

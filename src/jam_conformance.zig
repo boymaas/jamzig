@@ -224,7 +224,7 @@ test "jam-conformance:traces" {
             loader,
             allocator,
             entry.full_path,
-            RunConfig{ .mode = .CONTINOUS_MODE, .quiet = false },
+            RunConfig{ .quiet = false },
         );
         defer run_result.deinit(allocator);
     } else {
@@ -410,7 +410,7 @@ fn runTraceSummary(allocator: std.mem.Allocator, collection: *const TraceCollect
             loader,
             allocator,
             entry.full_path,
-            RunConfig{ .mode = .CONTINOUS_MODE, .quiet = true },
+            RunConfig{ .quiet = true },
         ) catch |err| {
             std.debug.print("[{d:3}/{d:3}] [{s:7}] {s}: ❌ {s}\n", .{ idx, total_count, entry.source_name, entry.timestamp, @errorName(err) });
             stats_entry.value_ptr.failed += 1;

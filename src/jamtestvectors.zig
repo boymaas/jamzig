@@ -28,7 +28,7 @@ test "w3f:traces:fallback" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/fallback",
-        RunConfig{ .mode = .CONTINOUS_MODE },
+        RunConfig{},
     );
     defer result.deinit(allocator);
 }
@@ -45,7 +45,7 @@ test "w3f:traces:safrole" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/safrole",
-        RunConfig{ .mode = .CONTINOUS_MODE },
+        RunConfig{},
     );
     defer result.deinit(allocator);
 }
@@ -62,7 +62,7 @@ test "w3f:traces:preimages_normal" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/preimages",
-        RunConfig{ .mode = .CONTINOUS_MODE },
+        RunConfig{},
     );
     defer result.deinit(allocator);
 }
@@ -79,7 +79,7 @@ test "w3f:traces:preimages_light" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/preimages_light",
-        RunConfig{ .mode = .CONTINOUS_MODE },
+        RunConfig{},
     );
     defer result.deinit(allocator);
 }
@@ -96,7 +96,7 @@ test "w3f:traces:storage" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/storage",
-        RunConfig{ .mode = .CONTINOUS_MODE },
+        RunConfig{},
     );
     defer result.deinit(allocator);
 }
@@ -113,7 +113,7 @@ test "w3f:traces:storage_light" {
         loader.loader(),
         allocator,
         "src/jamtestvectors/data/traces/storage_light",
-        RunConfig{ .mode = .CONTINOUS_MODE },
+        RunConfig{},
     );
     defer result.deinit(allocator);
 }
