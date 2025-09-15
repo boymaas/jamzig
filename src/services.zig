@@ -447,14 +447,17 @@ pub const ServiceAccount = struct {
             // Validate status transitions per graypaper
             switch (pi.len) {
                 0 => {
+                    span.warn("Action: Already pending, cannot re-solicit", .{});
                     // Status [] - Already pending, can't re-solicit
                     return error.AlreadySolicited;
                 },
                 1 => {
+                    span.warn("Action: Already available, no need to sollicit", .{});
                     // Status [x] - Already available, no need to solicit
                     return error.AlreadyAvailable;
                 },
                 2 => {
+                    span.debug("Action: Valid resollicitation after unavailable period", .{});
                     // Status [x,y] - Valid re-solicitation after unavailable period
                     // Transition: [x,y] → [x,y,t]
                     preimage_lookup.status[2] = current_timeslot;
@@ -465,15 +468,18 @@ pub const ServiceAccount = struct {
                     return;
                 },
                 3 => {
+                    span.warn("Action: Already Resolicited", .{});
                     // Status [x,y,z] - Already re-solicited, can't re-solicit again
                     return error.AlreadyReSolicited;
                 },
                 else => {
                     // Invalid status length
+                    span.err("Action: Invalid state", .{});
                     return error.InvalidState;
                 },
             }
         } else {
+            span.trace("Action: Creating new lookup with empty status", .{});
             // If no lookup exists yet, create a new one with an empty status
             const new_lookup = PreimageLookup{
                 .status = .{ null, null, null },

@@ -34,11 +34,31 @@ pub const Span = struct {
             .saved_depth = depth,
         };
 
+        const cfg = getConfig();
+        if (cfg.findScope(scope)) |_| {
+            for (0..depth * 2) |_| {
+                std.debug.print(" ", .{});
+            }
+            std.debug.print("\x1b[1;34m", .{}); // Bold blue for scope/operation
+            std.debug.print("[{s}] BEGIN {s}", .{ scope, operation });
+            std.debug.print("\x1b[0m\n", .{}); // Reset color and add newline
+        }
+
         depth += 1;
         return span;
     }
 
     pub fn deinit(self: *const Span) void {
+        const cfg = getConfig();
+        if (cfg.findScope(self.scope)) |_| {
+            for (0..self.saved_depth * 2) |_| {
+                std.debug.print(" ", .{});
+            }
+            std.debug.print("\x1b[1;34m", .{}); // Bold blue for scope/operation
+            std.debug.print("[{s}] END {s}", .{ self.scope, self.operation });
+            std.debug.print("\x1b[0m\n", .{}); // Reset color and add newline
+        }
+
         depth = self.saved_depth;
     }
 
@@ -53,18 +73,6 @@ pub const Span = struct {
 
         if (@intFromEnum(level) < @intFromEnum(scope_level)) {
             return;
-        }
-
-        // Emit operation name once per span
-        if (!self.operation_emitted) {
-            std.debug.print("\x1b[1;34m", .{}); // Bold blue for scope/operation
-            // Indent based on depth
-            for (0..self.saved_depth * 2) |_| {
-                std.debug.print(" ", .{});
-            }
-            std.debug.print("[{s}] {s}\n", .{ self.scope, self.operation });
-            // Mark operation as emitted (requires mutable access)
-            @constCast(self).operation_emitted = true;
         }
 
         // Indent based on depth

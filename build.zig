@@ -109,8 +109,7 @@ pub fn build(b: *std.Build) !void {
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
 
     // Parse command-line options
-    const raw_tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
-    const tracing_scopes = parseTracingScopes(b.allocator, raw_tracing_scopes) catch &[_][]const u8{};
+    const tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
 
     // Create base configuration from command-line options
     const base_config = BuildConfig{

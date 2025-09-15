@@ -141,8 +141,9 @@ pub fn invoke(
     };
 
     // Update the balance, and commit to the balance to services
-    span.debug("Found service account for ID {d}", .{context.service_id});
     destination_account.balance += total_transfer_amount;
+    span.debug("Service {d}: updating balance to {d}", .{ context.service_id, destination_account.balance });
+
     // NOTE: this commits the modification to the service accounts, which entails
     // removing and deinit the previous version and overwriting it with destination_accounts
     try context.service_accounts.commit();

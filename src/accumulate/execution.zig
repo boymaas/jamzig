@@ -284,8 +284,7 @@ pub fn parallelizedAccumulation(
     errdefer meta.deinit.deinitHashMapValuesAndMap(allocator, service_results);
 
     // Smart parallelization decision based on workload complexity
-    const PARALLEL_SERVICE_THRESHOLD = 3; // Break-even point from benchmarks
-    const PARALLEL_GAS_THRESHOLD = params.gas_alloc_accumulation / 5; // 20% of total gas
+    const PARALLEL_SERVICE_THRESHOLD = 2;
 
     // Calculate total work complexity
     var total_gas_complexity: u64 = 0;
@@ -297,8 +296,7 @@ pub fn parallelizedAccumulation(
         }
     }
 
-    const use_parallel = service_ids.count() >= PARALLEL_SERVICE_THRESHOLD or
-        total_gas_complexity >= PARALLEL_GAS_THRESHOLD;
+    const use_parallel = service_ids.count() >= PARALLEL_SERVICE_THRESHOLD;
 
     span.debug("Parallelization decision: services={d}, gas_complexity={d}, use_parallel={}", .{ service_ids.count(), total_gas_complexity, use_parallel });
 
@@ -306,6 +304,9 @@ pub fn parallelizedAccumulation(
     if (service_ids.count() == 0) {
         // No services to process
     } else if (!use_parallel) {
+        const seq_span = span.child(@src(), .sequential_accumulation);
+        defer seq_span.deinit();
+
         // Use optimized sequential processing - avoids thread coordination overhead
         for (service_ids.keys()) |service_id| {
             const maybe_operands = service_operands.getOperands(service_id);
@@ -321,6 +322,9 @@ pub fn parallelizedAccumulation(
             try service_results.put(service_id, result);
         }
     } else {
+        const par_span = span.child(@src(), .parallel_accumulation);
+        defer par_span.deinit();
+
         // Use parallel processing for high-complexity workloads - lock-free implementation
         var task_group = io_executor.createGroup();
 

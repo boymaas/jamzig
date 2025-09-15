@@ -462,16 +462,26 @@ pub fn HostCalls(comptime params: Params) type {
             const gas_limit = exec_ctx.registers[9]; // Gas limit for on_transfer
             const memo_ptr = exec_ctx.registers[10]; // Pointer to memo data
 
-            const gas_costs = 10 + @as(i64, @intCast(gas_limit));
-            span.debug("charging {d} gas", .{gas_costs});
-            exec_ctx.gas -= gas_costs;
-
             span.debug("Host call: transfer from service {d} to {d}", .{
                 ctx_regular.service_id, destination_id,
             });
             span.debug("Amount: {d}, Gas limit: {d}, Memo ptr: 0x{x}", .{
                 amount, gas_limit, memo_ptr,
             });
+
+            const gas_costs = 10 + @as(i64, @intCast(gas_limit));
+            span.debug("charging {d} gas", .{gas_costs});
+            exec_ctx.gas -= gas_costs;
+
+            // Read memo data from memory
+            span.debug("Reading memo data from memory at 0x{x}", .{memo_ptr});
+            var memo_slice = exec_ctx.memory.readSlice(@truncate(memo_ptr), params.transfer_memo_size) catch {
+                span.err("Memory access failed while reading memo data", .{});
+                return .{ .terminal = .panic };
+            };
+            defer memo_slice.deinit();
+
+            span.trace("Memo data: {s}", .{std.fmt.fmtSliceHexLower(memo_slice.buffer)});
 
             // Get source service account
             span.debug("Looking up source service account", .{});
@@ -503,26 +513,17 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Checking source balance: {d} against transfer amount: {d}", .{
                 source_service.balance, amount,
             });
-            if (source_service.balance < amount) {
-                span.debug("Insufficient balance, returning CASH error", .{});
+
+            const footprint = source_service.getStorageFootprint(params);
+
+            if (source_service.balance -| amount < footprint.a_t) {
+                span.warn("Transferring would push balance under threshold balance, returning CASH error", .{});
                 return HostCallError.CASH;
             }
 
-            // Read memo data from memory
-            span.debug("Reading memo data from memory at 0x{x}", .{memo_ptr});
-            var memo_slice = exec_ctx.memory.readSlice(@truncate(memo_ptr), params.transfer_memo_size) catch {
-                span.err("Memory access failed while reading memo data", .{});
-                return .{ .terminal = .panic };
-            };
-            defer memo_slice.deinit();
-
-            span.trace("Memo data (first 32 bytes max): {s}", .{
-                std.fmt.fmtSliceHexLower(memo_slice.buffer[0..@min(32, memo_slice.buffer.len)]),
-            });
-
             // Create a memo buffer and copy data from memory
-            var memo: [128]u8 = [_]u8{0} ** 128;
-            @memcpy(memo[0..@min(memo_slice.buffer.len, 128)], memo_slice.buffer[0..@min(memo_slice.buffer.len, 128)]);
+            var memo: [params.transfer_memo_size]u8 = [_]u8{0} ** params.transfer_memo_size;
+            @memcpy(&memo, memo_slice.buffer[0..params.transfer_memo_size]);
 
             // Create a deferred transfer
             span.debug("Creating deferred transfer", .{});
@@ -721,7 +722,7 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             // Get the calling service account
-            span.debug("Looking up calling service account", .{});
+            span.debug("Looking up calling service account: {d}", .{ctx_regular.service_id});
             const calling_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable instance", .{});
                 return .{ .terminal = .panic };
@@ -769,8 +770,9 @@ pub fn HostCalls(comptime params: Params) type {
             });
 
             // Check if caller has enough balance
-            if (calling_service.balance < initial_balance) {
-                span.debug("Insufficient balance to create new service, returning CASH error", .{});
+            const calling_footprint = calling_service.getStorageFootprint(params);
+            if (calling_service.balance -| initial_balance < calling_footprint.a_t) {
+                span.debug("Insufficient balance to create new service, under footprint, returning CASH error", .{});
                 // Rollback service creation
                 _ = ctx_regular.context.service_accounts.removeService(ctx_regular.new_service_id) catch {};
                 return HostCallError.CASH;
@@ -1071,7 +1073,7 @@ pub fn HostCalls(comptime params: Params) type {
             const additional_balance_needed = params.min_balance_per_item +
                 params.min_balance_per_octet * additional_storage_size;
 
-            if (footprint.a_t + additional_balance_needed > service_account.balance) {
+            if (service_account.balance - additional_balance_needed < footprint.a_t) {
                 span.debug("Insufficient balance for soliciting preimage, returning FULL", .{});
                 return HostCallError.FULL;
             }
@@ -1374,6 +1376,9 @@ pub fn HostCalls(comptime params: Params) type {
                 span.err("Failed to take ownership of data buffer", .{});
                 return .{ .terminal = .panic };
             };
+
+            span.debug("Storing provided preimage in context: key={any}", .{key});
+            span.trace("Storing provided preimage in context: key={any} data={}", .{ key, std.fmt.fmtSliceHexLower(data_owned) });
             ctx_regular.provided_preimages.put(key, data_owned) catch |err| {
                 span.err("Failed to store provided preimage: {}", .{err});
                 ctx_regular.allocator.free(data_owned);

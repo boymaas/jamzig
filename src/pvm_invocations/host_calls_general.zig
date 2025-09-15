@@ -139,22 +139,24 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             });
             span.debug("Offset: {d}, Limit: {d}", .{ offset, limit });
 
+            // NOTE: order of errors is important, follow graypaper exactly
+
+            // Read hash from memory (access verification is implicit)
+            span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
+            const hash = try exec_ctx.readHash(@truncate(hash_ptr));
+            span.debug("Preimage hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
+
             // Resolve service ID using graypaper convention
             const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg);
+            span.trace("Resolved service ID: {d}", .{resolved_service_id});
 
             // Get service account
-            const service_account = host_ctx.service_accounts.getReadOnly(resolved_service_id);
+            const service_account: ?*const ServiceAccount = host_ctx.service_accounts.getReadOnly(resolved_service_id);
 
             if (service_account == null) {
                 span.debug("Service not found, returning NONE", .{});
                 return HostCallError.NONE;
             }
-
-            // Read hash from memory (access verification is implicit)
-            span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
-            const hash = try exec_ctx.readHash(@truncate(hash_ptr));
-
-            span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
             // Look up preimage at the specified timeslot
             span.debug("Looking up preimage", .{});
