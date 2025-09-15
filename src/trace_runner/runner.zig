@@ -14,6 +14,10 @@ const io = @import("../io.zig");
 const tracing = @import("tracing");
 const trace = tracing.scoped(.trace_runner);
 
+pub const RunConfig = struct {
+    quiet: bool = false,
+};
+
 pub const RunResult = struct {
     had_no_op_blocks: bool = false,
     no_op_exceptions: []const u8 = "",
@@ -51,6 +55,7 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
         allocator: std.mem.Allocator,
         importer: block_import.BlockImporter(IOExecutor, params),
         loader: trace_runner.Loader,
+        config: RunConfig,
 
         // State management
         current_state: ?state.JamState(params) = null,
@@ -67,11 +72,13 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
             allocator: std.mem.Allocator,
             executor: *IOExecutor,
             loader: trace_runner.Loader,
+            config: RunConfig,
         ) Self {
             return .{
                 .allocator = allocator,
                 .importer = block_import.BlockImporter(IOExecutor, params).init(executor, allocator),
                 .loader = loader,
+                .config = config,
                 .no_op_exceptions = std.ArrayList(u8).init(allocator),
             };
         }
@@ -89,16 +96,20 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
             var transitions = try state_transitions.collectStateTransitions(test_dir, self.allocator);
             defer transitions.deinit(self.allocator);
 
-            std.log.info("Collected {d} state transition vectors", .{transitions.items().len});
-            if (offset > 0) {
-                std.log.info("Starting from offset: {d}", .{offset});
+            if (!self.config.quiet) {
+                std.log.info("Collected {d} state transition vectors", .{transitions.items().len});
+                if (offset > 0) {
+                    std.log.info("Starting from offset: {d}", .{offset});
+                }
             }
 
             // Process each transition
             for (transitions.items()[offset..], offset..) |transition_file, idx| {
                 if (shouldSkipTransition(transition_file.bin.name)) continue;
 
-                std.log.info("Processing block import {d}: {s}", .{ idx, transition_file.bin.name });
+                if (!self.config.quiet) {
+                    std.log.info("Processing block import {d}: {s}", .{ idx, transition_file.bin.name });
+                }
 
                 const result = try self.processTransition(transition_file);
                 self.updateTracking(result);
@@ -152,7 +163,9 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
             const is_no_op = std.mem.eql(u8, &expected_pre, &expected_post);
 
             if (is_no_op) {
-                std.log.warn("No-Op Block Detected (pre_state == post_state)", .{});
+                if (!self.config.quiet) {
+                    std.log.warn("No-Op Block Detected (pre_state == post_state)", .{});
+                }
                 return self.processNoOpBlock(&transition, expected_post);
             } else {
                 return self.processNormalBlock(&transition, expected_post);
@@ -168,7 +181,9 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
             };
             defer import_result.deinit();
 
-            std.log.debug("Block sealed with tickets: {}", .{import_result.sealed_with_tickets});
+            if (!self.config.quiet) {
+                std.log.debug("Block sealed with tickets: {}", .{import_result.sealed_with_tickets});
+            }
 
             // Merge state changes
             try import_result.state_transition.mergePrimeOntoBase();
@@ -194,13 +209,17 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
                 &self.current_state.?,
                 transition.block(),
             ) catch |err| {
-                std.log.debug("Block import failed (expected for no-op): {s}", .{@errorName(err)});
+                if (!self.config.quiet) {
+                    std.log.debug("Block import failed (expected for no-op): {s}", .{@errorName(err)});
+                }
 
                 // Verify state hasn't changed
                 const current_root = try self.current_state.?.buildStateRoot(self.allocator);
 
                 if (std.mem.eql(u8, &expected_post, &current_root)) {
-                    std.log.info("State correctly remained unchanged (no-op validated)", .{});
+                    if (!self.config.quiet) {
+                        std.log.info("State correctly remained unchanged (no-op validated)", .{});
+                    }
                     return ProcessResult{ .no_op_handled = .{ .error_name = @errorName(err) } };
                 } else {
                     std.log.err("State was modified when it shouldn't have been!", .{});
@@ -217,7 +236,9 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
                 return error.NoOpBlockChangedState;
             }
 
-            std.log.info("No-op block processed successfully with no state changes", .{});
+            if (!self.config.quiet) {
+                std.log.info("No-op block processed successfully with no state changes", .{});
+            }
             return ProcessResult{ .no_op_handled = .{ .error_name = "none" } };
         }
 
@@ -231,7 +252,9 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
                 block,
             ) catch {
                 // Retry with tracing enabled
-                std.log.debug("Retrying with debug tracing enabled...", .{});
+                if (!self.config.quiet) {
+                    std.log.debug("Retrying with debug tracing enabled...", .{});
+                }
 
                 try tracing.setScope("block_import", .trace);
                 defer tracing.disableScope("block_import");
@@ -314,7 +337,9 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
 
             if (diff.has_changes()) {
                 std.log.err("Expected state difference detected", .{});
-                std.log.debug("{}", .{diff});
+                if (!self.config.quiet) {
+                    std.log.debug("{}", .{diff});
+                }
                 try self.showStateDiff(transition);
                 return error.UnexpectedStateDiff;
             }
@@ -322,7 +347,9 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
             const state_root = try self.current_state.?.buildStateRoot(self.allocator);
 
             if (std.mem.eql(u8, &expected_post, &state_root)) {
-                std.log.info("Post-state root matches: {s}", .{std.fmt.fmtSliceHexLower(&state_root)});
+                if (!self.config.quiet) {
+                    std.log.info("Post-state root matches: {s}", .{std.fmt.fmtSliceHexLower(&state_root)});
+                }
             } else {
                 std.log.err("Post-state root mismatch!", .{});
                 std.log.err("Expected: {s}", .{std.fmt.fmtSliceHexLower(&expected_post)});
@@ -362,16 +389,17 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
 
         /// Log block information
         fn logBlockInfo(self: *const Self, block: *const types.Block) void {
-            _ = self;
-            std.log.debug("Extrinsic contents: tickets={d}, preimages={d}, guarantees={d}, assurances={d}, disputes(v={d},c={d},f={d})", .{
-                block.extrinsic.tickets.data.len,
-                block.extrinsic.preimages.data.len,
-                block.extrinsic.guarantees.data.len,
-                block.extrinsic.assurances.data.len,
-                block.extrinsic.disputes.verdicts.len,
-                block.extrinsic.disputes.culprits.len,
-                block.extrinsic.disputes.faults.len,
-            });
+            if (!self.config.quiet) {
+                std.log.debug("Extrinsic contents: tickets={d}, preimages={d}, guarantees={d}, assurances={d}, disputes(v={d},c={d},f={d})", .{
+                    block.extrinsic.tickets.data.len,
+                    block.extrinsic.preimages.data.len,
+                    block.extrinsic.guarantees.data.len,
+                    block.extrinsic.assurances.data.len,
+                    block.extrinsic.disputes.verdicts.len,
+                    block.extrinsic.disputes.culprits.len,
+                    block.extrinsic.disputes.faults.len,
+                });
+            }
         }
 
         /// Show state diff for debugging
@@ -394,6 +422,22 @@ pub fn TraceRunner(comptime IOExecutor: type, comptime params: jam_params.Params
     };
 }
 
+/// Public entry point with configuration support
+pub fn runTracesInDirWithConfig(
+    comptime IOExecutor: type,
+    executor: *IOExecutor,
+    comptime params: jam_params.Params,
+    loader: trace_runner.Loader,
+    allocator: std.mem.Allocator,
+    test_dir: []const u8,
+    config: RunConfig,
+) !RunResult {
+    var runner = TraceRunner(IOExecutor, params).init(allocator, executor, loader, config);
+    defer runner.deinit();
+
+    return try runner.runTransitions(test_dir);
+}
+
 /// Public entry point - maintains backward compatibility
 pub fn runTracesInDir(
     comptime IOExecutor: type,
@@ -403,10 +447,7 @@ pub fn runTracesInDir(
     allocator: std.mem.Allocator,
     test_dir: []const u8,
 ) !RunResult {
-    var runner = TraceRunner(IOExecutor, params).init(allocator, executor, loader);
-    defer runner.deinit();
-
-    return try runner.runTransitions(test_dir);
+    return runTracesInDirWithConfig(IOExecutor, executor, params, loader, allocator, test_dir, .{});
 }
 
 // Helper functions

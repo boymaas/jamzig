@@ -402,13 +402,14 @@ fn runTraceSummary(allocator: std.mem.Allocator, collection: *const TraceCollect
         }
 
         // Try to run traces, catch and record any errors
-        var run_result = trace_runner.runTracesInDir(
+        var run_result = trace_runner.runTracesInDirWithConfig(
             ExecutorType,
             &executor,
             FUZZ_PARAMS,
             loader,
             allocator,
             entry.full_path,
+            .{ .quiet = true },
         ) catch |err| {
             std.debug.print("[{d:3}/{d:3}] [{s:7}] {s}: ❌ {s}\n", .{ idx, total_count, entry.source_name, entry.timestamp, @errorName(err) });
             stats_entry.value_ptr.failed += 1;
