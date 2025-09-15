@@ -260,15 +260,46 @@ pub fn HostCalls(comptime params: Params) type {
                 manager_service_id, validator_service_id, always_accumulate_count,
             });
 
+            // NOTE: that the order of these checks follows the graypaper
+            // specification exactly, to ensure we return the correct error
+            // codes.
+
+            // Create a list of assign service IDs
+            var assign_services = std.ArrayList(types.ServiceId).init(ctx_regular.allocator);
+            defer assign_services.deinit();
+
+            // Read assign service IDs from memory
+            // Graypaper: 𝐚 = decode_4(memory[a..a+4C]) where C = core_count
+            const assign_memory_size = params.core_count * 4; // Each service ID is 4 bytes
+            span.debug("Reading assign service IDs from memory at 0x{x}, size={d} bytes ({d} cores)", .{ assign_ptr, assign_memory_size, params.core_count });
+
+            // Read memory for assign service IDs (exactly C service IDs)
+            var assign_data = exec_ctx.memory.readSlice(@truncate(assign_ptr), assign_memory_size) catch {
+                span.err("Memory access failed while reading assign service IDs", .{});
+                return .{ .terminal = .panic };
+            };
+            defer assign_data.deinit();
+
+            // Parse exactly C service IDs from memory
+            var i: usize = 0;
+            while (i < params.core_count) : (i += 1) {
+                const offset = i * 4;
+                const service_id = std.mem.readInt(u32, assign_data.buffer[offset..][0..4], .little);
+
+                span.debug("Assign service {d}: ID={d}", .{ i, service_id });
+
+                // Add to the list
+                assign_services.append(service_id) catch {
+                    span.err("Failed to add service to assign list", .{});
+                    return .{ .terminal = .panic };
+                };
+            }
+
             // Get current privileges
             const current_privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Could not get mutable privileges", .{});
                 return HostCallError.FULL;
             };
-
-            // NOTE: that the order of these checks follows the graypaper
-            // specification exactly, to ensure we return the correct error
-            // codes.
 
             // Only the current manager service can call bless
             // Graypaper: returns HUH when x_s ≠ (x_u)_m
@@ -288,37 +319,6 @@ pub fn HostCalls(comptime params: Params) type {
                     .{ exec_ctx.registers[7], exec_ctx.registers[9] },
                 );
                 return HostCallError.WHO;
-            }
-
-            // Read assign service IDs from memory
-            // Graypaper: 𝐚 = decode_4(memory[a..a+4C]) where C = core_count
-            const assign_memory_size = params.core_count * 4; // Each service ID is 4 bytes
-            span.debug("Reading assign service IDs from memory at 0x{x}, size={d} bytes ({d} cores)", .{ assign_ptr, assign_memory_size, params.core_count });
-
-            // Read memory for assign service IDs (exactly C service IDs)
-            var assign_data = exec_ctx.memory.readSlice(@truncate(assign_ptr), assign_memory_size) catch {
-                span.err("Memory access failed while reading assign service IDs", .{});
-                return .{ .terminal = .panic };
-            };
-            defer assign_data.deinit();
-
-            // Create a list of assign service IDs
-            var assign_services = std.ArrayList(types.ServiceId).init(ctx_regular.allocator);
-            defer assign_services.deinit();
-
-            // Parse exactly C service IDs from memory
-            var i: usize = 0;
-            while (i < params.core_count) : (i += 1) {
-                const offset = i * 4;
-                const service_id = std.mem.readInt(u32, assign_data.buffer[offset..][0..4], .little);
-
-                span.debug("Assign service {d}: ID={d}", .{ i, service_id });
-
-                // Add to the list
-                assign_services.append(service_id) catch {
-                    span.err("Failed to add service to assign list", .{});
-                    return .{ .terminal = .panic };
-                };
             }
 
             // Read always-accumulate service definitions from memory
