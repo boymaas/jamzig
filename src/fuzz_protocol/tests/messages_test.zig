@@ -2,6 +2,9 @@ const std = @import("std");
 const testing = std.testing;
 const messages = @import("../messages.zig");
 const version = @import("../version.zig");
+const jam_params = @import("../../jam_params.zig");
+
+const FUZZ_PARAMS = jam_params.TINY_PARAMS;
 
 test "message_encoding_and_decoding" {
     const allocator = testing.allocator;
@@ -18,14 +21,14 @@ test "message_encoding_and_decoding" {
     const message = messages.Message{ .peer_info = peer_info };
 
     // Encode message
-    const encoded = try messages.encodeMessage(allocator, message);
+    const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,message);
     defer allocator.free(encoded);
 
     // Verify length prefix exists
     try testing.expect(encoded.len >= 4);
 
     // Decode message
-    var decoded = try messages.decodeMessage(allocator, encoded);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
     // Verify decoded message matches original (v1 format)
@@ -52,10 +55,10 @@ test "state_root_message" {
     const message = messages.Message{ .state_root = state_root };
 
     // Encode and decode
-    const encoded = try messages.encodeMessage(allocator, message);
+    const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,message);
     defer allocator.free(encoded);
 
-    var decoded = try messages.decodeMessage(allocator, encoded);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
     // Verify decoded message
@@ -84,10 +87,10 @@ test "key-value_state_message" {
     const message = messages.Message{ .state = state };
 
     // Encode and decode
-    const encoded = try messages.encodeMessage(allocator, message);
+    const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,message);
     defer allocator.free(encoded);
 
-    var decoded = try messages.decodeMessage(allocator, encoded);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
     // Verify decoded message

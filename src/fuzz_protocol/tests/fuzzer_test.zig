@@ -15,8 +15,8 @@ const embedded_target = @import("../embedded_target.zig");
 const messages = @import("../messages.zig");
 const report = @import("../report.zig");
 
-const SocketFuzzer = fuzzer_mod.Fuzzer(io.SequentialExecutor, socket_target.SocketTarget);
-const EmbeddedFuzzer = fuzzer_mod.Fuzzer(io.SequentialExecutor, embedded_target.EmbeddedTarget(io.SequentialExecutor));
+const SocketFuzzer = fuzzer_mod.Fuzzer(io.SequentialExecutor, socket_target.SocketTarget, FUZZ_PARAMS);
+const EmbeddedFuzzer = fuzzer_mod.Fuzzer(io.SequentialExecutor, embedded_target.EmbeddedTarget(io.SequentialExecutor, FUZZ_PARAMS), FUZZ_PARAMS);
 
 const trace = @import("tracing").scoped(.fuzz_protocol);
 
@@ -32,7 +32,7 @@ test "fuzzer_initialization" {
 
     var executor = try io.SequentialExecutor.init(allocator);
 
-    var fuzzer_instance = try fuzzer_mod.createSocketFuzzer(&executor, allocator, seed, socket_path);
+    var fuzzer_instance = try fuzzer_mod.createSocketFuzzer(FUZZ_PARAMS, &executor, allocator, seed, socket_path);
     defer fuzzer_instance.destroy();
 
     // Verify initialization
@@ -54,13 +54,13 @@ test "fuzzer_socket_target_cycle" {
     var executor = try io.SequentialExecutor.init(allocator);
     defer executor.deinit();
 
-    var target_mgr = FuzzTargetInThread(io.SequentialExecutor).init(&executor, allocator, socket_path, .exit_on_disconnect);
+    var target_mgr = FuzzTargetInThread(io.SequentialExecutor, FUZZ_PARAMS).init(&executor, allocator, socket_path, .exit_on_disconnect);
     defer target_mgr.join();
 
     // Start the fuzz target
     try target_mgr.start();
 
-    var fuzzer_instance = try fuzzer_mod.createSocketFuzzer(&executor, allocator, seed, socket_path);
+    var fuzzer_instance = try fuzzer_mod.createSocketFuzzer(FUZZ_PARAMS, &executor, allocator, seed, socket_path);
     defer fuzzer_instance.destroy();
 
     // std.time.sleep(std.time.ns_per_s * 1); // Give some time for the target to start
@@ -95,7 +95,7 @@ test "fuzzer_embedded_target_cycle" {
     defer executor.deinit();
 
     // Create embedded fuzzer (no socket, no background thread needed)
-    var fuzzer_instance = try fuzzer_mod.createEmbeddedFuzzer(&executor, allocator, seed);
+    var fuzzer_instance = try fuzzer_mod.createEmbeddedFuzzer(FUZZ_PARAMS, &executor, allocator, seed);
     defer fuzzer_instance.destroy();
 
     // Connect to embedded target (sets state to .connected)

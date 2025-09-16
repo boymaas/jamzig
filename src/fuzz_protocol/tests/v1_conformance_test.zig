@@ -1,6 +1,9 @@
 const std = @import("std");
 const testing = std.testing;
 const messages = @import("../messages.zig");
+const jam_params = @import("../../jam_params.zig");
+
+const FUZZ_PARAMS = jam_params.TINY_PARAMS;
 
 const V1_EXAMPLES_PATH = "src/jam-conformance/fuzz-proto/examples/v1";
 
@@ -11,7 +14,7 @@ test "v1_conformance_peer_info" {
     const fuzzer_bin = try std.fs.cwd().readFileAlloc(allocator, V1_EXAMPLES_PATH ++ "/00000000_fuzzer_peer_info.bin", 1024);
     defer allocator.free(fuzzer_bin);
 
-    var decoded = try messages.decodeMessage(allocator, fuzzer_bin);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,fuzzer_bin);
     defer decoded.deinit(allocator);
 
     switch (decoded) {
@@ -30,7 +33,7 @@ test "v1_conformance_peer_info" {
     }
 
     // Test round-trip encoding
-    const re_encoded = try messages.encodeMessage(allocator, decoded);
+    const re_encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,decoded);
     defer allocator.free(re_encoded);
     try testing.expectEqualSlices(u8, fuzzer_bin, re_encoded);
 }
@@ -61,7 +64,7 @@ test "v1_conformance_error_messages" {
         };
         defer allocator.free(bin_data);
 
-        var decoded = messages.decodeMessage(allocator, bin_data) catch |err| {
+        var decoded = messages.decodeMessage(FUZZ_PARAMS, allocator,bin_data) catch |err| {
             std.debug.print("Failed to decode {s}: {}\n", .{ filename, err });
             return err;
         };
@@ -72,7 +75,7 @@ test "v1_conformance_error_messages" {
                 try testing.expect(error_msg.len > 0);
 
                 // Test round-trip encoding
-                const re_encoded = try messages.encodeMessage(allocator, decoded);
+                const re_encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,decoded);
                 defer allocator.free(re_encoded);
                 try testing.expectEqualSlices(u8, bin_data, re_encoded);
             },
@@ -119,7 +122,7 @@ test "v1_conformance_state_root_messages" {
         };
         defer allocator.free(bin_data);
 
-        var decoded = messages.decodeMessage(allocator, bin_data) catch |err| {
+        var decoded = messages.decodeMessage(FUZZ_PARAMS, allocator,bin_data) catch |err| {
             std.debug.print("Failed to decode {s}: {}\n", .{ filename, err });
             return err;
         };
@@ -130,7 +133,7 @@ test "v1_conformance_state_root_messages" {
                 try testing.expectEqual(@as(usize, 32), state_root.len);
 
                 // Test round-trip encoding
-                const re_encoded = try messages.encodeMessage(allocator, decoded);
+                const re_encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,decoded);
                 defer allocator.free(re_encoded);
                 try testing.expectEqualSlices(u8, bin_data, re_encoded);
             },
@@ -148,7 +151,7 @@ test "v1_conformance_get_state_message" {
     const bin_data = try std.fs.cwd().readFileAlloc(allocator, V1_EXAMPLES_PATH ++ "/00000030_fuzzer_get_state.bin", 1024);
     defer allocator.free(bin_data);
 
-    var decoded = try messages.decodeMessage(allocator, bin_data);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,bin_data);
     defer decoded.deinit(allocator);
 
     switch (decoded) {
@@ -156,7 +159,7 @@ test "v1_conformance_get_state_message" {
             try testing.expectEqual(@as(usize, 32), get_state.len);
 
             // Test round-trip encoding
-            const re_encoded = try messages.encodeMessage(allocator, decoded);
+            const re_encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,decoded);
             defer allocator.free(re_encoded);
             try testing.expectEqualSlices(u8, bin_data, re_encoded);
         },
@@ -184,7 +187,7 @@ fn testMessageDiscriminant(
     try testing.expectEqual(expected_discriminant, bin_data[0]);
 
     // Try to decode (this will tell us if our decode logic works)
-    var decoded = try messages.decodeMessage(allocator, bin_data);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,bin_data);
     defer decoded.deinit(allocator);
 
     try testing.expectEqual(expected_type, std.meta.activeTag(decoded));

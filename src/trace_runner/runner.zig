@@ -19,7 +19,8 @@ const trace = tracing.scoped(.trace_runner);
 // Type aliases for common configurations
 const EmbeddedFuzzer = fuzzer_mod.Fuzzer(
     io.SequentialExecutor,
-    embedded_target.EmbeddedTarget(io.SequentialExecutor),
+    embedded_target.EmbeddedTarget(io.SequentialExecutor, jam_params.TINY_PARAMS),
+    jam_params.TINY_PARAMS,
 );
 
 // Trace processing result types
@@ -331,19 +332,77 @@ pub fn generateReport(
     };
 }
 
-// Legacy compatibility - kept for now to maintain existing imports
-pub const RunConfig = struct {
-    quiet: bool = false,
-};
+// Simple result struct for compatibility with jamtestvectors
+pub const TraceRunResult = struct {
+    results: []TraceResult,
+    allocator: std.mem.Allocator,
 
-pub const RunResult = struct {
-    had_no_op_blocks: bool = false,
-    no_op_exceptions: []const u8 = "",
-
-    pub fn deinit(self: *RunResult, allocator: std.mem.Allocator) void {
-        if (self.no_op_exceptions.len > 0) {
-            allocator.free(self.no_op_exceptions);
-        }
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        _ = allocator; // Use self.allocator instead
+        self.allocator.free(self.results);
+        self.* = undefined;
     }
 };
 
+// Compatibility function for jamtestvectors.zig
+pub fn runTracesInDir(
+    comptime IOExecutor: type,
+    executor: *IOExecutor,
+    comptime params: jam_params.Params,
+    loader: trace_runner.Loader,
+    allocator: std.mem.Allocator,
+    test_dir: []const u8,
+) !TraceRunResult {
+    // Create embedded fuzzer
+    var fuzzer = try fuzzer_mod.createEmbeddedFuzzer(params, executor, allocator, 0);
+    defer fuzzer.destroy();
+
+    // Connect and handshake
+    try fuzzer.connectToTarget();
+    try fuzzer.performHandshake();
+
+    // Create trace iterator
+    var iter = try traceIterator(allocator, loader, test_dir);
+    defer iter.deinit();
+
+    // Get total count for progress output
+    const total_traces = iter.transitions.items().len;
+
+    // Collect results
+    var results = std.ArrayList(TraceResult).init(allocator);
+    errdefer results.deinit();
+
+    // Process traces
+    var is_first = true;
+    var trace_count: usize = 0;
+    while (try iter.next()) |transition| {
+        defer transition.deinit(allocator);
+
+        trace_count += 1;
+
+        // Extract filename from the current transition path
+        const current_pair = iter.transitions.items()[iter.index - 1];
+        const full_path = current_pair.bin.path;
+        const filename = std.fs.path.basename(full_path);
+
+        // Show progress
+        std.debug.print("Processing trace {d}/{d}: {s}\n", .{ trace_count, total_traces, filename });
+
+        const result = try processTrace(fuzzer, transition, is_first);
+        try results.append(result);
+
+        // Fail on errors or mismatches (keeps original behavior)
+        switch (result) {
+            .@"error" => |err| return err.err,
+            .mismatch => return error.StateMismatch,
+            else => {},
+        }
+
+        is_first = false;
+    }
+
+    return TraceRunResult{
+        .results = try results.toOwnedSlice(),
+        .allocator = allocator,
+    };
+}

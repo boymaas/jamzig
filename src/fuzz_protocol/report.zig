@@ -3,6 +3,7 @@ const messages = @import("messages.zig");
 const types = @import("../types.zig");
 const state_dictionary = @import("../state_dictionary.zig");
 const state_converter = @import("state_converter.zig");
+const jam_params = @import("../jam_params.zig");
 
 /// Represents a state root mismatch between local and target
 pub const Mismatch = struct {
@@ -47,7 +48,7 @@ pub const FuzzResult = struct {
 };
 
 /// Generate a detailed report of fuzzing results
-pub fn generateReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
+pub fn generateReport(comptime params: jam_params.Params, allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
     var report = std.ArrayList(u8).init(allocator);
     errdefer report.deinit();
 
@@ -96,7 +97,7 @@ pub fn generateReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
         try writer.print("  Reported State Root: {s}\n", .{std.fmt.fmtSliceHexLower(&mismatch.reported_state_root)});
 
         // Block information
-        const block_hash = try mismatch.block.header.header_hash(messages.FUZZ_PARAMS, allocator);
+        const block_hash = try mismatch.block.header.header_hash(params, allocator);
         try writer.print("  Block Hash: {s}\n", .{std.fmt.fmtSliceHexLower(&block_hash)});
         try writer.print("  Block Slot: {d}\n", .{mismatch.block.header.slot});
 

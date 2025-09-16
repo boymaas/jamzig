@@ -9,7 +9,6 @@ const socket_target = @import("socket_target.zig");
 const embedded_target = @import("embedded_target.zig");
 const target_interface = @import("target_interface.zig");
 const state_converter = @import("state_converter.zig");
-const shared = @import("tests/shared.zig");
 const report = @import("report.zig");
 const version = @import("version.zig");
 
@@ -41,36 +40,42 @@ const FuzzerState = enum {
 };
 
 /// Type aliases for common Fuzzer configurations
-pub const SocketFuzzer = Fuzzer(io.SequentialExecutor, socket_target.SocketTarget);
-pub const EmbeddedFuzzer = Fuzzer(io.SequentialExecutor, embedded_target.EmbeddedTarget(io.SequentialExecutor));
+pub fn SocketFuzzer(comptime params: jam_params.Params) type {
+    return Fuzzer(io.SequentialExecutor, socket_target.SocketTarget, params);
+}
+pub fn EmbeddedFuzzer(comptime params: jam_params.Params) type {
+    return Fuzzer(io.SequentialExecutor, embedded_target.EmbeddedTarget(io.SequentialExecutor, params), params);
+}
 
 /// Helper factory functions for creating fuzzer instances with target initialization
 pub fn createSocketFuzzer(
+    comptime params: jam_params.Params,
     executor: *io.SequentialExecutor,
     allocator: std.mem.Allocator,
     seed: u64,
     socket_path: []const u8,
-) !*SocketFuzzer {
+) !*SocketFuzzer(params) {
     var target_instance = try socket_target.SocketTarget.init(allocator, .{ .socket_path = socket_path });
     errdefer target_instance.deinit();
 
-    return SocketFuzzer.create(executor, allocator, seed, target_instance);
+    return SocketFuzzer(params).create(executor, allocator, seed, target_instance);
 }
 
 pub fn createEmbeddedFuzzer(
+    comptime params: jam_params.Params,
     executor: *io.SequentialExecutor,
     allocator: std.mem.Allocator,
     seed: u64,
-) !*EmbeddedFuzzer {
-    var target_instance = try embedded_target.EmbeddedTarget(io.SequentialExecutor).init(allocator, executor, .{});
+) !*EmbeddedFuzzer(params) {
+    var target_instance = try embedded_target.EmbeddedTarget(io.SequentialExecutor, params).init(allocator, executor, .{});
     errdefer target_instance.deinit();
 
-    return EmbeddedFuzzer.create(executor, allocator, seed, target_instance);
+    return EmbeddedFuzzer(params).create(executor, allocator, seed, target_instance);
 }
 
 /// Main Fuzzer implementation for JAM protocol conformance testing
-/// Parameterized by IOExecutor for async operations and Target for communication
-pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
+/// Parameterized by JAM params, IOExecutor for async operations and Target for communication
+pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params: jam_params.Params) type {
     return struct {
         allocator: std.mem.Allocator,
 
@@ -80,9 +85,9 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
         seed: u64,
 
         // JAM components
-        block_builder: sequoia.BlockBuilder(messages.FUZZ_PARAMS),
-        block_importer: block_import.BlockImporter(IOExecutor, messages.FUZZ_PARAMS),
-        current_jam_state: *const JamState(messages.FUZZ_PARAMS),
+        block_builder: sequoia.BlockBuilder(params),
+        block_importer: block_import.BlockImporter(IOExecutor, params),
+        current_jam_state: *const JamState(params),
         latest_block: ?types.Block = null,
 
         // Target communication
@@ -123,13 +128,13 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
             fuzzer.rng = fuzzer.prng.random();
 
             // Create a block builder using the stable rng
-            var config = try sequoia.GenesisConfig(messages.FUZZ_PARAMS).buildWithRng(allocator, &fuzzer.rng);
+            var config = try sequoia.GenesisConfig(params).buildWithRng(allocator, &fuzzer.rng);
             errdefer config.deinit(allocator);
 
-            fuzzer.block_builder = try sequoia.BlockBuilder(messages.FUZZ_PARAMS).init(allocator, config, &fuzzer.rng);
+            fuzzer.block_builder = try sequoia.BlockBuilder(params).init(allocator, config, &fuzzer.rng);
             errdefer fuzzer.block_builder.deinit();
 
-            fuzzer.block_importer = block_import.BlockImporter(IOExecutor, messages.FUZZ_PARAMS).init(executor, allocator);
+            fuzzer.block_importer = block_import.BlockImporter(IOExecutor, params).init(executor, allocator);
             fuzzer.current_jam_state = &fuzzer.block_builder.state;
 
             // Process the first (genesis) block to get proper state
@@ -223,10 +228,10 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
 
             // REFACTOR: I see  a pattern here, send message and waiting for a response. Seperate this
             // and also add a timeout. So if we do not get a repsonse in a certain time, we error out.
-            try self.target.sendMessage(.{ .peer_info = fuzzer_peer_info });
+            try self.target.sendMessage(params, .{ .peer_info = fuzzer_peer_info });
 
             // Receive target peer info
-            var response = try self.target.readMessage();
+            var response = try self.target.readMessage(params);
             defer response.deinit(self.allocator);
 
             switch (response) {
@@ -274,14 +279,14 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
             defer ancestry.deinit(self.allocator);
 
             // Send Initialize message (v1) with ancestry
-            try self.target.sendMessage(.{ .initialize = .{
+            try self.target.sendMessage(params, .{ .initialize = .{
                 .header = header,
                 .keyvals = state,
                 .ancestry = ancestry,
             } });
 
             // Receive StateRoot response
-            var response = try self.target.readMessage();
+            var response = try self.target.readMessage(params);
             defer response.deinit(self.allocator);
 
             switch (response) {
@@ -306,10 +311,10 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
             }
 
             // Send ImportBlock message, do not free message we do not own the block
-            try self.target.sendMessage(.{ .import_block = block.* });
+            try self.target.sendMessage(params, .{ .import_block = block.* });
 
             // Receive StateRoot response
-            var response = try self.target.readMessage();
+            var response = try self.target.readMessage(params);
             defer response.deinit(self.allocator);
 
             switch (response) {
@@ -331,10 +336,10 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
             try self.state.assertReachedState(.state_initialized);
 
             // Send GetState message
-            try self.target.sendMessage(.{ .get_state = header_hash });
+            try self.target.sendMessage(params, .{ .get_state = header_hash });
 
             // Receive State response
-            var response = try self.target.readMessage();
+            var response = try self.target.readMessage(params);
             defer response.deinit(self.allocator);
 
             switch (response) {
@@ -390,7 +395,7 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
 
             // Initialize state on target
             var initial_state_result = try state_converter.jamStateToFuzzState(
-                messages.FUZZ_PARAMS,
+                params,
                 self.allocator,
                 self.current_jam_state,
             );
@@ -473,7 +478,7 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
                     self.latest_block = block;
                 }
 
-                sequoia.logging.printBlockEntropyDebug(messages.FUZZ_PARAMS, &self.latest_block.?, self.current_jam_state);
+                sequoia.logging.printBlockEntropyDebug(params, &self.latest_block.?, self.current_jam_state);
 
                 // Compare state roots
                 if (!compareStateRoots(local_root, reported_target_root)) {
@@ -484,7 +489,7 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
                     errdefer local_dict.deinit();
 
                     // Retrieve full target state for analysis
-                    const block_header_hash = try self.latest_block.?.header.header_hash(messages.FUZZ_PARAMS, self.allocator);
+                    const block_header_hash = try self.latest_block.?.header.header_hash(params, self.allocator);
                     var target_state: ?messages.State = self.getState(block_header_hash) catch |err| blk: {
                         block_span.err("Failed to retrieve target state: {s}", .{@errorName(err)});
                         break :blk null;
@@ -546,7 +551,7 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type) type {
             span.debug("Starting trace mode from directory: {s}", .{trace_dir});
 
             // Create W3F loader directly
-            const w3f_loader = jamtestnet.w3f.Loader(messages.FUZZ_PARAMS){};
+            const w3f_loader = jamtestnet.w3f.Loader(params){};
             const loader = w3f_loader.loader();
 
             // Collect state transitions from directory

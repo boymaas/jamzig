@@ -35,24 +35,24 @@ pub const ServerState = enum {
 };
 
 /// Target server that implements the JAM protocol conformance testing target
-pub fn TargetServer(comptime IOExecutor: type) type {
+pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_params.zig").Params) type {
     return struct {
         allocator: std.mem.Allocator,
         socket_path: []const u8,
 
         // State management
-        current_state: ?jamstate.JamState(messages.FUZZ_PARAMS) = null,
+        current_state: ?jamstate.JamState(params) = null,
         current_state_root: ?messages.StateRootHash = null,
         server_state: ServerState = .initial,
         negotiated_features: messages.Features = 0,
 
         // Block importer
-        block_importer: block_import.BlockImporter(IOExecutor, messages.FUZZ_PARAMS),
+        block_importer: block_import.BlockImporter(IOExecutor, params),
 
         // Fork handling state
         last_block_hash: ?types.Hash = null,
         parent_block_hash: ?types.Hash = null,
-        pending_result: ?block_import.BlockImporter(IOExecutor, messages.FUZZ_PARAMS).ImportResult = null,
+        pending_result: ?block_import.BlockImporter(IOExecutor, params).ImportResult = null,
 
         // Server management
         restart_behavior: RestartBehavior = .restart_on_disconnect,
@@ -60,7 +60,7 @@ pub fn TargetServer(comptime IOExecutor: type) type {
         const Self = @This();
 
         pub fn init(executor: *IOExecutor, allocator: std.mem.Allocator, socket_path: []const u8, restart_behavior: RestartBehavior) !Self {
-            const block_importer = block_import.BlockImporter(IOExecutor, messages.FUZZ_PARAMS).init(executor, allocator);
+            const block_importer = block_import.BlockImporter(IOExecutor, params).init(executor, allocator);
 
             return Self{
                 .allocator = allocator,
@@ -244,12 +244,12 @@ pub fn TargetServer(comptime IOExecutor: type) type {
             defer self.allocator.free(frame_data);
 
             // Decode message using JAM codec
-            return messages.decodeMessage(self.allocator, frame_data);
+            return messages.decodeMessage(params, self.allocator, frame_data);
         }
 
         /// Send a message to the stream
         pub fn sendMessage(self: *Self, stream: net.Stream, message: messages.Message) !void {
-            const encoded = try messages.encodeMessage(self.allocator, message);
+            const encoded = try messages.encodeMessage(params, self.allocator, message);
             defer self.allocator.free(encoded);
 
             try frame.writeFrame(stream, encoded);
@@ -296,7 +296,7 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                     const enable_ancestry = (self.negotiated_features & messages.FEATURE_ANCESTRY) != 0;
 
                     self.current_state = try state_converter.fuzzStateToJamState(
-                        messages.FUZZ_PARAMS,
+                        params,
                         self.allocator,
                         initialize.keyvals,
                     );
@@ -324,7 +324,7 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                     span.trace("{}", .{types.fmt.format(block)});
 
                     // Calculate current block hash for fork tracking
-                    const block_hash = try block.header.header_hash(messages.FUZZ_PARAMS, self.allocator);
+                    const block_hash = try block.header.header_hash(params, self.allocator);
 
                     // Fork detection: check if this block's parent matches the last block
                     const is_fork = if (self.last_block_hash) |last| blk: {
@@ -416,7 +416,7 @@ pub fn TargetServer(comptime IOExecutor: type) type {
 
                     // Convert current JAM state to fuzz protocol state format
                     var result = try state_converter.jamStateToFuzzState(
-                        messages.FUZZ_PARAMS,
+                        params,
                         self.allocator,
                         &self.current_state.?,
                     );
@@ -442,7 +442,7 @@ pub fn TargetServer(comptime IOExecutor: type) type {
         }
 
         fn computeStateRoot(self: *Self) !messages.StateRootHash {
-            return try state_merklization.merklizeState(messages.FUZZ_PARAMS, self.allocator, &self.current_state.?);
+            return try state_merklization.merklizeState(params, self.allocator, &self.current_state.?);
         }
     };
 }

@@ -8,7 +8,7 @@ const fuzzer_mod = @import("fuzz_protocol/fuzzer.zig");
 const socket_target = @import("fuzz_protocol/socket_target.zig");
 const report = @import("fuzz_protocol/report.zig");
 
-const SocketFuzzer = fuzzer_mod.Fuzzer(io.SequentialExecutor, socket_target.SocketTarget);
+const SocketFuzzer = fuzzer_mod.Fuzzer(io.SequentialExecutor, socket_target.SocketTarget, jam_params.TINY_PARAMS);
 const jam_params = @import("jam_params.zig");
 const jam_params_format = @import("jam_params_format.zig");
 const build_options = @import("build_options");
@@ -90,8 +90,14 @@ pub fn main() !void {
         .trace_quiet = null,
     });
 
+    const FUZZ_PARAMS = jam_params.TINY_PARAMS;
+
     // Handle parameter dumping
-    if (try param_formatter.handleParamDump(res.args.@"dump-params" != 0, res.args.format)) {
+    if (try param_formatter.handleParamDump(
+        FUZZ_PARAMS,
+        res.args.@"dump-params" != 0,
+        res.args.format,
+    )) {
         return;
     }
 
@@ -148,7 +154,7 @@ pub fn main() !void {
     defer executor.deinit();
 
     // Create and run fuzzer
-    var fuzzer = try fuzzer_mod.createSocketFuzzer(&executor, allocator, seed, socket_path);
+    var fuzzer = try fuzzer_mod.createSocketFuzzer(FUZZ_PARAMS, &executor, allocator, seed, socket_path);
     defer fuzzer.destroy();
 
     std.debug.print("Connecting to target at {s}...\n", .{socket_path});
@@ -188,7 +194,7 @@ pub fn main() !void {
     fuzzer.endSession();
 
     // Generate report
-    const report_text = try report.generateReport(allocator, result);
+    const report_text = try report.generateReport(FUZZ_PARAMS, allocator, result);
     defer allocator.free(report_text);
 
     // Output report

@@ -3,13 +3,6 @@ pub const codec = @import("../codec.zig");
 const types = @import("../types.zig");
 const constants = @import("constants.zig");
 const jam_params = @import("../jam_params.zig");
-const build_options = @import("build_options");
-
-/// JAM parameters for fuzz protocol - configurable via build options
-pub const FUZZ_PARAMS = if (@hasDecl(build_options, "conformance_params") and build_options.conformance_params == .tiny)
-    jam_params.TINY_PARAMS
-else
-    jam_params.FULL_PARAMS;
 
 pub const MAX_MESSAGE_SIZE: u32 = constants.MAX_MESSAGE_SIZE;
 
@@ -266,12 +259,12 @@ pub const Message = union(MessageType) {
 };
 
 /// Encode a message using JAM codec
-pub fn encodeMessage(allocator: std.mem.Allocator, message: Message) ![]u8 {
-    return try codec.serializeAlloc(Message, FUZZ_PARAMS, allocator, message);
+pub fn encodeMessage(comptime params: jam_params.Params, allocator: std.mem.Allocator, message: Message) ![]u8 {
+    return try codec.serializeAlloc(Message, params, allocator, message);
 }
 
 /// Decode a message from bytes using JAM codec
-pub fn decodeMessage(allocator: std.mem.Allocator, data: []const u8) !Message {
+pub fn decodeMessage(comptime params: jam_params.Params, allocator: std.mem.Allocator, data: []const u8) !Message {
     var stream = std.io.fixedBufferStream(data);
-    return try codec.deserializeAlloc(Message, FUZZ_PARAMS, allocator, stream.reader());
+    return try codec.deserializeAlloc(Message, params, allocator, stream.reader());
 }

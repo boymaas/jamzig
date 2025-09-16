@@ -3,7 +3,6 @@ const testing = std.testing;
 
 pub const W3fLoader = @import("trace_runner/parsers.zig").w3f.Loader;
 pub const runTracesInDir = @import("trace_runner/runner.zig").runTracesInDir;
-pub const RunConfig = @import("trace_runner/runner.zig").RunConfig;
 
 const jam_params = @import("jam_params.zig");
 const io = @import("io.zig");

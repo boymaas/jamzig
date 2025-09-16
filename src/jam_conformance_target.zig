@@ -79,8 +79,10 @@ pub fn main() !void {
         return;
     }
 
+    const FUZZ_PARAMS = jam_params.TINY_PARAMS;
+
     // Handle parameter dumping
-    if (try param_formatter.handleParamDump(res.args.@"dump-params" != 0, res.args.format)) {
+    if (try param_formatter.handleParamDump(FUZZ_PARAMS, res.args.@"dump-params" != 0, res.args.format)) {
         return;
     }
 
@@ -116,13 +118,13 @@ pub fn main() !void {
     var executor = try ExecutorType.init(allocator);
     defer executor.deinit();
 
-    var server = try TargetServer(ExecutorType).init(&executor, allocator, socket_path, restart_behavior);
+    var server = try TargetServer(ExecutorType, FUZZ_PARAMS).init(&executor, allocator, socket_path, restart_behavior);
     defer server.deinit();
 
     // Setup signal handler for graceful shutdown
     // Note: Signal handlers must use global state as they can't capture context
     const shutdown_requested = struct {
-        var server_ref: ?*TargetServer(ExecutorType) = null;
+        var server_ref: ?*TargetServer(ExecutorType, FUZZ_PARAMS) = null;
     };
     shutdown_requested.server_ref = &server;
 

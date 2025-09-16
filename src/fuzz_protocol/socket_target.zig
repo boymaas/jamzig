@@ -51,19 +51,19 @@ pub const SocketTarget = struct {
     }
 
     /// Send message to target via socket
-    pub fn sendMessage(self: *SocketTarget, message: messages.Message) !void {
+    pub fn sendMessage(self: *SocketTarget, comptime params: @import("../jam_params.zig").Params, message: messages.Message) !void {
         const socket = self.socket orelse return error.NotConnected;
-        const encoded = try messages.encodeMessage(self.allocator, message);
+        const encoded = try messages.encodeMessage(params, self.allocator, message);
         defer self.allocator.free(encoded);
         try frame.writeFrame(socket, encoded);
     }
 
     /// Read response message from target via socket
-    pub fn readMessage(self: *SocketTarget) !messages.Message {
+    pub fn readMessage(self: *SocketTarget, comptime params: @import("../jam_params.zig").Params) !messages.Message {
         const socket = self.socket orelse return error.NotConnected;
         const frame_data = try frame.readFrame(self.allocator, socket);
         defer self.allocator.free(frame_data);
-        return messages.decodeMessage(self.allocator, frame_data);
+        return messages.decodeMessage(params, self.allocator, frame_data);
     }
 };
 

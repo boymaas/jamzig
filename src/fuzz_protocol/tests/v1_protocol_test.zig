@@ -2,6 +2,9 @@ const std = @import("std");
 const testing = std.testing;
 const messages = @import("../messages.zig");
 const version = @import("../version.zig");
+const jam_params = @import("../../jam_params.zig");
+
+const FUZZ_PARAMS = jam_params.TINY_PARAMS;
 
 test "v1_protocol_features" {
     const allocator = testing.allocator;
@@ -18,10 +21,10 @@ test "v1_protocol_features" {
     const peer_message = messages.Message{ .peer_info = peer_info };
 
     // Encode and decode PeerInfo
-    const encoded = try messages.encodeMessage(allocator, peer_message);
+    const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,peer_message);
     defer allocator.free(encoded);
 
-    var decoded = try messages.decodeMessage(allocator, encoded);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
     // Verify v1 fields
@@ -65,10 +68,10 @@ test "v1_initialize_message" {
     const init_message = messages.Message{ .initialize = initialize };
 
     // Encode and decode
-    const encoded = try messages.encodeMessage(allocator, init_message);
+    const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,init_message);
     defer allocator.free(encoded);
 
-    var decoded = try messages.decodeMessage(allocator, encoded);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
     // Verify Initialize message
@@ -92,10 +95,10 @@ test "v1_error_message" {
     defer error_message.deinit(allocator);
 
     // Encode and decode
-    const encoded = try messages.encodeMessage(allocator, error_message);
+    const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,error_message);
     defer allocator.free(encoded);
 
-    var decoded = try messages.decodeMessage(allocator, encoded);
+    var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
     // Verify Error message
@@ -119,7 +122,7 @@ test "v1_discriminants" {
         .app_name = "test",
     } };
 
-    const encoded = try messages.encodeMessage(allocator, peer_info);
+    const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,peer_info);
     defer allocator.free(encoded);
 
     // First byte should be the discriminant (0 for peer_info)
@@ -127,7 +130,7 @@ test "v1_discriminants" {
 
     // Test state_root discriminant (should be 2)
     const state_root = messages.Message{ .state_root = [_]u8{0x00} ** 32 };
-    const encoded2 = try messages.encodeMessage(allocator, state_root);
+    const encoded2 = try messages.encodeMessage(FUZZ_PARAMS, allocator,state_root);
     defer allocator.free(encoded2);
 
     // First byte should be the discriminant (2 for state_root)

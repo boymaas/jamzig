@@ -19,7 +19,7 @@ fn ThreadContext(comptime IOExecutor: type) type {
 }
 
 /// Manages the lifecycle of target server instances for fuzzing
-pub fn FuzzTargetInThread(comptime IOExecutor: type) type {
+pub fn FuzzTargetInThread(comptime IOExecutor: type, comptime params: @import("../jam_params.zig").Params) type {
     return struct {
         allocator: std.mem.Allocator,
         socket_path: []const u8,
@@ -86,7 +86,7 @@ pub fn FuzzTargetInThread(comptime IOExecutor: type) type {
         fn targetThreadMain(context: *const Context) void {
             defer context.allocator.destroy(context);
 
-            var target_server = target.TargetServer(IOExecutor).init(context.executor, context.allocator, context.socket_path, context.restart_behavior) catch |err| {
+            var target_server = target.TargetServer(IOExecutor, params).init(context.executor, context.allocator, context.socket_path, context.restart_behavior) catch |err| {
                 std.log.err("Failed to initialize target server: {s}", .{@errorName(err)});
                 return;
             };
