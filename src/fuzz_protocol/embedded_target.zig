@@ -8,10 +8,10 @@ const trace = @import("tracing").scoped(.fuzz_protocol);
 
 /// Embedded target that processes messages directly using TargetServer logic
 /// This provides identical behavior to socket-based targets without network overhead
-pub fn EmbeddedTarget(comptime params: @import("../jam_params.zig").Params, comptime IOExecutor: type) type {
+pub fn EmbeddedTarget(comptime IOExecutor: type, comptime params: @import("../jam_params.zig").Params) type {
     return struct {
         allocator: std.mem.Allocator,
-        target_server: target.TargetServer(params, IOExecutor),
+        target_server: target.TargetServer(IOExecutor, params),
         pending_response: ?messages.Message = null,
 
         pub const Config = struct {
@@ -24,7 +24,7 @@ pub fn EmbeddedTarget(comptime params: @import("../jam_params.zig").Params, comp
             _ = config; // Config is empty for embedded target
 
             // Create target server with no-op socket path (not used for embedded)
-            const target_server = target.TargetServer(params, IOExecutor).init(
+            const target_server = target.TargetServer(IOExecutor, params).init(
                 executor,
                 allocator,
                 "", // socket_path not used
@@ -100,12 +100,12 @@ pub fn createEmbeddedTarget(
     comptime IOExecutor: type,
     allocator: std.mem.Allocator,
     executor: *IOExecutor,
-    config: EmbeddedTarget(IOExecutor).Config
-) !EmbeddedTarget(IOExecutor) {
-    return EmbeddedTarget(IOExecutor).init(allocator, executor, config);
+    config: EmbeddedTarget(IOExecutor, @import("../jam_params.zig").TINY_PARAMS).Config
+) !EmbeddedTarget(IOExecutor, @import("../jam_params.zig").TINY_PARAMS) {
+    return EmbeddedTarget(IOExecutor, @import("../jam_params.zig").TINY_PARAMS).init(allocator, executor, config);
 }
 
 // Compile-time validation that EmbeddedTarget implements the target interface
 comptime {
-    target_interface.validateTargetInterface(EmbeddedTarget(@import("../jam_params.zig").TINY_PARAMS, io.SequentialExecutor));
+    target_interface.validateTargetInterface(EmbeddedTarget(io.SequentialExecutor, @import("../jam_params.zig").TINY_PARAMS));
 }

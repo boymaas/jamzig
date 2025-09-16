@@ -8,7 +8,7 @@ const fuzzer_mod = @import("fuzz_protocol/fuzzer.zig");
 const socket_target = @import("fuzz_protocol/socket_target.zig");
 const report = @import("fuzz_protocol/report.zig");
 
-const SocketFuzzer = fuzzer_mod.Fuzzer(io.SequentialExecutor, socket_target.SocketTarget);
+const SocketFuzzer = fuzzer_mod.Fuzzer(io.SequentialExecutor, socket_target.SocketTarget, jam_params.TINY_PARAMS);
 const jam_params = @import("jam_params.zig");
 const jam_params_format = @import("jam_params_format.zig");
 const build_options = @import("build_options");

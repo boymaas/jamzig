@@ -18,9 +18,9 @@ const trace = tracing.scoped(.trace_runner);
 
 // Type aliases for common configurations
 const EmbeddedFuzzer = fuzzer_mod.Fuzzer(
-    jam_params.TINY_PARAMS,
     io.SequentialExecutor,
-    embedded_target.EmbeddedTarget(jam_params.TINY_PARAMS, io.SequentialExecutor),
+    embedded_target.EmbeddedTarget(io.SequentialExecutor, jam_params.TINY_PARAMS),
+    jam_params.TINY_PARAMS,
 );
 
 // Trace processing result types

@@ -41,10 +41,10 @@ const FuzzerState = enum {
 
 /// Type aliases for common Fuzzer configurations
 pub fn SocketFuzzer(comptime params: jam_params.Params) type {
-    return Fuzzer(params, io.SequentialExecutor, socket_target.SocketTarget);
+    return Fuzzer(io.SequentialExecutor, socket_target.SocketTarget, params);
 }
 pub fn EmbeddedFuzzer(comptime params: jam_params.Params) type {
-    return Fuzzer(params, io.SequentialExecutor, embedded_target.EmbeddedTarget(params, io.SequentialExecutor));
+    return Fuzzer(io.SequentialExecutor, embedded_target.EmbeddedTarget(io.SequentialExecutor, params), params);
 }
 
 /// Helper factory functions for creating fuzzer instances with target initialization
@@ -67,7 +67,7 @@ pub fn createEmbeddedFuzzer(
     allocator: std.mem.Allocator,
     seed: u64,
 ) !*EmbeddedFuzzer(params) {
-    var target_instance = try embedded_target.EmbeddedTarget(params, io.SequentialExecutor).init(allocator, executor, .{});
+    var target_instance = try embedded_target.EmbeddedTarget(io.SequentialExecutor, params).init(allocator, executor, .{});
     errdefer target_instance.deinit();
 
     return EmbeddedFuzzer(params).create(executor, allocator, seed, target_instance);
@@ -75,7 +75,7 @@ pub fn createEmbeddedFuzzer(
 
 /// Main Fuzzer implementation for JAM protocol conformance testing
 /// Parameterized by JAM params, IOExecutor for async operations and Target for communication
-pub fn Fuzzer(comptime params: jam_params.Params, comptime IOExecutor: type, comptime Target: type) type {
+pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params: jam_params.Params) type {
     return struct {
         allocator: std.mem.Allocator,
 

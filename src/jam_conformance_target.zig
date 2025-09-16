@@ -118,13 +118,13 @@ pub fn main() !void {
     var executor = try ExecutorType.init(allocator);
     defer executor.deinit();
 
-    var server = try TargetServer(FUZZ_PARAMS, ExecutorType).init(&executor, allocator, socket_path, restart_behavior);
+    var server = try TargetServer(ExecutorType, FUZZ_PARAMS).init(&executor, allocator, socket_path, restart_behavior);
     defer server.deinit();
 
     // Setup signal handler for graceful shutdown
     // Note: Signal handlers must use global state as they can't capture context
     const shutdown_requested = struct {
-        var server_ref: ?*TargetServer(FUZZ_PARAMS, ExecutorType) = null;
+        var server_ref: ?*TargetServer(ExecutorType, FUZZ_PARAMS) = null;
     };
     shutdown_requested.server_ref = &server;
 

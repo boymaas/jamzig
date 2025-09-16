@@ -35,7 +35,7 @@ pub const ServerState = enum {
 };
 
 /// Target server that implements the JAM protocol conformance testing target
-pub fn TargetServer(comptime params: @import("../jam_params.zig").Params, comptime IOExecutor: type) type {
+pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_params.zig").Params) type {
     return struct {
         allocator: std.mem.Allocator,
         socket_path: []const u8,
