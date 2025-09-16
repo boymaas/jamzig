@@ -179,7 +179,7 @@ pub fn Fuzzer(comptime IOExecutor: type) type {
             // Send fuzzer peer info (v1 format)
             const fuzzer_peer_info = messages.PeerInfo{
                 .fuzz_version = version.FUZZ_PROTOCOL_VERSION,
-                .fuzz_features = version.DEFAULT_FUZZ_FEATURES,
+                .fuzz_features = version.IMPLEMENTED_FUZZ_FEATURES,
                 .jam_version = version.PROTOCOL_VERSION,
                 .app_version = version.FUZZ_TARGET_VERSION,
                 .app_name = "jamzig-fuzzer", // NOTE: static string here => no deinit

@@ -44,6 +44,7 @@ pub fn TargetServer(comptime IOExecutor: type) type {
         current_state: ?jamstate.JamState(messages.FUZZ_PARAMS) = null,
         current_state_root: ?messages.StateRootHash = null,
         server_state: ServerState = .initial,
+        negotiated_features: messages.Features = 0,
 
         // Block importer
         block_importer: block_import.BlockImporter(IOExecutor, messages.FUZZ_PARAMS),
@@ -252,14 +253,15 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                     span.debug("Remote features: 0x{x}", .{peer_info.fuzz_features});
 
                     // Calculate negotiated features (intersection)
-                    const negotiated_features = peer_info.fuzz_features & version.DEFAULT_FUZZ_FEATURES;
+                    const negotiated_features = peer_info.fuzz_features & version.IMPLEMENTED_FUZZ_FEATURES;
+                    self.negotiated_features = negotiated_features;
                     span.debug("Negotiated features: 0x{x}", .{negotiated_features});
 
                     // Respond with our own peer info
                     const our_peer_info = try messages.PeerInfo.buildFromStaticString(
                         self.allocator,
                         version.FUZZ_PROTOCOL_VERSION,
-                        version.DEFAULT_FUZZ_FEATURES,
+                        version.IMPLEMENTED_FUZZ_FEATURES,
                         version.PROTOCOL_VERSION,
                         version.FUZZ_TARGET_VERSION,
                         version.TARGET_NAME,
@@ -278,17 +280,21 @@ pub fn TargetServer(comptime IOExecutor: type) type {
                     if (self.current_state) |*s| s.deinit(self.allocator);
 
                     // Reconstruct JAM state from fuzz protocol state
+                    const enable_ancestry = (self.negotiated_features & messages.FEATURE_ANCESTRY) != 0;
+
                     self.current_state = try state_converter.fuzzStateToJamState(
                         messages.FUZZ_PARAMS,
                         self.allocator,
                         initialize.keyvals,
                     );
 
-                    // Initialize and populate ancestry from provided items
-                    try self.current_state.?.initAncestry(self.allocator);
-                    if (self.current_state.?.ancestry) |*ancestry| {
-                        for (initialize.ancestry.items) |item| {
-                            try ancestry.addHeader(item.header_hash, item.slot);
+                    // Initialize and populate ancestry only if the feature is enabled
+                    if (enable_ancestry) {
+                        try self.current_state.?.initAncestry(self.allocator);
+                        if (self.current_state.?.ancestry) |*ancestry| {
+                            for (initialize.ancestry.items) |item| {
+                                try ancestry.addHeader(item.header_hash, item.slot);
+                            }
                         }
                     }
 

@@ -73,37 +73,38 @@ pub fn validateAnchor(
         }
 
         bv_span.debug("Anchor validation successful", .{});
+        return; // Success - anchor found and validated in beta, no need to check ancestry
+    }
+
+    // Anchor not found in recent history (beta), check ancestry if available
+    const av_span = span.child(@src(), .ancestry_validation);
+    defer av_span.deinit();
+
+    av_span.debug("Anchor not found in recent history, checking ancestry", .{});
+
+    // Fall back to ancestry for older blocks
+    if (stx.base.ancestry) |anc| {
+        if (anc.lookupTimeslot(guarantee.report.context.anchor)) |timeslot| {
+            if (guarantee.report.context.lookup_anchor_slot != timeslot) {
+                av_span.err("Anchor timeslot mismatch in ancestry - expected(ancestry): {d}, got: {d}", .{
+                    guarantee.report.context.lookup_anchor_slot,
+                    timeslot,
+                });
+                return Error.AnchorAncestryTimeslotMismatch;
+            }
+            av_span.debug("Anchor found in ancestry and timeslot {d} matches", .{timeslot});
+        } else {
+            av_span.err("Anchor not found in ancestry: {s}", .{
+                std.fmt.fmtSliceHexLower(&guarantee.report.context.anchor),
+            });
+            return Error.AnchorNotInAncestry;
+        }
     } else {
+        // No ancestry available - this means ancestry feature is disabled
+        av_span.debug("No ancestry available, skipping ancestry validation per graypaper spec", .{});
         span.err("Anchor block not found in recent history: {s}", .{
             std.fmt.fmtSliceHexLower(&guarantee.report.context.anchor),
         });
         return Error.AnchorNotRecent;
-    }
-
-    // Now do ancestry check, if we defined it
-
-    {
-        const av_span = span.child(@src(), .ancestry_validation);
-        defer av_span.deinit();
-
-        av_span.debug("Anchor not found in recent history, checking ancestry", .{});
-
-        // Fall back to ancestry for older blocks
-        if (stx.base.ancestry) |anc| {
-            if (anc.lookupTimeslot(guarantee.report.context.anchor)) |timeslot| {
-                if (guarantee.report.context.lookup_anchor_slot != timeslot) {
-                    av_span.err("Anchor timeslot mismatch in ancestry - expected(ancestry): {d}, got: {d}", .{
-                        guarantee.report.context.lookup_anchor_slot,
-                        timeslot,
-                    });
-                    return Error.AnchorAncestryTimeslotMismatch;
-                }
-                av_span.debug("Anchor found in ancestry and timeslot {d} matches", .{timeslot});
-            } else {
-                return Error.AnchorNotInAncestry;
-            }
-        } else {
-            av_span.debug("No ancestry available for anchor validation", .{});
-        }
     }
 }
