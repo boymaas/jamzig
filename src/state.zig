@@ -181,6 +181,16 @@ pub fn JamState(comptime params: Params) type {
 
         /// Initialize an empty genesis state with all components properly initialized
         pub fn initGenesis(allocator: std.mem.Allocator) !JamState(params) {
+            return initGenesisWithOptions(allocator, .{ .enable_ancestry = true });
+        }
+
+        /// Initialize options for genesis state
+        pub const InitOptions = struct {
+            enable_ancestry: bool = true,
+        };
+
+        /// Initialize an empty genesis state with configurable options
+        pub fn initGenesisWithOptions(allocator: std.mem.Allocator, options: InitOptions) !JamState(params) {
             var state = try JamState(params).init(allocator);
 
             try state.initAlpha(allocator);
@@ -201,8 +211,10 @@ pub fn JamState(comptime params: Params) type {
             // try state.initTau();
             try state.initSafrole(allocator);
 
-            // Auxiliary state
-            try state.initAncestry(allocator);
+            // Auxiliary state - only initialize if enabled
+            if (options.enable_ancestry) {
+                try state.initAncestry(allocator);
+            }
 
             return state;
         }

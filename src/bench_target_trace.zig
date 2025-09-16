@@ -60,7 +60,7 @@ const TraceClientContext = struct {
         // Send handshake (v1 format)
         const peer_info = messages.PeerInfo{
             .fuzz_version = version.FUZZ_PROTOCOL_VERSION,
-            .fuzz_features = version.DEFAULT_FUZZ_FEATURES,
+            .fuzz_features = version.IMPLEMENTED_FUZZ_FEATURES,
             .jam_version = version.PROTOCOL_VERSION,
             .app_version = version.FUZZ_TARGET_VERSION,
             .app_name = "bench-target-trace",
@@ -206,7 +206,7 @@ fn loadTransitions(context: *TraceClientContext, trace_files: []const []const u8
 pub fn main() !void {
     var alloc = build_tuned_allocator.BuildTunedAllocator.init();
     defer alloc.deinit();
-    
+
     // TracyAllocator is a no-op when Tracy is disabled
     var tracy_alloc = tracy.TracyAllocator.init(alloc.allocator());
     const allocator = tracy_alloc.allocator();
