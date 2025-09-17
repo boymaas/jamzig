@@ -65,6 +65,15 @@ pub const TraceIterator = struct {
         return try self.loader.loadTestVector(self.allocator, transition_pair.bin.path);
     }
 
+    pub fn count(self: *Self) usize {
+        return self.transitions.count();
+    }
+
+    pub fn getCurrentStateTransitionPair(self: *Self) ?*const trace_runner.state_transitions.StateTransitionPair {
+        if (self.index == 0) return null;
+        return &self.transitions.items()[self.index - 1];
+    }
+
     pub fn deinit(self: *Self) void {
         self.transitions.deinit(self.allocator);
         self.* = undefined;
@@ -366,7 +375,7 @@ pub fn runTracesInDir(
     defer iter.deinit();
 
     // Get total count for progress output
-    const total_traces = iter.transitions.items().len;
+    const total_traces = iter.count();
 
     // Collect results
     var results = std.ArrayList(TraceResult).init(allocator);
@@ -381,7 +390,7 @@ pub fn runTracesInDir(
         trace_count += 1;
 
         // Extract filename from the current transition path
-        const current_pair = iter.transitions.items()[iter.index - 1];
+        const current_pair = iter.getCurrentStateTransitionPair().?;
         const full_path = current_pair.bin.path;
         const filename = std.fs.path.basename(full_path);
 

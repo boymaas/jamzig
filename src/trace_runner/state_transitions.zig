@@ -29,6 +29,10 @@ pub const StateTransitions = struct {
         return self.transitions.items;
     }
 
+    pub fn count(self: *StateTransitions) usize {
+        return self.transitions.items.len;
+    }
+
     pub fn deinit(self: *StateTransitions, allocator: Allocator) void {
         for (self.transitions.items) |*transition| {
             transition.deinit(allocator);
@@ -41,33 +45,33 @@ pub const StateTransitions = struct {
 fn isValidStateTransitionBinFile(filename: []const u8) bool {
     // Must end with .bin
     if (!std.mem.endsWith(u8, filename, ".bin")) return false;
-    
+
     // Extract basename (remove .bin)
-    const basename = filename[0..filename.len - ".bin".len];
-    
+    const basename = filename[0 .. filename.len - ".bin".len];
+
     // Must have at least one character in basename
     if (basename.len == 0) return false;
-    
+
     // Must contain only digits and underscores
     for (basename) |c| {
         if (!std.ascii.isDigit(c) and c != '_') {
             return false;
         }
     }
-    
+
     return true;
 }
 
 fn createJsonEntryIfExists(allocator: Allocator, dir_path: []const u8, basename: []const u8) !?ordered_files.Entry {
     const json_filename = try std.fmt.allocPrint(allocator, "{s}.json", .{basename});
     defer allocator.free(json_filename);
-    
+
     const json_path = try std.fs.path.join(allocator, &[_][]const u8{
         dir_path,
         json_filename,
     });
     defer allocator.free(json_path);
-    
+
     return if (std.fs.cwd().access(json_path, .{})) |_|
         ordered_files.Entry{
             .name = try allocator.dupe(u8, json_filename),
@@ -96,9 +100,9 @@ pub fn collectStateTransitions(state_transitions_path: []const u8, allocator: Al
 
     // For each valid .bin file, check if corresponding .json exists
     for (bin_files.items()) |bin_file| {
-        const basename = bin_file.name[0..bin_file.name.len - ".bin".len]; // Remove .bin
+        const basename = bin_file.name[0 .. bin_file.name.len - ".bin".len]; // Remove .bin
         const json_entry = try createJsonEntryIfExists(allocator, state_transitions_path, basename);
-        
+
         try transitions.append(.{
             .bin = try bin_file.deepClone(allocator),
             .json = json_entry,
