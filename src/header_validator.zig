@@ -145,6 +145,9 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             // Ensure state is initialized (only debugbuilds)
             _ = try state.debugCheckIfFullyInitialized();
 
+            const time = params.Time().init(state.tau.?, header.slot);
+            span.debug("Time initialized: {}", .{time});
+
             // Phase:  Select appropriate entropy
             const eta_prime = self.selectEntropy(state, header);
 
@@ -324,10 +327,10 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 validators.len,
             );
 
-            _ = expected_index;
-            // if (expected_index == header.author_index) {
-            //     return HeaderValidationError.InvalidAuthorIndex;
-            // }
+            if (expected_index != header.author_index) {
+                span.err("InvalidAuthorIndex expected={d} header.author_index={d}", .{ expected_index, header.author_index });
+                // return HeaderValidationError.InvalidAuthorIndex;
+            }
 
             return validators[header.author_index].bandersnatch;
         }
@@ -432,10 +435,8 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             const entropy_buffer = state.eta.?;
 
             if (time.isNewEpoch()) {
-                // Use entropy from 3 epochs ago
                 return [4][32]u8{ [_]u8{0} ** 32, entropy_buffer[0], entropy_buffer[1], entropy_buffer[2] };
             } else {
-                // Use current epoch's entropy
                 return entropy_buffer;
             }
         }
