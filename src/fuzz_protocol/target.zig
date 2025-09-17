@@ -50,8 +50,11 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
         block_importer: block_import.BlockImporter(IOExecutor, params),
 
         // Fork handling state
+        last_block_parent: ?types.Hash = null,
         last_block_hash: ?types.Hash = null,
-        parent_block_hash: ?types.Hash = null,
+        last_block_state_root: ?messages.StateRootHash = null,
+
+        // Pending block import result (uncommitted)
         pending_result: ?block_import.BlockImporter(IOExecutor, params).ImportResult = null,
 
         // Server management
@@ -292,6 +295,17 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
                     // Clear current state
                     if (self.current_state) |*s| s.deinit(self.allocator);
 
+                    // Clear any pending block import result
+                    if (self.pending_result) |*result| {
+                        result.deinit();
+                        self.pending_result = null;
+                    }
+
+                    // Reset fork detection state for fresh initialization
+                    self.last_block_parent = null;
+                    self.last_block_parent = null;
+                    span.debug("Fork detection state reset for fresh initialization", .{});
+
                     // Reconstruct JAM state from fuzz protocol state
                     const enable_ancestry = (self.negotiated_features & messages.FEATURE_ANCESTRY) != 0;
 
@@ -318,6 +332,9 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
                 },
 
                 .import_block => |block| {
+                    const import_block_span = span.child(@src(), .import_block);
+                    defer import_block_span.deinit();
+
                     if (self.server_state != .ready) return error.StateNotReady;
 
                     span.debug("Processing ImportBlock", .{});
@@ -327,21 +344,26 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
                     const block_hash = try block.header.header_hash(params, self.allocator);
 
                     // Fork detection: check if this block's parent matches the last block
-                    const is_fork = if (self.last_block_hash) |last| blk: {
-                        if (std.mem.eql(u8, &block.header.parent, &last)) {
+                    import_block_span.debug("Fork detection: last_block_hash={?s}, last_block_parent={?s}, current_block_parent={s}", .{
+                        if (self.last_block_hash) |h| std.fmt.fmtSliceHexLower(&h) else null,
+                        if (self.last_block_parent) |h| std.fmt.fmtSliceHexLower(&h) else null,
+                        std.fmt.fmtSliceHexLower(&block.header.parent),
+                    });
+                    const is_fork = if (self.last_block_hash) |last_block_hash| blk: {
+                        if (std.mem.eql(u8, &block.header.parent, &last_block_hash)) {
                             // Sequential block - continues from last block
-                            span.debug("Sequential block detected", .{});
+                            import_block_span.debug("Sequential block detected", .{});
                             break :blk false;
-                        } else if (self.parent_block_hash) |parent| {
-                            if (std.mem.eql(u8, &block.header.parent, &parent)) {
+                        } else if (self.last_block_parent) |last_block_parent| {
+                            if (std.mem.eql(u8, &block.header.parent, &last_block_parent)) {
                                 // Fork - sibling of last block
-                                span.debug("Fork detected: block is sibling of last block", .{});
+                                import_block_span.debug("Fork detected: block is sibling of last block", .{});
                                 break :blk true;
                             } else {
                                 // Invalid - parent doesn't match last or parent
-                                span.err("Invalid block parent: expected {s} or {s}, got {s}", .{
-                                    std.fmt.fmtSliceHexLower(&last),
-                                    std.fmt.fmtSliceHexLower(&parent),
+                                import_block_span.err("Invalid block parent: expected {s} or {s}, got {s}", .{
+                                    std.fmt.fmtSliceHexLower(&last_block_hash),
+                                    std.fmt.fmtSliceHexLower(&last_block_parent),
                                     std.fmt.fmtSliceHexLower(&block.header.parent),
                                 });
                                 const error_msg = try std.fmt.allocPrint(
@@ -363,13 +385,14 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
                             result.deinit();
                             self.pending_result = null;
                         }
+                        // Revert to last block's state root
+                        self.current_state_root = self.last_block_state_root;
                     } else if (self.pending_result) |*result| {
                         // Sequential block - commit pending changes from previous block
                         span.debug("Sequential block: committing pending changes", .{});
                         try result.commit();
                         result.deinit();
                         self.pending_result = null;
-                        self.parent_block_hash = self.last_block_hash;
                     }
 
                     // Import new block without committing
@@ -386,23 +409,17 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
 
                     span.debug("Block imported successfully, sealed with tickets: {}", .{result.sealed_with_tickets});
 
-                    // SET TO TRUE to simulate a failing state transition
-                    // FIXME: remove when done
-                    if (false) {
-                        var pi_prime: *@import("../state.zig").Pi = result.state_transition.get(.pi_prime) catch |err| {
-                            span.err("State transition failed: {s}", .{@errorName(err)});
-                            return err;
-                        };
-                        pi_prime.current_epoch_stats.items[0].blocks_produced += 1; // Increment epoch stats for testing
-                    }
-
-                    // Compute state root from uncommitted transition
-                    const new_state_root = try result.state_transition.computeStateRoot(self.allocator);
+                    // Fork tracking
+                    self.last_block_hash = block_hash;
+                    self.last_block_parent = block.header.parent;
+                    self.last_block_state_root = self.current_state_root;
 
                     // Store pending result for potential commit later
                     self.pending_result = result;
+
+                    // Compute state root from uncommitted transition
+                    const new_state_root = try result.state_transition.computeStateRoot(self.allocator);
                     self.current_state_root = new_state_root;
-                    self.last_block_hash = block_hash;
 
                     span.debug("Block processed, state root: {s}", .{std.fmt.fmtSliceHexLower(&new_state_root)});
 
