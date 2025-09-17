@@ -98,6 +98,7 @@ build_platform() {
     timeout 10m zig build conformance_target \
         -Doptimize=ReleaseFast \
         -Dconformance-params=${params} \
+        -Dtracing-mode=disabled \
         -Dtarget=${target} \
         --prefix "${platform_build_dir}"
     

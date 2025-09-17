@@ -152,9 +152,9 @@ pub fn build(b: *std.Build) !void {
 
     // Create target-specific optimized configuration with disabled tracing
     const target_config = BuildConfig{
-        .tracing_scopes = &[_][]const u8{}, // Empty - no tracing scopes
-        .tracing_level = "", // No default level
-        .tracing_mode = .disabled, // Compile out all tracing
+        .tracing_scopes = base_config.tracing_scopes,
+        .tracing_level = base_config.tracing_level,
+        .tracing_mode = base_config.tracing_mode,
         .conformance_params = base_config.conformance_params,
         .enable_tracy = false,
     };
