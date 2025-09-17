@@ -86,8 +86,6 @@ pub const ValidationResult = struct {
     success: bool,
     /// Whether the block was sealed with tickets
     sealed_with_tickets: bool,
-    /// The entropy that was used for validation
-    entropy_used: ?types.Entropy = null,
 };
 
 /// Header validator with state-based validation
@@ -148,7 +146,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             _ = try state.debugCheckIfFullyInitialized();
 
             // Phase:  Select appropriate entropy
-            const entropy = self.selectEntropy(state, header);
+            const entropy_prime = self.selectEntropy(state, header);
 
             // Phase: Author validation
             const author_key =
@@ -168,7 +166,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 const seal_context = SealContext{
                     .header = header,
                     .author_key = author_key,
-                    .entropy = entropy,
+                    .entropy = entropy_prime[3],
                     .tickets = tickets.tickets,
                     .context_prefix = if (tickets.tickets != null) SEAL_CONTEXT_TICKET else SEAL_CONTEXT_FALLBACK,
                 };
@@ -207,7 +205,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             return ValidationResult{
                 .success = true,
                 .sealed_with_tickets = tickets.tickets != null,
-                .entropy_used = entropy,
             };
         }
 
@@ -413,7 +410,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             self: *Self,
             state: *const JamState(params),
             header: *const types.Header,
-        ) types.Entropy {
+        ) types.Eta {
             _ = self;
             const span = trace.span(@src(), .select_entropy);
             defer span.deinit();
@@ -423,10 +420,10 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
 
             if (time.isNewEpoch()) {
                 // Use entropy from 3 epochs ago
-                return entropy_buffer[2];
+                return [4][32]u8{ [_]u8{0} ** 32, entropy_buffer[0], entropy_buffer[1], entropy_buffer[2] };
             } else {
                 // Use current epoch's entropy
-                return entropy_buffer[3];
+                return entropy_buffer;
             }
         }
 
