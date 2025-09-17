@@ -146,11 +146,11 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             _ = try state.debugCheckIfFullyInitialized();
 
             // Phase:  Select appropriate entropy
-            const entropy_prime = self.selectEntropy(state, header);
+            const eta_prime = self.selectEntropy(state, header);
 
             // Phase: Author validation
             const author_key =
-                try self.validateAuthorConstraints(state, header);
+                try self.validateAuthorConstraints(state, header, eta_prime);
 
             // Phase: Determine ticket availability
             var tickets = try self.resolveTickets(state, header);
@@ -166,7 +166,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 const seal_context = SealContext{
                     .header = header,
                     .author_key = author_key,
-                    .entropy = entropy_prime[3],
+                    .entropy = eta_prime[3],
                     .tickets = tickets.tickets,
                     .context_prefix = if (tickets.tickets != null) SEAL_CONTEXT_TICKET else SEAL_CONTEXT_FALLBACK,
                 };
@@ -294,6 +294,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             self: *Self,
             state: *const JamState(params),
             header: *const types.Header,
+            eta_prime: types.Eta,
         ) !types.BandersnatchPublic {
             _ = self;
             const span = trace.span(@src(), .validate_author_constraints);
@@ -303,6 +304,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             // According to graypaper: use posterior κ' which at epoch boundaries is γ_k
             const time = params.Time().init(state.tau.?, header.slot);
             const validators = if (time.isNewEpoch())
+                // TODO: gamma_k is no gamma_pedning
                 state.gamma.?.k.validators // Use gamma.k for first block of new epoch
             else
                 state.kappa.?.validators; // Use kappa for regular blocks
@@ -315,6 +317,17 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 });
                 return HeaderValidationError.InvalidAuthorIndex;
             }
+
+            const expected_index = @import("safrole/epoch_handler.zig").deriveKeyIndex(
+                eta_prime[2],
+                time.current_slot_in_epoch,
+                validators.len,
+            );
+
+            _ = expected_index;
+            // if (expected_index == header.author_index) {
+            //     return HeaderValidationError.InvalidAuthorIndex;
+            // }
 
             return validators[header.author_index].bandersnatch;
         }
