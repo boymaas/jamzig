@@ -21,8 +21,67 @@ threadlocal var depth: usize = 0;
 // Thread-local tracing context for auto-detection
 threadlocal var current_context: ?TracingContext = null;
 
-// Global mutex for thread-safe trace output
-var trace_mutex = std.Thread.Mutex{};
+/// Recursive mutex for trace output synchronization.
+///
+/// This uses a recursive (reentrant) mutex instead of a standard mutex to handle
+/// the case where formatting functions themselves use tracing. For example:
+///
+///   span.trace("{s}", .{types.fmt.format(block)});
+///
+/// Here, types.fmt.format returns a lazy formatter that implements the format()
+/// method. When writer.print() calls this format() method (while holding the mutex),
+/// the formatting code creates its own tracing spans, leading to recursive mutex
+/// acquisition on the same thread.
+///
+/// TRADEOFF ANALYSIS:
+/// - PRO: Zero allocations - preserves streaming writer pattern
+/// - PRO: Transparent tracing - any code can trace without restrictions
+/// - PRO: Composable formatters - complex nested formatters work naturally
+/// - CON: Small performance overhead (thread ID checks on each lock/unlock)
+///
+/// This is appropriate for tracing because:
+/// 1. Tracing should be transparent and not restrict what code can trace
+/// 2. Formatters are often complex and may legitimately need their own tracing
+/// 3. The zero-allocation streaming approach aligns with TIGER_STYLE principles
+/// 4. Nested trace output is actually useful for debugging formatter behavior
+const RecursiveMutex = struct {
+    mutex: std.Thread.Mutex = .{},
+    owner: ?std.Thread.Id = null,
+    count: u32 = 0,
+
+    pub fn lock(self: *RecursiveMutex) void {
+        const current_thread = std.Thread.getCurrentId();
+
+        // If we already own the mutex, just increment the count
+        if (self.owner) |owner| {
+            if (owner == current_thread) {
+                self.count += 1;
+                return;
+            }
+        }
+
+        // Otherwise, acquire the underlying mutex
+        self.mutex.lock();
+        self.owner = current_thread;
+        self.count = 1;
+    }
+
+    pub fn unlock(self: *RecursiveMutex) void {
+        const current_thread = std.Thread.getCurrentId();
+
+        // Verify that only the owning thread can unlock
+        std.debug.assert(self.owner != null and self.owner.? == current_thread);
+
+        self.count -= 1;
+        if (self.count == 0) {
+            self.owner = null;
+            self.mutex.unlock();
+        }
+    }
+};
+
+// Global recursive mutex for thread-safe trace output
+var trace_mutex = RecursiveMutex{};
 
 // Global stderr writer type
 const StderrWriter = @TypeOf(std.io.getStdErr().writer());
@@ -180,17 +239,20 @@ pub const Span = struct {
             return;
         }
 
-        trace_mutex.lock();
-        defer trace_mutex.unlock();
+        {
+            trace_mutex.lock();
+            defer trace_mutex.unlock();
 
-        const stderr = std.io.getStdErr().writer();
-        var indented = IndentedWriter(StderrWriter).init(stderr, self.saved_depth);
-        const writer = indented.writer();
+            const stderr = std.io.getStdErr().writer();
 
-        // Print with color: color code, then message with automatic indentation for multi-line
-        writer.writeAll(level.color()) catch return;
-        writer.print(fmt, args) catch return;
-        writer.writeAll("\x1b[0m\n") catch return; // Reset color and add newline
+            var indented = IndentedWriter(StderrWriter).init(stderr, self.saved_depth);
+            const writer = indented.writer();
+
+            // Print with color: color code, then message with automatic indentation for multi-line
+            writer.writeAll(level.color()) catch return;
+            writer.print(fmt, args) catch return;
+            writer.writeAll("\x1b[0m\n") catch return; // Reset color and add newline
+        }
     }
 
     pub inline fn trace(self: *const Span, comptime fmt: []const u8, args: anytype) void {
