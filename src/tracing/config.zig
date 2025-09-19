@@ -36,7 +36,6 @@ pub const LogLevel = enum(u8) {
         if (std.mem.eql(u8, level_str, "err")) return .err;
         return error.InvalidLogLevel;
     }
-
 };
 
 pub const Scope = []const u8;
@@ -45,12 +44,20 @@ pub const Config = struct {
     allocator: std.mem.Allocator,
     scopes: std.StringHashMap(LogLevel),
     default_level: LogLevel,
+    disabled_scopes: std.StringHashMap(void),
 
     pub fn init(allocator: std.mem.Allocator) Config {
         const scopes_str = if (@hasDecl(build_options, "enable_tracing_scopes"))
             build_options.enable_tracing_scopes
         else
             &[_][]const u8{};
+
+        const disabled_scopes = if (@hasDecl(build_options, "disabled_tracing_scopes"))
+            build_options.disabled_tracing_scopes
+        else
+            &[_][]const u8{};
+
+        std.debug.print("Disabled scopes: {any}", .{disabled_scopes});
 
         const level_str = if (@hasDecl(build_options, "enable_tracing_level") and build_options.enable_tracing_level.len > 0)
             build_options.enable_tracing_level
@@ -61,7 +68,15 @@ pub const Config = struct {
             .allocator = allocator,
             .scopes = std.StringHashMap(LogLevel).init(allocator),
             .default_level = parseLogLevel(level_str),
+            .disabled_scopes = std.StringHashMap(void).init(allocator),
         };
+
+        // Parse disabled scopes from build options
+        for (disabled_scopes) |disabled_scope| {
+            config.disabled_scopes.put(disabled_scope, {}) catch |err| {
+                std.debug.print("Warning: Failed to add disabled scope '{s}': {}\n", .{ disabled_scope, err });
+            };
+        }
 
         // Parse scope configurations from build options
         for (scopes_str) |scope_config| {
@@ -75,6 +90,7 @@ pub const Config = struct {
 
     pub fn deinit(self: *Config) void {
         self.scopes.deinit();
+        self.disabled_scopes.deinit();
     }
 
     fn parseAndSetScope(self: *Config, scope_config: []const u8) !void {
@@ -116,6 +132,7 @@ pub const Config = struct {
 
     pub fn reset(self: *Config) void {
         self.scopes.clearRetainingCapacity();
+        self.disabled_scopes.clearRetainingCapacity();
         self.default_level = .info;
     }
 
@@ -130,6 +147,10 @@ pub const Config = struct {
     pub fn isActive(self: *const Config, scope: Scope, level: LogLevel) bool {
         const scope_level = self.getLevel(scope);
         return @intFromEnum(level) >= @intFromEnum(scope_level);
+    }
+
+    pub fn isDisabledScope(self: *const Config, scope: Scope) bool {
+        return self.disabled_scopes.contains(scope);
     }
 
     pub fn fromBuildOptions(options: []const u8) Config {

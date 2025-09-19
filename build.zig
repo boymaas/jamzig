@@ -2,26 +2,23 @@ const std = @import("std");
 
 // Define enum types that can be shared
 const TracingMode = enum { disabled, runtime, tracy };
-const ConformanceParams = enum { tiny, full };
 
 // Configuration struct to hold all build parameters
 const BuildConfig = struct {
-    tracing_scopes: []const []const u8,
-    tracing_level: []const u8,
     tracing_mode: TracingMode,
-    conformance_params: ?ConformanceParams = null,
+    tracing_level: []const u8,
+    tracing_scopes: []const []const u8,
+    tracing_scopes_disabled: []const []const u8,
     enable_tracy: bool = false,
 };
 
 // Helper function to apply build configuration to options
 fn applyBuildConfig(options: *std.Build.Step.Options, config: BuildConfig) void {
-    options.addOption([]const []const u8, "enable_tracing_scopes", config.tracing_scopes);
-    options.addOption([]const u8, "enable_tracing_level", config.tracing_level);
     options.addOption(@TypeOf(config.tracing_mode), "tracing_mode", config.tracing_mode);
+    options.addOption([]const u8, "enable_tracing_level", config.tracing_level);
+    options.addOption([]const []const u8, "enable_tracing_scopes", config.tracing_scopes);
+    options.addOption([]const []const u8, "disabled_tracing_scopes", config.tracing_scopes_disabled);
     options.addOption(bool, "enable_tracy", config.enable_tracy);
-    if (config.conformance_params) |conformance_params| {
-        options.addOption(ConformanceParams, "conformance_params", conformance_params);
-    }
 }
 
 // Helper function to configure tracing module based on tracing mode
@@ -54,6 +51,7 @@ fn configureTracingAndTracy(b: *std.Build, exe: *std.Build.Step.Compile, config:
     // Create a separate options module for tracing with only the fields it needs
     const tracing_options = b.addOptions();
     tracing_options.addOption([]const []const u8, "enable_tracing_scopes", config.tracing_scopes);
+    tracing_options.addOption([]const []const u8, "disabled_tracing_scopes", config.tracing_scopes_disabled);
     tracing_options.addOption([]const u8, "enable_tracing_level", config.tracing_level);
 
     const tracing_mod = switch (config.tracing_mode) {
@@ -107,19 +105,19 @@ pub fn build(b: *std.Build) !void {
 
     // Parse command-line options
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match filter") orelse &[0][]const u8{};
-
-    // Parse command-line options
     const tracing_scopes = b.option([][]const u8, "tracing-scope", "Enable detailed tracing by scope") orelse &[_][]const u8{};
+    const tracing_scopes_disabled = b.option([][]const u8, "tracing-scope-disabled", "Disable detailed tracing by scope") orelse
+        &[_][]const u8{"codec"};
 
     // Create base configuration from command-line options
     const base_config = BuildConfig{
-        .tracing_scopes = tracing_scopes,
-        .tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{},
         .tracing_mode = b.option(TracingMode, "tracing-mode", "Tracing mode (disabled/runtime/tracy)") orelse blk: {
             // Auto-enable runtime tracing when scopes are specified
             break :blk if (tracing_scopes.len > 0) .runtime else .disabled;
         },
-        .conformance_params = b.option(ConformanceParams, "conformance-params", "JAM protocol parameters for conformance testing (tiny/full)") orelse .tiny,
+        .tracing_level = b.option([]const u8, "tracing-level", "Tracing log level default is info") orelse &[_]u8{},
+        .tracing_scopes = tracing_scopes,
+        .tracing_scopes_disabled = tracing_scopes_disabled,
         .enable_tracy = b.option(bool, "enable-tracy", "Enable Tracy profiler") orelse false,
     };
 
@@ -128,7 +126,7 @@ pub fn build(b: *std.Build) !void {
         .tracing_scopes = base_config.tracing_scopes,
         .tracing_level = base_config.tracing_level,
         .tracing_mode = base_config.tracing_mode,
-        .conformance_params = base_config.conformance_params,
+        .tracing_scopes_disabled = base_config.tracing_scopes_disabled,
         .enable_tracy = false, // Disable tracy for tests
     };
 
@@ -137,7 +135,7 @@ pub fn build(b: *std.Build) !void {
         .tracing_scopes = base_config.tracing_scopes, // Use user's tracing scopes
         .tracing_level = base_config.tracing_level, // Use user's tracing level
         .tracing_mode = base_config.tracing_mode, // Use user's tracing mode
-        .conformance_params = base_config.conformance_params,
+        .tracing_scopes_disabled = base_config.tracing_scopes_disabled, // Use user's disabled scopes
         .enable_tracy = base_config.enable_tracy, // Allow tracy for benchmarking
     };
 
@@ -146,7 +144,7 @@ pub fn build(b: *std.Build) !void {
         .tracing_scopes = base_config.tracing_scopes,
         .tracing_level = base_config.tracing_level,
         .tracing_mode = base_config.tracing_mode,
-        .conformance_params = base_config.conformance_params,
+        .tracing_scopes_disabled = base_config.tracing_scopes_disabled,
         .enable_tracy = base_config.enable_tracy,
     };
 
@@ -160,7 +158,7 @@ pub fn build(b: *std.Build) !void {
             .ReleaseSmall => .disabled,
             else => base_config.tracing_mode,
         },
-        .conformance_params = base_config.conformance_params,
+        .tracing_scopes_disabled = base_config.tracing_scopes_disabled,
         .enable_tracy = false,
     };
 

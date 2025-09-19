@@ -3,6 +3,11 @@ const std = @import("std");
 pub const LogLevel = @import("tracing/config.zig").LogLevel;
 pub const Config = @import("tracing/config.zig").Config;
 
+pub const TracingContext = struct {
+    scope: []const u8,
+    level: LogLevel,
+};
+
 // Static buffer for tracing configuration
 var config_buffer: [4096]u8 align(@alignOf(std.StringHashMap(LogLevel).KV)) = undefined;
 var config_fba = std.heap.FixedBufferAllocator.init(&config_buffer);
@@ -12,6 +17,9 @@ var config: ?Config = null;
 
 // Thread-local depth for indentation
 threadlocal var depth: usize = 0;
+
+// Thread-local tracing context for auto-detection
+threadlocal var current_context: ?TracingContext = null;
 
 // Global mutex for thread-safe trace output
 var trace_mutex = std.Thread.Mutex{};
@@ -72,18 +80,32 @@ fn getConfig() *Config {
 pub const Span = struct {
     scope: []const u8,
     operation: []const u8,
-    operation_emitted: bool = false,
     saved_depth: usize,
+    owns_context: bool = false,
 
     pub fn init(scope: []const u8, operation: []const u8) Span {
-        const span = Span{
+        var span = Span{
             .scope = scope,
             .operation = operation,
             .saved_depth = depth,
+            .owns_context = false,
         };
 
         const cfg = getConfig();
-        if (cfg.findScope(scope)) |_| {
+        var should_emit = false;
+
+        // Check active context FIRST (fastest path)
+        if (current_context != null and !cfg.isDisabledScope(scope)) {
+            // Emit using inherited level from active context
+            should_emit = true;
+        } else if (cfg.findScope(scope)) |level| {
+            // Explicitly configured - we set the context
+            current_context = TracingContext{ .scope = scope, .level = level };
+            span.owns_context = true;
+            should_emit = true;
+        }
+
+        if (should_emit) {
             trace_mutex.lock();
             defer trace_mutex.unlock();
 
@@ -102,7 +124,16 @@ pub const Span = struct {
 
     pub fn deinit(self: *const Span) void {
         const cfg = getConfig();
-        if (cfg.findScope(self.scope)) |_| {
+        var should_emit = false;
+
+        // Check if we should emit end message (same logic as init)
+        if (current_context != null and !cfg.isDisabledScope(self.scope)) {
+            should_emit = true;
+        } else if (cfg.findScope(self.scope)) |_| {
+            should_emit = true;
+        }
+
+        if (should_emit) {
             trace_mutex.lock();
             defer trace_mutex.unlock();
 
@@ -115,6 +146,11 @@ pub const Span = struct {
             writer.writeAll("\x1b[0m\n") catch {}; // Reset color and add newline
         }
 
+        // Clear context if we own it
+        if (self.owns_context) {
+            current_context = null;
+        }
+
         depth = self.saved_depth;
     }
 
@@ -125,7 +161,19 @@ pub const Span = struct {
 
     fn log(self: *const Span, level: LogLevel, comptime fmt: []const u8, args: anytype) void {
         const cfg = getConfig();
-        const scope_level = cfg.findScope(self.scope) orelse cfg.default_level;
+
+        // Determine the active level for this scope
+        var scope_level: LogLevel = undefined;
+        if (current_context != null and !cfg.isDisabledScope(self.scope)) {
+            // Use inherited level from active context
+            scope_level = current_context.?.level;
+        } else if (cfg.findScope(self.scope)) |found_level| {
+            // Use explicitly configured level
+            scope_level = found_level;
+        } else {
+            // Not active, don't log
+            return;
+        }
 
         if (@intFromEnum(level) < @intFromEnum(scope_level)) {
             return;
