@@ -51,6 +51,7 @@ fn IndentedWriter(comptime WriterType: type) type {
         }
 
         pub fn write(self: *Self, bytes: []const u8) Error!usize {
+            // OPTIMIZE: now writes per byte, this ofcourse can be done more efficient
             for (bytes) |byte| {
                 if (self.at_line_start and byte != '\n') {
                     // Write indentation

@@ -118,7 +118,12 @@ pub fn main() !void {
     var executor = try ExecutorType.init(allocator);
     defer executor.deinit();
 
-    var server = try TargetServer(ExecutorType, FUZZ_PARAMS).init(&executor, allocator, socket_path, restart_behavior);
+    var server = try TargetServer(ExecutorType, FUZZ_PARAMS).init(
+        &executor,
+        allocator,
+        socket_path,
+        restart_behavior,
+    );
     defer server.deinit();
 
     // Setup signal handler for graceful shutdown
