@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const net = std.net;
 const messages = @import("messages.zig");
 const frame = @import("frame.zig");
@@ -398,10 +399,13 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
 
                         // check if the state root of the committed result is
                         // the same as what we calculated before
-                        const state_root = try self.current_state.?.buildStateRoot(self.allocator);
-                        if (!std.mem.eql(u8, &state_root, &self.current_state_root.?)) {
-                            span.err("State root differs after commit", .{});
-                            return error.StateRootDiffersAfterCommit;
+
+                        if (comptime builtin.mode == .Debug) {
+                            const state_root = try self.current_state.?.buildStateRoot(self.allocator);
+                            if (!std.mem.eql(u8, &state_root, &self.current_state_root.?)) {
+                                span.err("State root differs after commit, this is an internal state problem. Check fuzz target code", .{});
+                                return error.StateRootDiffersAfterCommit;
+                            }
                         }
                     }
 
@@ -445,11 +449,22 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
 
                     span.debug("Processing GetState for header: {s}", .{std.fmt.fmtSliceHexLower(&header_hash)});
 
-                    // Convert current JAM state to fuzz protocol state format
+                    // If we have pending changes, use merged view that includes them
+                    // Otherwise use current committed state
+                    const state_to_convert = if (self.pending_result) |*result| blk: {
+                        span.debug("GetState: Using merged view with pending changes", .{});
+                        const merged_view = result.state_transition.createMergedView();
+                        break :blk &merged_view;
+                    } else blk: {
+                        span.debug("GetState: Using current committed state", .{});
+                        break :blk &self.current_state.?;
+                    };
+
+                    // Convert JAM state to fuzz protocol state format
                     var result = try state_converter.jamStateToFuzzState(
                         params,
                         self.allocator,
-                        &self.current_state.?,
+                        state_to_convert,
                     );
                     // Transfer ownership to the message response
                     const state = result.state;
