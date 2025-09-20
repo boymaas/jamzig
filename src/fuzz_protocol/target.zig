@@ -395,6 +395,14 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
                         try result.commit();
                         result.deinit();
                         self.pending_result = null;
+
+                        // check if the state root of the committed result is
+                        // the same as what we calculated before
+                        const state_root = try self.current_state.?.buildStateRoot(self.allocator);
+                        if (!std.mem.eql(u8, &state_root, &self.current_state_root.?)) {
+                            span.err("State root differs after commit", .{});
+                            return error.StateRootDiffersAfterCommit;
+                        }
                     }
 
                     if (!is_fork) {

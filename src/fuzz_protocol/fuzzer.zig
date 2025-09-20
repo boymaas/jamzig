@@ -316,7 +316,7 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
                     span.debug("Received state with {d} key-value pairs", .{state.items.len});
                     // Transfer ownership to caller - clear response to prevent double-free
                     const result = state;
-                    response = .{ .state = messages.State.Empty };
+                    response = .{ .state = messages.State.Empty }; // transfer of ownership
                     return result;
                 },
                 else => return error.UnexpectedGetStateResponse,
