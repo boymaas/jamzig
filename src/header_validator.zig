@@ -387,8 +387,16 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             }
 
             // Check tickets marker timing
-            if (transition_time.didCrossTicketSubmissionEndInSameEpoch()) {
-                // Tickets marker validation would go here if needed
+            if (transition_time.didCrossTicketSubmissionEndInSameEpoch() and
+                // TODO: make a nice accessor for this
+                state.gamma.?.a.len == params.epoch_length)
+            {
+                // When crossing ticket submission end, and our ticket
+                // accumulator is full tickets_mark is REQUIRED
+                if (header.tickets_mark == null) {
+                    span.err("Missing required tickets marker when crossing ticket submission end", .{});
+                    return HeaderValidationError.InvalidTicketsMarkerTiming;
+                }
             } else if (header.tickets_mark != null) {
                 span.err("Tickets marker present but we did not cross didCrossTicketSubmissionEnd", .{});
                 return HeaderValidationError.InvalidTicketsMarkerTiming;
