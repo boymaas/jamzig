@@ -13,6 +13,8 @@ const state = @import("../state.zig");
 const jam_params = @import("../jam_params.zig");
 const io = @import("../io.zig");
 const entropy_handler = @import("../safrole/epoch_handler.zig");
+const state_diff = @import("../tests/state_diff.zig");
+const state_dictionary = @import("../state_dictionary.zig");
 
 const tracing = @import("tracing");
 const trace = tracing.scoped(.trace_runner);
@@ -317,7 +319,7 @@ pub fn processTrace(
     var block_result = try fuzzer.sendBlock(block);
     defer block_result.deinit(fuzzer.allocator);
 
-    const target_state_root = switch (block_result) {
+    const send_block_target_state_root = switch (block_result) {
         .success => |root| root,
         .import_error => |err_msg| {
             // Block import error - check if this was expected (no-op) or an actual error
@@ -326,22 +328,84 @@ pub fn processTrace(
                 return TraceResult{ .no_op = .{ .error_name = err_msg } };
             } else {
                 span.err("Block import failed: {s}", .{err_msg});
-                return TraceResult{ .@"error" = .{ .err = error.BlockImportFailed, .context = err_msg } };
+                return TraceResult{ .@"error" = .{
+                    .err = error.BlockImportFailed,
+                    .context = try fuzzer.allocator.dupe(u8, err_msg),
+                } };
             }
         },
     };
 
+    // If this is an expected no_op and sendBlock send_block_target_state_root is not expected_pre_root
+    // we can give an explantory error here
+    if (is_expected_no_op and !std.mem.eql(u8, &expected_pre_root, &send_block_target_state_root)) {
+        span.err("Expected no-op but state changed unexpectedly", .{});
+        span.err("Pre-state root:  {s}", .{std.fmt.fmtSliceHexLower(&expected_pre_root)});
+        span.err("Post-state root: {s}", .{std.fmt.fmtSliceHexLower(&send_block_target_state_root)});
+        span.err("Block should not have changed state but did", .{});
+        return TraceResult{ .@"error" = .{ .err = error.UnexpectedStateChange, .context = "Block was expected to be no-op but changed state" } };
+    }
+
     // Block processed successfully - compare the target state root with expected
-    if (!std.mem.eql(u8, &expected_post_root, &target_state_root)) {
+    if (!std.mem.eql(u8, &expected_post_root, &send_block_target_state_root)) {
         span.err("Post-state root mismatch", .{});
+        span.err("Trace post state root: {s}", .{std.fmt.fmtSliceHexLower(&expected_post_root)});
+        span.err("SendBlock  state root   : {s}", .{std.fmt.fmtSliceHexLower(&send_block_target_state_root)});
+
+        span.err("Post-state root mismatch", .{});
+        span.err("Trace pre state root    : {s}", .{std.fmt.fmtSliceHexLower(&expected_pre_root)});
+
+        // Print detailed state diff
+        span.debug("Fetching states for diff analysis...", .{});
+
+        // Get actual state from fuzzer
+        const header_hash = try block.header.header_hash(params, fuzzer.allocator);
+        var fuzz_target_state = try fuzzer.getState(header_hash);
+        defer fuzz_target_state.deinit(fuzzer.allocator);
+
+        var fuzz_target_jam_state = try state_converter.fuzzStateToJamState(params, fuzzer.allocator, fuzz_target_state);
+        defer fuzz_target_jam_state.deinit(fuzzer.allocator);
+
+        // Get expected state from transition
+        var expected_dict = transition.postStateAsMerklizationDict(fuzzer.allocator) catch |err| {
+            span.err("Failed to get expected state dictionary for diff: {s}", .{@errorName(err)});
+            return TraceResult{ .mismatch = .{
+                .expected_root = expected_post_root,
+                .actual_root = send_block_target_state_root,
+            } };
+        };
+        defer expected_dict.deinit();
+
+        var expected_jam_state = try state_dictionary.reconstruct.reconstructState(params, fuzzer.allocator, &expected_dict);
+        defer expected_jam_state.deinit(fuzzer.allocator);
+
+        // Ensure that the state we got from the fuzz target has the same root we got back from
+        // the sendBlock command
+        const fuzz_target_jam_state_root = try fuzz_target_jam_state.buildStateRoot(fuzzer.allocator);
+        if (!std.mem.eql(u8, &fuzz_target_jam_state_root, &send_block_target_state_root)) {
+            std.debug.print("\x1b[31mInternal fuzz target consistency check failed: state root from sendBlock() does not match getState() result\x1b[0m\n", .{});
+            std.debug.print("\x1b[31mState root received from  sendBlock: {any}\x1b[0m\n", .{std.fmt.fmtSliceHexLower(&send_block_target_state_root)});
+            std.debug.print("\x1b[31mState root calculated from getState: {any}\x1b[0m\n", .{std.fmt.fmtSliceHexLower(&fuzz_target_jam_state_root)});
+            std.debug.print("\x1b[31mThis indicates a potential issue with the fuzz target's state management\x1b[0m\n", .{});
+
+            return error.FuzzTargetStateMismatch;
+        }
+
+        // Build and print diff
+        std.debug.print("\n=== STATE MISMATCH DIFF ===\n", .{});
+        var diff = try state_diff.JamStateDiff(params).build(fuzzer.allocator, &fuzz_target_jam_state, &expected_jam_state);
+        defer diff.deinit();
+        diff.printToStdErr();
+        std.debug.print("=== END DIFF ===\n\n", .{});
+
         return TraceResult{ .mismatch = .{
             .expected_root = expected_post_root,
-            .actual_root = target_state_root,
+            .actual_root = send_block_target_state_root,
         } };
     }
 
     span.debug("Block processed successfully", .{});
-    return TraceResult{ .success = .{ .post_root = target_state_root } };
+    return TraceResult{ .success = .{ .post_root = send_block_target_state_root } };
 }
 
 // Report generation types
