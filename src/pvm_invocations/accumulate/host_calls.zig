@@ -264,6 +264,44 @@ pub fn HostCalls(comptime params: Params) type {
             // specification exactly, to ensure we return the correct error
             // codes.
 
+            // Read always-accumulate service definitions from memory
+            span.debug("Reading always-accumulate services from memory at 0x{x}", .{always_accumulate_ptr});
+
+            // Calculate required memory size: each entry is 12 bytes (4 bytes service ID + 8 bytes gas)
+            const required_memory_size = always_accumulate_count * 12;
+
+            // Read memory for always-accumulate services
+            var always_accumulate_data: PVM.Memory.MemorySlice = if (always_accumulate_count > 0)
+                exec_ctx.memory.readSlice(@truncate(always_accumulate_ptr), required_memory_size) catch {
+                    span.err("Memory access failed while reading always-accumulate services", .{});
+                    return .{ .terminal = .panic };
+                }
+            else
+                .{ .buffer = &[_]u8{} };
+            defer always_accumulate_data.deinit();
+
+            // Create a new always-accumulate services map
+            var always_accumulate_services = std.AutoHashMap(types.ServiceId, types.Gas).init(ctx_regular.allocator);
+            defer always_accumulate_services.deinit();
+
+            // Parse the always-accumulate services from the memory
+            var k: usize = 0;
+            while (k < always_accumulate_count) : (k += 1) {
+                const offset = k * 12;
+
+                // Read service ID (4 bytes) and gas limit (8 bytes)
+                const service_id = std.mem.readInt(u32, always_accumulate_data.buffer[offset..][0..4], .little);
+                const gas_limit = std.mem.readInt(u64, always_accumulate_data.buffer[offset + 4 ..][0..8], .little);
+
+                span.debug("Always-accumulate service {d}: ID={d}, gas={d}", .{ k, service_id, gas_limit });
+
+                // Add to the map
+                always_accumulate_services.put(service_id, gas_limit) catch {
+                    span.err("Failed to add service to always-accumulate map", .{});
+                    return .{ .terminal = .panic };
+                };
+            }
+
             // Create a list of assign service IDs
             var assign_services = std.ArrayList(types.ServiceId).init(ctx_regular.allocator);
             defer assign_services.deinit();
@@ -319,44 +357,6 @@ pub fn HostCalls(comptime params: Params) type {
                     .{ exec_ctx.registers[7], exec_ctx.registers[9] },
                 );
                 return HostCallError.WHO;
-            }
-
-            // Read always-accumulate service definitions from memory
-            span.debug("Reading always-accumulate services from memory at 0x{x}", .{always_accumulate_ptr});
-
-            // Calculate required memory size: each entry is 12 bytes (4 bytes service ID + 8 bytes gas)
-            const required_memory_size = always_accumulate_count * 12;
-
-            // Read memory for always-accumulate services
-            var always_accumulate_data: PVM.Memory.MemorySlice = if (always_accumulate_count > 0)
-                exec_ctx.memory.readSlice(@truncate(always_accumulate_ptr), required_memory_size) catch {
-                    span.err("Memory access failed while reading always-accumulate services", .{});
-                    return .{ .terminal = .panic };
-                }
-            else
-                .{ .buffer = &[_]u8{} };
-            defer always_accumulate_data.deinit();
-
-            // Create a new always-accumulate services map
-            var always_accumulate_services = std.AutoHashMap(types.ServiceId, types.Gas).init(ctx_regular.allocator);
-            defer always_accumulate_services.deinit();
-
-            // Parse the always-accumulate services from the memory
-            var k: usize = 0;
-            while (k < always_accumulate_count) : (k += 1) {
-                const offset = k * 12;
-
-                // Read service ID (4 bytes) and gas limit (8 bytes)
-                const service_id = std.mem.readInt(u32, always_accumulate_data.buffer[offset..][0..4], .little);
-                const gas_limit = std.mem.readInt(u64, always_accumulate_data.buffer[offset + 4 ..][0..8], .little);
-
-                span.debug("Always-accumulate service {d}: ID={d}, gas={d}", .{ k, service_id, gas_limit });
-
-                // Add to the map
-                always_accumulate_services.put(service_id, gas_limit) catch {
-                    span.err("Failed to add service to always-accumulate map", .{});
-                    return .{ .terminal = .panic };
-                };
             }
 
             // Update privileges
