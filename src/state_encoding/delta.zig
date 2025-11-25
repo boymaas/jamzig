@@ -9,16 +9,16 @@ const Params = @import("../jam_params.zig").Params;
 
 const trace = @import("tracing").scoped(.codec);
 
-/// Encodes base service account data: C(255, s) ↦ version_byte ⌢ a_c ⌢ E_8(a_b, a_g, a_m, a_l) ⌢ E_4(a_i)
-/// Version byte: 0x00 for v0.7.1+ format (GP #472)
+/// Encodes base service account data for merklization: C(255, s) ↦ encode(0, a_c, E_8(...), E_4(...))
+/// v0.7.1 GP #472: Merklization encoding includes version byte 0 before account data
 pub fn encodeServiceAccountBase(params: Params, account: *const ServiceAccount, writer: anytype) !void {
     const span = trace.span(@src(), .encode_service_account_base);
     defer span.deinit();
     span.debug("Starting service account base encoding", .{});
 
-    // Write version byte (v0.7.1 requirement - GP #472)
-    span.trace("Writing version byte: 0x00", .{});
-    try writer.writeByte(0x00);
+    // Write version byte for merklization (v0.7.1 GP #472)
+    span.trace("Writing merklization version byte: 0", .{});
+    try writer.writeByte(0);
 
     // Write code hash (a_c)
     span.trace("Writing code hash: {s}", .{std.fmt.fmtSliceHexLower(&account.code_hash)});
@@ -108,10 +108,10 @@ test "ServiceAccount base encoding roundtrip with version byte" {
     defer buffer.deinit();
     try encodeServiceAccountBase(params, &original, buffer.writer());
 
-    // Verify version byte is first and length is correct
-    try testing.expectEqual(@as(u8, 0x00), buffer.items[0]);
+    // Verify length is correct (merklization version byte + account data)
     // Length: 1 (version) + 32 (code_hash) + 8*5 (balance, min_gas_acc, min_gas_tr, a_o, storage_offset) + 4*4 (items, creation, last_acc, parent) = 89 bytes
     try testing.expectEqual(@as(usize, 89), buffer.items.len);
+    try testing.expectEqual(@as(u8, 0), buffer.items[0]); // Verify version byte
 
     // Decode
     var fbs = std.io.fixedBufferStream(buffer.items);

@@ -4,19 +4,18 @@ const types = @import("../types.zig");
 const services = @import("../services.zig");
 const DecodingError = @import("../state_decoding.zig").DecodingError;
 
-/// Decodes base service account data and adds/updates the account in delta
-/// Base account data includes service info like code hash, balance, gas limits etc
+/// Decodes base service account data from merklization keyvals
 /// Expected format: version_byte ⌢ a_c ⌢ E_8(a_b, a_g, a_m, a_o, a_f) ⌢ E_4(a_i, a_r, a_a, a_p)
-/// Version byte: 0x00 for v0.7.1+ format (GP #472)
+/// v0.7.1 GP #472: Merklization includes version byte 0 before account data
 pub fn decodeServiceAccountBase(
     _: std.mem.Allocator,
     delta: *state.Delta,
     service_id: types.ServiceId,
     reader: anytype,
 ) !void {
-    // Read and validate version byte (v0.7.1 requirement - GP #472)
+    // Read and validate merklization version byte (v0.7.1 GP #472)
     const version = try reader.readByte();
-    if (version != 0x00) {
+    if (version != 0) {
         return error.UnexpectedVersion;
     }
 
