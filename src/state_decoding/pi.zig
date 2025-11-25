@@ -183,12 +183,7 @@ fn decodeServiceStats(context: *DecodingContext, reader: anytype, stats: *std.Au
             return context.makeError(error.EndOfStream, "failed to read accumulate_gas_used: {s}", .{@errorName(err)});
         };
 
-        const on_transfers_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
-            return context.makeError(error.EndOfStream, "failed to read on_transfers_count: {s}", .{@errorName(err)});
-        }));
-        const on_transfers_gas_used = codec.readInteger(reader) catch |err| {
-            return context.makeError(error.EndOfStream, "failed to read on_transfers_gas_used: {s}", .{@errorName(err)});
-        };
+        // v0.7.1: on_transfers fields removed (GP #457)
 
         const record = ServiceActivityRecord{
             .provided_count = provided_count,
@@ -201,8 +196,6 @@ fn decodeServiceStats(context: *DecodingContext, reader: anytype, stats: *std.Au
             .exports = exports,
             .accumulate_count = accumulate_count,
             .accumulate_gas_used = accumulate_gas_used,
-            .on_transfers_count = on_transfers_count,
-            .on_transfers_gas_used = on_transfers_gas_used,
         };
 
         stats.put(service_id, record) catch |err| {

@@ -214,8 +214,7 @@ pub fn convertServiceStatistics(
         // Map all the statistics fields from test vector to internal representation
         service_stats.accumulate_count = record.accumulate_count;
         service_stats.accumulate_gas_used = record.accumulate_gas_used;
-        service_stats.on_transfers_count = record.on_transfers_count;
-        service_stats.on_transfers_gas_used = record.on_transfers_gas_used;
+        // v0.7.1: on_transfers fields removed from record (GP #457)
 
         // Also map the other fields that exist in ServiceActivityRecord
         service_stats.provided_count = record.provided_count;

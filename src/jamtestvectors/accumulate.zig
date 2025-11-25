@@ -70,6 +70,7 @@ pub const Privileges = struct {
     bless: types.ServiceId,
     assign: []types.ServiceId, // Changed to array in v0.6.7
     designate: types.ServiceId,
+    register: types.ServiceId, // v0.7.1: Registrar service privilege (GP #473)
     always_acc: []AlwaysAccumulateMapItem,
 
     pub fn assign_size(params: jam_params.Params) usize {
@@ -137,8 +138,9 @@ pub const StorageMapEntry = struct {
     }
 };
 
-/// ServiceInfo type for test vectors with additional fields (v0.6.7)
+/// ServiceInfo type for test vectors with additional fields (v0.6.7+)
 pub const ServiceInfoTestVector = struct {
+    version: u8, // v0.7.1: Service information version (GP #472)
     code_hash: types.OpaqueHash,
     balance: types.Balance,
     min_item_gas: types.Gas,
@@ -166,12 +168,17 @@ pub const Account = struct {
     service: ServiceInfoTestVector,
     storage: []StorageMapEntry,
     preimages: []PreimageEntry,
+    preimages_status: []PreimagesStatusMapEntry, // v0.7.1 addition
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.preimages) |*entry| {
             entry.deinit(allocator);
         }
         allocator.free(self.preimages);
+        for (self.preimages_status) |*entry| {
+            entry.deinit(allocator);
+        }
+        allocator.free(self.preimages_status);
         for (self.storage) |*entry| {
             entry.deinit(allocator);
         }
@@ -186,6 +193,17 @@ pub const PreimageEntry = struct {
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.blob);
+        self.* = undefined;
+    }
+};
+
+/// Preimage provision status entry (v0.7.1 addition)
+pub const PreimagesStatusMapEntry = struct {
+    hash: types.OpaqueHash,
+    status: []types.TimeSlot, // SEQUENCE (SIZE(0..3)) OF TimeSlot
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.status);
         self.* = undefined;
     }
 };

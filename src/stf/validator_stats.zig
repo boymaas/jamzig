@@ -185,16 +185,9 @@ pub fn transitionWithInput(
         service_stats.accumulate_gas_used += stats_I.gas_used;
     }
 
-    // Eq 13.15: Transfer Stats (on_transfers_count, on_transfers_gas_used)
-    // Depends on X (Transfer Statistics - map ServiceId -> (Count, Gas)) - Eq 12.30
-    var transfer_iter = accumulate_result.transfer_stats.iterator();
-    while (transfer_iter.next()) |entry| {
-        const service_id = entry.key_ptr.*;
-        const stats_X = entry.value_ptr.*; // {transfer_count, gas_used}
-        const service_stats = try pi.getOrCreateServiceStats(service_id);
-        service_stats.on_transfers_count += stats_X.transfer_count;
-        service_stats.on_transfers_gas_used += stats_X.gas_used;
-    }
+    // v0.7.1: on_transfers stats removed from ServiceActivityRecord (GP #457)
+    // Transfer statistics are now combined with accumulation (see Eq 12.30 in v0.7.1+)
+    _ = accumulate_result.transfer_stats; // Keep to avoid unused variable warning for now
 }
 
 /// Transition function that takes a block and delegates to transitionWithInput

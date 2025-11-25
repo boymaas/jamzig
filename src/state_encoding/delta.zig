@@ -9,11 +9,16 @@ const Params = @import("../jam_params.zig").Params;
 
 const trace = @import("tracing").scoped(.codec);
 
-/// Encodes base service account data: C(255, s) ↦ a_c ⌢ E_8(a_b, a_g, a_m, a_l) ⌢ E_4(a_i)
+/// Encodes base service account data: C(255, s) ↦ version_byte ⌢ a_c ⌢ E_8(a_b, a_g, a_m, a_l) ⌢ E_4(a_i)
+/// Version byte: 0x00 for v0.7.1+ format (GP #472)
 pub fn encodeServiceAccountBase(params: Params, account: *const ServiceAccount, writer: anytype) !void {
     const span = trace.span(@src(), .encode_service_account_base);
     defer span.deinit();
     span.debug("Starting service account base encoding", .{});
+
+    // Write version byte (v0.7.1 requirement - GP #472)
+    span.trace("Writing version byte: 0x00", .{});
+    try writer.writeByte(0x00);
 
     // Write code hash (a_c)
     span.trace("Writing code hash: {s}", .{std.fmt.fmtSliceHexLower(&account.code_hash)});
@@ -70,4 +75,64 @@ pub fn encodePreimageLookup(lookup: PreimageLookup, writer: anytype) !void {
         span.trace("Writing timestamp {d}: {d}", .{ i, timestamp });
         try writer.writeInt(u32, timestamp, .little);
     }
+}
+
+// ========== Tests ==========
+
+const testing = std.testing;
+const jam_params = @import("../jam_params.zig");
+const state = @import("../state.zig");
+
+test "ServiceAccount base encoding roundtrip with version byte" {
+    const allocator = testing.allocator;
+    const params = jam_params.TINY_PARAMS;
+    const state_decoding = @import("../state_decoding.zig");
+
+    // Create test account with known values
+    var original = ServiceAccount.init(allocator);
+    defer original.deinit();
+
+    original.code_hash = [_]u8{0xAB} ** 32;
+    original.balance = 1000;
+    original.min_gas_accumulate = 100;
+    original.min_gas_on_transfer = 200;
+    original.storage_offset = 500;
+    original.creation_slot = 10;
+    original.last_accumulation_slot = 5;
+    original.parent_service = 0;
+    // Note: footprint_items and footprint_bytes are calculated by getStorageFootprint()
+    // from the actual data in the account, so we don't set them directly
+
+    // Encode
+    var buffer = std.ArrayList(u8).init(allocator);
+    defer buffer.deinit();
+    try encodeServiceAccountBase(params, &original, buffer.writer());
+
+    // Verify version byte is first and length is correct
+    try testing.expectEqual(@as(u8, 0x00), buffer.items[0]);
+    // Length: 1 (version) + 32 (code_hash) + 8*5 (balance, min_gas_acc, min_gas_tr, a_o, storage_offset) + 4*4 (items, creation, last_acc, parent) = 89 bytes
+    try testing.expectEqual(@as(usize, 89), buffer.items.len);
+
+    // Decode
+    var fbs = std.io.fixedBufferStream(buffer.items);
+    var delta = state.Delta.init(allocator);
+    defer delta.deinit();
+    
+    const service_id: u32 = 1;
+    try state_decoding.delta.decodeServiceAccountBase(allocator, &delta, service_id, fbs.reader());
+    
+    // Verify decoded values match
+    const decoded = delta.getAccount(service_id).?;
+    try testing.expectEqualSlices(u8, &original.code_hash, &decoded.code_hash);
+    try testing.expectEqual(original.balance, decoded.balance);
+    try testing.expectEqual(original.min_gas_accumulate, decoded.min_gas_accumulate);
+    try testing.expectEqual(original.min_gas_on_transfer, decoded.min_gas_on_transfer);
+    try testing.expectEqual(original.storage_offset, decoded.storage_offset);
+    try testing.expectEqual(original.creation_slot, decoded.creation_slot);
+    try testing.expectEqual(original.last_accumulation_slot, decoded.last_accumulation_slot);
+    try testing.expectEqual(original.parent_service, decoded.parent_service);
+    // Footprint values are calculated by getStorageFootprint(), so verify they match encoded values
+    const footprint = original.getStorageFootprint(params);
+    try testing.expectEqual(footprint.a_i, decoded.footprint_items);
+    try testing.expectEqual(footprint.a_o, decoded.footprint_bytes);
 }

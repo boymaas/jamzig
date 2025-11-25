@@ -131,8 +131,7 @@ pub const ServiceActivityRecord = struct {
     extrinsic_count: U32 = 0,
     accumulate_count: U32 = 0,
     accumulate_gas_used: U64 = 0,
-    on_transfers_count: U32 = 0,
-    on_transfers_gas_used: U64 = 0,
+    // v0.7.1: Removed on_transfers_count and on_transfers_gas_used (GP #457)
 
     pub fn init() ServiceActivityRecord {
         return ServiceActivityRecord{};
@@ -152,8 +151,7 @@ pub const ServiceActivityRecord = struct {
         try codec.writeInteger(self.extrinsic_count, writer);
         try codec.writeInteger(self.accumulate_count, writer);
         try codec.writeInteger(self.accumulate_gas_used, writer);
-        try codec.writeInteger(self.on_transfers_count, writer);
-        try codec.writeInteger(self.on_transfers_gas_used, writer);
+        // v0.7.1: on_transfers fields removed
     }
 
     pub fn decode(_: anytype, reader: anytype, _: std.mem.Allocator) !@This() {
@@ -171,8 +169,7 @@ pub const ServiceActivityRecord = struct {
         const extrinsic_count = @as(U32, @truncate(try codec.readInteger(reader)));
         const accumulate_count = @as(U32, @truncate(try codec.readInteger(reader)));
         const accumulate_gas_used = try codec.readInteger(reader);
-        const on_transfers_count = @as(U32, @truncate(try codec.readInteger(reader)));
-        const on_transfers_gas_used = try codec.readInteger(reader);
+        // v0.7.1: on_transfers fields removed
 
         return @This(){
             .provided_count = provided_count,
@@ -185,8 +182,6 @@ pub const ServiceActivityRecord = struct {
             .exports = exports,
             .accumulate_count = accumulate_count,
             .accumulate_gas_used = accumulate_gas_used,
-            .on_transfers_count = on_transfers_count,
-            .on_transfers_gas_used = on_transfers_gas_used,
         };
     }
 };

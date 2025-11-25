@@ -456,8 +456,7 @@ pub const RandomStateGenerator = struct {
                 .exports = self.rng.int(u32) % 5000,
                 .extrinsic_count = self.rng.int(u32) % 25,
                 .extrinsic_size = self.rng.int(u32) % 2500,
-                .on_transfers_count = self.rng.int(u32) % 10,
-                .on_transfers_gas_used = self.rng.int(u64) % 100000,
+                // v0.7.1: on_transfers fields removed (GP #457)
             };
             try pi.service_stats.put(service_id, service_record);
         }

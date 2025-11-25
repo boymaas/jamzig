@@ -153,11 +153,7 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
         entry_span.trace("Accumulate gas used: {}", .{record.accumulate_gas_used});
         try codec.writeInteger(record.accumulate_gas_used, writer);
 
-        // Encode transfer stats
-        entry_span.trace("On transfers count: {}", .{record.on_transfers_count});
-        try codec.writeInteger(record.on_transfers_count, writer);
-        entry_span.trace("On transfers gas used: {}", .{record.on_transfers_gas_used});
-        try codec.writeInteger(record.on_transfers_gas_used, writer);
+        // v0.7.1: on_transfers stats removed (GP #457)
     }
 
     span.debug("Successfully encoded all service stats in sorted order", .{});
