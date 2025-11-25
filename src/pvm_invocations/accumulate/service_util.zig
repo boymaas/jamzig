@@ -22,7 +22,8 @@ pub fn check(service_accounts: *const state.Delta.Snapshot, candidate_id: types.
     span.debug("Service ID {d} is already used, calculating next ID", .{candidate_id});
 
     // Otherwise, calculate the next candidate in the sequence
-    // The formula is: check((i - 2^8 + 1) mod (2^32 - 2^9) + 2^8)
+    // v0.7.1 GP #473: check((i - 2^8 + 1) mod (2^32 - 2^8 - 2^8) + 2^8)
+    // Reserved: [0, 256) lower + [2^32-256, 2^32) upper = 512 total
     const next_id: u32 = 0x100 + ((candidate_id - 0x100 + 1) % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
     span.debug("Next candidate ID: {d}", .{next_id});
 
@@ -66,7 +67,8 @@ pub fn generateServiceId(service_accounts: *const state.Delta.Snapshot, creator_
     std.crypto.hash.blake2.Blake2b256.hash(hash_input, &hash_output, .{});
     span.trace("Hash output: {s}", .{std.fmt.fmtSliceHexLower(&hash_output)});
 
-    // Generate initial ID: take first 4 bytes of hash mod (2^32 - 2^9) + 2^8
+    // v0.7.1 GP #473: take first 4 bytes of hash mod (2^32 - 2^8 - 2^8) + 2^8
+    // Available range: [256, 2^32-256) to avoid privileged and top reserved ranges
     const initial_value = std.mem.readInt(u32, hash_output[0..4], .little);
     const candidate_id = 0x100 + (initial_value % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
     span.debug("Initial candidate ID: {d}", .{candidate_id});
