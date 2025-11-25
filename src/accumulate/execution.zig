@@ -47,6 +47,7 @@ pub const OuterAccumulationResult = struct {
     deferred_transfers: []DeferredTransfer,
     accumulation_outputs: HashSet(ServiceAccumulationOutput),
     gas_used_per_service: std.AutoHashMap(types.ServiceId, types.Gas), // Gas used per service ID
+    invoked_services: std.AutoHashMap(types.ServiceId, void), // v0.7.2: All services that were invoked
 
     pub fn takeTransfers(self: *@This()) []DeferredTransfer {
         const result = self.deferred_transfers;
@@ -57,7 +58,8 @@ pub const OuterAccumulationResult = struct {
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.deferred_transfers);
         self.accumulation_outputs.deinit(allocator);
-        self.gas_used_per_service.deinit(); // Deinit the new map
+        self.gas_used_per_service.deinit();
+        self.invoked_services.deinit(); // v0.7.2
         self.* = undefined;
     }
 };
@@ -67,11 +69,13 @@ pub const ProcessAccumulationResult = struct {
     accumulate_root: types.AccumulateRoot,
     accumulation_stats: std.AutoHashMap(types.ServiceId, AccumulationServiceStats),
     transfer_stats: std.AutoHashMap(types.ServiceId, TransferServiceStats),
+    invoked_services: std.AutoHashMap(types.ServiceId, void), // v0.7.2: Track ALL invoked services
 
     pub fn deinit(self: *@This(), _: std.mem.Allocator) void {
         // Deinit maps
         self.accumulation_stats.deinit();
         self.transfer_stats.deinit();
+        self.invoked_services.deinit(); // v0.7.2
         self.* = undefined;
     }
 };
@@ -110,6 +114,10 @@ pub fn outerAccumulation(
     var gas_used_per_service = std.AutoHashMap(types.ServiceId, types.Gas).init(allocator);
     errdefer gas_used_per_service.deinit();
 
+    // v0.7.2: Track invoked services
+    var invoked_services = std.AutoHashMap(types.ServiceId, void).init(allocator);
+    errdefer invoked_services.deinit();
+
     // If no work reports, return early
     if (work_reports.len == 0) {
         span.debug("No work reports to process", .{});
@@ -118,6 +126,7 @@ pub fn outerAccumulation(
             .deferred_transfers = &[_]DeferredTransfer{},
             .accumulation_outputs = accumulation_outputs,
             .gas_used_per_service = gas_used_per_service,
+            .invoked_services = invoked_services, // v0.7.2
         };
     }
 
@@ -151,6 +160,7 @@ pub fn outerAccumulation(
             context,
             current_reports[0..batch.reports_to_process],
             first_batch,
+            &invoked_services, // v0.7.2
         );
         defer parallelized_result.deinit(allocator);
 
@@ -215,6 +225,7 @@ pub fn outerAccumulation(
         .deferred_transfers = try transfers.toOwnedSlice(),
         .accumulation_outputs = accumulation_outputs,
         .gas_used_per_service = gas_used_per_service,
+        .invoked_services = invoked_services, // v0.7.2
     };
 }
 
@@ -261,6 +272,7 @@ pub fn parallelizedAccumulation(
     context: *const AccumulationContext(params),
     work_reports: []const types.WorkReport,
     include_privileged: bool, // Whether to include privileged services (first batch only)
+    invoked_services: *std.AutoHashMap(types.ServiceId, void), // v0.7.2: Track invoked services
 ) !ParallelizedAccumulationResult(params) {
     const span = trace.span(@src(), .parallelized_accumulation);
     defer span.deinit();
@@ -272,6 +284,11 @@ pub fn parallelizedAccumulation(
     // Collect all unique service IDs
     var service_ids = try collectServiceIds(allocator, context, work_reports, include_privileged);
     defer service_ids.deinit();
+
+    // v0.7.2: Add all collected services to invoked_services for last_accumulation_slot tracking
+    for (service_ids.keys()) |service_id| {
+        try invoked_services.put(service_id, {});
+    }
 
     span.debug("Found {d} unique services to accumulate", .{service_ids.count()});
 

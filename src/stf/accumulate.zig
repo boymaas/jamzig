@@ -12,8 +12,10 @@ const trace = tracing.scoped(.stf);
 
 pub const Error = error{};
 
-/// Updates last_accumulation_slot for all services that were accumulated or received transfers
-/// According to graypaper §12.24 equation 279
+/// Updates last_accumulation_slot for all services that were invoked for accumulation
+/// v0.7.2: Updates for ANY service that went through accumulation logic,
+/// not just those that produced statistics or received transfers
+/// According to graypaper v0.7.2 §12.24 equation 279 (backported to v0.7.1 test vectors)
 fn updateLastAccumulationSlot(
     comptime params: Params,
     stx: *StateTransition(params),
@@ -21,25 +23,12 @@ fn updateLastAccumulationSlot(
 ) !void {
     const delta_prime = try stx.ensure(.delta_prime);
 
-    // Update for accumulated services
-    var iter = result.accumulation_stats.iterator();
+    // v0.7.2: Update for ALL invoked services (includes R* services that didn't accumulate)
+    var iter = result.invoked_services.iterator();
     while (iter.next()) |entry| {
         if (delta_prime.getAccount(entry.key_ptr.*)) |account| {
             // Only update if the service was not created in this same slot
             // A service created in the current slot hasn't accumulated yet
-            if (account.creation_slot != stx.time.current_slot) {
-                account.last_accumulation_slot = stx.time.current_slot;
-            }
-        }
-    }
-
-    // Update for services that received transfers
-    var transfer_iter = result.transfer_stats.iterator();
-    while (transfer_iter.next()) |entry| {
-        if (delta_prime.getAccount(entry.key_ptr.*)) |account| {
-            // Only update if the service was not created in this same slot
-            // A service created in the current slot that receives a transfer should update
-            // But based on graypaper, newly created services shouldn't be in transfer_stats
             if (account.creation_slot != stx.time.current_slot) {
                 account.last_accumulation_slot = stx.time.current_slot;
             }

@@ -61,6 +61,7 @@ pub fn StatisticsCalculator(comptime params: Params) type {
                 .accumulate_root = accumulate_root,
                 .accumulation_stats = accumulation_stats,
                 .transfer_stats = transfer_stats,
+                .invoked_services = execution_result.invoked_services, // v0.7.2: Pass through invoked services
             };
         }
 
