@@ -53,10 +53,10 @@ pub fn invoke(
     span.debug("Time slot: {d}, Gas limit: {d}, Operand count: {d}", .{ context.time.current_slot, gas_limit, accumulation_operands.len });
     span.trace("Entropy: {s}", .{std.fmt.fmtSliceHexLower(&context.entropy)});
 
-    // Look up the service account
+    // Look up the service account - if not found (ejected), return empty result
     const service_account = context.service_accounts.getReadOnly(service_id) orelse {
-        span.err("Service {d} not found", .{service_id});
-        return error.ServiceNotFound;
+        span.info("Service {d} not found (likely ejected), returning empty result", .{service_id});
+        return try AccumulationResult(params).createEmpty(allocator, context, service_id);
     };
 
     span.debug("Found service account for ID {d}", .{service_id});
@@ -460,6 +460,7 @@ test "AccumulationOperand.Output encode/decode" {
         .{ .out_of_gas = {} },
         .{ .panic = {} },
         .{ .bad_exports = {} },
+        .{ .oversize = {} },
         .{ .bad_code = {} },
         .{ .code_oversize = {} },
     };
