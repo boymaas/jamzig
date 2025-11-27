@@ -80,16 +80,45 @@ pub fn encodeJamParams(allocator: std.mem.Allocator, params_val: Params) ![]u8 {
     return try @import("../codec.zig").serializeAlloc(EncodeMap, .{}, allocator, constants);
 }
 
-/// Encode operand tuples array for accumulate context
+/// Encode accumulation inputs (operand tuples only for now) for accumulate context.
+/// Per graypaper serialization.tex: each accinput element has discriminator prefix:
+///   0 + operand_tuple_encoding for operand tuples
+///   1 + transfer_encoding for deferred transfers
+/// Format: length_prefix + (disc + element)*
 pub fn encodeOperandTuples(allocator: std.mem.Allocator, operand_tuples: []const @import("accumulate.zig").AccumulationOperand) ![]u8 {
     const codec = @import("../codec.zig");
-    return try codec.serializeAlloc([]const @import("accumulate.zig").AccumulationOperand, .{}, allocator, operand_tuples);
+
+    // Calculate total size: count varint + (discriminator + operand) for each
+    var buffer = std.ArrayList(u8).init(allocator);
+    errdefer buffer.deinit();
+
+    // Write count as varint
+    try codec.writeInteger(operand_tuples.len, buffer.writer());
+
+    // Write each operand tuple with discriminator prefix (0 = operand tuple)
+    for (operand_tuples) |operand| {
+        // Discriminator 0 for operand tuple (per graypaper accinput encoding)
+        try buffer.writer().writeByte(0);
+        // Encode the operand tuple
+        try operand.encode(.{}, buffer.writer());
+    }
+
+    return buffer.toOwnedSlice();
 }
 
-/// Encode single operand tuple for accumulate context
+/// Encode single accumulation input (operand tuple) for accumulate context.
+/// Per graypaper: selector 15 returns `encode(i[index])` which is a single accinput.
+/// accinput encoding includes discriminator: 0 + operand_tuple_encoding
 pub fn encodeOperandTuple(allocator: std.mem.Allocator, operand_tuple: *const @import("accumulate.zig").AccumulationOperand) ![]u8 {
-    const codec = @import("../codec.zig");
-    return try codec.serializeAlloc(@import("accumulate.zig").AccumulationOperand, .{}, allocator, operand_tuple.*);
+    var buffer = std.ArrayList(u8).init(allocator);
+    errdefer buffer.deinit();
+
+    // Discriminator 0 for operand tuple (per graypaper accinput encoding)
+    try buffer.writer().writeByte(0);
+    // Encode the operand tuple
+    try operand_tuple.encode(.{}, buffer.writer());
+
+    return buffer.toOwnedSlice();
 }
 
 /// Encode transfers array for ontransfer context
