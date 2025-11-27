@@ -79,11 +79,19 @@ pub fn TransferExecutor(comptime params: Params) type {
                 defer context.deinit();
 
                 // Invoke ontransfer for this service
-                const res = try @import("../pvm_invocations/ontransfer.zig").invoke(
+                // If the service was ejected, the transfer is lost (funds burned)
+                const res = @import("../pvm_invocations/ontransfer.zig").invoke(
                     params,
                     self.allocator,
                     &context,
-                );
+                ) catch |err| {
+                    if (err == error.ServiceNotFound) {
+                        span.debug("Service {d} was ejected, transfers are lost", .{service_id});
+                        // Transfers to ejected services are lost - continue processing
+                        continue;
+                    }
+                    return err;
+                };
 
                 // Store transfer statistics
                 try transfer_stats.put(service_id, .{
