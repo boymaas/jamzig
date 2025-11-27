@@ -162,18 +162,18 @@ fn decodeServiceStats(context: *DecodingContext, reader: anytype, stats: *std.Au
             return context.makeError(error.EndOfStream, "failed to read refinement_gas_used: {s}", .{@errorName(err)});
         };
 
-        // Decode I/O stats (Graypaper 13.6 and 13.7)
+        // Decode I/O stats per graypaper statistics.tex: imports, extrinsic_count, extrinsic_size, exports
         const imports = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
             return context.makeError(error.EndOfStream, "failed to read imports: {s}", .{@errorName(err)});
         }));
-        const exports = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
-            return context.makeError(error.EndOfStream, "failed to read exports: {s}", .{@errorName(err)});
+        const extrinsic_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read extrinsic_count: {s}", .{@errorName(err)});
         }));
         const extrinsic_size = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
             return context.makeError(error.EndOfStream, "failed to read extrinsic_size: {s}", .{@errorName(err)});
         }));
-        const extrinsic_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
-            return context.makeError(error.EndOfStream, "failed to read extrinsic_count: {s}", .{@errorName(err)});
+        const exports = @as(u32, @truncate(codec.readInteger(reader) catch |err| {
+            return context.makeError(error.EndOfStream, "failed to read exports: {s}", .{@errorName(err)});
         }));
 
         const accumulate_count = @as(u32, @truncate(codec.readInteger(reader) catch |err| {

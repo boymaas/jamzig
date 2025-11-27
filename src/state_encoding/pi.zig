@@ -137,15 +137,15 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
         entry_span.trace("Refinement gas used: {}", .{record.refinement_gas_used});
         try codec.writeInteger(record.refinement_gas_used, writer);
 
-        // Encode I/O stats (Graypaper 13.6 and 13.7)
+        // Encode I/O stats per graypaper statistics.tex: imports, extrinsic_count, extrinsic_size, exports
         entry_span.trace("Imports: {}", .{record.imports});
         try codec.writeInteger(record.imports, writer);
-        entry_span.trace("Exports: {}", .{record.exports});
-        try codec.writeInteger(record.exports, writer);
-        entry_span.trace("Extrinsic size: {}", .{record.extrinsic_size});
-        try codec.writeInteger(record.extrinsic_size, writer);
         entry_span.trace("Extrinsic count: {}", .{record.extrinsic_count});
         try codec.writeInteger(record.extrinsic_count, writer);
+        entry_span.trace("Extrinsic size: {}", .{record.extrinsic_size});
+        try codec.writeInteger(record.extrinsic_size, writer);
+        entry_span.trace("Exports: {}", .{record.exports});
+        try codec.writeInteger(record.exports, writer);
 
         // Encode accumulation stats
         entry_span.trace("Accumulate count: {}", .{record.accumulate_count});
