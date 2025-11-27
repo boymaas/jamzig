@@ -661,6 +661,48 @@ pub const ServiceAccount = struct {
         try self.data.put(key, encoded);
     }
 
+    /// Same as registerPreimageAvailable but does NOT update footprint values.
+    /// Used when loading test vectors where footprint is already accounted for.
+    /// Sets the preimage to "provided" state (status[0] and status[1] both set).
+    pub fn registerPreimageAvailableNoFootprint(
+        self: *ServiceAccount,
+        service_id: u32,
+        hash: Hash,
+        length: u32,
+        timeslot: ?Timeslot,
+    ) !void {
+        const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
+
+        // If we do not have one, create a new lookup
+        const existing_data = self.data.get(key) orelse {
+            // For test vectors, set both status[0] and status[1] to mark as "provided"
+            // This makes the preimage ejectable (status.len == 2)
+            const new_lookup = PreimageLookup{
+                .status = .{ timeslot, timeslot, null },
+            };
+            const encoded = try encodePreimageLookup(self.data.allocator, new_lookup);
+            try self.data.put(key, encoded);
+            // Note: NOT updating footprint - caller has already set it
+            return;
+        };
+
+        const existing_lookup = try decodePreimageLookup(existing_data);
+        const status = existing_lookup.asSlice();
+
+        var updated_lookup = existing_lookup;
+
+        if (status.len <= 1) {
+            updated_lookup.status[0] = timeslot;
+            updated_lookup.status[1] = timeslot;
+        } else if (status.len >= 2) {
+            updated_lookup.status[2] = timeslot;
+        }
+
+        const encoded = try encodePreimageLookup(self.data.allocator, updated_lookup);
+        self.data.allocator.free(existing_data);
+        try self.data.put(key, encoded);
+    }
+
     // 9.2.2 Implement the historical lookup function
     pub fn historicalLookup(self: *ServiceAccount, service_id: u32, time: Timeslot, hash: Hash) ?[]const u8 {
         // Create the structured preimage key
