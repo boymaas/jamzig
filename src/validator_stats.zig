@@ -54,12 +54,12 @@ pub const CoreActivityRecord = struct {
     popularity: U16,
     // Number of segments imported from DA made by core for reported work.
     imports: U16,
-    // Number of segments exported into DA made by core for reported work.
-    exports: U16,
     // Total number of extrinsics used by core for reported work.
     extrinsic_count: U16,
-    //  Total size of extrinsics used by core for reported work.
+    // Total size of extrinsics used by core for reported work.
     extrinsic_size: U32,
+    // Number of segments exported into DA made by core for reported work.
+    exports: U16,
     // The work-bundle size. This is the size of data being placed into Audits DA by the core.
     bundle_size: U32,
     // Total gas consumed by core for reported work. Includes all
@@ -82,13 +82,13 @@ pub const CoreActivityRecord = struct {
     pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
         const codec = @import("codec.zig");
 
-        // Encode each field using variable-length integer encoding
+        // Encode per graypaper statistics.tex: da_load, popularity, imports, extrinsic_count, extrinsic_size, exports, bundle_size, gas_used
         try codec.writeInteger(self.da_load, writer);
         try codec.writeInteger(self.popularity, writer);
         try codec.writeInteger(self.imports, writer);
-        try codec.writeInteger(self.exports, writer);
-        try codec.writeInteger(self.extrinsic_size, writer);
         try codec.writeInteger(self.extrinsic_count, writer);
+        try codec.writeInteger(self.extrinsic_size, writer);
+        try codec.writeInteger(self.exports, writer);
         try codec.writeInteger(self.bundle_size, writer);
         try codec.writeInteger(self.gas_used, writer);
     }
@@ -96,26 +96,24 @@ pub const CoreActivityRecord = struct {
     pub fn decode(_: anytype, reader: anytype, _: anytype) !@This() {
         const codec = @import("codec.zig");
 
-        // Read each field using variable-length integer decoding
-        // and truncate to the appropriate size
         const da_load = @as(U32, @truncate(try codec.readInteger(reader)));
         const popularity = @as(U16, @truncate(try codec.readInteger(reader)));
         const imports = @as(U16, @truncate(try codec.readInteger(reader)));
-        const exports = @as(U16, @truncate(try codec.readInteger(reader)));
-        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
         const extrinsic_count = @as(U16, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
+        const exports = @as(U16, @truncate(try codec.readInteger(reader)));
         const bundle_size = @as(U32, @truncate(try codec.readInteger(reader)));
         const gas_used = try codec.readInteger(reader);
 
         return @This(){
-            .gas_used = gas_used,
+            .da_load = da_load,
+            .popularity = popularity,
             .imports = imports,
             .extrinsic_count = extrinsic_count,
             .extrinsic_size = extrinsic_size,
             .exports = exports,
             .bundle_size = bundle_size,
-            .da_load = da_load,
-            .popularity = popularity,
+            .gas_used = gas_used,
         };
     }
 };
@@ -126,12 +124,11 @@ pub const ServiceActivityRecord = struct {
     refinement_count: U32 = 0,
     refinement_gas_used: U64 = 0,
     imports: U32 = 0,
-    exports: U32 = 0,
-    extrinsic_size: U32 = 0,
     extrinsic_count: U32 = 0,
+    extrinsic_size: U32 = 0,
+    exports: U32 = 0,
     accumulate_count: U32 = 0,
     accumulate_gas_used: U64 = 0,
-    // v0.7.1: Removed on_transfers_count and on_transfers_gas_used (GP #457)
 
     pub fn init() ServiceActivityRecord {
         return ServiceActivityRecord{};
@@ -140,36 +137,32 @@ pub const ServiceActivityRecord = struct {
     pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
         const codec = @import("codec.zig");
 
-        // Encode each field using variable-length integer encoding
+        // Encode per graypaper statistics.tex: imports, extrinsic_count, extrinsic_size, exports
         try codec.writeInteger(self.provided_count, writer);
         try codec.writeInteger(self.provided_size, writer);
         try codec.writeInteger(self.refinement_count, writer);
         try codec.writeInteger(self.refinement_gas_used, writer);
         try codec.writeInteger(self.imports, writer);
-        try codec.writeInteger(self.exports, writer);
-        try codec.writeInteger(self.extrinsic_size, writer);
         try codec.writeInteger(self.extrinsic_count, writer);
+        try codec.writeInteger(self.extrinsic_size, writer);
+        try codec.writeInteger(self.exports, writer);
         try codec.writeInteger(self.accumulate_count, writer);
         try codec.writeInteger(self.accumulate_gas_used, writer);
-        // v0.7.1: on_transfers fields removed
     }
 
     pub fn decode(_: anytype, reader: anytype, _: std.mem.Allocator) !@This() {
         const codec = @import("codec.zig");
 
-        // Read each field using variable-length integer decoding
-        // and truncate to the appropriate size
         const provided_count = @as(U16, @truncate(try codec.readInteger(reader)));
         const provided_size = @as(U32, @truncate(try codec.readInteger(reader)));
         const refinement_count = @as(U32, @truncate(try codec.readInteger(reader)));
         const refinement_gas_used = try codec.readInteger(reader);
         const imports = @as(U32, @truncate(try codec.readInteger(reader)));
-        const exports = @as(U32, @truncate(try codec.readInteger(reader)));
-        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
         const extrinsic_count = @as(U32, @truncate(try codec.readInteger(reader)));
+        const extrinsic_size = @as(U32, @truncate(try codec.readInteger(reader)));
+        const exports = @as(U32, @truncate(try codec.readInteger(reader)));
         const accumulate_count = @as(U32, @truncate(try codec.readInteger(reader)));
         const accumulate_gas_used = try codec.readInteger(reader);
-        // v0.7.1: on_transfers fields removed
 
         return @This(){
             .provided_count = provided_count,
