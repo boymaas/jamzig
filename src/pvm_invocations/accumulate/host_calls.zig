@@ -1236,9 +1236,23 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Host call: designate validators", .{});
             span.debug("Offset pointer: 0x{x}", .{offset_ptr});
 
-            // Check if current service has the validator privilege (x_s = (x_u)_v)
+            // Calculate total size needed: VALIDATOR_DATA_SIZE bytes per validator * V validators
+            const validator_count: u32 = params.validators_count;
+            const total_size: u32 = VALIDATOR_DATA_SIZE * validator_count;
+
+            span.debug("Reading {d} validators, total size: {d} bytes", .{ validator_count, total_size });
+
+            // Per graypaper: Read memory FIRST, then check privilege
+            // If memory read fails (v = error), panic takes precedence over privilege check
+            var validator_data = exec_ctx.memory.readSlice(@truncate(offset_ptr), total_size) catch {
+                span.err("Memory access failed while reading validator keys", .{});
+                return .{ .terminal = .panic };
+            };
+            defer validator_data.deinit();
+
+            // Now check if current service has the validator privilege (x_s = (x_u)_v)
             const privileges: *const state.Chi(params.core_count) = ctx_regular.context.privileges.getReadOnly();
-            // Note: Chi incorrectly names this field 'designate' but it represents the validator service
+            // Note: Chi field 'designate' represents the delegator/validator service
             if (privileges.designate != ctx_regular.service_id) {
                 span.debug("Service {d} does not have validator privilege, current validator service is {?d}", .{
                     ctx_regular.service_id, privileges.designate,
@@ -1246,19 +1260,6 @@ pub fn HostCalls(comptime params: Params) type {
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                 return .play;
             }
-
-            // Calculate total size needed: VALIDATOR_DATA_SIZE bytes per validator * V validators
-            const validator_count: u32 = params.validators_count;
-            const total_size: u32 = VALIDATOR_DATA_SIZE * validator_count;
-
-            span.debug("Reading {d} validators, total size: {d} bytes", .{ validator_count, total_size });
-
-            // Read validator keys from memory
-            var validator_data = exec_ctx.memory.readSlice(@truncate(offset_ptr), total_size) catch {
-                span.err("Memory access failed while reading validator keys", .{});
-                return .{ .terminal = .panic };
-            };
-            defer validator_data.deinit();
 
             // Parse the validator keys directly from memory using bytesAsSlice
             // Each validator is exactly VALIDATOR_DATA_SIZE bytes:
