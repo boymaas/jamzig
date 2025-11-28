@@ -335,21 +335,6 @@ pub fn HostCalls(comptime params: Params) type {
                 };
             }
 
-            // Get current privileges
-            const current_privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
-                span.err("Could not get mutable privileges", .{});
-                return HostCallError.FULL;
-            };
-
-            // Only the current manager service can call bless
-            // Graypaper: returns HUH when x_s ≠ (x_u)_m
-            if (ctx_regular.service_id != current_privileges.manager) {
-                span.debug("Unauthorized bless call from service {d}, current manager is {d}", .{
-                    ctx_regular.service_id, current_privileges.manager,
-                });
-                return HostCallError.HUH;
-            }
-
             // Check if manager, validator, and registrar service IDs are in the u32 domain
             // Graypaper: returns WHO when (m, v, r) ∉ serviceid^3
             if (exec_ctx.registers[7] > std.math.maxInt(u32) or
@@ -362,6 +347,12 @@ pub fn HostCalls(comptime params: Params) type {
                 );
                 return HostCallError.WHO;
             }
+
+            // Get mutable privileges (no authorization check per v0.7.1 graypaper)
+            const current_privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
+                span.err("Could not get mutable privileges", .{});
+                return HostCallError.FULL;
+            };
 
             // Update privileges
             span.debug("Updating privileges", .{});
