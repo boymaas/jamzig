@@ -21,7 +21,6 @@ const DependencyResolver = @import("accumulate/dependency_resolver.zig").Depende
 const StatisticsCalculator = @import("accumulate/statistics_calculator.zig").StatisticsCalculator;
 const StateUpdater = @import("accumulate/state_updater.zig").StateUpdater;
 const GasCalculator = @import("accumulate/gas_calculator.zig").GasCalculator;
-const TransferExecutor = @import("accumulate/transfer_executor.zig").TransferExecutor;
 const HistoryTracker = @import("accumulate/history_tracker.zig").HistoryTracker;
 const QueueProcessor = @import("accumulate/queue_processor.zig").QueueProcessor;
 
@@ -80,12 +79,10 @@ pub fn processAccumulationReports(
 
     const accumulated = accumulatable[0..execution_result.accumulated_count];
 
-    // Step 4: Apply deferred transfers
-    const transfer_executor = TransferExecutor(params).init(allocator);
-    const transfer_stats = try transfer_executor.applyDeferredTransfers(
-        stx,
-        execution_result.deferred_transfers,
-    );
+    // Step 4: Transfer stats (v0.7.1 inline processing - no separate step needed)
+    // Transfer stats are now tracked during accumulation, not post-processed
+    var transfer_stats = std.AutoHashMap(types.ServiceId, @import("accumulate/execution.zig").TransferServiceStats).init(allocator);
+    defer transfer_stats.deinit();
 
     // Step 5: Update history
     const history_tracker = HistoryTracker(params){};

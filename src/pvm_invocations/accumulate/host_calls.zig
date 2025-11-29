@@ -22,6 +22,9 @@ const trace = @import("tracing").scoped(.host_calls);
 // Import shared encoding utilities
 const encoding_utils = @import("../encoding_utils.zig");
 
+// Import accumulate module for TransferOperand
+const pvm_accumulate = @import("../accumulate.zig");
+
 pub fn HostCalls(comptime params: Params) type {
     return struct {
         pub const Context = struct {
@@ -55,10 +58,9 @@ pub fn HostCalls(comptime params: Params) type {
             context: AccumulationContext(params),
             service_id: types.ServiceId,
             new_service_id: types.ServiceId,
-            deferred_transfers: std.ArrayList(DeferredTransfer),
+            generated_transfers: std.ArrayList(pvm_accumulate.TransferOperand),
             accumulation_output: ?types.AccumulateRoot,
-            operands: []const @import("../accumulate.zig").AccumulationOperand,
-            // Track provided preimages (x_p set) for post-accumulation integration
+            operands: []const pvm_accumulate.AccumulationOperand,
             provided_preimages: std.AutoHashMap(ProvidedKey, []const u8),
 
             pub fn commit(self: *@This()) !void {
@@ -135,7 +137,7 @@ pub fn HostCalls(comptime params: Params) type {
                     .context = try self.context.deepClone(),
                     .service_id = self.service_id,
                     .new_service_id = self.new_service_id,
-                    .deferred_transfers = try self.deferred_transfers.clone(),
+                    .generated_transfers = try self.generated_transfers.clone(),
                     .accumulation_output = self.accumulation_output,
                     .operands = self.operands,
                     .provided_preimages = cloned_preimages,
@@ -166,7 +168,7 @@ pub fn HostCalls(comptime params: Params) type {
                 }
                 self.provided_preimages.deinit();
 
-                self.deferred_transfers.deinit();
+                self.generated_transfers.deinit();
                 self.context.deinit();
                 self.* = undefined;
             }
@@ -465,7 +467,13 @@ pub fn HostCalls(comptime params: Params) type {
                 amount, gas_limit, memo_ptr,
             });
 
+            // CRITICAL: Check gas BEFORE charging (graypaper spec)
             const gas_costs = 10 + @as(i64, @intCast(gas_limit));
+            if (exec_ctx.gas < gas_costs) {
+                span.debug("Insufficient gas for transfer (need {d}, have {d})", .{ gas_costs, exec_ctx.gas });
+                return .{ .terminal = .out_of_gas };
+            }
+
             span.debug("charging {d} gas", .{gas_costs});
             exec_ctx.gas -= gas_costs;
 
@@ -505,15 +513,16 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.LOW;
             }
 
-            // Check if source has enough balance
-            span.debug("Checking source balance: {d} against transfer amount: {d}", .{
-                source_service.balance, amount,
+            // Check if transfer would leave balance below min_balance threshold
+            // Corrected spec (v0.7.1 had typo): CASH when b < self.min_balance where b = balance - amount
+            const min_balance = source_service.getStorageFootprint(params).a_t;
+
+            span.debug("Checking source balance {d} - amount {d} = {d} against min_balance {d}", .{
+                source_service.balance, amount, source_service.balance -| amount, min_balance,
             });
 
-            const footprint = source_service.getStorageFootprint(params);
-
-            if (source_service.balance -| amount < footprint.a_t) {
-                span.warn("Transferring would push balance under threshold balance, returning CASH error", .{});
+            if (source_service.balance -| amount < min_balance) {
+                span.warn("Transfer would push balance below min_balance threshold, returning CASH error", .{});
                 return HostCallError.CASH;
             }
 
@@ -521,9 +530,8 @@ pub fn HostCalls(comptime params: Params) type {
             var memo: [params.transfer_memo_size]u8 = [_]u8{0} ** params.transfer_memo_size;
             @memcpy(&memo, memo_slice.buffer[0..params.transfer_memo_size]);
 
-            // Create a deferred transfer
-            span.debug("Creating deferred transfer", .{});
-            const deferred_transfer = DeferredTransfer{
+            // Create transfer for inline processing (v0.7.1)
+            const transfer_operand = pvm_accumulate.TransferOperand{
                 .sender = ctx_regular.service_id,
                 .destination = @intCast(destination_id),
                 .amount = @intCast(amount),
@@ -531,11 +539,9 @@ pub fn HostCalls(comptime params: Params) type {
                 .gas_limit = @intCast(gas_limit),
             };
 
-            // Add the transfer to the list of deferred transfers
-            span.debug("Adding transfer to deferred transfers list", .{});
-            ctx_regular.deferred_transfers.append(deferred_transfer) catch {
-                // Out of memory
-                span.err("Failed to append transfer to list, out of memory", .{});
+            // Add to generated_transfers for inline processing (v0.7.1)
+            span.debug("Adding transfer to generated_transfers for next service", .{});
+            ctx_regular.generated_transfers.append(transfer_operand) catch {
                 return .{ .terminal = .panic };
             };
 
@@ -1478,13 +1484,13 @@ pub fn HostCalls(comptime params: Params) type {
                 },
 
                 16 => {
-                    // Selector 16: Encoded transfer sequence - access from deferred transfers
-                    if (ctx_regular.deferred_transfers.items.len > 0) {
-                        const transfers_data = encoding_utils.encodeTransfers(ctx_regular.allocator, ctx_regular.deferred_transfers.items) catch {
+                    // Selector 16: Encoded transfer sequence (v0.7.1 uses generated_transfers)
+                    if (ctx_regular.generated_transfers.items.len > 0) {
+                        const transfers_data = encoding_utils.encodeTransfers(ctx_regular.allocator, ctx_regular.generated_transfers.items) catch {
                             span.err("Failed to encode transfer sequence", .{});
                             return HostCallError.NONE;
                         };
-                        span.debug("Transfer sequence encoded successfully, count={d}", .{ctx_regular.deferred_transfers.items.len});
+                        span.debug("Transfer sequence encoded successfully, count={d}", .{ctx_regular.generated_transfers.items.len});
                         data_to_fetch = transfers_data;
                         needs_cleanup = true;
                     } else {
@@ -1494,10 +1500,10 @@ pub fn HostCalls(comptime params: Params) type {
                 },
 
                 17 => {
-                    // Selector 17: Specific transfer by index
-                    if (ctx_regular.deferred_transfers.items.len > 0) {
-                        if (index1 < ctx_regular.deferred_transfers.items.len) {
-                            const transfer_item = &ctx_regular.deferred_transfers.items[index1];
+                    // Selector 17: Specific transfer by index (v0.7.1 uses generated_transfers)
+                    if (ctx_regular.generated_transfers.items.len > 0) {
+                        if (index1 < ctx_regular.generated_transfers.items.len) {
+                            const transfer_item = &ctx_regular.generated_transfers.items[index1];
                             const transfer_data = encoding_utils.encodeTransfer(ctx_regular.allocator, transfer_item) catch {
                                 span.err("Failed to encode transfer", .{});
                                 return HostCallError.NONE;
@@ -1506,11 +1512,11 @@ pub fn HostCalls(comptime params: Params) type {
                             data_to_fetch = transfer_data;
                             needs_cleanup = true;
                         } else {
-                            span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.deferred_transfers.items.len });
+                            span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.generated_transfers.items.len });
                             return HostCallError.NONE;
                         }
                     } else {
-                        span.debug("No deferred transfers available in accumulate context", .{});
+                        span.debug("No generated transfers available in accumulate context", .{});
                         return HostCallError.NONE;
                     }
                 },

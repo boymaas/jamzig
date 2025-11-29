@@ -46,16 +46,9 @@ pub const TransferServiceStats = struct {
 /// Result of the outer accumulation function
 pub const OuterAccumulationResult = struct {
     accumulated_count: usize,
-    deferred_transfers: []DeferredTransfer,
     accumulation_outputs: HashSet(ServiceAccumulationOutput),
-    gas_used_per_service: std.AutoHashMap(types.ServiceId, types.Gas), // Gas used per service ID
-    invoked_services: std.AutoHashMap(types.ServiceId, void), // v0.7.2: All services that were invoked
-
-    pub fn takeTransfers(self: *@This()) []DeferredTransfer {
-        const result = self.deferred_transfers;
-        self.deferred_transfers = &[_]DeferredTransfer{};
-        return result;
-    }
+    gas_used_per_service: std.AutoHashMap(types.ServiceId, types.Gas),
+    invoked_services: std.AutoHashMap(types.ServiceId, void),
 
     pub fn takeInvokedServices(self: *@This()) std.AutoHashMap(types.ServiceId, void) {
         const result = self.invoked_services;
@@ -64,10 +57,9 @@ pub const OuterAccumulationResult = struct {
     }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.deferred_transfers);
         self.accumulation_outputs.deinit(allocator);
         self.gas_used_per_service.deinit();
-        self.invoked_services.deinit(); // v0.7.2
+        self.invoked_services.deinit();
         self.* = undefined;
     }
 };
@@ -112,9 +104,6 @@ pub fn outerAccumulation(
     span.trace("Processing following work_reports: {}", .{types.fmt.format(work_reports)});
 
     // Initialize output containers
-    var transfers = std.ArrayList(DeferredTransfer).init(allocator);
-    defer transfers.deinit();
-
     var accumulation_outputs = HashSet(ServiceAccumulationOutput).init();
     errdefer accumulation_outputs.deinit(allocator);
 
@@ -131,10 +120,9 @@ pub fn outerAccumulation(
         span.debug("No work reports to process", .{});
         return .{
             .accumulated_count = 0,
-            .deferred_transfers = &[_]DeferredTransfer{},
             .accumulation_outputs = accumulation_outputs,
             .gas_used_per_service = gas_used_per_service,
-            .invoked_services = invoked_services, // v0.7.2
+            .invoked_services = invoked_services,
         };
     }
 
@@ -143,6 +131,11 @@ pub fn outerAccumulation(
     var current_reports = work_reports;
     var total_accumulated_count: usize = 0;
     var first_batch = true;
+
+    // NEW (v0.7.1): Track pending transfers for inline processing
+    // Transfers generated in one batch become inputs to the next batch
+    var pending_transfers = std.ArrayList(pvm_accumulate.TransferOperand).init(allocator);
+    defer pending_transfers.deinit();
 
     // Process reports in batches until we've processed all or run out of gas
     while (current_reports.len > 0 and current_gas_limit > 0) {
@@ -181,10 +174,15 @@ pub fn outerAccumulation(
 
         // Process all service results in a single loop:
         // - Apply provided preimages
-        // - Collect transfers
+        // - Collect transfers (OLD path - will be removed in Phase 3)
+        // - Collect generated_transfers (NEW path - for next batch)
         // - Aggregate gas usage
         // - Collect accumulation outputs
         var batch_gas_used: types.Gas = 0;
+
+        // Clear pending transfers and collect new ones from this batch
+        pending_transfers.clearRetainingCapacity();
+
         var result_it = parallelized_result.iterator();
         while (result_it.next()) |entry| {
             const service_id = entry.key_ptr.*;
@@ -193,8 +191,14 @@ pub fn outerAccumulation(
             // Apply provided preimages
             try result.collapsed_dimension.applyProvidedPreimages(context.time.current_slot);
 
-            // Append transfers directly
-            try transfers.appendSlice(result.transfers);
+            // Collect generated transfers for next batch (v0.7.1 inline processing)
+            // These will be passed as inputs to services in the next iteration
+            try pending_transfers.appendSlice(result.generated_transfers);
+            if (result.generated_transfers.len > 0) {
+                span.debug("Service {d} generated {d} transfers for next batch", .{
+                    service_id, result.generated_transfers.len,
+                });
+            }
 
             // Add accumulation output to our output set if present
             if (result.accumulation_output) |output| {
@@ -234,10 +238,9 @@ pub fn outerAccumulation(
 
     return .{
         .accumulated_count = total_accumulated_count,
-        .deferred_transfers = try transfers.toOwnedSlice(),
         .accumulation_outputs = accumulation_outputs,
         .gas_used_per_service = gas_used_per_service,
-        .invoked_services = invoked_services, // v0.7.2
+        .invoked_services = invoked_services,
     };
 }
 

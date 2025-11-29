@@ -152,7 +152,7 @@ pub fn invoke(
         // Clone the context for this invocation to ensure isolation
         .context = context,
         .new_service_id = service_util.generateServiceId(&context.service_accounts, service_id, context.entropy, context.time.current_slot),
-        .deferred_transfers = std.ArrayList(DeferredTransfer).init(allocator),
+        .generated_transfers = std.ArrayList(TransferOperand).init(allocator),
         .accumulation_output = null,
         .operands = accumulation_operands,
         .provided_preimages = std.AutoHashMap(AccumulateHostCalls(params).ProvidedKey, []const u8).init(allocator),
@@ -251,19 +251,6 @@ pub fn invoke(
     const gas_used = result.gas_used;
     span.debug("Gas used for invocation: {d}", .{gas_used});
 
-    // Build the result array of deferred transfers
-    // Note: toOwnedSlice() removes items from the ArrayList, but these transfers
-    // will be applied later in the accumulation pipeline
-    const transfers = try collapsed_dimension.deferred_transfers.toOwnedSlice();
-    span.debug("Number of deferred transfers created: {d}", .{transfers.len});
-
-    // TODO: add debugging condition
-    for (transfers, 0..) |transfer, i| {
-        span.debug("Transfer {d}: {d} -> {d}, amount: {d}", .{
-            i, transfer.sender, transfer.destination, transfer.amount,
-        });
-    }
-
     // See: B.12
     const accumulation_output: ?[32]u8 = outer: switch (result.result) {
         .halt => |output| {
@@ -281,8 +268,13 @@ pub fn invoke(
     // Return the collapsed dimension to the caller, who will apply preimages and commit changes
     // at the appropriate level after all services have been processed
     span.debug("Accumulation invocation completed", .{});
+
+    // Extract generated transfers from the collapsed dimension (v0.7.1 inline processing)
+    const generated_transfers = try collapsed_dimension.generated_transfers.toOwnedSlice();
+    span.debug("Number of generated transfers (for next service): {d}", .{generated_transfers.len});
+
     return AccumulationResult(params){
-        .transfers = transfers,
+        .generated_transfers = generated_transfers,
         .accumulation_output = accumulation_output,
         .gas_used = gas_used,
         .collapsed_dimension = try collapsed_dimension.deepCloneHeap(),
@@ -342,6 +334,16 @@ pub const AccumulationOperands = struct {
         // Mark as undefined to prevent use-after-free
         self.* = undefined;
     }
+};
+
+/// Transfer processed inline during accumulation per v0.7.1 graypaper
+/// T ≡ {s ∈ N_S, d ∈ N_S, a ∈ N_B, m ∈ Y_W_T, g ∈ N_G}
+pub const TransferOperand = struct {
+    sender: types.ServiceId,
+    destination: types.ServiceId,
+    amount: types.Balance,
+    memo: [128]u8,
+    gas_limit: types.Gas,
 };
 
 /// 12.18 AccumulationOperand represents a wrangled tuple of operands used by the PVM Accumulation function.
@@ -527,8 +529,8 @@ test "AccumulationOperand.Output encode/decode" {
 /// Parameterized to allow proper typing of the collapsed dimension
 pub fn AccumulationResult(comptime params: Params) type {
     return struct {
-        /// Sequence of deferred transfers resulting from accumulation
-        transfers: []DeferredTransfer,
+        /// Transfers generated during THIS accumulation for inline processing (v0.7.1)
+        generated_transfers: []TransferOperand,
 
         /// Optional accumulation output hash (null if no output was produced)
         accumulation_output: ?types.AccumulateOutput,
@@ -537,7 +539,6 @@ pub fn AccumulationResult(comptime params: Params) type {
         gas_used: types.Gas,
 
         /// The collapsed dimension containing all state changes from accumulation
-        /// This allows the caller to apply preimages and commit changes at the appropriate level
         collapsed_dimension: *AccumulateHostCalls(params).Dimension,
 
         /// Create an empty result with a valid dimension
@@ -548,30 +549,23 @@ pub fn AccumulationResult(comptime params: Params) type {
                 .allocator = allocator,
                 .context = context,
                 .service_id = service_id,
-                .new_service_id = service_id, // No new service generated for empty result
-                .deferred_transfers = std.ArrayList(DeferredTransfer).init(allocator),
+                .new_service_id = service_id,
+                .generated_transfers = std.ArrayList(TransferOperand).init(allocator),
                 .accumulation_output = null,
                 .operands = &[_]@import("accumulate.zig").AccumulationOperand{},
                 .provided_preimages = std.AutoHashMap(AccumulateHostCalls(params).ProvidedKey, []const u8).init(allocator),
             };
 
             return @This(){
-                .transfers = &[_]DeferredTransfer{},
+                .generated_transfers = &[_]TransferOperand{},
                 .accumulation_output = null,
                 .gas_used = 0,
                 .collapsed_dimension = dimension,
             };
         }
 
-        pub fn takeTransfers(self: *@This()) []DeferredTransfer {
-            const result = self.transfers;
-            self.transfers = &[_]DeferredTransfer{};
-            return result;
-        }
-
         pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {
-            alloc.free(self.transfers);
-            // Now we own the dimension and must clean it up
+            alloc.free(self.generated_transfers);
             self.collapsed_dimension.deinit();
             alloc.destroy(self.collapsed_dimension);
             self.* = undefined;
