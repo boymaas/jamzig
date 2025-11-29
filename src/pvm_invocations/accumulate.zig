@@ -22,6 +22,7 @@ const HostCallMap = @import("accumulate/host_calls_map.zig");
 
 // Add tracing import
 const trace = @import("tracing").scoped(.accumulate);
+const trace_hostcalls = @import("tracing").scoped(.host_calls);
 
 // Replace the AccumulateArgs struct definition with this:
 const AccumulateArgs = struct {
@@ -87,10 +88,23 @@ pub fn invoke(
 
     const accumulate_wrapper = struct {
         fn wrap(
+            host_call_id: u32,
             host_call_fn: pvm.PVM.HostCallFn,
             exec_ctx: *pvm.PVM.ExecutionContext,
             host_ctx: *anyopaque,
         ) pvm.PVM.HostCallResult {
+            // Capture gas before
+            const gas_before = exec_ctx.gas;
+
+            // Log before host call
+            {
+                const enum_val: host_calls.Id = @enumFromInt(host_call_id);
+                const hc_span = trace_hostcalls.span(@src(), .host_call_pre);
+                defer hc_span.deinit();
+                hc_span.debug(">>> {s} gas_before={d}", .{ @tagName(enum_val), gas_before });
+            }
+
+            // Execute host call
             const result = host_call_fn(exec_ctx, host_ctx) catch |err| switch (err) {
                 error.MemoryAccessFault => {
                     // Memory faults cause panic per graypaper
@@ -103,6 +117,20 @@ pub fn invoke(
                     return .play;
                 },
             };
+
+            // Log after host call
+            {
+                const enum_val: host_calls.Id = @enumFromInt(host_call_id);
+                const hc_span = trace_hostcalls.span(@src(), .host_call_post);
+                defer hc_span.deinit();
+                const gas_charged = gas_before - exec_ctx.gas;
+                hc_span.debug("<<< {s} gas_after={d} gas_charged={d}", .{
+                    @tagName(enum_val),
+                    exec_ctx.gas,
+                    gas_charged,
+                });
+            }
+
             return result;
         }
     }.wrap;
