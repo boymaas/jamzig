@@ -165,6 +165,14 @@ pub fn StatisticsCalculator(comptime params: Params) type {
                     }
                 }
 
+                // v0.7.1: Skip services that didn't actually accumulate
+                // Services may be invoked for transfer credit but if code is unavailable,
+                // they have gas_used=0 and count=0, and should not appear in statistics.
+                if (gas_used == 0 and count == 0) {
+                    span.trace("Skipping service {d} with no accumulation activity", .{service_id});
+                    continue;
+                }
+
                 try accumulation_stats.put(service_id, .{
                     .gas_used = gas_used,
                     .accumulated_count = count,
