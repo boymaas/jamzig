@@ -8,3 +8,6 @@ build-outputs
 *.tracy
 profiles/captures/
 build.log
+
+# Trace debugging progress (local only)
+.trace-progress/

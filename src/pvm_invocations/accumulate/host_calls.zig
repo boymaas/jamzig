@@ -58,6 +58,7 @@ pub fn HostCalls(comptime params: Params) type {
             context: AccumulationContext(params),
             service_id: types.ServiceId,
             new_service_id: types.ServiceId,
+            incoming_transfers: []const pvm_accumulate.TransferOperand,
             generated_transfers: std.ArrayList(pvm_accumulate.TransferOperand),
             accumulation_output: ?types.AccumulateRoot,
             operands: []const pvm_accumulate.AccumulationOperand,
@@ -137,6 +138,7 @@ pub fn HostCalls(comptime params: Params) type {
                     .context = try self.context.deepClone(),
                     .service_id = self.service_id,
                     .new_service_id = self.new_service_id,
+                    .incoming_transfers = self.incoming_transfers,
                     .generated_transfers = try self.generated_transfers.clone(),
                     .accumulation_output = self.accumulation_output,
                     .operands = self.operands,
@@ -487,7 +489,23 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Memo data: {s}", .{std.fmt.fmtSliceHexLower(memo_slice.buffer)});
 
-            // Get source service account
+            // Check if destination service exists (WHO check - before accessing self per graypaper)
+            span.debug("Looking up destination service account", .{});
+            const destination_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
+                span.debug("Destination service not found, returning WHO error", .{});
+                return HostCallError.WHO;
+            };
+
+            // Check if gas limit is high enough for destination service's on_transfer (LOW check)
+            span.debug("Checking gas limit against destination service's min_gas_on_transfer: {d}", .{
+                destination_service.min_gas_on_transfer,
+            });
+            if (gas_limit < destination_service.min_gas_on_transfer) {
+                span.debug("Gas limit too low, returning LOW error", .{});
+                return HostCallError.LOW;
+            }
+
+            // Get source service account (only after WHO and LOW checks per graypaper spec)
             span.debug("Looking up source service account", .{});
             const source_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable of service account", .{});
@@ -497,23 +515,7 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            // Check if destination service exists
-            span.debug("Looking up destination service account", .{});
-            const destination_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
-                span.debug("Destination service not found, returning WHO error", .{});
-                return HostCallError.WHO;
-            };
-
-            // Check if gas limit is high enough for destination service's on_transfer
-            span.debug("Checking gas limit against destination service's min_gas_on_transfer: {d}", .{
-                destination_service.min_gas_on_transfer,
-            });
-            if (gas_limit < destination_service.min_gas_on_transfer) {
-                span.debug("Gas limit too low, returning LOW error", .{});
-                return HostCallError.LOW;
-            }
-
-            // Check if transfer would leave balance below min_balance threshold
+            // Check if transfer would leave balance below min_balance threshold (CASH check)
             // Corrected spec (v0.7.1 had typo): CASH when b < self.min_balance where b = balance - amount
             const min_balance = source_service.getStorageFootprint(params).a_t;
 
@@ -1331,19 +1333,20 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.debug("Providing data for service: {d}", .{service_id});
 
-            // Check if the service exists
-            const service_account = ctx_regular.context.service_accounts.getReadOnly(service_id) orelse {
-                span.debug("Service {d} not found, returning WHO error", .{service_id});
-                return HostCallError.WHO;
-            };
-
-            // Read data from memory
+            // Per graypaper: Read memory FIRST, then check service existence
+            // Order matters: PANIC for memory error takes precedence over WHO for missing service
             span.debug("Reading {d} bytes from memory at 0x{x}", .{ data_size, data_ptr });
             var data_slice = exec_ctx.memory.readSlice(@truncate(data_ptr), @truncate(data_size)) catch {
                 span.err("Memory access failed while reading provide data", .{});
                 return .{ .terminal = .panic };
             };
             defer data_slice.deinit();
+
+            // Check if the service exists (after memory read per graypaper)
+            const service_account = ctx_regular.context.service_accounts.getReadOnly(service_id) orelse {
+                span.debug("Service {d} not found, returning WHO error", .{service_id});
+                return HostCallError.WHO;
+            };
 
             // Hash the data
             var data_hash: [32]u8 = undefined;
@@ -1456,29 +1459,56 @@ pub fn HostCalls(comptime params: Params) type {
                 },
 
                 14 => {
-                    // Selector 14: Encoded operand tuples
-                    const operand_tuples_data = encoding_utils.encodeOperandTuples(ctx_regular.allocator, ctx_regular.operands) catch {
-                        span.err("Failed to encode operand tuples", .{});
+                    // Selector 14: Encoded sequence of ALL inputs (transfers + work)
+                    // Per graypaper accone: Ψ_A(..., i^T ++ i^U) where i^T=transfers, i^U=work
+                    const combined_data = encoding_utils.encodeCombinedInputs(
+                        ctx_regular.allocator,
+                        ctx_regular.incoming_transfers,
+                        ctx_regular.operands,
+                    ) catch {
+                        span.err("Failed to encode combined inputs", .{});
                         return HostCallError.NONE;
                     };
-                    span.debug("Operand tuples encoded successfully, count={d}", .{ctx_regular.operands.len});
-                    data_to_fetch = operand_tuples_data;
+                    span.debug("Combined inputs encoded: {d} transfers + {d} work = {d} total", .{
+                        ctx_regular.incoming_transfers.len,
+                        ctx_regular.operands.len,
+                        ctx_regular.incoming_transfers.len + ctx_regular.operands.len,
+                    });
+                    data_to_fetch = combined_data;
                     needs_cleanup = true;
                 },
 
                 15 => {
-                    // Selector 15: Specific operand tuple
-                    if (index1 < ctx_regular.operands.len) {
-                        const operand_tuple = &ctx_regular.operands[index1];
-                        const operand_tuple_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand_tuple) catch {
-                            span.err("Failed to encode operand tuple", .{});
-                            return HostCallError.NONE;
-                        };
-                        span.debug("Operand tuple encoded successfully: index={d}", .{index1});
-                        data_to_fetch = operand_tuple_data;
-                        needs_cleanup = true;
+                    // Selector 15: Specific input by index
+                    // Per graypaper: inputs = i^T ++ i^U (transfers first, then work)
+                    const transfer_count = ctx_regular.incoming_transfers.len;
+                    const total_count = transfer_count + ctx_regular.operands.len;
+
+                    if (index1 < total_count) {
+                        if (index1 < transfer_count) {
+                            // Index in transfer range
+                            const transfer_item = &ctx_regular.incoming_transfers[index1];
+                            const transfer_data = encoding_utils.encodeTransferAsInput(ctx_regular.allocator, transfer_item) catch {
+                                span.err("Failed to encode transfer input", .{});
+                                return HostCallError.NONE;
+                            };
+                            span.debug("Transfer input encoded: index={d}", .{index1});
+                            data_to_fetch = transfer_data;
+                            needs_cleanup = true;
+                        } else {
+                            // Index in work operand range
+                            const operand_index = index1 - transfer_count;
+                            const operand = &ctx_regular.operands[operand_index];
+                            const operand_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand) catch {
+                                span.err("Failed to encode operand tuple", .{});
+                                return HostCallError.NONE;
+                            };
+                            span.debug("Work operand encoded: index={d} (work_index={d})", .{ index1, operand_index });
+                            data_to_fetch = operand_data;
+                            needs_cleanup = true;
+                        }
                     } else {
-                        span.debug("Operand tuple index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.operands.len });
+                        span.debug("Input index out of bounds: index={d}, total={d}", .{ index1, total_count });
                         return HostCallError.NONE;
                     }
                 },

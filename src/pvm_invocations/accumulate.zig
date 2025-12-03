@@ -47,11 +47,14 @@ pub fn invoke(
     service_id: types.ServiceId,
     gas_limit: types.Gas,
     accumulation_operands: []const AccumulationOperand, // O
+    incoming_transfers: []const TransferOperand,
 ) !AccumulationResult(params) {
     const span = trace.span(@src(), .invoke);
     defer span.deinit();
     span.debug("Starting accumulation invocation for service {d}", .{service_id});
-    span.debug("Time slot: {d}, Gas limit: {d}, Operand count: {d}", .{ context.time.current_slot, gas_limit, accumulation_operands.len });
+    span.debug("Time slot: {d}, Gas limit: {d}, Operands: {d}, Transfers: {d}", .{
+        context.time.current_slot, gas_limit, accumulation_operands.len, incoming_transfers.len,
+    });
     span.trace("Entropy: {s}", .{std.fmt.fmtSliceHexLower(&context.entropy)});
 
     // Look up the service account - if not found (ejected), return empty result
@@ -62,15 +65,42 @@ pub fn invoke(
 
     span.debug("Found service account for ID {d}", .{service_id});
 
+    // v0.7.1: Calculate total incoming transfer amount and filter for this service
+    var total_transfer_amount: types.Balance = 0;
+    var transfer_count: usize = 0;
+    for (incoming_transfers) |transfer| {
+        if (transfer.destination == service_id) {
+            total_transfer_amount += transfer.amount;
+            transfer_count += 1;
+        }
+    }
+
+    // v0.7.1: Update balance BEFORE PVM invocation per graypaper spec
+    var modified_context = context;
+    if (total_transfer_amount > 0) {
+        const mutable_account = modified_context.service_accounts.getMutable(service_id) catch {
+            span.err("Failed to get mutable service account", .{});
+            return try AccumulationResult(params).createEmpty(allocator, context, service_id);
+        } orelse {
+            span.err("Service account disappeared", .{});
+            return try AccumulationResult(params).createEmpty(allocator, context, service_id);
+        };
+
+        mutable_account.balance += total_transfer_amount;
+        span.debug("Updated service {d} balance by +{d} from {d} incoming transfers", .{
+            service_id, total_transfer_amount, transfer_count,
+        });
+    }
+
     // Prepare accumulation arguments
     span.debug("Preparing accumulation arguments", .{});
     var args_buffer = std.ArrayList(u8).init(allocator);
     defer args_buffer.deinit();
 
     const arguments = AccumulateArgs{
-        .timeslot = context.time.current_slot,
+        .timeslot = modified_context.time.current_slot,
         .service_id = service_id,
-        .operand_count = @intCast(accumulation_operands.len), // Just the count!
+        .operand_count = @intCast(accumulation_operands.len + transfer_count), // Work + transfers
     };
 
     span.trace("AccumulateArgs: timeslot={d}, service_id={d}, operand_count={d}", .{ arguments.timeslot, arguments.service_id, arguments.operand_count });
@@ -144,14 +174,30 @@ pub fn invoke(
 
     span.debug("Cloning accumulation context and updating fetch context", .{});
 
+    // v0.7.1: Filter incoming transfers for this specific service
+    var transfers_for_service = std.ArrayList(TransferOperand).init(allocator);
+    defer transfers_for_service.deinit();
+
+    for (incoming_transfers) |transfer| {
+        if (transfer.destination == service_id) {
+            try transfers_for_service.append(transfer);
+        }
+    }
+
+    const transfers_slice = try transfers_for_service.toOwnedSlice();
+    defer allocator.free(transfers_slice);
+
+    span.debug("Filtered {d} incoming transfers for service {d}", .{ transfers_slice.len, service_id });
+
     // Initialize host call context B.6
     span.debug("Initializing host call context", .{});
     var host_call_context = try AccumulateHostCalls(params).Context.constructUsingRegular(.{
         .allocator = allocator,
         .service_id = service_id,
-        // Clone the context for this invocation to ensure isolation
-        .context = context,
-        .new_service_id = service_util.generateServiceId(&context.service_accounts, service_id, context.entropy, context.time.current_slot),
+        // Use modified context with updated balance (v0.7.1 transfer processing)
+        .context = modified_context,
+        .new_service_id = service_util.generateServiceId(&modified_context.service_accounts, service_id, modified_context.entropy, modified_context.time.current_slot),
+        .incoming_transfers = transfers_slice,
         .generated_transfers = std.ArrayList(TransferOperand).init(allocator),
         .accumulation_output = null,
         .operands = accumulation_operands,
@@ -550,6 +596,7 @@ pub fn AccumulationResult(comptime params: Params) type {
                 .context = context,
                 .service_id = service_id,
                 .new_service_id = service_id,
+                .incoming_transfers = &[_]TransferOperand{},
                 .generated_transfers = std.ArrayList(TransferOperand).init(allocator),
                 .accumulation_output = null,
                 .operands = &[_]@import("accumulate.zig").AccumulationOperand{},
