@@ -38,6 +38,7 @@ pub fn decodeServiceAccountBase(
 
     // Construct account
     var account = try delta.getOrCreateAccount(service_id);
+    account.version = 0; // Default version
     account.code_hash = code_hash;
     account.balance = balance;
     account.min_gas_accumulate = min_item_gas;

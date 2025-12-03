@@ -96,6 +96,9 @@ pub const ServiceAccount = struct {
     // All data is stored as 31-byte StateKeys mapped to byte arrays
     data: std.AutoHashMap(types.StateKey, []const u8),
 
+    // Service information version (v0.7.1)
+    version: u8,
+
     // Must be present in pre-image lookup, this in self.preimages
     code_hash: Hash,
 
@@ -128,6 +131,7 @@ pub const ServiceAccount = struct {
     pub fn init(allocator: Allocator) ServiceAccount {
         return .{
             .data = std.AutoHashMap(types.StateKey, []const u8).init(allocator),
+            .version = 0,
             .code_hash = undefined,
             .balance = 0,
             .min_gas_accumulate = 0,
@@ -153,6 +157,7 @@ pub const ServiceAccount = struct {
         }
 
         // Copy all fields including tracking fields - they represent the exact same data
+        clone.version = self.version;
         clone.code_hash = self.code_hash;
         clone.balance = self.balance;
         clone.min_gas_accumulate = self.min_gas_accumulate;
