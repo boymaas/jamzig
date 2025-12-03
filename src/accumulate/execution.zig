@@ -137,8 +137,10 @@ pub fn outerAccumulation(
     var pending_transfers = std.ArrayList(pvm_accumulate.TransferOperand).init(allocator);
     defer pending_transfers.deinit();
 
-    // Process reports in batches until we've processed all or run out of gas
-    while (current_reports.len > 0 and current_gas_limit > 0) {
+    // Process reports in batches until we've processed all reports AND transfers, or run out of gas
+    // Per graypaper §12.16: n = len(t) + i + len(f) - continue while n > 0
+    // Transfer destinations must be processed to credit their balances (v0.7.1 inline transfers)
+    while ((current_reports.len > 0 or pending_transfers.items.len > 0) and current_gas_limit > 0) {
         // Calculate how many reports fit within gas limit
         const batch = calculateBatchSize(current_reports, current_gas_limit);
 
@@ -146,9 +148,10 @@ pub fn outerAccumulation(
             batch.reports_to_process, current_reports.len, batch.gas_to_use, current_gas_limit,
         });
 
-        // If no reports can be processed within the gas limit, break the loop
-        if (batch.reports_to_process == 0) {
-            span.debug("No more reports can be processed within gas limit", .{});
+        // If no reports can be processed AND no pending transfers, break the loop
+        // Per graypaper §12.17: services to accumulate include transfer destinations
+        if (batch.reports_to_process == 0 and pending_transfers.items.len == 0) {
+            span.debug("No more reports or transfers to process", .{});
             break;
         }
 
@@ -216,6 +219,8 @@ pub fn outerAccumulation(
         span.debug("Applied state changes for all services", .{});
 
         // v0.7.1: Calculate gas refund from processed transfers
+        // Refunded gas becomes available for subsequent batches, enabling further
+        // accumulation within the same block (per graypaper §12.16: g* = g + sum(t.gas))
         var gas_refund: types.Gas = 0;
         for (pending_transfers.items) |transfer| {
             gas_refund += transfer.gas_limit;
@@ -237,9 +242,10 @@ pub fn outerAccumulation(
         // We only execute our privileged_services once
         first_batch = false;
 
-        // If all reports processed, break early
-        if (current_reports.len == batch.reports_to_process) {
-            span.debug("Processed all work reports", .{});
+        // If all reports processed AND no pending transfers for next batch, break
+        // Per graypaper §12.16: continue while n = len(t) + i + len(f) > 0
+        if (current_reports.len == batch.reports_to_process and pending_transfers.items.len == 0) {
+            span.debug("Processed all work reports and transfers", .{});
             break;
         }
 
@@ -661,6 +667,9 @@ fn collectServiceIds(
     pending_transfers: []const pvm_accumulate.TransferOperand,
     include_privileged: bool,
 ) !std.AutoArrayHashMap(types.ServiceId, void) {
+    const span = trace.span(@src(), .collect_service_ids);
+    defer span.deinit();
+
     var service_ids = std.AutoArrayHashMap(types.ServiceId, void).init(allocator);
     errdefer service_ids.deinit();
 
@@ -679,9 +688,14 @@ fn collectServiceIds(
         }
     }
 
-    // v0.7.1: Transfer destination services
+    // v0.7.1: Transfer destination services (only if they exist)
+    // Per graypaper: ejected services are not accumulated
     for (pending_transfers) |transfer| {
-        try service_ids.put(transfer.destination, {});
+        if (context.service_accounts.getReadOnly(transfer.destination) != null) {
+            try service_ids.put(transfer.destination, {});
+        } else {
+            span.debug("Filtered transfer to non-existent service {d}", .{transfer.destination});
+        }
     }
 
     return service_ids;
