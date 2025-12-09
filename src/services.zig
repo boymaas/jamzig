@@ -577,10 +577,14 @@ pub const ServiceAccount = struct {
 
     // method to determine if this service needs a preimage
     pub fn needsPreImage(self: *const ServiceAccount, service_id: u32, hash: Hash, length: u32, current_timeslot: Timeslot) bool {
+        const span = trace.span(@src(), .preimage_needs);
+        defer span.deinit();
+
         // Check if we have an entry in preimage_lookups
         const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
         if (self.data.get(key)) |data| {
+            span.debug("Found lookup entry with {d} bytes", .{data.len});
             const lookup = decodePreimageLookup(data) catch return false;
             const status = lookup.asSlice();
 
@@ -601,8 +605,11 @@ pub const ServiceAccount = struct {
 
             // Case 4: Three-element status [t1, t2, t3] - available again since t3
             if (status.len == 3) {
+                span.debug("Case 4: Status [t1,t2,t3] - already available again, returning false", .{});
                 return false; // Already available again
             }
+        } else {
+            span.debug("No lookup entry found for this hash/length, returning false", .{});
         }
 
         // No lookup entry for this hash/length

@@ -67,8 +67,11 @@ pub fn processPreimagesExtrinsic(
         }
     }
 
-    // Ensure the delta prime state is available
-    var delta_prime: *state.Delta = try stx.ensure(.delta_prime);
+    // Get base delta for validation (graypaper §12.4: validate against accountspre)
+    const base_delta: *const state.Delta = &stx.base.delta.?;
+
+    // Ensure the delta prime state is available for integration
+    const delta_prime: *state.Delta = try stx.ensure(.delta_prime);
 
     // Process each preimage
     for (preimages.data, 0..) |preimage, i| {
@@ -81,29 +84,42 @@ pub fn processPreimagesExtrinsic(
         const preimage_hash = try calculatePreimageHash(preimage.blob);
         preimage_span.debug("Calculated hash: {s}", .{std.fmt.fmtSliceHexLower(&preimage_hash)});
 
-        // Check if service exists
         const service_id = preimage.requester;
-        var service_account = delta_prime.getAccount(service_id) orelse {
-            preimage_span.err("Service account {d} not found", .{service_id});
+        const preimage_len: u32 = @intCast(preimage.blob.len);
+
+        // VALIDATION: Check against BASE state (accountspre) - determines block validity
+        const base_account = base_delta.getAccount(service_id) orelse {
+            preimage_span.err("Service account {d} not found in base state", .{service_id});
             return error.UnknownServiceAccount;
         };
 
-        // Check if preimage hash is already recorded
-        if (!service_account.needsPreImage(service_id, preimage_hash, @intCast(preimage.blob.len), stx.time.current_slot)) {
-            preimage_span.err("Preimage not needed for service {d}, hash: {s}", .{ service_id, std.fmt.fmtSliceHexLower(&preimage_hash) });
+        if (!base_account.needsPreImage(service_id, preimage_hash, preimage_len, stx.time.current_slot)) {
+            preimage_span.err("Preimage not needed in base state for service {d}, hash: {s}", .{ service_id, std.fmt.fmtSliceHexLower(&preimage_hash) });
             return error.PreimageUnneeded;
+        }
+
+        // INTEGRATION: Check against PRIME state (accountspostxfer) - determines if we store
+        // If key was removed during accumulation (e.g., by forget), skip without error
+        const prime_account = delta_prime.getAccount(service_id) orelse {
+            preimage_span.debug("Service {d} no longer exists in prime state, skipping integration", .{service_id});
+            continue;
+        };
+
+        if (!prime_account.needsPreImage(service_id, preimage_hash, preimage_len, stx.time.current_slot)) {
+            preimage_span.debug("Preimage no longer needed in prime state (forgotten during accumulation), skipping", .{});
+            continue;
         }
 
         // Add the preimage to the service account using structured key
         const preimage_key = state_keys.constructServicePreimageKey(service_id, preimage_hash);
-        try service_account.dupeAndAddPreimage(preimage_key, preimage.blob);
+        try prime_account.dupeAndAddPreimage(preimage_key, preimage.blob);
         preimage_span.debug("Added preimage to service {d}", .{service_id});
 
         // Update the lookup metadata
-        try service_account.registerPreimageAvailable(
+        try prime_account.registerPreimageAvailable(
             service_id,
             preimage_hash,
-            @intCast(preimage.blob.len),
+            preimage_len,
             stx.time.current_slot,
         );
         preimage_span.debug("Updated lookup metadata for service {d}", .{service_id});
