@@ -187,10 +187,13 @@ pub fn outerAccumulation(
         var new_transfers = std.ArrayList(pvm_accumulate.TransferOperand).init(allocator);
         defer new_transfers.deinit();
 
-        var result_it = parallelized_result.iterator();
-        while (result_it.next()) |entry| {
-            const service_id = entry.key_ptr.*;
-            const result = entry.value_ptr;
+        // Iterate in ascending service ID order per graypaper Eq. 207 "orderedin"
+        var ordered_it = try parallelized_result.iteratorByServiceId(allocator);
+        defer allocator.free(ordered_it.service_ids_sorted);
+
+        while (ordered_it.next()) |entry| {
+            const service_id = entry.service_id;
+            const result = entry.result;
 
             // Apply provided preimages
             try result.collapsed_dimension.applyProvidedPreimages(context.time.current_slot);
@@ -271,6 +274,45 @@ pub fn ParallelizedAccumulationResult(params: jam_params.Params) type {
         /// Returns standard HashMap iterator for direct access
         pub fn iterator(self: *@This()) std.AutoHashMap(types.ServiceId, AccumulationResult(params)).Iterator {
             return self.service_results.iterator();
+        }
+
+        /// Iterator that yields (service_id, result) pairs in ascending service ID order
+        /// Implements graypaper Eq. 207 "orderedin" specification: results ordered by service ID
+        pub const ServiceIdOrderedIterator = struct {
+            service_ids_sorted: []types.ServiceId,
+            results: *std.AutoHashMap(types.ServiceId, AccumulationResult(params)),
+            index: usize,
+
+            pub fn next(self: *@This()) ?struct { service_id: types.ServiceId, result: *AccumulationResult(params) } {
+                if (self.index >= self.service_ids_sorted.len) return null;
+
+                const service_id = self.service_ids_sorted[self.index];
+                self.index += 1;
+
+                const result = self.results.getPtr(service_id) orelse return self.next();
+                return .{ .service_id = service_id, .result = result };
+            }
+        };
+
+        /// Returns an iterator that yields results in ascending service ID order (graypaper Eq. 207)
+        /// Caller must free the returned iterator's service_ids_sorted slice
+        pub fn iteratorByServiceId(self: *@This(), allocator: std.mem.Allocator) !ServiceIdOrderedIterator {
+            var service_id_list = std.ArrayList(types.ServiceId).init(allocator);
+            errdefer service_id_list.deinit();
+
+            var it = self.service_results.iterator();
+            while (it.next()) |entry| {
+                try service_id_list.append(entry.key_ptr.*);
+            }
+
+            const service_ids_sorted = try service_id_list.toOwnedSlice();
+            std.mem.sort(types.ServiceId, service_ids_sorted, {}, comptime std.sort.asc(types.ServiceId));
+
+            return ServiceIdOrderedIterator{
+                .service_ids_sorted = service_ids_sorted,
+                .results = &self.service_results,
+                .index = 0,
+            };
         }
 
         /// Apply context changes from all service dimensions
