@@ -6,8 +6,12 @@ const codec = @import("../../codec.zig");
 
 const trace = @import("tracing").scoped(.accumulate);
 
+/// C_minpublicindex = 2^16 - minimum public service index
+/// Services below this can only be created by the Registrar (graypaper definitions.tex)
+const C_MIN_PUBLIC_INDEX: u32 = 0x10000; // 65536 = 2^16
+
 /// Checks if a service ID is available and finds the next available one if not
-/// As defined in B.13 of the graypaper
+/// Graypaper eq. newserviceindex: check((i - C_minpublicindex + 1) mod (2^32 - 2^8 - C_minpublicindex) + C_minpublicindex)
 pub fn check(service_accounts: *const state.Delta.Snapshot, candidate_id: types.ServiceId) types.ServiceId {
     const span = trace.span(@src(), .check_service_id);
     defer span.deinit();
@@ -21,10 +25,10 @@ pub fn check(service_accounts: *const state.Delta.Snapshot, candidate_id: types.
 
     span.debug("Service ID {d} is already used, calculating next ID", .{candidate_id});
 
-    // Otherwise, calculate the next candidate in the sequence
-    // v0.7.1 GP #473: check((i - 2^8 + 1) mod (2^32 - 2^8 - 2^8) + 2^8)
-    // Reserved: [0, 256) lower + [2^32-256, 2^32) upper = 512 total
-    const next_id: u32 = 0x100 + ((candidate_id - 0x100 + 1) % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
+    // check((i - C_minpublicindex + 1) mod (2^32 - 2^8 - C_minpublicindex) + C_minpublicindex)
+    // Available range: [C_minpublicindex, 2^32-256) = [65536, 2^32-256)
+    const modulo: u32 = @intCast(std.math.pow(u64, 2, 32) - 0x100 - C_MIN_PUBLIC_INDEX);
+    const next_id: u32 = C_MIN_PUBLIC_INDEX + ((candidate_id - C_MIN_PUBLIC_INDEX + 1) % modulo);
     span.debug("Next candidate ID: {d}", .{next_id});
 
     // Recursive call to check the next candidate
@@ -67,10 +71,11 @@ pub fn generateServiceId(service_accounts: *const state.Delta.Snapshot, creator_
     std.crypto.hash.blake2.Blake2b256.hash(hash_input, &hash_output, .{});
     span.trace("Hash output: {s}", .{std.fmt.fmtSliceHexLower(&hash_output)});
 
-    // v0.7.1 GP #473: take first 4 bytes of hash mod (2^32 - 2^8 - 2^8) + 2^8
-    // Available range: [256, 2^32-256) to avoid privileged and top reserved ranges
+    // Graypaper: (decode[4]{hash} mod (2^32 - C_minpublicindex - 2^8)) + C_minpublicindex
+    // Available range: [C_minpublicindex, 2^32-256) = [65536, 2^32-256)
     const initial_value = std.mem.readInt(u32, hash_output[0..4], .little);
-    const candidate_id = 0x100 + (initial_value % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
+    const modulo: u32 = @intCast(std.math.pow(u64, 2, 32) - C_MIN_PUBLIC_INDEX - 0x100);
+    const candidate_id = C_MIN_PUBLIC_INDEX + (initial_value % modulo);
     span.debug("Initial candidate ID: {d}", .{candidate_id});
 
     // Check if this ID is available, and find next available if not

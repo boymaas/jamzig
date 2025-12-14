@@ -78,24 +78,11 @@ pub fn JamStateDiff(
             var state_diff = @This().init(allocator);
             var fields = &state_diff.fields;
             inline for (std.meta.fields(state.JamState(params))) |field| {
-                try fields.put(field.name, try diff.diffBasedOnFormat(
+                try fields.put(field.name, try diff.diffBasedOnReflection(
+                    field.type,
                     allocator,
-                    types.fmt.formatWithOptions(
-                        @field(before, field.name),
-                        .{
-                            .ignore_fields = &[_][]const u8{"global_index"},
-                            .sort_hash_fields = true,
-                            .allocator = allocator,
-                        },
-                    ),
-                    types.fmt.formatWithOptions(
-                        @field(after, field.name),
-                        .{
-                            .ignore_fields = &[_][]const u8{"global_index"},
-                            .sort_hash_fields = true,
-                            .allocator = allocator,
-                        },
-                    ),
+                    @field(before, field.name),
+                    @field(after, field.name),
                 ));
             }
 

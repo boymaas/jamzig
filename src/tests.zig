@@ -42,7 +42,6 @@ comptime {
     _ = @import("pvm_test/fuzzer/polkavm_ffi.zig");
 
     _ = @import("pvm_invocations/accumulate.zig");
-    _ = @import("pvm_invocations/ontransfer.zig");
 
     _ = @import("merkle.zig");
     _ = @import("merkle_test.zig");
@@ -99,6 +98,7 @@ comptime {
 
     _ = @import("accumulate.zig");
     _ = @import("accumulate_test.zig");
+    _ = @import("accumulate/chi_merger.zig");
 
     _ = @import("header_validator.zig");
 
@@ -123,5 +123,8 @@ comptime {
     _ = @import("lab/thread/reactor_pattern.zig");
 
     // JAM Conformance tests
-    // _ = @import("jam_conformance.zig");
+    _ = @import("jam_conformance.zig");
+
+    // Testing infrastructure
+    _ = @import("tests/reflection_diff_test.zig");
 }

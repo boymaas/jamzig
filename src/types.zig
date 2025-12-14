@@ -85,6 +85,7 @@ pub const BandersnatchKeyPair = struct {
 pub const ValidatorMetadata = [128]u8;
 
 pub const ServiceInfo = struct {
+    version: U8,
     code_hash: OpaqueHash,
     balance: Balance,
     min_item_gas: Gas,

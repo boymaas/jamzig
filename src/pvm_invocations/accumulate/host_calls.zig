@@ -22,6 +22,9 @@ const trace = @import("tracing").scoped(.host_calls);
 // Import shared encoding utilities
 const encoding_utils = @import("../encoding_utils.zig");
 
+// Import accumulate module for TransferOperand
+const pvm_accumulate = @import("../accumulate.zig");
+
 pub fn HostCalls(comptime params: Params) type {
     return struct {
         pub const Context = struct {
@@ -55,14 +58,15 @@ pub fn HostCalls(comptime params: Params) type {
             context: AccumulationContext(params),
             service_id: types.ServiceId,
             new_service_id: types.ServiceId,
-            deferred_transfers: std.ArrayList(DeferredTransfer),
+            incoming_transfers: []const pvm_accumulate.TransferOperand,
+            generated_transfers: std.ArrayList(pvm_accumulate.TransferOperand),
             accumulation_output: ?types.AccumulateRoot,
-            operands: []const @import("../accumulate.zig").AccumulationOperand,
-            // Track provided preimages (x_p set) for post-accumulation integration
+            operands: []const pvm_accumulate.AccumulationOperand,
             provided_preimages: std.AutoHashMap(ProvidedKey, []const u8),
 
             pub fn commit(self: *@This()) !void {
-                try self.context.commit();
+                // Per graypaper §12.17: only the original delegator's staging set (iota) is used
+                try self.context.commitForService(self.service_id);
             }
 
             /// Apply provided preimages after accumulation
@@ -134,7 +138,8 @@ pub fn HostCalls(comptime params: Params) type {
                     .context = try self.context.deepClone(),
                     .service_id = self.service_id,
                     .new_service_id = self.new_service_id,
-                    .deferred_transfers = try self.deferred_transfers.clone(),
+                    .incoming_transfers = self.incoming_transfers,
+                    .generated_transfers = try self.generated_transfers.clone(),
                     .accumulation_output = self.accumulation_output,
                     .operands = self.operands,
                     .provided_preimages = cloned_preimages,
@@ -165,7 +170,7 @@ pub fn HostCalls(comptime params: Params) type {
                 }
                 self.provided_preimages.deinit();
 
-                self.deferred_transfers.deinit();
+                self.generated_transfers.deinit();
                 self.context.deinit();
                 self.* = undefined;
             }
@@ -249,15 +254,16 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper B.7: [m, a, v, o, n] = registers[7..+5]
+            // Get registers per graypaper B.7: [m, a, v, r, o, n] = registers[7..+6]
             const manager_service_id: u32 = @truncate(exec_ctx.registers[7]); // m: Manager service ID
             const assign_ptr: u32 = @truncate(exec_ctx.registers[8]); // a: Pointer to assign service IDs array
             const validator_service_id: u32 = @truncate(exec_ctx.registers[9]); // v: Validator service ID
-            const always_accumulate_ptr: u32 = @truncate(exec_ctx.registers[10]); // o: Pointer to always-accumulate services array
-            const always_accumulate_count: u32 = @truncate(exec_ctx.registers[11]); // n: Number of entries in always-accumulate array
+            const registrar_service_id: u32 = @truncate(exec_ctx.registers[10]); // r: Registrar service ID
+            const always_accumulate_ptr: u32 = @truncate(exec_ctx.registers[11]); // o: Pointer to always-accumulate services array
+            const always_accumulate_count: u32 = @truncate(exec_ctx.registers[12]); // n: Number of entries in always-accumulate array
 
-            span.debug("Host call: bless - m={d}, v={d}, always_accumulate_count={d}", .{
-                manager_service_id, validator_service_id, always_accumulate_count,
+            span.debug("Host call: bless - m={d}, v={d}, r={d}, always_accumulate_count={d}", .{
+                manager_service_id, validator_service_id, registrar_service_id, always_accumulate_count,
             });
 
             // NOTE: that the order of these checks follows the graypaper
@@ -333,38 +339,32 @@ pub fn HostCalls(comptime params: Params) type {
                 };
             }
 
-            // Get current privileges
+            // Check if manager, validator, and registrar service IDs are in the u32 domain
+            // Graypaper: returns WHO when (m, v, r) ∉ serviceid^3
+            if (exec_ctx.registers[7] > std.math.maxInt(u32) or
+                exec_ctx.registers[9] > std.math.maxInt(u32) or
+                exec_ctx.registers[10] > std.math.maxInt(u32))
+            {
+                span.err(
+                    "Manager, validator, or registrar service ID exceeds u32 domain. M={d} V={d} R={d}",
+                    .{ exec_ctx.registers[7], exec_ctx.registers[9], exec_ctx.registers[10] },
+                );
+                return HostCallError.WHO;
+            }
+
+            // Get mutable privileges (no authorization check per v0.7.1 graypaper)
             const current_privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Could not get mutable privileges", .{});
                 return HostCallError.FULL;
             };
 
-            // Only the current manager service can call bless
-            // Graypaper: returns HUH when x_s ≠ (x_u)_m
-            if (ctx_regular.service_id != current_privileges.manager) {
-                span.debug("Unauthorized bless call from service {d}, current manager is {d}", .{
-                    ctx_regular.service_id, current_privileges.manager,
-                });
-                return HostCallError.HUH;
-            }
-
-            // Check if manager and validator service IDs are in the u32 domain
-            if (exec_ctx.registers[7] > std.math.maxInt(u32) or
-                exec_ctx.registers[9] > std.math.maxInt(u32))
-            {
-                span.err(
-                    "Manager or validator service ID exceeds u32 domain. M={d} V={d}",
-                    .{ exec_ctx.registers[7], exec_ctx.registers[9] },
-                );
-                return HostCallError.WHO;
-            }
-
             // Update privileges
             span.debug("Updating privileges", .{});
 
-            // Update the manager and validator service IDs
+            // Update the manager, validator, and registrar service IDs
             current_privileges.manager = manager_service_id;
             current_privileges.designate = validator_service_id;
+            current_privileges.registrar = registrar_service_id;
 
             // Update the assign service IDs list
             // Chi.assign must have exactly C elements
@@ -469,7 +469,13 @@ pub fn HostCalls(comptime params: Params) type {
                 amount, gas_limit, memo_ptr,
             });
 
+            // CRITICAL: Check gas BEFORE charging (graypaper spec)
             const gas_costs = 10 + @as(i64, @intCast(gas_limit));
+            if (exec_ctx.gas < gas_costs) {
+                span.debug("Insufficient gas for transfer (need {d}, have {d})", .{ gas_costs, exec_ctx.gas });
+                return .{ .terminal = .out_of_gas };
+            }
+
             span.debug("charging {d} gas", .{gas_costs});
             exec_ctx.gas -= gas_costs;
 
@@ -483,7 +489,23 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Memo data: {s}", .{std.fmt.fmtSliceHexLower(memo_slice.buffer)});
 
-            // Get source service account
+            // Check if destination service exists (WHO check - before accessing self per graypaper)
+            span.debug("Looking up destination service account", .{});
+            const destination_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
+                span.debug("Destination service not found, returning WHO error", .{});
+                return HostCallError.WHO;
+            };
+
+            // Check if gas limit is high enough for destination service's on_transfer (LOW check)
+            span.debug("Checking gas limit against destination service's min_gas_on_transfer: {d}", .{
+                destination_service.min_gas_on_transfer,
+            });
+            if (gas_limit < destination_service.min_gas_on_transfer) {
+                span.debug("Gas limit too low, returning LOW error", .{});
+                return HostCallError.LOW;
+            }
+
+            // Get source service account (only after WHO and LOW checks per graypaper spec)
             span.debug("Looking up source service account", .{});
             const source_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable of service account", .{});
@@ -493,31 +515,16 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            // Check if destination service exists
-            span.debug("Looking up destination service account", .{});
-            const destination_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
-                span.debug("Destination service not found, returning WHO error", .{});
-                return HostCallError.WHO;
-            };
+            // Check if transfer would leave balance below min_balance threshold (CASH check)
+            // Corrected spec (v0.7.1 had typo): CASH when b < self.min_balance where b = balance - amount
+            const min_balance = source_service.getStorageFootprint(params).a_t;
 
-            // Check if gas limit is high enough for destination service's on_transfer
-            span.debug("Checking gas limit against destination service's min_gas_on_transfer: {d}", .{
-                destination_service.min_gas_on_transfer,
-            });
-            if (gas_limit < destination_service.min_gas_on_transfer) {
-                span.debug("Gas limit too low, returning LOW error", .{});
-                return HostCallError.LOW;
-            }
-
-            // Check if source has enough balance
-            span.debug("Checking source balance: {d} against transfer amount: {d}", .{
-                source_service.balance, amount,
+            span.debug("Checking source balance {d} - amount {d} = {d} against min_balance {d}", .{
+                source_service.balance, amount, source_service.balance -| amount, min_balance,
             });
 
-            const footprint = source_service.getStorageFootprint(params);
-
-            if (source_service.balance -| amount < footprint.a_t) {
-                span.warn("Transferring would push balance under threshold balance, returning CASH error", .{});
+            if (source_service.balance -| amount < min_balance) {
+                span.warn("Transfer would push balance below min_balance threshold, returning CASH error", .{});
                 return HostCallError.CASH;
             }
 
@@ -525,9 +532,8 @@ pub fn HostCalls(comptime params: Params) type {
             var memo: [params.transfer_memo_size]u8 = [_]u8{0} ** params.transfer_memo_size;
             @memcpy(&memo, memo_slice.buffer[0..params.transfer_memo_size]);
 
-            // Create a deferred transfer
-            span.debug("Creating deferred transfer", .{});
-            const deferred_transfer = DeferredTransfer{
+            // Create transfer for inline processing (v0.7.1)
+            const transfer_operand = pvm_accumulate.TransferOperand{
                 .sender = ctx_regular.service_id,
                 .destination = @intCast(destination_id),
                 .amount = @intCast(amount),
@@ -535,11 +541,9 @@ pub fn HostCalls(comptime params: Params) type {
                 .gas_limit = @intCast(gas_limit),
             };
 
-            // Add the transfer to the list of deferred transfers
-            span.debug("Adding transfer to deferred transfers list", .{});
-            ctx_regular.deferred_transfers.append(deferred_transfer) catch {
-                // Out of memory
-                span.err("Failed to append transfer to list, out of memory", .{});
+            // Add to generated_transfers for inline processing (v0.7.1)
+            span.debug("Adding transfer to generated_transfers for next service", .{});
+            ctx_regular.generated_transfers.append(transfer_operand) catch {
                 return .{ .terminal = .panic };
             };
 
@@ -821,6 +825,15 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Host call: eject service {d}", .{target_service_id});
             span.debug("Hash pointer: 0x{x}", .{hash_ptr});
 
+            // Per graypaper: Read hash from memory FIRST (before service checks)
+            // This ensures memory errors have priority over protocol errors
+            span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
+            const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
+                span.err("Memory access failed while reading hash", .{});
+                return .{ .terminal = .panic };
+            };
+            span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
+
             // Check if target service is current service (can't eject self)
             if (target_service_id == ctx_regular.service_id) {
                 span.debug("Cannot eject current service, returning WHO error", .{});
@@ -832,14 +845,6 @@ pub fn HostCalls(comptime params: Params) type {
                 span.debug("Target service not found, returning WHO error", .{});
                 return HostCallError.WHO;
             };
-
-            // Read hash from memory
-            span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
-            const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
-                span.err("Memory access failed while reading hash", .{});
-                return .{ .terminal = .panic };
-            };
-            span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
             // Get the current_service
             const current_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
@@ -1231,9 +1236,23 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Host call: designate validators", .{});
             span.debug("Offset pointer: 0x{x}", .{offset_ptr});
 
-            // Check if current service has the validator privilege (x_s = (x_u)_v)
+            // Calculate total size needed: VALIDATOR_DATA_SIZE bytes per validator * V validators
+            const validator_count: u32 = params.validators_count;
+            const total_size: u32 = VALIDATOR_DATA_SIZE * validator_count;
+
+            span.debug("Reading {d} validators, total size: {d} bytes", .{ validator_count, total_size });
+
+            // Per graypaper: Read memory FIRST, then check privilege
+            // If memory read fails (v = error), panic takes precedence over privilege check
+            var validator_data = exec_ctx.memory.readSlice(@truncate(offset_ptr), total_size) catch {
+                span.err("Memory access failed while reading validator keys", .{});
+                return .{ .terminal = .panic };
+            };
+            defer validator_data.deinit();
+
+            // Now check if current service has the validator privilege (x_s = (x_u)_v)
             const privileges: *const state.Chi(params.core_count) = ctx_regular.context.privileges.getReadOnly();
-            // Note: Chi incorrectly names this field 'designate' but it represents the validator service
+            // Note: Chi field 'designate' represents the delegator/validator service
             if (privileges.designate != ctx_regular.service_id) {
                 span.debug("Service {d} does not have validator privilege, current validator service is {?d}", .{
                     ctx_regular.service_id, privileges.designate,
@@ -1241,19 +1260,6 @@ pub fn HostCalls(comptime params: Params) type {
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                 return .play;
             }
-
-            // Calculate total size needed: VALIDATOR_DATA_SIZE bytes per validator * V validators
-            const validator_count: u32 = params.validators_count;
-            const total_size: u32 = VALIDATOR_DATA_SIZE * validator_count;
-
-            span.debug("Reading {d} validators, total size: {d} bytes", .{ validator_count, total_size });
-
-            // Read validator keys from memory
-            var validator_data = exec_ctx.memory.readSlice(@truncate(offset_ptr), total_size) catch {
-                span.err("Memory access failed while reading validator keys", .{});
-                return .{ .terminal = .panic };
-            };
-            defer validator_data.deinit();
 
             // Parse the validator keys directly from memory using bytesAsSlice
             // Each validator is exactly VALIDATOR_DATA_SIZE bytes:
@@ -1328,19 +1334,20 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.debug("Providing data for service: {d}", .{service_id});
 
-            // Check if the service exists
-            const service_account = ctx_regular.context.service_accounts.getReadOnly(service_id) orelse {
-                span.debug("Service {d} not found, returning WHO error", .{service_id});
-                return HostCallError.WHO;
-            };
-
-            // Read data from memory
+            // Per graypaper: Read memory FIRST, then check service existence
+            // Order matters: PANIC for memory error takes precedence over WHO for missing service
             span.debug("Reading {d} bytes from memory at 0x{x}", .{ data_size, data_ptr });
             var data_slice = exec_ctx.memory.readSlice(@truncate(data_ptr), @truncate(data_size)) catch {
                 span.err("Memory access failed while reading provide data", .{});
                 return .{ .terminal = .panic };
             };
             defer data_slice.deinit();
+
+            // Check if the service exists (after memory read per graypaper)
+            const service_account = ctx_regular.context.service_accounts.getReadOnly(service_id) orelse {
+                span.debug("Service {d} not found, returning WHO error", .{service_id});
+                return HostCallError.WHO;
+            };
 
             // Hash the data
             var data_hash: [32]u8 = undefined;
@@ -1453,41 +1460,68 @@ pub fn HostCalls(comptime params: Params) type {
                 },
 
                 14 => {
-                    // Selector 14: Encoded operand tuples
-                    const operand_tuples_data = encoding_utils.encodeOperandTuples(ctx_regular.allocator, ctx_regular.operands) catch {
-                        span.err("Failed to encode operand tuples", .{});
+                    // Selector 14: Encoded sequence of ALL inputs (transfers + work)
+                    // Per graypaper accone: Ψ_A(..., i^T ++ i^U) where i^T=transfers, i^U=work
+                    const combined_data = encoding_utils.encodeCombinedInputs(
+                        ctx_regular.allocator,
+                        ctx_regular.incoming_transfers,
+                        ctx_regular.operands,
+                    ) catch {
+                        span.err("Failed to encode combined inputs", .{});
                         return HostCallError.NONE;
                     };
-                    span.debug("Operand tuples encoded successfully, count={d}", .{ctx_regular.operands.len});
-                    data_to_fetch = operand_tuples_data;
+                    span.debug("Combined inputs encoded: {d} transfers + {d} work = {d} total", .{
+                        ctx_regular.incoming_transfers.len,
+                        ctx_regular.operands.len,
+                        ctx_regular.incoming_transfers.len + ctx_regular.operands.len,
+                    });
+                    data_to_fetch = combined_data;
                     needs_cleanup = true;
                 },
 
                 15 => {
-                    // Selector 15: Specific operand tuple
-                    if (index1 < ctx_regular.operands.len) {
-                        const operand_tuple = &ctx_regular.operands[index1];
-                        const operand_tuple_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand_tuple) catch {
-                            span.err("Failed to encode operand tuple", .{});
-                            return HostCallError.NONE;
-                        };
-                        span.debug("Operand tuple encoded successfully: index={d}", .{index1});
-                        data_to_fetch = operand_tuple_data;
-                        needs_cleanup = true;
+                    // Selector 15: Specific input by index
+                    // Per graypaper: inputs = i^T ++ i^U (transfers first, then work)
+                    const transfer_count = ctx_regular.incoming_transfers.len;
+                    const total_count = transfer_count + ctx_regular.operands.len;
+
+                    if (index1 < total_count) {
+                        if (index1 < transfer_count) {
+                            // Index in transfer range
+                            const transfer_item = &ctx_regular.incoming_transfers[index1];
+                            const transfer_data = encoding_utils.encodeTransferAsInput(ctx_regular.allocator, transfer_item) catch {
+                                span.err("Failed to encode transfer input", .{});
+                                return HostCallError.NONE;
+                            };
+                            span.debug("Transfer input encoded: index={d}", .{index1});
+                            data_to_fetch = transfer_data;
+                            needs_cleanup = true;
+                        } else {
+                            // Index in work operand range
+                            const operand_index = index1 - transfer_count;
+                            const operand = &ctx_regular.operands[operand_index];
+                            const operand_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand) catch {
+                                span.err("Failed to encode operand tuple", .{});
+                                return HostCallError.NONE;
+                            };
+                            span.debug("Work operand encoded: index={d} (work_index={d})", .{ index1, operand_index });
+                            data_to_fetch = operand_data;
+                            needs_cleanup = true;
+                        }
                     } else {
-                        span.debug("Operand tuple index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.operands.len });
+                        span.debug("Input index out of bounds: index={d}, total={d}", .{ index1, total_count });
                         return HostCallError.NONE;
                     }
                 },
 
                 16 => {
-                    // Selector 16: Encoded transfer sequence - access from deferred transfers
-                    if (ctx_regular.deferred_transfers.items.len > 0) {
-                        const transfers_data = encoding_utils.encodeTransfers(ctx_regular.allocator, ctx_regular.deferred_transfers.items) catch {
+                    // Selector 16: Encoded transfer sequence (v0.7.1 uses generated_transfers)
+                    if (ctx_regular.generated_transfers.items.len > 0) {
+                        const transfers_data = encoding_utils.encodeTransfers(ctx_regular.allocator, ctx_regular.generated_transfers.items) catch {
                             span.err("Failed to encode transfer sequence", .{});
                             return HostCallError.NONE;
                         };
-                        span.debug("Transfer sequence encoded successfully, count={d}", .{ctx_regular.deferred_transfers.items.len});
+                        span.debug("Transfer sequence encoded successfully, count={d}", .{ctx_regular.generated_transfers.items.len});
                         data_to_fetch = transfers_data;
                         needs_cleanup = true;
                     } else {
@@ -1497,10 +1531,10 @@ pub fn HostCalls(comptime params: Params) type {
                 },
 
                 17 => {
-                    // Selector 17: Specific transfer by index
-                    if (ctx_regular.deferred_transfers.items.len > 0) {
-                        if (index1 < ctx_regular.deferred_transfers.items.len) {
-                            const transfer_item = &ctx_regular.deferred_transfers.items[index1];
+                    // Selector 17: Specific transfer by index (v0.7.1 uses generated_transfers)
+                    if (ctx_regular.generated_transfers.items.len > 0) {
+                        if (index1 < ctx_regular.generated_transfers.items.len) {
+                            const transfer_item = &ctx_regular.generated_transfers.items[index1];
                             const transfer_data = encoding_utils.encodeTransfer(ctx_regular.allocator, transfer_item) catch {
                                 span.err("Failed to encode transfer", .{});
                                 return HostCallError.NONE;
@@ -1509,11 +1543,11 @@ pub fn HostCalls(comptime params: Params) type {
                             data_to_fetch = transfer_data;
                             needs_cleanup = true;
                         } else {
-                            span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.deferred_transfers.items.len });
+                            span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.generated_transfers.items.len });
                             return HostCallError.NONE;
                         }
                     } else {
-                        span.debug("No deferred transfers available in accumulate context", .{});
+                        span.debug("No generated transfers available in accumulate context", .{});
                         return HostCallError.NONE;
                     }
                 },

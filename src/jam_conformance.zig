@@ -528,7 +528,7 @@ fn runTraceSummary(allocator: std.mem.Allocator, collection: *const TraceCollect
                 stats.no_ops,
                 stats.failed,
                 stats.skipped,
-                @as(f64, @floatFromInt(stats.passed)) * 100.0 / @as(f64, @floatFromInt(runnable)),
+                @as(f64, @floatFromInt(stats.passed + stats.no_ops)) * 100.0 / @as(f64, @floatFromInt(runnable)),
             });
         } else {
             std.debug.print("{s}: All {d} tests skipped\n", .{ entry.key_ptr.*, stats.skipped });
@@ -545,7 +545,7 @@ fn runTraceSummary(allocator: std.mem.Allocator, collection: *const TraceCollect
             total_no_ops,
             total_failed,
             total_skipped,
-            @as(f64, @floatFromInt(total_passed)) * 100.0 / @as(f64, @floatFromInt(total_runnable)),
+            @as(f64, @floatFromInt(total_passed + total_no_ops)) * 100.0 / @as(f64, @floatFromInt(total_runnable)),
         });
     } else {
         std.debug.print("Total: {d} | All tests skipped\n", .{total_count});

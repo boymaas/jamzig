@@ -19,9 +19,11 @@ pub fn validateGasLimits(
     span.debug("Validating gas limits for {d} results", .{guarantee.report.results.len});
 
     // Calculate total accumulate gas for this report
+    // Use saturating add to handle potential overflow from malformed input
+    // Any overflow means sum > G_A, so saturation to u64 MAX still triggers rejection
     var total_gas: u64 = 0;
     for (guarantee.report.results) |result| {
-        total_gas += result.accumulate_gas;
+        total_gas = std.math.add(u64, total_gas, result.accumulate_gas) catch std.math.maxInt(u64);
     }
 
     span.debug("Total accumulate gas: {d}", .{total_gas});

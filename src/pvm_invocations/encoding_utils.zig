@@ -132,3 +132,49 @@ pub fn encodeTransfer(allocator: std.mem.Allocator, transfer: *const @import("ac
     const codec = @import("../codec.zig");
     return try codec.serializeAlloc(@import("accumulate/types.zig").DeferredTransfer, .{}, allocator, transfer.*);
 }
+
+/// Encode combined inputs sequence (transfers + work operands)
+/// Per graypaper accone: Ψ_A(..., i^T ++ i^U) where i^T=transfers, i^U=work
+/// accinput ≡ operandtuple ∪ defxfer encoded as discriminated union
+pub fn encodeCombinedInputs(
+    allocator: std.mem.Allocator,
+    transfers: []const @import("accumulate.zig").TransferOperand,
+    operands: []const @import("accumulate.zig").AccumulationOperand,
+) ![]u8 {
+    const codec = @import("../codec.zig");
+    var buffer = std.ArrayList(u8).init(allocator);
+    errdefer buffer.deinit();
+
+    const total_count = transfers.len + operands.len;
+
+    try codec.writeInteger(total_count, buffer.writer());
+
+    // Transfers first (discriminator 1 per accinput union)
+    for (transfers) |transfer| {
+        try buffer.writer().writeByte(1);
+        try codec.serialize(@import("accumulate.zig").TransferOperand, .{}, buffer.writer(), transfer);
+    }
+
+    // Work operands second (discriminator 0)
+    for (operands) |operand| {
+        try buffer.writer().writeByte(0);
+        try operand.encode(.{}, buffer.writer());
+    }
+
+    return buffer.toOwnedSlice();
+}
+
+/// Encode single transfer as accinput (with discriminator 1)
+pub fn encodeTransferAsInput(
+    allocator: std.mem.Allocator,
+    transfer: *const @import("accumulate.zig").TransferOperand,
+) ![]u8 {
+    const codec = @import("../codec.zig");
+    var buffer = std.ArrayList(u8).init(allocator);
+    errdefer buffer.deinit();
+
+    try buffer.writer().writeByte(1);
+    try codec.serialize(@import("accumulate.zig").TransferOperand, .{}, buffer.writer(), transfer.*);
+
+    return buffer.toOwnedSlice();
+}

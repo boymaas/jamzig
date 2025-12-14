@@ -3,6 +3,7 @@ const std = @import("std");
 const tmpfile = @import("tmpfile");
 
 const tfmt = @import("../types/fmt.zig");
+const reflection_diff = @import("reflection_diff.zig");
 
 pub const DiffResult = union(enum) {
     EmptyDiff,
@@ -157,4 +158,33 @@ pub fn expectTypesFmtEqual(
     var diff = try diffBasedOnStrings(allocator, actual_str, expected_str);
     defer diff.deinit(allocator);
     try diff.debugPrintAndReturnErrorOnDiff();
+}
+
+/// Reflection-based diff using compile-time type walking
+/// Drop-in replacement for diffBasedOnStrings with semantic output
+pub fn diffBasedOnReflection(
+    comptime T: type,
+    allocator: std.mem.Allocator,
+    expected: T,
+    actual: T,
+) !DiffResult {
+    var reflection_result = try reflection_diff.diffBasedOnReflection(
+        T,
+        allocator,
+        expected,
+        actual,
+        .{},
+    );
+    defer reflection_result.deinit();
+
+    if (!reflection_result.hasChanges()) {
+        return .EmptyDiff;
+    }
+
+    var buffer = std.ArrayList(u8).init(allocator);
+    errdefer buffer.deinit();
+
+    try std.fmt.format(buffer.writer(), "{}", .{reflection_result});
+
+    return .{ .Diff = try buffer.toOwnedSlice() };
 }

@@ -451,21 +451,24 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
 
                     // If we have pending changes, use merged view that includes them
                     // Otherwise use current committed state
-                    const state_to_convert = if (self.pending_result) |*result| blk: {
+                    // NOTE: Must call jamStateToFuzzState inside the branch to avoid
+                    // dangling pointer to merged_view (which is a local variable)
+                    var result = if (self.pending_result) |*pending| blk: {
                         span.debug("GetState: Using merged view with pending changes", .{});
-                        const merged_view = result.state_transition.createMergedView();
-                        break :blk &merged_view;
+                        const merged_view = pending.state_transition.createMergedView();
+                        break :blk try state_converter.jamStateToFuzzState(
+                            params,
+                            self.allocator,
+                            &merged_view,
+                        );
                     } else blk: {
                         span.debug("GetState: Using current committed state", .{});
-                        break :blk &self.current_state.?;
+                        break :blk try state_converter.jamStateToFuzzState(
+                            params,
+                            self.allocator,
+                            &self.current_state.?,
+                        );
                     };
-
-                    // Convert JAM state to fuzz protocol state format
-                    var result = try state_converter.jamStateToFuzzState(
-                        params,
-                        self.allocator,
-                        state_to_convert,
-                    );
                     // Transfer ownership to the message response
                     const state = result.state;
                     result.state = messages.State.Empty; // Clear to prevent double-free

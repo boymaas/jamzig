@@ -27,8 +27,8 @@ pub const PVM = struct {
         /// Optional catchall handler for non-existent host calls
         catchall: ?HostCallFn = null,
         /// Optional wrapper that intercepts all host calls for error handling
-        /// The wrapper receives additional context for proper error handling
-        wrapper: ?*const fn (HostCallFn, *ExecutionContext, *anyopaque) HostCallResult = null,
+        /// The wrapper receives the host call ID, function, execution context, and host context
+        wrapper: ?*const fn (u32, HostCallFn, *ExecutionContext, *anyopaque) HostCallResult = null,
     };
 
     // Helper to log memory writes for execution trace
@@ -204,8 +204,8 @@ pub const PVM = struct {
                             const result = blk: {
                                 // Use wrapper if configured, otherwise panic on errors
                                 if (host_calls_config.wrapper) |wrapper| {
-                                    // Wrapper handles all error processing
-                                    break :blk wrapper(host_call_fn, context, call_ctx);
+                                    // Wrapper handles all error processing and logging
+                                    break :blk wrapper(params.idx, host_call_fn, context, call_ctx);
                                 } else {
                                     // No wrapper - any error should panic to decouple PVM from implementation details
                                     break :blk host_call_fn(context, call_ctx) catch {

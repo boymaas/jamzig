@@ -154,6 +154,7 @@ pub const ServiceInfoTestVector = struct {
 
     pub fn toCore(self: @This()) types.ServiceInfo {
         return .{
+            .version = self.version,
             .code_hash = self.code_hash,
             .balance = self.balance,
             .min_item_gas = self.min_item_gas,

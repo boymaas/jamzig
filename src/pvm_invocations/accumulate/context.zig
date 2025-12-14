@@ -21,6 +21,14 @@ pub fn AccumulationContext(params: Params) type {
         // Additional context for fetch selectors (JAM graypaper §1.7.2)
         entropy: types.Entropy, // η - entropy for current block (fetch selector 1)
 
+        // Original chi values from input partial state (graypaper §12.17)
+        // Used for R() function to select between manager and privileged services' changes.
+        // See accumulate/chi_merger.zig for R() implementation.
+        original_manager: types.ServiceId,
+        original_assigners: [params.core_count]types.ServiceId,
+        original_delegator: types.ServiceId,
+        original_registrar: types.ServiceId,
+
         const InitArgs = struct {
             service_accounts: *state.Delta,
             validator_keys: *state.Iota,
@@ -28,6 +36,10 @@ pub fn AccumulationContext(params: Params) type {
             privileges: *state.Chi(params.core_count),
             time: *const params.Time(),
             entropy: types.Entropy,
+            original_manager: types.ServiceId,
+            original_assigners: [params.core_count]types.ServiceId,
+            original_delegator: types.ServiceId,
+            original_registrar: types.ServiceId,
         };
 
         pub fn build(allocator: std.mem.Allocator, args: InitArgs) @This() {
@@ -38,6 +50,10 @@ pub fn AccumulationContext(params: Params) type {
                 .privileges = CopyOnWrite(state.Chi(params.core_count)).init(allocator, args.privileges),
                 .time = args.time,
                 .entropy = args.entropy,
+                .original_manager = args.original_manager,
+                .original_assigners = args.original_assigners,
+                .original_delegator = args.original_delegator,
+                .original_registrar = args.original_registrar,
             };
         }
 
@@ -52,6 +68,22 @@ pub fn AccumulationContext(params: Params) type {
             try self.service_accounts.commit();
         }
 
+        /// Commit state changes for a specific service.
+        /// Per graypaper §12.17: stagingset' = (acc(delegator)_poststate)_stagingset
+        /// Only the original delegator's validator_keys changes are committed.
+        /// NOTE: privileges (chi) is NOT committed here - handled by R() resolution
+        /// in applyChiRResolution() after all services complete.
+        pub fn commitForService(self: *@This(), service_id: types.ServiceId) !void {
+            // Only commit validator_keys if this service is the original delegator
+            if (service_id == self.original_delegator) {
+                self.validator_keys.commit();
+            }
+            self.authorizer_queue.commit();
+            // NOTE: privileges NOT committed here - handled by R() resolution
+            // See accumulate/chi_merger.zig and execution.zig applyChiRResolution()
+            try self.service_accounts.commit();
+        }
+
         // TODO: since its deepCloning the wrappers and not really the wrapped objects
         // maybe we should rename this function as its not really a deepClone
         pub fn deepClone(self: @This()) !@This() {
@@ -62,10 +94,15 @@ pub fn AccumulationContext(params: Params) type {
                 .validator_keys = try self.validator_keys.deepClone(),
                 .authorizer_queue = try self.authorizer_queue.deepClone(),
                 .privileges = try self.privileges.deepClone(),
-                // The above deepClones clone the wrappers, the references stay intack
+                // The above deepClones clone the wrappers, the references stay intact
                 // since time is not a wrapper. We just pass the pointer, as this will never be mutated
                 .time = self.time,
                 .entropy = self.entropy,
+                // Original chi values are immutable, just copy them
+                .original_manager = self.original_manager,
+                .original_assigners = self.original_assigners,
+                .original_delegator = self.original_delegator,
+                .original_registrar = self.original_registrar,
             };
         }
 

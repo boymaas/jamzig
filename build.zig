@@ -281,6 +281,19 @@ pub fn build(b: *std.Build) !void {
     rust_deps.staticallyLinkTo(jam_conformance_target);
     b.installArtifact(jam_conformance_target);
 
+    // Trace Query Tool
+    const trace_query = b.addExecutable(.{
+        .name = "trace-query",
+        .root_source_file = b.path("src/trace_query.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    trace_query.root_module.addOptions("build_options", target_build_options);
+    configureTracingAndTracy(b, trace_query, target_config, target, optimize);
+    trace_query.linkLibCpp();
+    rust_deps.staticallyLinkTo(trace_query);
+    b.installArtifact(trace_query);
+
     // Run Steps
     // NODE
     const run_cmd = b.addRunArtifact(jamzig_exe);
@@ -317,6 +330,15 @@ pub fn build(b: *std.Build) !void {
     }
     const run_jam_conformance_target_step = b.step("jam_conformance_target", "Run the JAM conformance target server");
     run_jam_conformance_target_step.dependOn(&run_jam_conformance_target.step);
+
+    // TRACE QUERY
+    const run_trace_query = b.addRunArtifact(trace_query);
+    run_trace_query.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_trace_query.addArgs(args);
+    }
+    const run_trace_query_step = b.step("trace-query", "Query trace state values");
+    run_trace_query_step.dependOn(&run_trace_query.step);
 
     // Add individual build steps for conformance tools
     const build_jam_conformance_fuzzer_step = b.step("conformance_fuzzer", "Build JAM conformance fuzzer");

@@ -24,18 +24,23 @@ pub fn encode(theta: *const Theta, writer: anytype) !void {
     // First encode the number of outputs
     try codec.writeInteger(outputs.len, writer);
     span.debug("Encoding {d} accumulation outputs", .{outputs.len});
-    
-    // Sort outputs by service_id for deterministic encoding
+
+    // Sort outputs by lexicographic tuple ordering for deterministic encoding
+    // Note: state_updater.zig already sorts outputs, but we sort again here for safety
     const sorted_outputs = try theta.allocator.alloc(AccumulationOutput, outputs.len);
     defer theta.allocator.free(sorted_outputs);
     @memcpy(sorted_outputs, outputs);
-    
+
     std.sort.insertion(AccumulationOutput, sorted_outputs, {}, struct {
         pub fn lessThan(_: void, a: AccumulationOutput, b: AccumulationOutput) bool {
-            return a.service_id < b.service_id;
+            if (a.service_id != b.service_id) {
+                return a.service_id < b.service_id;
+            }
+            // Tiebreaker: lexicographic hash comparison when service IDs are equal
+            return std.mem.lessThan(u8, &a.hash, &b.hash);
         }
     }.lessThan);
-    
+
     // Encode each output: service_id (4 bytes) + hash (32 bytes)
     for (sorted_outputs, 0..) |output, i| {
         const output_span = span.child(@src(), .output);

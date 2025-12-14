@@ -196,7 +196,7 @@ pub fn DependencyResolver(comptime params: Params) type {
                         try accumulatable.append(cloned_report);
                         try resolved.append(wradeps.work_report.package_spec.hash);
                         resolved_count += 1;
-                        iter_span.debug("Found resolvable report at index {d}, hash: {s}", .{ i, std.fmt.fmtSliceHexLower(&wradeps.work_report.package_spec.hash) });
+                        iter_span.debug("Found resolvable report at index {d} (core={d}, results={d}), hash: {s}", .{ i, wradeps.work_report.core_index.value, wradeps.work_report.results.len, std.fmt.fmtSliceHexLower(&wradeps.work_report.package_spec.hash) });
                     }
                 }
 
@@ -238,12 +238,12 @@ pub fn DependencyResolver(comptime params: Params) type {
                 if (report.context.prerequisites.len == 0 and
                     report.segment_root_lookup.len == 0)
                 {
-                    span.debug("Report {d} is immediately accumulatable", .{i});
+                    span.debug("Report {d} (core={d}, results={d}) is immediately accumulatable", .{ i, report.core_index.value, report.results.len });
                     const cloned_report = try report.deepClone(self.allocator);
                     try accumulatable_buffer.append(cloned_report);
                     immediate_count += 1;
                 } else {
-                    span.debug("Report {d} has dependencies (prereqs: {d}, lookups: {d})", .{ i, report.context.prerequisites.len, report.segment_root_lookup.len });
+                    span.debug("Report {d} (core={d}, results={d}) has dependencies (prereqs: {d}, lookups: {d})", .{ i, report.core_index.value, report.results.len, report.context.prerequisites.len, report.segment_root_lookup.len });
                     const cloned_report = try report.deepClone(self.allocator);
                     const work_report_deps = try WorkReportAndDeps.fromWorkReport(self.allocator, cloned_report);
                     try queued.append(work_report_deps);

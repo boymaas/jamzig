@@ -47,6 +47,7 @@ pub const HeaderValidationError = error{
     InvalidEpochBoundary,
     InvalidEpochMarkerTiming,
     InvalidTicketsMarkerTiming,
+    InvalidOffendersMark,
 
     // General errors
     OutOfMemory,
@@ -156,9 +157,9 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             defer tickets.deinit(self.allocator);
 
             // Phase: Author validation (needs ticket information)
-            // TODO: cleanup code
+            // Pass gamma.s for fallback mode key verification
             const author_key =
-                try self.validateAuthorConstraints(state, header, eta_prime, tickets.tickets);
+                try self.validateAuthorConstraints(state, header, eta_prime, tickets.tickets, state.gamma.?.s);
 
             {
                 // Parallel signature verification using WorkGroup
@@ -204,7 +205,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             try self.validateTimingConstraints(state, header);
 
             // Phase: Marker timing validation
-            try self.validateMarkerTiming(state, header);
+            try self.validateMarkerTiming(state, header, extrinsics);
 
             return ValidationResult{
                 .success = true,
@@ -300,6 +301,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             header: *const types.Header,
             eta_prime: types.Eta,
             tickets: ?[]const types.TicketBody,
+            gamma_s: types.GammaS,
         ) !types.BandersnatchPublic {
             _ = self;
             const span = trace.span(@src(), .validate_author_constraints);
@@ -335,25 +337,47 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
 
                 span.debug("Ticket mode: author claims index {d}, ownership verified via seal", .{header.author_index});
             } else {
-                // FALLBACK MODE: Author is determined by entropy-based derivation
+                // FALLBACK MODE: Verify author key matches γ_s'[m'] as per graypaper
+                // Graypaper eq:slotkeysequence:
+                //   γ_s' = γ_s when e' = e (same epoch - use stored keys)
+                //   γ_s' = F(η'_2, κ') otherwise (epoch boundary - recompute)
                 span.debug("Validating author in fallback mode", .{});
 
-                const expected_index = @import("safrole/epoch_handler.zig").deriveKeyIndex(
-                    eta_prime[2],
-                    time.current_slot_in_epoch,
-                    validators.len,
-                );
+                const author_key = validators[header.author_index].bandersnatch;
 
-                if (expected_index != header.author_index) {
-                    span.err("Fallback mode: expected author index {d}, got {d}", .{ expected_index, header.author_index });
-                    // FIXME: this to make the tests work
-                    // https://github.com/davxy/jam-conformance/issues/4#issuecomment-3306386391
-                    if (time.current_epoch > 0) {
+                if (time.isSameEpoch()) {
+                    // Same epoch: use stored gamma.s.keys
+                    const expected_key = switch (gamma_s) {
+                        .keys => |keys| keys[time.current_slot_in_epoch],
+                        .tickets => {
+                            // This shouldn't happen - if we have tickets, we should be in ticket mode
+                            span.err("Fallback mode entered but gamma.s contains tickets", .{});
+                            return HeaderValidationError.InvalidAuthorIndex;
+                        },
+                    };
+
+                    if (!std.mem.eql(u8, &expected_key, &author_key)) {
+                        span.err("Fallback mode: author key mismatch at slot {d}", .{time.current_slot_in_epoch});
+                        span.err("Expected key: {s}", .{std.fmt.fmtSliceHexLower(&expected_key)});
+                        span.err("Got key:      {s}", .{std.fmt.fmtSliceHexLower(&author_key)});
+                        return HeaderValidationError.InvalidAuthorIndex;
+                    }
+                } else {
+                    // Epoch boundary: compute expected author with F(η'_2, κ')
+                    // The expected author index is derived from entropy
+                    const expected_index = @import("safrole/epoch_handler.zig").deriveKeyIndex(
+                        eta_prime[2],
+                        time.current_slot_in_epoch,
+                        validators.len,
+                    );
+
+                    if (expected_index != header.author_index) {
+                        span.err("Fallback mode (epoch boundary): expected author index {d}, got {d}", .{ expected_index, header.author_index });
                         return HeaderValidationError.InvalidAuthorIndex;
                     }
                 }
 
-                span.debug("Fallback mode author validation passed: slot={d}, author={d}", .{ time.current_slot_in_epoch, expected_index });
+                span.debug("Fallback mode author validation passed: slot={d}", .{time.current_slot_in_epoch});
             }
 
             return validators[header.author_index].bandersnatch;
@@ -364,6 +388,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             self: *Self,
             state: *const JamState(params),
             header: *const types.Header,
+            extrinsics: *const types.Extrinsic,
         ) !void {
             _ = self;
             const span = trace.span(@src(), .validate_marker_timing);
@@ -400,6 +425,17 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             } else if (header.tickets_mark != null) {
                 span.err("Tickets marker present but we did not cross didCrossTicketSubmissionEnd", .{});
                 return HeaderValidationError.InvalidTicketsMarkerTiming;
+            }
+
+            // Validate offenders mark matches disputes extrinsic (graypaper judgments.tex)
+            // Note: This is a preliminary check - we can only verify it's empty when disputes is empty
+            // Full validation requires processing disputes first, which happens in STF
+            // For now, we enforce the basic structural constraint
+            if (extrinsics.disputes.culprits.len == 0 and extrinsics.disputes.faults.len == 0) {
+                if (header.offenders_mark.len > 0) {
+                    span.err("Offenders mark not empty but no culprits or faults in disputes extrinsic", .{});
+                    return HeaderValidationError.InvalidOffendersMark;
+                }
             }
         }
 

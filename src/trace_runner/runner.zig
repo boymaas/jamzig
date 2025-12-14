@@ -392,8 +392,11 @@ pub fn processTrace(
         }
 
         // Build and print diff
+        // IMPORTANT: state_diff.build(allocator, expected, actual) - order matters for correct labels!
+        // - expected_jam_state: the correct state from the trace file (what we SHOULD produce)
+        // - fuzz_target_jam_state: our computed state (what we ACTUALLY produced)
         std.debug.print("\n=== STATE MISMATCH DIFF ===\n", .{});
-        var diff = try state_diff.JamStateDiff(params).build(fuzzer.allocator, &fuzz_target_jam_state, &expected_jam_state);
+        var diff = try state_diff.JamStateDiff(params).build(fuzzer.allocator, &expected_jam_state, &fuzz_target_jam_state);
         defer diff.deinit();
         diff.printToStdErr();
         std.debug.print("=== END DIFF ===\n\n", .{});

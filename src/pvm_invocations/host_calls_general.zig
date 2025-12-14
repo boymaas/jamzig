@@ -221,6 +221,11 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             });
             span.debug("Offset: {d}, Limit: {d}", .{ offset, limit });
 
+            // Read key from memory first - memory errors must PANIC before service lookup
+            span.debug("Reading key data from memory at 0x{x} (len={d})", .{ k_o, k_z });
+            var key_data = try exec_ctx.readMemory(@truncate(k_o), @truncate(k_z));
+            defer key_data.deinit();
+
             // Get service account based on special cases as per graypaper B.7
             // s* = s when R7 = 2^64-1, otherwise s* = R7
             // a = s when s* = s, otherwise a = d[s*]
@@ -229,11 +234,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
                 return .play;
             };
-
-            // Read key data from memory
-            span.debug("Reading key data from memory at 0x{x} (len={d})", .{ k_o, k_z });
-            var key_data = try exec_ctx.readMemory(@truncate(k_o), @truncate(k_z));
-            defer key_data.deinit();
             span.trace("Key = {s}", .{std.fmt.fmtSliceHexLower(key_data.buffer)});
 
             // Log the service ID and key for debugging
