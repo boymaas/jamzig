@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const state = @import("state.zig");
-const crypto = std.crypto;
+const ed25519 = @import("crypto/ed25519.zig").Ed25519;
 
 const tracing = @import("tracing");
 const trace = tracing.scoped(.assurances);
@@ -94,7 +94,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
                 const byte_idx = core_idx / 8;
                 const bit_idx: u3 = @intCast(core_idx % 8);
                 const bit_set = (assurance.bitfield[byte_idx] & (@as(u8, 1) << bit_idx)) != 0;
-                
+
                 if (bit_set) {
                     bitfield_validation_span.trace("Core {d}: bit set, checking for pending report", .{core_idx});
                     if (!pending_reports.hasReport(core_idx)) {
@@ -143,13 +143,10 @@ pub const ValidatedAssuranceExtrinsic = struct {
         // Get validator public key
         span.trace("Retrieving public key for validator {d}", .{assurance.validator_index});
         const public_key = kappa.validators[assurance.validator_index].ed25519;
-        const validator_pub_key = crypto.sign.Ed25519.PublicKey.fromBytes(public_key) catch {
-            span.err("Invalid public key format for validator {d}", .{assurance.validator_index});
-            return ValidationError.InvalidPublicKey;
-        };
 
-        // Verify signature
-        const signature = crypto.sign.Ed25519.Signature.fromBytes(assurance.signature);
+        // ZIP-215 compliant verification
+        const validator_pub_key = ed25519.PublicKey.fromBytes(public_key);
+        const signature = ed25519.Signature.fromBytes(assurance.signature);
         span.trace("Verifying signature", .{});
         signature.verify(prefix ++ &hash, validator_pub_key) catch {
             span.err("Signature verification failed for validator {d}", .{assurance.validator_index});

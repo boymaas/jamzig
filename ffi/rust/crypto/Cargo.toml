@@ -11,10 +11,14 @@ ark-serialize = "0.5.0"
 # after benchmarking, parellel feature pushed down the max times. So keeping it on
 ark-vrf = { git = "https://github.com/davxy/ark-vrf", rev = "bf2d1cf", features = ["bandersnatch", "ring", "parallel" ] } 
 
+ed25519-consensus = "2.1"
 hex = "0.4.3"
 libc = "0.2.167"
 lru = "0.12.4"
 thiserror = "1.0.64"
+
+[dev-dependencies]
+rand = "0.8"
 
 [lib]
 crate-type = ["staticlib"]

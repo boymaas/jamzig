@@ -1,0 +1,6 @@
+# Crypto test data
+# This directory contains test vectors for cryptographic primitives
+
+# Do not ignore ed25519 vectors - they are essential for ZIP-215 compliance testing
+!ed25519/
+!ed25519/vectors.json

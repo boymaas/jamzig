@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("../../types.zig");
 const state = @import("../../state.zig");
 const tracing = @import("tracing");
-const crypto = std.crypto;
+const ed25519 = @import("../../crypto/ed25519.zig").Ed25519;
 
 const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
@@ -69,15 +69,12 @@ pub fn validateSignaturesWithAssignments(
         var hash: [32]u8 = undefined;
         hasher.final(&hash);
 
-        const validator_pub_key = crypto.sign.Ed25519.PublicKey.fromBytes(public_key) catch {
-            return Error.InvalidValidatorPublicKey;
-        };
-
-        const signature = crypto.sign.Ed25519.Signature.fromBytes(sig.signature);
+        // ZIP-215 compliant verification
+        const validator_pub_key = ed25519.PublicKey.fromBytes(public_key);
+        const signature = ed25519.Signature.fromBytes(sig.signature);
 
         signature.verify(prefix ++ &hash, validator_pub_key) catch {
             return Error.BadSignature;
         };
     }
 }
-

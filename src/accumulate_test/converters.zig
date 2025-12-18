@@ -105,13 +105,24 @@ pub fn convertServiceAccount(allocator: std.mem.Allocator, account: tv_types.Ser
     service_account.parent_service = account.data.service.parent_service;
     service_account.storage_offset = account.data.service.deposit_offset;
 
-    // Add all preimages
+    // Add all preimages (v0.7.2: renamed to preimage_blobs)
     // Use NoFootprint variant because test vector already includes footprint values
-    // Pass timeslot 0 to mark preimage as "provided" (status[0] and status[1] set)
-    for (account.data.preimages) |preimage| {
+    for (account.data.preimage_blobs) |preimage| {
         const preimage_key = state_keys.constructServicePreimageKey(account.id, preimage.hash);
         try service_account.dupeAndAddPreimage(preimage_key, preimage.blob);
-        try service_account.registerPreimageAvailableNoFootprint(account.id, preimage.hash, @intCast(preimage.blob.len), 0);
+    }
+
+    // Register preimage requests (v0.7.2: renamed from preimages_status)
+    // The request status indicates which timeslots have requested this preimage
+    for (account.data.preimage_requests) |request| {
+        // Use the first timeslot from the request value to mark as "provided"
+        const timeslot: types.TimeSlot = if (request.value.len > 0) request.value[0] else 0;
+        try service_account.registerPreimageAvailableNoFootprint(
+            account.id,
+            request.key.hash,
+            request.key.length,  // v0.7.2: length is now part of the key
+            timeslot
+        );
     }
 
     // Add all storage entries

@@ -8,5 +8,5 @@ pub const Version = struct {
 pub const GRAYPAPER_VERSION = Version{
     .major = 0,
     .minor = 7,
-    .patch = 1,
+    .patch = 2,
 };

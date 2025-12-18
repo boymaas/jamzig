@@ -30,6 +30,8 @@ pub const Error = error{
     OutOfOrderGuarantee,
     CoreEngaged,
     DuplicatePackage,
+    LookupAnchorNotRecent,  // v0.7.2
+    MissingWorkResults,  // v0.7.2
 } || anchor.Error ||
     service.Error ||
     dependency.Error ||
@@ -81,6 +83,12 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             if (guarantee.report.core_index.value >= params.core_count) {
                 core_span.err("Invalid core index {d} >= {d}", .{ guarantee.report.core_index.value, params.core_count });
                 return Error.BadCoreIndex;
+            }
+
+            // v0.7.2: Check work report has at least one result (graypaper: results ∈ sequence[1:C_I])
+            if (guarantee.report.results.len == 0) {
+                core_span.err("Work report has no results", .{});
+                return Error.MissingWorkResults;
             }
 
             // Check for out-of-order guarantees

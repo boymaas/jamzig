@@ -470,22 +470,25 @@ pub fn HostCalls(comptime params: Params) type {
             });
 
             // CRITICAL: Check gas BEFORE charging (graypaper spec)
-            const gas_costs = 10 + @as(i64, @intCast(gas_limit));
-            if (exec_ctx.gas < gas_costs) {
-                span.debug("Insufficient gas for transfer (need {d}, have {d})", .{ gas_costs, exec_ctx.gas });
+            // v0.7.2 PR #488: Gas charged based on outcome - check availability first
+            const total_gas_needed = 10 + @as(i64, @intCast(gas_limit));
+            if (exec_ctx.gas < total_gas_needed) {
+                span.debug("Insufficient gas for transfer (need {d}, have {d})", .{ total_gas_needed, exec_ctx.gas });
                 return .{ .terminal = .out_of_gas };
             }
 
-            span.debug("charging {d} gas", .{gas_costs});
-            exec_ctx.gas -= gas_costs;
-
-            // Read memo data from memory
+            // Read memo data from memory BEFORE charging gas
+            // v0.7.2: Memory error results in panic with t=0 (no gas charged)
             span.debug("Reading memo data from memory at 0x{x}", .{memo_ptr});
             var memo_slice = exec_ctx.memory.readSlice(@truncate(memo_ptr), params.transfer_memo_size) catch {
                 span.err("Memory access failed while reading memo data", .{});
                 return .{ .terminal = .panic };
             };
             defer memo_slice.deinit();
+
+            // Now charge base gas after memo read succeeds
+            span.debug("charging 10 gas (base cost)", .{});
+            exec_ctx.gas -= 10;
 
             span.trace("Memo data: {s}", .{std.fmt.fmtSliceHexLower(memo_slice.buffer)});
 
@@ -550,6 +553,10 @@ pub fn HostCalls(comptime params: Params) type {
             // Deduct the amount from the source service's balance
             span.debug("Deducting {d} from source service balance", .{amount});
             source_service.balance -= @intCast(amount);
+
+            // Charge additional gas on success (v0.7.2 PR #488)
+            span.debug("charging {d} gas (on_transfer gas limit)", .{gas_limit});
+            exec_ctx.gas -= @intCast(gas_limit);
 
             // Return success
             span.debug("Transfer scheduled successfully", .{});

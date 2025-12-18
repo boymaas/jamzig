@@ -70,7 +70,10 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const span = trace.span(@src(), .host_call_debug_log);
             defer span.deinit();
 
-            // https://hackmd.io/@polkadot/jip1
+            // JIP-1: https://github.com/polkadot-fellows/JIPs/blob/main/JIP-1.md
+            // Gas cost: 10 units
+            span.debug("charging 10 gas", .{});
+            exec_ctx.gas -= 10;
             const level = switch (exec_ctx.registers[7]) {
                 0 => "FATAL_ERROR",
                 1 => "WARNING",
@@ -90,11 +93,15 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             var message = exec_ctx.memory.readSlice(@truncate(exec_ctx.registers[10]), exec_ctx.registers[11]) catch {
                 span.err("Could not access memory for message component", .{});
+                exec_ctx.registers[7] = @intFromEnum(host_calls.ReturnCode.WHAT);
                 return .play;
             };
             defer message.deinit();
 
             span.warn("DEBUGLOG {s} {s}: {s}", .{ level, target.buffer, message.buffer });
+
+            // JIP-1: Return WHAT unconditionally in register 7
+            exec_ctx.registers[7] = @intFromEnum(host_calls.ReturnCode.WHAT);
             return .play;
         }
 

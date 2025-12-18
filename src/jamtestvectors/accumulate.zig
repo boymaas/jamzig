@@ -168,18 +168,18 @@ pub const ServiceInfoTestVector = struct {
 pub const Account = struct {
     service: ServiceInfoTestVector,
     storage: []StorageMapEntry,
-    preimages: []PreimageEntry,
-    preimages_status: []PreimagesStatusMapEntry, // v0.7.1 addition
+    preimage_blobs: []PreimageBlobEntry,  // v0.7.2: renamed from preimages
+    preimage_requests: []PreimageRequestEntry,  // v0.7.2: renamed from preimages_status, structure changed
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        for (self.preimages) |*entry| {
+        for (self.preimage_blobs) |*entry| {
             entry.deinit(allocator);
         }
-        allocator.free(self.preimages);
-        for (self.preimages_status) |*entry| {
+        allocator.free(self.preimage_blobs);
+        for (self.preimage_requests) |*entry| {
             entry.deinit(allocator);
         }
-        allocator.free(self.preimages_status);
+        allocator.free(self.preimage_requests);
         for (self.storage) |*entry| {
             entry.deinit(allocator);
         }
@@ -188,7 +188,7 @@ pub const Account = struct {
     }
 };
 
-pub const PreimageEntry = struct {
+pub const PreimageBlobEntry = struct {
     hash: types.OpaqueHash,
     blob: []u8,
 
@@ -198,13 +198,19 @@ pub const PreimageEntry = struct {
     }
 };
 
-/// Preimage provision status entry (v0.7.1 addition)
-pub const PreimagesStatusMapEntry = struct {
+/// Preimage request key (v0.7.2)
+pub const PreimageRequestKey = struct {
     hash: types.OpaqueHash,
-    status: []types.TimeSlot, // SEQUENCE (SIZE(0..3)) OF TimeSlot
+    length: types.U32,
+};
+
+/// Preimage request entry (v0.7.2: renamed from PreimagesStatusMapEntry, structure changed)
+pub const PreimageRequestEntry = struct {
+    key: PreimageRequestKey,
+    value: []types.TimeSlot, // SEQUENCE (SIZE(0..3)) OF TimeSlot
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.status);
+        allocator.free(self.value);
         self.* = undefined;
     }
 };

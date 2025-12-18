@@ -446,23 +446,39 @@ pub const JamSnpServer = struct {
 
         span.trace("Local address: {}", .{local_address});
 
+        // macOS kernel workaround: When receiving UDP packets on an IPv6 socket bound to
+        // loopback (::1), macOS reports the peer source address as :: (unspecified) instead
+        // of ::1, even though the packet genuinely came from ::1. This causes lsquic to try
+        // replying to :: which fails with EHOSTUNREACH (errno 65).
+        // Fix: If we're bound to loopback and peer shows ::, normalize peer to ::1.
+        var normalized_peer = peer_address;
+        if (local_address.address == .ipv6) {
+            const local_ipv6 = local_address.address.ipv6;
+            const ipv6_loopback = network.Address.IPv6.loopback;
+            if (std.mem.eql(u8, &local_ipv6.value, &ipv6_loopback.value)) {
+                // Server is bound to ::1
+                if (peer_address.any.family == std.posix.AF.INET6) {
+                    const peer_ipv6 = @as(*const std.posix.sockaddr.in6, @ptrCast(@alignCast(&peer_address.any)));
+                    const ipv6_any = std.mem.zeroes([16]u8);
+                    if (std.mem.eql(u8, &peer_ipv6.addr, &ipv6_any)) {
+                        // Peer address is :: (unspecified), normalize to ::1
+                        span.debug("macOS loopback workaround: normalizing peer from :: to ::1", .{});
+                        var fixed_peer = peer_address;
+                        const fixed_in6 = @as(*std.posix.sockaddr.in6, @ptrCast(@alignCast(&fixed_peer.any)));
+                        fixed_in6.addr = ipv6_loopback.value;
+                        normalized_peer = fixed_peer;
+                    }
+                }
+            }
+        }
+
         span.trace("Passing packet to lsquic engine", .{});
-        // When passing pointers across FFI, always pass &instance.field rather than
-        // copying the field and passing &field_copy. C functions expect pointers
-        // with the proper structural context (alignment, layout, size) defined by
-        // the C ABI. A pointer to an isolated field lacks this context, breaking C's
-        // assumptions about memory layout and type punning, causing subtle failures.
-        // So do not do:
-        //   const local_sa = peer_address.any; <== create local copy of the field
-        // and then pass &local_sa to lsquic_engine_packet_in. This will lead
-        // to a violation of Violation of Type Punning / Structural
-        // Assumptions.
         if (0 > lsquic.lsquic_engine_packet_in(
             self.lsquic_engine,
             xev_read_buffer.slice.ptr,
             bytes,
             @ptrCast(&toSocketAddress(local_address)),
-            @ptrCast(&peer_address.any),
+            @ptrCast(&normalized_peer.any),
             self, // peer_ctx
             0, // ecn
         )) {

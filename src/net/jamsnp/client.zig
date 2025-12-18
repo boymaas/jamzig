@@ -406,9 +406,22 @@ pub const JamSnpClient = struct {
         defer span.deinit();
         span.debug("Connecting to {s}", .{peer_endpoint});
 
-        // Bind to a local address (use any address)
-        self.socket.bindToPort(0) catch |err| {
-            span.err("Failed to bind to local port: {s}", .{@errorName(err)});
+        // Bind to a local address - must match interface type of peer
+        // On macOS, binding to :: (any) when connecting to ::1 causes the kernel
+        // to report source address as :: instead of ::1, making replies unreachable.
+        // Fix: bind to loopback when connecting to loopback.
+        const local_address: network.Address = switch (peer_endpoint.address) {
+            .ipv6 => |ipv6| if (std.mem.eql(u8, &ipv6.value, &network.Address.IPv6.loopback.value))
+                .{ .ipv6 = network.Address.IPv6.loopback }
+            else
+                .{ .ipv6 = network.Address.IPv6.any },
+            .ipv4 => |ipv4| if (std.mem.eql(u8, &ipv4.value, &network.Address.IPv4.loopback.value))
+                .{ .ipv4 = network.Address.IPv4.loopback }
+            else
+                .{ .ipv4 = network.Address.IPv4.any },
+        };
+        self.socket.bind(.{ .address = local_address, .port = 0 }) catch |err| {
+            span.err("Failed to bind to local address: {s}", .{@errorName(err)});
             return err;
         };
 

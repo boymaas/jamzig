@@ -44,7 +44,7 @@ pub fn decode(
         if (exists == 1) {
             const assignment = codec.deserializeAlloc(
                 types.AvailabilityAssignment,
-                @import("../jam_params.zig").FULL_PARAMS,  // TODO: This needs to be passed properly
+                {},
                 allocator,
                 reader,
             ) catch |err| {

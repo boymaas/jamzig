@@ -17,6 +17,7 @@ comptime {
     _ = @import("jamtestvectors/accumulate.zig");
     _ = @import("jamtestvectors/preimages.zig");
     _ = @import("jamtestvectors/statistics.zig");
+    _ = @import("jamtestvectors/ed25519.zig");
 
     _ = @import("codec.zig");
     _ = @import("codec_test.zig");
@@ -109,6 +110,7 @@ comptime {
 
     _ = @import("crypto/bandersnatch.zig");
     _ = @import("crypto/bls12_381.zig");
+    _ = @import("crypto/ed25519.zig");
 
     // Data structures
     _ = @import("datastruct/hash_set.zig");

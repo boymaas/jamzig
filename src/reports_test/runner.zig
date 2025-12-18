@@ -59,7 +59,7 @@ pub fn validateAndProcessGuaranteeExtrinsic(
     defer empty_accumulate_stats.deinit();
     var empty_transfer_stats = std.AutoHashMap(types.ServiceId, @import("../accumulate.zig").execution.TransferServiceStats).init(allocator);
     defer empty_transfer_stats.deinit();
-    var empty_invoked_services = std.AutoHashMap(types.ServiceId, void).init(allocator);
+    var empty_invoked_services = std.AutoArrayHashMap(types.ServiceId, void).init(allocator);
     defer empty_invoked_services.deinit();
 
     const accumulate_result = @import("../accumulate.zig").ProcessAccumulationResult{
@@ -136,6 +136,8 @@ pub fn runReportTest(comptime params: Params, allocator: std.mem.Allocator, test
                     .bad_signature => error.BadSignature,
                     .work_report_too_big => error.WorkReportTooBig,
                     .banned_validators => error.BannedValidators,
+                    .lookup_anchor_not_recent => error.LookupAnchorNotRecent,  // v0.7.2
+                    .missing_work_results => error.MissingWorkResults,  // v0.7.2
                 };
                 if (mapped_expected_error != actual_error) {
                     std.debug.print("\nExpected error: {any} => {any} got error {any}\n", .{ expected_error, mapped_expected_error, actual_error });

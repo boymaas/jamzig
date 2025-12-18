@@ -48,11 +48,11 @@ pub const OuterAccumulationResult = struct {
     accumulated_count: usize,
     accumulation_outputs: HashSet(ServiceAccumulationOutput),
     gas_used_per_service: std.AutoHashMap(types.ServiceId, types.Gas),
-    invoked_services: std.AutoHashMap(types.ServiceId, void),
+    invoked_services: std.AutoArrayHashMap(types.ServiceId, void),
 
-    pub fn takeInvokedServices(self: *@This()) std.AutoHashMap(types.ServiceId, void) {
+    pub fn takeInvokedServices(self: *@This()) std.AutoArrayHashMap(types.ServiceId, void) {
         const result = self.invoked_services;
-        self.invoked_services = std.AutoHashMap(types.ServiceId, void).init(self.invoked_services.allocator);
+        self.invoked_services = std.AutoArrayHashMap(types.ServiceId, void).init(self.invoked_services.allocator);
         return result;
     }
 
@@ -69,7 +69,7 @@ pub const ProcessAccumulationResult = struct {
     accumulate_root: types.AccumulateRoot,
     accumulation_stats: std.AutoHashMap(types.ServiceId, AccumulationServiceStats),
     transfer_stats: std.AutoHashMap(types.ServiceId, TransferServiceStats),
-    invoked_services: std.AutoHashMap(types.ServiceId, void), // v0.7.2: Track ALL invoked services
+    invoked_services: std.AutoArrayHashMap(types.ServiceId, void), // v0.7.2: Track ALL invoked services
 
     pub fn deinit(self: *@This(), _: std.mem.Allocator) void {
         // Deinit maps
@@ -111,8 +111,8 @@ pub fn outerAccumulation(
     var gas_used_per_service = std.AutoHashMap(types.ServiceId, types.Gas).init(allocator);
     errdefer gas_used_per_service.deinit();
 
-    // v0.7.2: Track invoked services
-    var invoked_services = std.AutoHashMap(types.ServiceId, void).init(allocator);
+    // v0.7.2: Track invoked services (maintains insertion order for consistency)
+    var invoked_services = std.AutoArrayHashMap(types.ServiceId, void).init(allocator);
     errdefer invoked_services.deinit();
 
     // If no work reports, return early
@@ -411,7 +411,7 @@ pub fn parallelizedAccumulation(
     work_reports: []const types.WorkReport,
     pending_transfers: []const pvm_accumulate.TransferOperand,
     include_privileged: bool, // Whether to include privileged services (first batch only)
-    invoked_services: *std.AutoHashMap(types.ServiceId, void), // v0.7.2: Track invoked services
+    invoked_services: *std.AutoArrayHashMap(types.ServiceId, void), // v0.7.2: Track invoked services
 ) !ParallelizedAccumulationResult(params) {
     const span = trace.span(@src(), .parallelized_accumulation);
     defer span.deinit();

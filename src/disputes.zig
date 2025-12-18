@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const crypto = std.crypto;
+const ed25519 = @import("crypto/ed25519.zig").Ed25519;
 
 const trace = @import("tracing").scoped(.disputes);
 
@@ -240,16 +240,15 @@ fn verifyVerdictSignatures(
         else
             return VerificationError.BadJudgementAge;
 
-        const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(validator_key) catch {
-            return VerificationError.BadValidatorPubKey;
-        };
+        // ZIP-215 compliant verification
+        const public_key = ed25519.PublicKey.fromBytes(validator_key);
 
         const message = if (judgment.vote)
             "jam_valid" ++ verdict.target
         else
             "jam_invalid" ++ verdict.target;
 
-        const signature = crypto.sign.Ed25519.Signature.fromBytes(judgment.signature);
+        const signature = ed25519.Signature.fromBytes(judgment.signature);
 
         signature.verify(message, public_key) catch {
             return VerificationError.BadSignature;
@@ -259,13 +258,10 @@ fn verifyVerdictSignatures(
 
 fn verifyCulpritSignatures(culprits: []const Culprit) VerificationError!void {
     for (culprits) |culprit| {
-        const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(culprit.key) catch {
-            return VerificationError.BadValidatorPubKey;
-        };
-
+        // ZIP-215 compliant verification
+        const public_key = ed25519.PublicKey.fromBytes(culprit.key);
         const message = "jam_guarantee" ++ culprit.target;
-
-        const signature = crypto.sign.Ed25519.Signature.fromBytes(culprit.signature);
+        const signature = ed25519.Signature.fromBytes(culprit.signature);
 
         signature.verify(message, public_key) catch {
             return VerificationError.BadSignature;
@@ -275,16 +271,15 @@ fn verifyCulpritSignatures(culprits: []const Culprit) VerificationError!void {
 
 fn verifyFaultSignatures(faults: []const Fault) VerificationError!void {
     for (faults) |fault| {
-        const public_key = crypto.sign.Ed25519.PublicKey.fromBytes(fault.key) catch {
-            return VerificationError.BadValidatorPubKey;
-        };
+        // ZIP-215 compliant verification
+        const public_key = ed25519.PublicKey.fromBytes(fault.key);
 
         const message = if (fault.vote)
             "jam_valid" ++ fault.target
         else
             "jam_invalid" ++ fault.target;
 
-        const signature = crypto.sign.Ed25519.Signature.fromBytes(fault.signature);
+        const signature = ed25519.Signature.fromBytes(fault.signature);
 
         signature.verify(message, public_key) catch {
             return VerificationError.BadSignature;
