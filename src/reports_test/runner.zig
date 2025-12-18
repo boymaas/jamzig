@@ -136,6 +136,8 @@ pub fn runReportTest(comptime params: Params, allocator: std.mem.Allocator, test
                     .bad_signature => error.BadSignature,
                     .work_report_too_big => error.WorkReportTooBig,
                     .banned_validators => error.BannedValidators,
+                    .lookup_anchor_not_recent => error.LookupAnchorNotRecent,  // v0.7.2
+                    .missing_work_results => error.MissingWorkResults,  // v0.7.2
                 };
                 if (mapped_expected_error != actual_error) {
                     std.debug.print("\nExpected error: {any} => {any} got error {any}\n", .{ expected_error, mapped_expected_error, actual_error });

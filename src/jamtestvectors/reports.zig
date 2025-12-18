@@ -240,6 +240,8 @@ pub const ErrorCode = enum(u8) {
     bad_signature = 21,
     work_report_too_big = 22,
     banned_validators = 23,
+    lookup_anchor_not_recent = 24,  // v0.7.2
+    missing_work_results = 25,  // v0.7.2
 };
 
 pub const Output = union(enum) {
