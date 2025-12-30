@@ -195,7 +195,7 @@ pub const FlatMemory = struct {
     inline fn getMemoryPtr(self: *FlatMemory, address: u32, size: usize, check_write: bool) MemoryAccessResult {
         // Check stack region
         if (address >= self.stack_bottom and address < self.stack_base) {
-            if (address + size <= self.stack_base) {
+            if (address +| size <= self.stack_base) {
                 const offset = address - self.stack_bottom;
                 return .{ .success = self.stack_data.ptr + offset };
             }
@@ -204,7 +204,7 @@ pub const FlatMemory = struct {
         // Check heap region
         if (address >= self.heap_base and address < self.heap_top) {
             // Check for overflow: address + size must not wrap around
-            if (address + size <= self.heap_top) {
+            if (address +| size <= self.heap_top) {
                 const offset = address - self.heap_base;
                 return .{ .success = self.heap_data.ptr + offset };
             }
@@ -213,7 +213,7 @@ pub const FlatMemory = struct {
         // Check read-only section
         const ro_end = self.read_only_base + self.read_only_size;
         if (address >= self.read_only_base and address < ro_end) {
-            if (address + size <= ro_end) {
+            if (address +| size <= ro_end) {
                 if (check_write) {
                     const violation = ViolationInfo{
                         .violation_type = .WriteProtection,
@@ -232,7 +232,7 @@ pub const FlatMemory = struct {
         // Check input
         const input_end = self.input_base + self.input_size_in_bytes;
         if (address >= self.input_base and address < input_end) {
-            if (address + size <= input_end) {
+            if (address +| size <= input_end) {
                 if (check_write) {
                     const violation = ViolationInfo{
                         .violation_type = .WriteProtection,
@@ -251,7 +251,7 @@ pub const FlatMemory = struct {
         // Page fault - address not in any valid region
         const violation = ViolationInfo{
             .violation_type = .NonAllocated,
-            .address = (address + @as(u32, @intCast(size))) & ~(Z_P - 1),
+            .address = (address +| @as(u32, @intCast(size))) & ~(Z_P - 1),
             .attempted_size = size,
         };
 
@@ -552,7 +552,7 @@ pub const FlatMemory = struct {
             self.read_only_size = @intCast(new_data.len);
             // There are some addresses requiring multiple heap pages
         } else if (address >= self.heap_base) {
-            const pages = ((address + aligned_size) - self.heap_base) / Z_P;
+            const pages = ((address +| aligned_size) - self.heap_base) / Z_P;
             span.trace("Allocating {d} heap pages", .{pages});
             if (pages > 32) {
                 std.debug.panic("allocateTestRegion: too many pages requested to reach address 0x{X:0>8} (max 32 pages)\n", .{address});
