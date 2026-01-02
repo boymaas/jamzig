@@ -479,7 +479,12 @@ fn runTraceSummary(allocator: std.mem.Allocator, collection: *const TraceCollect
 
         // Process all traces in this directory
         var trace_results = std.ArrayList(trace_runner.TraceResult).init(allocator);
-        defer trace_results.deinit();
+        defer {
+            for (trace_results.items) |*result| {
+                result.deinit(allocator);
+            }
+            trace_results.deinit();
+        }
 
         var trace_names = std.ArrayList([]u8).init(allocator);
         defer {
