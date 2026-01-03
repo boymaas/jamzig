@@ -2,8 +2,6 @@
 
 JAMZIG is a Zig-based implementation of a JAM (Join-Accumulate Machine) node. JAM is a next-generation blockchain protocol designed as a potential successor to the Polkadot Relay Chain, introducing a novel computational model that addresses the size-coherency antagonism in distributed systems.
 
-**This is a code cutoff open-sourced for the M1 milestone delivery review process.** Ongoing development continues privately toward the M2 milestone.
-
 JamZig account: 14T1UcnoaMND24ubV86FCT4YxJ8q5CKVG7winwZ7umAit8g2
 
 ## What is JAM?
@@ -34,7 +32,7 @@ The protocol uses a **collect-refine-join-accumulate** model that enables massiv
 
 ### Key Features
 
-- **16-segment state partitioning** for parallel computation (α, β, γ, δ, etc.)
+- **17-segment state partitioning** for parallel computation (α, β, γ, δ, etc.)
 - **Service-based architecture** replacing traditional account model
 - **Crypto-economic validation** through guaranteeing, assuring, and auditing
 - **Bandersnatch Ring VRF** for validator selection
