@@ -25,10 +25,7 @@ fn updateLastAccumulationSlot(
     var iter = result.accumulation_stats.iterator();
     while (iter.next()) |entry| {
         if (delta_prime.getAccount(entry.key_ptr.*)) |account| {
-            // Only update if the service was not created in this same slot
-            if (account.creation_slot != stx.time.current_slot) {
-                account.last_accumulation_slot = stx.time.current_slot;
-            }
+            account.last_accumulation_slot = stx.time.current_slot;
         }
     }
 }
