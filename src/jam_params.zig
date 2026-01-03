@@ -75,7 +75,7 @@ pub const Params = struct {
     // WR: Maximum size of an encoded work-report in octets
     max_work_report_size: u32 = 48 * (1 << 10), // 48 KB
     // WB: Maximum size of encoded work-package with extrinsic data and import implications
-    max_work_package_size_with_extrinsics: u32 = 13_794_305, // ~13.15 MB (graypaper v0.7.0)
+    max_work_package_size_with_extrinsics: u32 = 13_791_360, // ~13.15 MB (graypaper v0.7.2)
 
     // ===== Authorization and Queue Parameters =====
 

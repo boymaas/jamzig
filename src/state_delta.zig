@@ -198,6 +198,17 @@ pub fn StateTransition(comptime params: Params) type {
             return base_field != null;
         }
 
+        pub fn hasPrime(self: *const Self, comptime field: STAccessors(State)) bool {
+            const name = @tagName(field);
+            const base_name = if (comptime std.mem.endsWith(u8, name, "_prime"))
+                name[0 .. name.len - 6]
+            else
+                name;
+
+            const prime_field = @field(self.prime, base_name);
+            return prime_field != null;
+        }
+
         fn cloneField(self: *Self, field: anytype) Error!@TypeOf(field.?) {
             const T = @TypeOf(field.?);
             return switch (@typeInfo(T)) {

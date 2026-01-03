@@ -46,6 +46,7 @@ pub const HeaderValidationError = error{
     // Marker validation errors
     InvalidEpochBoundary,
     InvalidEpochMarkerTiming,
+    InvalidEpochMark,
     InvalidTicketsMarkerTiming,
     InvalidOffendersMark,
 
@@ -390,7 +391,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             header: *const types.Header,
             extrinsics: *const types.Extrinsic,
         ) !void {
-            _ = self;
             const span = trace.span(@src(), .validate_marker_timing);
             defer span.deinit();
 
@@ -409,6 +409,11 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             if (!should_have_epoch_marker and has_epoch_marker) {
                 span.err("Epoch marker present but not new epoch", .{});
                 return HeaderValidationError.InvalidEpochMarkerTiming;
+            }
+
+            // Validate epoch mark contents if present
+            if (should_have_epoch_marker) {
+                try self.validateEpochMark(header, state);
             }
 
             // Check tickets marker timing
@@ -437,6 +442,62 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                     return HeaderValidationError.InvalidOffendersMark;
                 }
             }
+        }
+
+        fn validateEpochMark(
+            self: *Self,
+            header: *const types.Header,
+            state: *const JamState(params),
+        ) !void {
+            _ = self;
+            const span = trace.span(@src(), .validate_epoch_mark);
+            defer span.deinit();
+
+            const epoch_mark = header.epoch_mark.?;
+            const eta = state.eta.?;
+
+            // Validate entropy field matches eta[0] (prior state)
+            // This will become eta_prime[1] after rotation in STF
+            if (!std.mem.eql(u8, &epoch_mark.entropy, &eta[0])) {
+                span.err("Epoch mark entropy mismatch: expected eta[0]={s}, got {s}", .{
+                    std.fmt.fmtSliceHexLower(&eta[0]),
+                    std.fmt.fmtSliceHexLower(&epoch_mark.entropy),
+                });
+                return HeaderValidationError.InvalidEpochMark;
+            }
+
+            // Validate tickets_entropy field matches eta[1] (prior state)
+            // This will become eta_prime[2] after rotation in STF
+            if (!std.mem.eql(u8, &epoch_mark.tickets_entropy, &eta[1])) {
+                span.err("Epoch mark tickets_entropy mismatch: expected eta[1]={s}, got {s}", .{
+                    std.fmt.fmtSliceHexLower(&eta[1]),
+                    std.fmt.fmtSliceHexLower(&epoch_mark.tickets_entropy),
+                });
+                return HeaderValidationError.InvalidEpochMark;
+            }
+
+            // Validate validators field matches iota (pending validators that become active next epoch)
+            // Epoch mark contains the NEXT validator set (iota), not current gamma.k
+            const iota = state.iota.?;
+            if (epoch_mark.validators.len != iota.validators.len) {
+                span.err("Epoch mark validators count mismatch: expected {}, got {}", .{
+                    iota.validators.len,
+                    epoch_mark.validators.len,
+                });
+                return HeaderValidationError.InvalidEpochMark;
+            }
+
+            for (epoch_mark.validators, 0..) |validator_keys, i| {
+                const expected_validator = iota.validators[i];
+                if (!std.mem.eql(u8, &validator_keys.bandersnatch, &expected_validator.bandersnatch) or
+                    !std.mem.eql(u8, &validator_keys.ed25519, &expected_validator.ed25519))
+                {
+                    span.err("Epoch mark validator mismatch at index {}", .{i});
+                    return HeaderValidationError.InvalidEpochMark;
+                }
+            }
+
+            span.debug("Epoch mark validation passed", .{});
         }
 
         /// Result of ticket resolution

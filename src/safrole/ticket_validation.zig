@@ -43,7 +43,6 @@ pub fn processTicketExtrinsic(
     // Check the number of ticket attempts in the input when more than N we have a bad ticket attempt
     for (ticket_extrinsic.data) |extrinsic| {
         if (extrinsic.attempt >= params.max_ticket_entries_per_validator) {
-            std.debug.print("attempt {d}\n", .{extrinsic.attempt});
             return Error.BadTicketAttempt;
         }
     }

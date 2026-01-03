@@ -231,7 +231,12 @@ test "jam-conformance:traces" {
 
         // Process all traces
         var results = std.ArrayList(trace_runner.TraceResult).init(allocator);
-        defer results.deinit();
+        defer {
+            for (results.items) |*result| {
+                result.deinit(allocator);
+            }
+            results.deinit();
+        }
 
         var trace_names = std.ArrayList([]u8).init(allocator);
         defer {
@@ -303,17 +308,46 @@ fn isSkippedTest(id: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Check if a directory name is a valid timestamp (contains only digits)
+/// Check if a directory name is a valid timestamp
+/// Accepts two formats:
+///   1. Plain timestamp: all digits (e.g., "1766241814")
+///   2. Fuzzing variant: timestamp_number (e.g., "1766243315_1733")
 fn isValidTimestamp(name: []const u8) bool {
     if (name.len == 0) return false;
 
-    for (name) |char| {
-        if (!std.ascii.isDigit(char)) {
+    // Check for underscore to determine format
+    if (std.mem.indexOfScalar(u8, name, '_')) |underscore_pos| {
+        // New format: <timestamp>_<number>
+        // Must have digits before and after underscore
+        if (underscore_pos == 0 or underscore_pos == name.len - 1) {
             return false;
         }
-    }
 
-    return true;
+        // Validate prefix (before underscore) contains only digits
+        for (name[0..underscore_pos]) |char| {
+            if (!std.ascii.isDigit(char)) {
+                return false;
+            }
+        }
+
+        // Validate suffix (after underscore) contains only digits
+        for (name[underscore_pos + 1 ..]) |char| {
+            if (!std.ascii.isDigit(char)) {
+                return false;
+            }
+        }
+
+        return true;
+    } else {
+        // Old format: plain timestamp (all digits)
+        for (name) |char| {
+            if (!std.ascii.isDigit(char)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
 
 /// Build a standard TraceCollection with configured paths
@@ -445,7 +479,12 @@ fn runTraceSummary(allocator: std.mem.Allocator, collection: *const TraceCollect
 
         // Process all traces in this directory
         var trace_results = std.ArrayList(trace_runner.TraceResult).init(allocator);
-        defer trace_results.deinit();
+        defer {
+            for (trace_results.items) |*result| {
+                result.deinit(allocator);
+            }
+            trace_results.deinit();
+        }
 
         var trace_names = std.ArrayList([]u8).init(allocator);
         defer {

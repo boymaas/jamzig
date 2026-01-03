@@ -19,7 +19,7 @@ pub fn validateAndProcessAssuranceExtrinsic(
         params,
         test_case.input.assurances,
         test_case.input.parent,
-        kappa,
+        kappa.validators,
         rho,
     );
 

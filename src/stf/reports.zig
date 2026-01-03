@@ -60,7 +60,8 @@ pub fn transition(
     );
 
     // Find the indices of validators who reported
-    const kappa: *const state.Kappa = try stx.get(.kappa);
+    // Use kappa_prime (κ') as per graypaper: a'[v].guarantees += (κ'[v] ∈ reporters)
+    const kappa: *const state.Kappa = try stx.ensure(.kappa_prime);
     const validator_indices = try kappa.findValidatorIndices(allocator, .Ed25519Public, result.reporters);
 
     return .{ .validator_indices = validator_indices, .result = result };

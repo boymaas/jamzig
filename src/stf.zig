@@ -76,6 +76,17 @@ pub fn stateTransition(
         block.extrinsic.disputes,
     );
 
+    // Run safrole transition BEFORE assurances/reports to update validator sets at epoch boundaries
+    // This ensures kappa and lambda reflect the current epoch when validating signatures
+    var markers = try safrole.transition(
+        IOExecutor,
+        io_executor,
+        params,
+        stx,
+        block.extrinsic.tickets,
+    );
+    defer markers.deinit(allocator);
+
     // => rho_double_dagger
     var assurance_result =
         try assurances.transition(
@@ -84,6 +95,7 @@ pub fn stateTransition(
             stx,
             block.extrinsic.assurances,
             block.header.parent,
+            block.header.epoch_mark,
         );
     defer assurance_result.deinit(allocator);
 
@@ -141,15 +153,6 @@ pub fn stateTransition(
         stx,
         block.extrinsic.guarantees,
     );
-
-    var markers = try safrole.transition(
-        IOExecutor,
-        io_executor,
-        params,
-        stx,
-        block.extrinsic.tickets,
-    );
-    defer markers.deinit(allocator);
 
     // Create comprehensive ValidatorStatsInput with all collected data
     // Convert reporters to validator indices for statistics

@@ -2,6 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const tracy = @import("tracy");
 
+const tracing = @import("tracing");
+const trace = tracing.scoped(.io);
+
 pub const ThreadPoolTaskGroup = struct {
     pool: *std.Thread.Pool,
     wg: std.Thread.WaitGroup,
@@ -34,7 +37,9 @@ pub const ThreadPoolTaskGroup = struct {
                             defer group.error_mutex.unlock();
                             group.error_list.append(err) catch {}; // best effort
                         }
-                        std.log.err("Task failed with error: {}", .{err});
+                        const span = trace.span(@src(), .parallel_task_error);
+                        defer span.deinit();
+                        span.debug("Task failed with error: {}", .{err});
                     };
                 } else {
                     @call(.auto, f, a);
@@ -56,8 +61,10 @@ pub const ThreadPoolTaskGroup = struct {
         defer self.error_mutex.unlock();
 
         if (self.error_list.items.len > 0) {
+            const span = trace.span(@src(), .parallel_execution_errors);
+            defer span.deinit();
             const first_error = self.error_list.items[0];
-            std.log.err("Found {} errors during parallel execution", .{self.error_list.items.len});
+            span.debug("Found {} errors during parallel execution", .{self.error_list.items.len});
             return first_error;
         }
     }
@@ -118,7 +125,9 @@ pub const SequentialTaskGroup = struct {
         if (is_error_union) {
             @call(.auto, func, args) catch |err| {
                 self.error_list.append(err) catch {};
-                std.log.err("Task failed with error: {}", .{err});
+                const span = trace.span(@src(), .sequential_task_error);
+                defer span.deinit();
+                span.debug("Task failed with error: {}", .{err});
             };
         } else {
             @call(.auto, func, args);
@@ -131,8 +140,10 @@ pub const SequentialTaskGroup = struct {
 
     pub fn waitAndCheckErrors(self: *SequentialTaskGroup) !void {
         if (self.error_list.items.len > 0) {
+            const span = trace.span(@src(), .sequential_execution_errors);
+            defer span.deinit();
             const first_error = self.error_list.items[0];
-            std.log.err("Found {} errors during sequential execution", .{self.error_list.items.len});
+            span.debug("Found {} errors during sequential execution", .{self.error_list.items.len});
             return first_error;
         }
     }

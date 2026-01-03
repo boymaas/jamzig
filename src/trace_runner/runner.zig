@@ -189,6 +189,14 @@ pub const TraceResult = union(enum) {
     no_op: NoOp,
     mismatch: Mismatch,
     @"error": ProcessError,
+
+    pub fn deinit(self: *TraceResult, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .no_op => |no_op| allocator.free(no_op.error_name),
+            .@"error" => |err_info| allocator.free(err_info.context),
+            else => {},
+        }
+    }
 };
 
 // Lazy-loading trace iterator
@@ -270,13 +278,13 @@ pub fn processTrace(
         // Initialize state from pre-state dictionary
         var pre_dict = transition.preStateAsMerklizationDict(fuzzer.allocator) catch |err| {
             span.err("Failed to get pre-state dictionary: {s}", .{@errorName(err)});
-            return TraceResult{ .@"error" = .{ .err = err, .context = "Failed to load pre-state dictionary" } };
+            return TraceResult{ .@"error" = .{ .err = err, .context = try fuzzer.allocator.dupe(u8, "Failed to load pre-state dictionary") } };
         };
         defer pre_dict.deinit();
 
         var fuzz_state = state_converter.dictionaryToFuzzState(fuzzer.allocator, &pre_dict) catch |err| {
             span.err("Failed to convert dictionary to fuzz state: {s}", .{@errorName(err)});
-            return TraceResult{ .@"error" = .{ .err = err, .context = "Failed to convert pre-state to fuzz format" } };
+            return TraceResult{ .@"error" = .{ .err = err, .context = try fuzzer.allocator.dupe(u8, "Failed to convert pre-state to fuzz format") } };
         };
         defer fuzz_state.deinit(fuzzer.allocator);
 
@@ -286,7 +294,7 @@ pub fn processTrace(
         // Send state to embedded target
         const actual_state_root = fuzzer.setState(block.*.header, fuzz_state) catch |err| {
             span.err("Failed to set state on target: {s}", .{@errorName(err)});
-            return TraceResult{ .@"error" = .{ .err = err, .context = "Failed to initialize target state" } };
+            return TraceResult{ .@"error" = .{ .err = err, .context = try fuzzer.allocator.dupe(u8, "Failed to initialize target state") } };
         };
 
         // Verify pre-state root matches
@@ -325,7 +333,9 @@ pub fn processTrace(
             // Block import error - check if this was expected (no-op) or an actual error
             if (is_expected_no_op) {
                 span.debug("Block import failed as expected (no-op): {s}", .{err_msg});
-                return TraceResult{ .no_op = .{ .error_name = err_msg } };
+                // Duplicate error message before block_result.deinit() frees it
+                const error_name_copy = try fuzzer.allocator.dupe(u8, err_msg);
+                return TraceResult{ .no_op = .{ .error_name = error_name_copy } };
             } else {
                 span.err("Block import failed: {s}", .{err_msg});
                 return TraceResult{ .@"error" = .{
@@ -343,7 +353,7 @@ pub fn processTrace(
         span.err("Pre-state root:  {s}", .{std.fmt.fmtSliceHexLower(&expected_pre_root)});
         span.err("Post-state root: {s}", .{std.fmt.fmtSliceHexLower(&send_block_target_state_root)});
         span.err("Block should not have changed state but did", .{});
-        return TraceResult{ .@"error" = .{ .err = error.UnexpectedStateChange, .context = "Block was expected to be no-op but changed state" } };
+        return TraceResult{ .@"error" = .{ .err = error.UnexpectedStateChange, .context = try fuzzer.allocator.dupe(u8, "Block was expected to be no-op but changed state") } };
     }
 
     // Block processed successfully - compare the target state root with expected

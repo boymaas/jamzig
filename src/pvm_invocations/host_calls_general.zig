@@ -74,6 +74,12 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             // Gas cost: 10 units
             span.debug("charging 10 gas", .{});
             exec_ctx.gas -= 10;
+
+            if (exec_ctx.gas < 0) {
+                span.debug("Out of gas after charging", .{});
+                return .{ .terminal = .out_of_gas };
+            }
+
             const level = switch (exec_ctx.registers[7]) {
                 0 => "FATAL_ERROR",
                 1 => "WARNING",
@@ -117,6 +123,12 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             // exec_ctx.exec_trace.logHostCall("gasRemaining", 1, 10);
 
             exec_ctx.gas -= 10;
+
+            if (exec_ctx.gas < 0) {
+                span.debug("Out of gas after charging", .{});
+                return .{ .terminal = .out_of_gas };
+            }
+
             const remaining_gas = exec_ctx.gas;
             exec_ctx.registers[7] = @intCast(remaining_gas);
 
@@ -134,6 +146,11 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             span.debug("charging 10 gas", .{});
             exec_ctx.gas -= 10;
+
+            if (exec_ctx.gas < 0) {
+                span.debug("Out of gas after charging", .{});
+                return .{ .terminal = .out_of_gas };
+            }
 
             const service_id_reg = exec_ctx.registers[7];
             const hash_ptr = exec_ctx.registers[8];
@@ -210,6 +227,11 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const host_ctx: Context = host_ctx_;
             span.debug("charging 10 gas", .{});
             exec_ctx.gas -= 10;
+
+            if (exec_ctx.gas < 0) {
+                span.debug("Out of gas after charging", .{});
+                return .{ .terminal = .out_of_gas };
+            }
 
             // Get registers per graypaper B.7: (s*, k_o, k_z, o)
             const service_id_reg = exec_ctx.registers[7]; // Service ID (s*)
@@ -295,6 +317,11 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             span.debug("charging 10 gas", .{});
             exec_ctx.gas -= 10;
+
+            if (exec_ctx.gas < 0) {
+                span.debug("Out of gas after charging", .{});
+                return .{ .terminal = .out_of_gas };
+            }
 
             // Get registers per graypaper B.7: (k_o, k_z, v_o, v_z)
             const k_o = exec_ctx.registers[7]; // Key offset
@@ -479,6 +506,11 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             span.debug("charging 10 gas", .{});
             exec_ctx.gas -= 10;
+
+            if (exec_ctx.gas < 0) {
+                span.debug("Out of gas after charging", .{});
+                return .{ .terminal = .out_of_gas };
+            }
 
             // Get registers per graypaper B.7: service ID, output pointer, offset, and limit
             const service_id_reg = exec_ctx.registers[7];

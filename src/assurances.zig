@@ -31,11 +31,12 @@ pub const ValidatedAssuranceExtrinsic = struct {
     }
 
     /// Validates the AssuranceExtrinsic according to protocol rules
+    /// The validators parameter can be either []types.ValidatorData or []types.EpochMarkValidatorsKeys
     pub fn validate(
         comptime params: @import("jam_params.zig").Params,
         extrinsic: types.AssurancesExtrinsic,
         parent_hash: types.HeaderHash,
-        kappa: types.ValidatorSet,
+        validators: anytype,
         pending_reports: *const state.Rho(params.core_count),
     ) ValidationError!@This() {
         // Compile-time assertions for parameters
@@ -114,7 +115,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
             try validateSignature(
                 &signature_span,
                 assurance,
-                kappa,
+                validators,
             );
         }
 
@@ -124,11 +125,11 @@ pub const ValidatedAssuranceExtrinsic = struct {
     fn validateSignature(
         span: anytype,
         assurance: types.AvailAssurance,
-        kappa: types.ValidatorSet,
+        validators: anytype,
     ) ValidationError!void {
         // Validate validator index bounds
-        if (assurance.validator_index >= kappa.validators.len) {
-            span.err("Invalid validator index {d}, max allowed {d}", .{ assurance.validator_index, kappa.validators.len - 1 });
+        if (assurance.validator_index >= validators.len) {
+            span.err("Invalid validator index {d}, max allowed {d}", .{ assurance.validator_index, validators.len - 1 });
             return ValidationError.InvalidValidatorIndex;
         }
 
@@ -142,7 +143,7 @@ pub const ValidatedAssuranceExtrinsic = struct {
 
         // Get validator public key
         span.trace("Retrieving public key for validator {d}", .{assurance.validator_index});
-        const public_key = kappa.validators[assurance.validator_index].ed25519;
+        const public_key = validators[assurance.validator_index].ed25519;
 
         // ZIP-215 compliant verification
         const validator_pub_key = ed25519.PublicKey.fromBytes(public_key);

@@ -112,10 +112,11 @@ pub fn determineGuarantorAssignments(
     // Step 2: Determine if we need G or G*
     if (current_rotation == guarantee_rotation) {
         // Use G (current rotation)
+        // After safrole runs, use kappa_prime (updated validators), otherwise use base kappa
         span.debug("Using current rotation G with η'₂ and κ'", .{});
 
         const eta_prime = try stx.ensure(.eta_prime);
-        const kappa = try stx.ensure(.kappa);
+        const kappa = try stx.ensure(.kappa_prime);
 
         const assignments = try permuteAssignments(
             params,
@@ -137,11 +138,12 @@ pub fn determineGuarantorAssignments(
         const previous_epoch = @divFloor(previous_slot, params.epoch_length);
 
         if (current_epoch == previous_epoch) {
-            // Same epoch: use current entropy and validators
+            // Same epoch: use current entropy and validators (prefer prime if available)
             span.debug("Using previous rotation G* with η'₂ and κ' (same epoch)", .{});
 
             const eta_prime = try stx.ensure(.eta_prime);
-            const kappa = try stx.ensure(.kappa);
+            const kappa =
+                try stx.ensure(.kappa_prime);
 
             const assignments = try permuteAssignments(
                 params,
@@ -155,11 +157,11 @@ pub fn determineGuarantorAssignments(
                 .validators = kappa,
             };
         } else {
-            // Different epoch: use previous entropy and validators
+            // Different epoch: use previous entropy and validators (prefer prime if available)
             span.debug("Using previous rotation G* with η'₃ and λ' (different epoch)", .{});
 
             const eta_prime = try stx.ensure(.eta_prime);
-            const lambda = try stx.ensure(.lambda);
+            const lambda = try stx.ensure(.lambda_prime);
 
             const assignments = try permuteAssignments(
                 params,
