@@ -34,19 +34,19 @@
           extensions = [ "rust-analyzer" "rust-src" ];
         };
       in
-      {
+      rec {
         # Development shell
         devShells.default = pkgs.mkShell {
           name = "jamzig-dev";
-          
+
           buildInputs = with pkgs; [
             # Zig development
             zig
             zls
-            
+
             # Rust development
             rustToolchain
-            
+
             # Additional tools
             qemu
           ];
@@ -59,6 +59,25 @@
             echo ""
           '';
         };
+
+        # Apps for CI
+        apps.test = {
+          type = "app";
+          program = toString (pkgs.writeShellScript "jamzig-test" ''
+            export PATH="${pkgs.lib.makeBinPath [ pkgs.zig rustToolchain pkgs.qemu ]}:$PATH"
+            exec zig build test "$@"
+          '');
+        };
+
+        apps.build = {
+          type = "app";
+          program = toString (pkgs.writeShellScript "jamzig-build" ''
+            export PATH="${pkgs.lib.makeBinPath [ pkgs.zig rustToolchain pkgs.qemu ]}:$PATH"
+            exec zig build "$@"
+          '');
+        };
+
+        apps.default = apps.build;
 
       });
 }

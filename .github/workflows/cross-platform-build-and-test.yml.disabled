@@ -1,4 +1,4 @@
-name: Crossplatfrom build and test
+name: Cross-platform build and test
 on:
   push:
     branches:
