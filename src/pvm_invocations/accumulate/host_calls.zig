@@ -639,6 +639,13 @@ pub fn HostCalls(comptime params: Params) type {
                 return .play;
             }
 
+            // Check if new assign service ID is within serviceid domain (u32)
+            if (new_assign_service > std.math.maxInt(u32)) {
+                span.debug("New assign service ID {d} exceeds u32 range, returning WHO", .{new_assign_service});
+                exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
+                return .play;
+            }
+
             // Create a sequence of authorizer hashes
             const authorizer_hashes = std.mem.bytesAsSlice(types.AuthorizerHash, hashes_data.buffer);
 
@@ -730,10 +737,18 @@ pub fn HostCalls(comptime params: Params) type {
             const ctx_regular: *Dimension = &host_ctx.regular;
 
             const code_hash_ptr = exec_ctx.registers[7];
-            const code_len: u32 = @truncate(exec_ctx.registers[8]);
+            const code_len_raw = exec_ctx.registers[8];
             const min_gas_limit = exec_ctx.registers[9];
             const min_memo_gas = exec_ctx.registers[10];
             const free_storage_offset = exec_ctx.registers[11];
+
+            // Validate code length is within N_32 (u32 range)
+            // Per graypaper l ∉ N_32 leads to PANIC
+            if (code_len_raw > std.math.maxInt(u32)) {
+                span.err("Code length {d} exceeds u32 range, returning PANIC", .{code_len_raw});
+                return .{ .terminal = .panic };
+            }
+            const code_len: u32 = @truncate(code_len_raw);
 
             span.debug("Host call: new service from service {d}", .{ctx_regular.service_id});
             span.debug("Code hash ptr: 0x{x}, Code len: {d}", .{ code_hash_ptr, code_len });
