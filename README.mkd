@@ -57,8 +57,19 @@ JAMZIG includes comprehensive testing infrastructure:
   - Covers all major components: accumulate, safrole, assurances, etc.
   - Includes W3F trace tests for block sequence validation
 - **JAM Conformance**: Community-validated traces for cross-implementation compatibility
+  - Tests against the `jam-conformance/` archive of community-validated block traces
+  - Ensures compatibility across different JAM implementations
 
 The dedicated `test-vectors` command provides faster compilation by building only test vector code (~25 files) instead of the entire test suite, making it ideal for continuous compliance checking.
+
+#### Test Runner Options
+
+The test runner supports flags passed after `--`:
+
+- `--progress`: Show colored progress output for each test as it runs
+- `--nocapture`: Don't capture stderr - shows all debug output during test execution (essential for debugging failures)
+- `--exit-on-fail`: Exit immediately on first test failure
+- `--log-progress`: Log detailed test progress to `test_progress.log` file (includes timing, pass/fail status, summary stats)
 
 ### Commands
 
@@ -72,6 +83,9 @@ zig build test
 # Run specific test
 zig build test -Dtest-filter=<test_name>
 
+# Run tests with progress output
+zig build test -Dtest-filter=<test_name> -- --progress
+
 # Run JAM test vectors for specification compliance
 zig build test-vectors
 
@@ -80,6 +94,15 @@ zig build test-vectors -Dtest-filter="tiny"
 
 # Run only full parameter test vectors
 zig build test-vectors -Dtest-filter="full"
+
+# Run W3F trace tests (block sequence validation)
+zig build test-vectors -Dtest-filter="w3f:traces"
+
+# JAM Conformance: View compliance summary
+zig build test -Dtest-filter=jam-conformance:summary -- --nocapture
+
+# JAM Conformance: Validate against specific archive
+JAM_CONFORMANCE_ARCHIVE=<timestamp> zig build test -Dtest-filter="jam-conformance:archive" -- --nocapture
 
 # Run the node
 zig build run
