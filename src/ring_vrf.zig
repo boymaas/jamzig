@@ -14,13 +14,6 @@ pub const Error = error{
     SignatureVerificationFailed,
 };
 
-//  ____
-// |  _ \ _ __ _____   _____ _ __
-// | |_) | '__/ _ \ \ / / _ \ '__|
-// |  __/| | | (_) \ V /  __/ |
-// |_|   |_|  \___/ \_/ \___|_|
-//
-
 extern fn new_ring_vrf_prover(
     secret: [*]const u8,
     public_keys: [*]const u8,
@@ -126,14 +119,6 @@ pub const RingProver = struct {
     }
 };
 
-// __     __        _  __ _
-// \ \   / /__ _ __(_)/ _(_) ___ _ __
-//  \ \ / / _ \ '__| | |_| |/ _ \ '__|
-//   \ V /  __/ |  | |  _| |  __/ |
-//    \_/ \___|_|  |_|_| |_|\___|_|
-//
-
-// FFI declarations
 extern fn new_ring_vrf_verifier(
     public_keys: [*]const u8,
     public_keys_len: usize,
@@ -240,8 +225,6 @@ pub const RingVerifier = struct {
             return Error.VerificationFailed;
         }
 
-        // If the output is always exactly 32 bytes, you can assert here:
-        // std.debug.assert(output_len == 32);
         return output;
     }
 
@@ -254,12 +237,6 @@ pub const RingVerifier = struct {
         return output;
     }
 };
-
-//   ____                          _ _                        _
-//  / ___|___  _ __ ___  _ __ ___ (_) |_ _ __ ___   ___ _ __ | |_ ___
-// | |   / _ \| '_ ` _ \| '_ ` _ \| | __| '_ ` _ \ / _ \ '_ \| __/ __|
-// | |__| (_) | | | | | | | | | | | | |_| | | | | |  __/ | | | |_\__ \
-//  \____\___/|_| |_| |_|_| |_| |_|_|\__|_| |_| |_|\___|_| |_|\__|___/
 
 extern fn vrf_verify_ring_signature_against_commitment(
     commitment: [*c]const u8,
@@ -299,13 +276,6 @@ pub fn verifyRingSignatureAgainstCommitment(
     return vrf_output;
 }
 
-//  ____           _     _ _             ____       _       _
-// |  _ \ __ _  __| | __| (_)_ __   __ _|  _ \ ___ (_)_ __ | |_
-// | |_) / _` |/ _` |/ _` | | '_ \ / _` | |_) / _ \| | '_ \| __|
-// |  __/ (_| | (_| | (_| | | | | | (_| |  __/ (_) | | | | | |_
-// |_|   \__,_|\__,_|\__,_|_|_| |_|\__, |_|   \___/|_|_| |_|\__|
-//                                 |___/
-
 extern fn get_padding_point(
     ring_size: usize,
     output: [*]u8,
@@ -331,13 +301,6 @@ test "ring_vrf.padding: get padding point" {
     const padding_point = try getPaddingPoint(ring_size);
     std.debug.print("Padding point for ring size {d}: {any}\n", .{ ring_size, std.fmt.fmtSliceHexLower(&padding_point) });
 }
-
-//  _   _       _ _     _____         _
-// | | | |_ __ (_) |_  |_   _|__  ___| |_ ___
-// | | | | '_ \| | __|   | |/ _ \/ __| __/ __|
-// | |_| | | | | | |_    | |  __/\__ \ |_\__ \
-//  \___/|_| |_|_|\__|   |_|\___||___/\__|___/
-//
 
 const bandersnatch = @import("crypto/bandersnatch.zig");
 
