@@ -17,7 +17,6 @@ pub fn encodeFixedLengthInteger(l: usize, x: u64, buffer: []u8) void {
         return;
     }
 
-    // Optimized: write bytes directly without loop variable
     var value: u64 = x;
     for (buffer[0..l]) |*byte| {
         byte.* = @intCast(value & 0xff);
