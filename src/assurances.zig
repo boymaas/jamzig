@@ -6,7 +6,6 @@ const ed25519 = @import("crypto/ed25519.zig").Ed25519;
 const tracing = @import("tracing");
 const trace = tracing.scoped(.assurances);
 
-/// A wrapper type that guarantees an AssuranceExtrinsic has been validated
 pub const ValidatedAssuranceExtrinsic = struct {
     inner: types.AssurancesExtrinsic,
 
@@ -30,8 +29,6 @@ pub const ValidatedAssuranceExtrinsic = struct {
         self.* = undefined;
     }
 
-    /// Validates the AssuranceExtrinsic according to protocol rules
-    /// The validators parameter can be either []types.ValidatorData or []types.EpochMarkValidatorsKeys
     pub fn validate(
         comptime params: @import("jam_params.zig").Params,
         extrinsic: types.AssurancesExtrinsic,
@@ -39,7 +36,6 @@ pub const ValidatedAssuranceExtrinsic = struct {
         validators: anytype,
         pending_reports: *const state.Rho(params.core_count),
     ) ValidationError!@This() {
-        // Compile-time assertions for parameters
         comptime {
             std.debug.assert(params.core_count > 0);
             std.debug.assert(params.validators_count > 0);
@@ -60,13 +56,11 @@ pub const ValidatedAssuranceExtrinsic = struct {
             defer assurance_span.deinit();
             assurance_span.debug("Validating assurance {d} of {d}", .{ i + 1, extrinsic.data.len });
 
-            // Validate bitfield size
             if (assurance.bitfield.len != params.avail_bitfield_bytes) {
                 assurance_span.err("Invalid bitfield size {d}, expected {d}", .{ assurance.bitfield.len, params.avail_bitfield_bytes });
                 return ValidationError.InvalidBitfieldSize;
             }
 
-            // Ensure strictly increasing validator indices
             assurance_span.trace("Checking validator index ordering - current: {d}, previous: {d}", .{ assurance.validator_index, prev_validator_idx });
             if (assurance.validator_index == prev_validator_idx) {
                 assurance_span.err("Duplicate validator index {d}", .{assurance.validator_index});

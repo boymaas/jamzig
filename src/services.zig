@@ -29,13 +29,11 @@ pub const StorageFootprint = struct {
     a_t: Balance,
 };
 
-/// Result of analyzing a potential storage write operation
-/// Contains all necessary information to avoid duplicate lookups
 pub const StorageWriteAnalysis = struct {
     new_footprint: StorageFootprint,
-    storage_key: types.StateKey, // Already constructed key
-    prior_value: ?[]const u8, // Existing value if any
-    prior_value_length: u64, // Length or NONE constant for return value
+    storage_key: types.StateKey,
+    prior_value: ?[]const u8,
+    prior_value_length: u64,
 };
 
 pub const PreimageLookup = struct {
@@ -51,8 +49,6 @@ pub const PreimageLookup = struct {
     status: [3]?Timeslot,
 
     pub fn asSlice(self: *const @This()) []const ?Timeslot {
-        // Else we have an existing one, now set the appropiate
-        // value based on the tailing count
         var non_null_len: usize = 0;
         for (self.status) |e| {
             if (e != null) {
@@ -64,8 +60,6 @@ pub const PreimageLookup = struct {
     }
 
     pub fn asSliceMut(self: *@This()) []?Timeslot {
-        // Else we have an existing one, now set the appropiate
-        // value based on the tailing count
         var non_null_len: usize = 0;
         for (self.status) |e| {
             if (e != null) {
@@ -89,44 +83,20 @@ pub const AccountUpdate = struct {
     new_gas_limit: GasLimit,
 };
 
-/// See GP0.4.1p@Ch9
+// (GP §9)
 pub const ServiceAccount = struct {
-    // Unified data container for ALL service data (storage, preimages, preimage lookups)
-    // JAM v0.6.7: Keys are intentionally opaque - the merkle tree doesn't care about data types
-    // All data is stored as 31-byte StateKeys mapped to byte arrays
     data: std.AutoHashMap(types.StateKey, []const u8),
-
-    // Service information version (v0.7.1)
     version: u8,
-
-    // Must be present in pre-image lookup, this in self.preimages
     code_hash: Hash,
-
-    // The balance of the account, which is the amount of the native token held
-    // by the account.
     balance: Balance,
-
-    // The minumum gas limit before the accumulate and on transfer may be
-    // executed
     min_gas_accumulate: GasLimit,
     min_gas_on_transfer: GasLimit,
-
-    // Storage offset for gratis (free) storage allowance - NEW in v0.6.7
     storage_offset: u64,
-
-    // Time slot when this service was created (r in spec)
-    creation_slot: u32, // types.TimeSlot or u32
-
-    // Time slot of the most recent accumulation for this service (a in spec)
-    last_accumulation_slot: u32, // types.TimeSlot or u32
-
-    // Index of the parent service that created this service (p in spec)
-    parent_service: types.ServiceId, // or u32
-
-    // Storage footprint tracking - NEW in v0.6.7
-    // We directly track a_i and a_o as defined in the graypaper
-    footprint_items: u32, // a_i = 2·|preimage_lookups| + |storage_items|
-    footprint_bytes: u64, // a_o = Σ(81 + length) for lookups + Σ(65 + |value|) for storage
+    creation_slot: u32,
+    last_accumulation_slot: u32,
+    parent_service: types.ServiceId,
+    footprint_items: u32,
+    footprint_bytes: u64,
 
     pub fn init(allocator: Allocator) ServiceAccount {
         return .{
@@ -149,14 +119,12 @@ pub const ServiceAccount = struct {
         var clone = ServiceAccount.init(allocator);
         errdefer clone.deinit();
 
-        // Clone unified data map
         var data_it = self.data.iterator();
         while (data_it.next()) |entry| {
             const cloned_value = try allocator.dupe(u8, entry.value_ptr.*);
             try clone.data.put(entry.key_ptr.*, cloned_value);
         }
 
-        // Copy all fields including tracking fields - they represent the exact same data
         clone.version = self.version;
         clone.code_hash = self.code_hash;
         clone.balance = self.balance;
@@ -181,7 +149,6 @@ pub const ServiceAccount = struct {
         self.* = undefined;
     }
 
-    // Functionality to read and write storage, reflecting access patterns in Section 4.9.2 on Service State.
     pub fn readStorage(self: *const ServiceAccount, service_id: u32, key: []const u8) ?[]const u8 {
         const storage_key = state_keys.constructStorageKey(service_id, key);
         const value = self.data.get(storage_key);
@@ -218,12 +185,10 @@ pub const ServiceAccount = struct {
                 old_value_ptr.len,
             });
 
-            // Update a_o - reduce bytes by old value length (key overhead stays)
             self.footprint_bytes = self.footprint_bytes - old_value_ptr.len;
 
             self.data.allocator.free(old_value_ptr.*);
             self.data.put(storage_key, &[_]u8{}) catch unreachable;
-            // Empty value doesn't add bytes
         } else {
             span.debug("Storage RESET - Service: {d}, Key: {s} ({d} bytes), StateKey: {s}, Not found", .{
                 service_id,
@@ -234,7 +199,6 @@ pub const ServiceAccount = struct {
         }
     }
 
-    // Returns the length of the removed value
     pub fn removeStorage(self: *ServiceAccount, service_id: u32, key: []const u8) ?usize {
         const storage_key = state_keys.constructStorageKey(service_id, key);
 
@@ -252,10 +216,8 @@ pub const ServiceAccount = struct {
                 value_length,
             });
 
-            // In trace mode, show what was removed
             span.trace("  Removed value: {}", .{formatValue(entry.value)});
 
-            // Update a_i and a_o for storage removal
             self.footprint_items -= 1; // One storage item removed
             self.footprint_bytes -= 34 + key.len + value_length; // 34 + key length + value length
 
@@ -275,7 +237,6 @@ pub const ServiceAccount = struct {
 
     pub fn writeStorage(self: *ServiceAccount, service_id: u32, key: []const u8, value: []const u8) !?[]const u8 {
         const storage_key = state_keys.constructStorageKey(service_id, key);
-        // Clear the old, otherwise we are leaking
         const old_value = self.data.get(storage_key);
 
         const span = trace.span(@src(), .storage_write);
@@ -289,18 +250,14 @@ pub const ServiceAccount = struct {
             if (old_value) |old| old.len else 0,
         });
 
-        // In trace mode, show the full value being written (up to 512 bytes)
         span.trace("  Value: {}", .{formatValue(value)});
         if (old_value) |old| {
             span.trace("  Prior: {}", .{formatValue(old)});
         }
 
-        // Update a_i and a_o based on whether this is new or update
         if (old_value) |old| {
-            // Updating existing entry - only a_o changes (value size difference)
             self.footprint_bytes = self.footprint_bytes - old.len + value.len;
         } else {
-            // New entry - increment both a_i and a_o
             self.footprint_items += 1; // One new storage item
             self.footprint_bytes += 34 + key.len + value.len; // 34 + key length + value length
         }
@@ -311,7 +268,6 @@ pub const ServiceAccount = struct {
     }
 
     pub fn writeStorageNoFootprint(self: *ServiceAccount, service_id: u32, key: []const u8, value: []const u8) !void {
-        // This function does not update footprint metrics
         const storage_key = state_keys.constructStorageKey(service_id, key);
         try self.data.put(storage_key, value);
     }
@@ -321,7 +277,6 @@ pub const ServiceAccount = struct {
         if (maybe_old_value) |old_value| self.data.allocator.free(old_value);
     }
 
-    // Functions to add and manage preimages correspond to the discussion in Section 4.9.2 and Appendix D.
     pub fn dupeAndAddPreimage(self: *ServiceAccount, key: types.StateKey, preimage: []const u8) !void {
         const new_preimage = try self.data.allocator.dupe(u8, preimage);
 
@@ -332,11 +287,8 @@ pub const ServiceAccount = struct {
             preimage.len,
         });
 
-        // In trace mode, show the preimage (up to 512 bytes)
         span.trace("  Preimage: {}", .{formatValue(preimage)});
 
-        // Preimages do NOT affect a_i or a_o according to the graypaper
-        // They are stored separately and don't contribute to storage footprint
 
         try self.data.put(key, new_preimage);
     }
@@ -362,21 +314,17 @@ pub const ServiceAccount = struct {
         return self.data.contains(key);
     }
 
-    // Helper function to encode PreimageLookup to bytes for storage
     pub fn encodePreimageLookup(allocator: Allocator, lookup: PreimageLookup) ![]const u8 {
         var buffer = std.ArrayList(u8).init(allocator);
         errdefer buffer.deinit();
 
-        // Count non-null timestamps
         var count: u8 = 0;
         for (lookup.status) |ts| {
             if (ts != null) count += 1 else break;
         }
 
-        // Write count as single byte
         try buffer.append(count);
 
-        // Write each timestamp as 4 bytes little-endian
         for (0..count) |i| {
             try buffer.writer().writeInt(u32, lookup.status[i].?, .little);
         }
@@ -384,7 +332,6 @@ pub const ServiceAccount = struct {
         return buffer.toOwnedSlice();
     }
 
-    // Helper function to decode PreimageLookup from bytes
     fn decodePreimageLookup(data: []const u8) !PreimageLookup {
         if (data.len < 1) return error.InvalidData;
 
@@ -570,7 +517,6 @@ pub const ServiceAccount = struct {
         const preimage_key = state_keys.constructServicePreimageKey(service_id, target_hash);
 
         if (self.data.fetchRemove(preimage_key)) |removed| {
-            // Preimages do NOT affect a_i or a_o
             self.data.allocator.free(removed.value);
         }
     }
@@ -801,10 +747,8 @@ pub const ServiceAccount = struct {
         var new_a_o = self.footprint_bytes;
 
         if (old_value) |old| {
-            // Updating existing entry - only a_o changes (value size difference)
             new_a_o = new_a_o - old.len + new_value_len;
         } else {
-            // New entry - increment both a_i and a_o
             new_a_i += 1; // One new storage item
             new_a_o += 34 + key.len + new_value_len; // 34 + key length + value length
         }

@@ -1,6 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
-const services_privileged = @import("../services_priviledged.zig");
+const services_privileged = @import("../services_privileged.zig");
 const Chi = services_privileged.Chi;
 const decoder = @import("../codec/decoder.zig");
 const codec = @import("../codec.zig");
