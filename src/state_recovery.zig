@@ -1,17 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
 
-//  ____  _        _         ____                                
-// / ___|| |_ __ _| |_ ___  |  _ \ ___  ___ _____   _____ _ __ _   _ 
-// \___ \| __/ _` | __/ _ \ | |_) / _ \/ __/ _ \ \ / / _ \ '__| | | |
-//  ___) | || (_| | ||  __/ |  _ <  __/ (_| (_) \ V /  __/ |  | |_| |
-// |____/ \__\__,_|\__\___| |_| \_\___|\___\___/ \_/ \___|_|   \__, |
-//                                                             |___/ 
-//
-// Minimal state recovery functions for JAM service storage.
-// Used only for state reconstruction scenarios (snapshots, chain sync).
-
-/// Key type enumeration for state recovery
 pub const KeyType = enum {
     state_component,
     service_base,

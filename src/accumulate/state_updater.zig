@@ -1,9 +1,3 @@
-//! State coordination for accumulation process
-//!
-//! This module handles all state updates after accumulation, including
-//! Xi (accumulation history), Theta (pending reports), and Delta (service accounts).
-//! It ensures coordinated updates to prevent state inconsistencies.
-
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");

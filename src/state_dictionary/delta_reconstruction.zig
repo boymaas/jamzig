@@ -55,7 +55,7 @@ pub fn reconstructStorageData(
     const owned_value = try allocator.dupe(u8, dict_entry.value);
     errdefer allocator.free(owned_value);
 
+    // Direct data access: key already in final form from serialized state
     const storage_key = dict_entry.key;
     try account.data.put(storage_key, owned_value);
-    span.debug("Successfully stored entry in account data", .{});
 }

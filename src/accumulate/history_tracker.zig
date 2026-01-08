@@ -1,9 +1,3 @@
-//! Accumulation history tracking in Xi state
-//!
-//! This module manages the accumulation history by tracking which work
-//! reports have been successfully accumulated. It maintains the Xi state
-//! component according to JAM specifications.
-
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");

@@ -35,13 +35,6 @@ pub fn encode(comptime core_count: u16, comptime max_pool_items: u8, self: *cons
     span.debug("Successfully encoded all {d} pools", .{core_count});
 }
 
-//  _____         _   _
-// |_   _|__  ___| |_(_)_ __   __ _
-//   | |/ _ \/ __| __| | '_ \ / _` |
-//   | |  __/\__ \ |_| | | | | (_| |
-//   |_|\___||___/\__|_|_| |_|\__, |
-//                            |___/
-
 const testing = std.testing;
 
 test "Alpha encode" {

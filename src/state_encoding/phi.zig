@@ -27,13 +27,6 @@ pub fn encode(self: anytype, writer: anytype) !void {
     span.debug("Successfully completed phi encoding", .{});
 }
 
-//  _____         _   _
-// |_   _|__  ___| |_(_)_ __   __ _
-//   | |/ _ \/ __| __| | '_ \ / _` |
-//   | |  __/\__ \ |_| | | | | (_| |
-//   |_|\___||___/\__|_|_| |_|\__, |
-//                            |___/
-
 const testing = std.testing;
 
 test "encode" {

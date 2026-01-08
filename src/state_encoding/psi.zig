@@ -55,13 +55,6 @@ fn encodeOrderedSet(set: *const std.AutoArrayHashMap([32]u8, void), name: []cons
     span.debug("Successfully encoded ordered set: {s}", .{name});
 }
 
-//  _____         _   _
-// |_   _|__  ___| |_(_)_ __   __ _
-//   | |/ _ \/ __| __| | '_ \ / _` |
-//   | |  __/\__ \ |_| | | | | (_| |
-//   |_|\___||___/\__|_|_| |_|\__, |
-//                            |___/
-
 const testing = std.testing;
 
 test "encode" {

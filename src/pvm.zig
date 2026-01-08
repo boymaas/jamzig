@@ -323,7 +323,7 @@ pub const PVM = struct {
     }
 
     const PcOffset = i32;
-    const signExtendToU64 = @import("./pvm/sign_extention.zig").signExtendToU64;
+    const signExtendToU64 = @import("./pvm/sign_extension.zig").signExtendToU64;
     fn executeInstruction(context: *ExecutionContext, i: InstructionWithArgs) Error!SingleStepResult {
         switch (i.instruction) {
             // A.5.1 Instructions without Arguments

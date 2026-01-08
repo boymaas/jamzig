@@ -1,10 +1,3 @@
-//! Dependency resolution for work reports according to JAM §12.5-12.8
-//!
-//! This module handles the complex dependency chains between work reports,
-//! ensuring they are processed in the correct order to maintain state consistency.
-//! Uses topological sorting and iterative resolution to handle complex
-//! dependency graphs while detecting circular dependencies.
-
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");

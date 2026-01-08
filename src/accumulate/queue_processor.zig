@@ -1,9 +1,3 @@
-//! Queue processing for accumulation
-//!
-//! This module handles the processing of work report queues, managing
-//! the transition of reports from pending to ready state based on
-//! dependency resolution.
-
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");

@@ -34,7 +34,6 @@ pub const Psi = struct {
         };
     }
 
-    // Register an offender
     // TODO: add the test
     pub fn registerOffender(self: *Psi, key: PublicKey) !void {
         if (self.punish_set.contains(key)) {
@@ -43,7 +42,6 @@ pub const Psi = struct {
         try self.punish_set.put(key, {});
     }
 
-    // Register a set of offenders
     // TODO: add the test
     pub fn registerOffenders(self: *Psi, keys: []const PublicKey) !void {
         for (keys) |key| {
@@ -51,7 +49,6 @@ pub const Psi = struct {
         }
     }
 
-    // Get offenders slice - no allocation, slice is owned by Psi
     pub fn offendersSlice(self: *const Psi) []const PublicKey {
         return self.punish_set.keys();
     }
@@ -60,12 +57,10 @@ pub const Psi = struct {
         return self.punish_set.contains(key);
     }
 
-    // Get offenders with allocation (when ownership is needed)
     pub fn offendersOwned(self: *const Psi, allocator: Allocator) ![]PublicKey {
         return try allocator.dupe(PublicKey, self.punish_set.keys());
     }
 
-    // Deep clone functionality
     pub fn deepClone(self: *const Psi) !Psi {
         return Psi{
             .good_set = try self.good_set.clone(),
@@ -83,7 +78,6 @@ pub const Psi = struct {
         self.* = undefined;
     }
 
-    // Format implementation
     pub fn format(
         self: *const @This(),
         comptime fmt: []const u8,
@@ -99,7 +93,6 @@ pub const Psi = struct {
     }
 };
 
-// Process disputes extrinsic implementation
 pub fn processDisputesExtrinsic(
     comptime core_count: u32,
     psi_prime: *Psi,
@@ -120,7 +113,6 @@ pub fn processDisputesExtrinsic(
         extrinsic.faults.len,
     });
 
-    // Process verdicts
     for (extrinsic.verdicts, 0..) |verdict, i| {
         const verdict_span = span.child(@src(), .process_verdict);
         defer verdict_span.deinit();
@@ -146,10 +138,8 @@ pub fn processDisputesExtrinsic(
         }
     }
 
-    // Clear punish set before processing new offenders
     psi_prime.punish_set.clearRetainingCapacity();
 
-    // Process culprits
     const culprits_span = span.child(@src(), .process_culprits);
     defer culprits_span.deinit();
     culprits_span.debug("Processing {d} culprits", .{extrinsic.culprits.len});
@@ -162,7 +152,6 @@ pub fn processDisputesExtrinsic(
         try psi_prime.punish_set.put(culprit.key, {});
     }
 
-    // Process faults
     const faults_span = span.child(@src(), .process_faults);
     defer faults_span.deinit();
     faults_span.debug("Processing {d} faults", .{extrinsic.faults.len});
@@ -240,7 +229,6 @@ fn verifyVerdictSignatures(
         else
             return VerificationError.BadJudgementAge;
 
-        // ZIP-215 compliant verification
         const public_key = ed25519.PublicKey.fromBytes(validator_key);
 
         const message = if (judgment.vote)

@@ -1,9 +1,3 @@
-//! Accumulation statistics calculation according to JAM §12.25
-//!
-//! This module computes the accumulation statistics after work reports
-//! have been processed. It calculates the AccumulateRoot and tracks
-//! gas usage and transfer counts per service.
-
 const std = @import("std");
 const types = @import("../types.zig");
 const meta = @import("../meta.zig");
