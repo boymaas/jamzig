@@ -1140,15 +1140,20 @@ pub fn HostCalls(comptime params: Params) type {
             };
 
             // Calculate storage footprint for the preimage
-            const additional_storage_size: u64 = 81 + preimage_size; // 81 bytes overhead + preimage size
+            // Use saturating arithmetic - if overflow, balance check will fail anyway
+            const additional_storage_size: u64 = 81 +| preimage_size;
 
             // Check if service has enough balance to store this data
             span.debug("Checking if service has enough balance to store preimage", .{});
             const footprint = service_account.getStorageFootprint(params);
-            const additional_balance_needed = params.min_balance_per_item +
-                params.min_balance_per_octet * additional_storage_size;
+            const storage_cost = params.min_balance_per_octet *| additional_storage_size;
+            const additional_balance_needed = params.min_balance_per_item +| storage_cost;
 
-            if (service_account.balance - additional_balance_needed < footprint.a_t) {
+            // Check overflow-safe: balance >= additional AND balance - additional >= threshold
+            // Equivalent to: balance < additional OR balance - additional < threshold => FULL
+            if (additional_balance_needed > service_account.balance or
+                service_account.balance - additional_balance_needed < footprint.a_t)
+            {
                 span.debug("Insufficient balance for soliciting preimage, returning FULL", .{});
                 return HostCallError.FULL;
             }
