@@ -11,15 +11,6 @@ const trace = @import("tracing").scoped(.reports);
 
 pub const Error = error{};
 
-pub fn accumulateWorkReports(
-    comptime params: Params,
-    stx: *StateTransition(params),
-) !void {
-    _ = stx;
-    // Process work reports and transition δ, χ, ι, and φ
-    @panic("Not implemented");
-}
-
 pub const ReportsResult = struct {
     result: reports.Result,
     validator_indices: []const types.ValidatorIndex = &.{},
@@ -51,7 +42,6 @@ pub fn transition(
         block.extrinsic.guarantees,
     );
 
-    // Process
     const result = try reports.processGuaranteeExtrinsic(
         params,
         allocator,

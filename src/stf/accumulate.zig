@@ -12,8 +12,6 @@ const trace = tracing.scoped(.stf);
 
 pub const Error = error{};
 
-/// Updates last_accumulation_slot for services with non-empty work-digests (N(s) ≠ [])
-/// Per graypaper v0.7.1 eq 12.26: only services in keys(accumulationstatistics) are updated
 fn updateLastAccumulationSlot(
     comptime params: Params,
     stx: *StateTransition(params),
@@ -21,7 +19,6 @@ fn updateLastAccumulationSlot(
 ) !void {
     const delta_prime = try stx.ensure(.delta_prime);
 
-    // Update only services with work-digests (in accumulation_stats per eq 12.25)
     var iter = result.accumulation_stats.iterator();
     while (iter.next()) |entry| {
         if (delta_prime.getAccount(entry.key_ptr.*)) |account| {
@@ -43,7 +40,6 @@ pub fn transition(
     const span = trace.span(@src(), .accumulate);
     defer span.deinit();
 
-    // Process the newly available reports
     const result = try accumulate.processAccumulationReports(
         IOExecutor,
         io_executor,
@@ -53,7 +49,6 @@ pub fn transition(
         reports,
     );
 
-    // Update last_accumulation_slot for all affected services
     try updateLastAccumulationSlot(params, stx, &result);
 
     return result;

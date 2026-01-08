@@ -14,17 +14,13 @@ pub fn transition(
     comptime params: Params,
     stx: *StateTransition(params),
     preimages_extrinsic: types.PreimagesExtrinsic,
-    author_index: types.ValidatorIndex,
 ) !void {
     const span = trace.span(@src(), .preimages);
     defer span.deinit();
 
-    // Process the preimages extrinsic
     try preimages.processPreimagesExtrinsic(
         params,
         stx,
         preimages_extrinsic,
     );
-
-    _ = author_index;
 }
