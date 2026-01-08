@@ -279,7 +279,7 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Reading always-accumulate services from memory at 0x{x}", .{always_accumulate_ptr});
 
             // Calculate required memory size: each entry is 12 bytes (4 bytes service ID + 8 bytes gas)
-            const required_memory_size = always_accumulate_count * 12;
+            const required_memory_size = always_accumulate_count *| 12;
 
             // Read memory for always-accumulate services
             var always_accumulate_data: PVM.Memory.MemorySlice = if (always_accumulate_count > 0)
@@ -1526,7 +1526,7 @@ pub fn HostCalls(comptime params: Params) type {
             const offset = exec_ctx.registers[8]; // Offset (f)
             const limit = exec_ctx.registers[9]; // Length limit (l)
             const selector = exec_ctx.registers[10]; // Data selector
-            const index1 = @as(u32, @intCast(exec_ctx.registers[11])); // Index 1
+            const index1: u32 = @truncate(exec_ctx.registers[11]); // Index 1
 
             span.debug("Host call: fetch selector={d} index1={d}", .{ selector, index1 });
             span.debug("Output ptr: 0x{x}, offset: {d}, limit: {d}", .{ output_ptr, offset, limit });
