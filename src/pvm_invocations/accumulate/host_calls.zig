@@ -1609,56 +1609,19 @@ pub fn HostCalls(comptime params: Params) type {
                     }
                 },
 
-                16 => {
-                    // Selector 16: Encoded transfer sequence (v0.7.1 uses generated_transfers)
-                    if (ctx_regular.generated_transfers.items.len > 0) {
-                        const transfers_data = encoding_utils.encodeTransfers(ctx_regular.allocator, ctx_regular.generated_transfers.items) catch {
-                            span.err("Failed to encode transfer sequence", .{});
-                            return HostCallError.NONE;
-                        };
-                        span.debug("Transfer sequence encoded successfully, count={d}", .{ctx_regular.generated_transfers.items.len});
-                        data_to_fetch = transfers_data;
-                        needs_cleanup = true;
-                    } else {
-                        span.debug("No deferred transfers available in accumulate context", .{});
-                        return HostCallError.NONE;
-                    }
-                },
-
-                17 => {
-                    // Selector 17: Specific transfer by index (v0.7.1 uses generated_transfers)
-                    if (ctx_regular.generated_transfers.items.len > 0) {
-                        if (index1 < ctx_regular.generated_transfers.items.len) {
-                            const transfer_item = &ctx_regular.generated_transfers.items[index1];
-                            const transfer_data = encoding_utils.encodeTransfer(ctx_regular.allocator, transfer_item) catch {
-                                span.err("Failed to encode transfer", .{});
-                                return HostCallError.NONE;
-                            };
-                            span.debug("Transfer encoded successfully: index={d}", .{index1});
-                            data_to_fetch = transfer_data;
-                            needs_cleanup = true;
-                        } else {
-                            span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.generated_transfers.items.len });
-                            return HostCallError.NONE;
-                        }
-                    } else {
-                        span.debug("No generated transfers available in accumulate context", .{});
-                        return HostCallError.NONE;
-                    }
-                },
-
-                2...13 => {
-                    // Selectors 2-13 are for work package/refine contexts only
+                2...13, 16, 17 => {
+                    // Selectors 2-13 and 16-17 not available in accumulate context per graypaper
                     // 2-3: Header data (Refine only)
                     // 4-6: Work reports (Refine only)
                     // 7-13: Work package data (Is-Authorized/Refine only)
-                    span.debug("Selector {d} not available in accumulate context (work package/refine only)", .{selector});
+                    // 16-17: Not defined for accumulate (only selectors 0,1,14,15 valid)
+                    span.debug("Selector {d} not available in accumulate context", .{selector});
                     return HostCallError.NONE;
                 },
 
                 else => {
                     // Invalid selector
-                    span.debug("Invalid fetch selector: {d} (valid for accumulate: 0,1,14,15,16,17)", .{selector});
+                    span.debug("Invalid fetch selector: {d} (valid for accumulate: 0,1,14,15)", .{selector});
                     return HostCallError.NONE;
                 },
             }
