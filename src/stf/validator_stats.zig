@@ -156,9 +156,6 @@ pub fn transitionWithInput(
         service_stats.accumulate_count += stats_I.accumulated_count;
         service_stats.accumulate_gas_used += stats_I.gas_used;
     }
-
-    // GP v0.7.1: on_transfers stats removed (GP #457)
-    _ = accumulate_result.transfer_stats;
 }
 
 pub fn transition(

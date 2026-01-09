@@ -417,7 +417,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Get registers per graypaper B.7: [o, g, m]
             const code_hash_ptr = exec_ctx.registers[7]; // Pointer to new code hash (o)
             const min_gas_limit = exec_ctx.registers[8]; // New gas limit for accumulate (g)
-            const min_memo_gas = exec_ctx.registers[9]; // New gas limit for on_transfer (m)
+            const min_memo_gas = exec_ctx.registers[9]; // Minimum gas threshold for transfers (m)
 
             span.debug("Host call: upgrade service {d}", .{ctx_regular.service_id});
             span.debug("Code hash ptr: 0x{x}, Min gas: {d}, Min memo gas: {d}", .{
@@ -469,7 +469,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Get registers per graypaper B.7: [d, a, l, o]
             const destination_id = exec_ctx.registers[7]; // Destination service ID
             const amount = exec_ctx.registers[8]; // Amount to transfer
-            const gas_limit = exec_ctx.registers[9]; // Gas limit for on_transfer
+            const gas_limit = exec_ctx.registers[9]; // Gas limit (charged now, refunded after processing)
             const memo_ptr = exec_ctx.registers[10]; // Pointer to memo data
 
             span.debug("Host call: transfer from service {d} to {d}", .{
@@ -507,12 +507,12 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.WHO;
             };
 
-            // Check if gas limit is high enough for destination service's on_transfer (LOW check)
-            span.debug("Checking gas limit against destination service's min_gas_on_transfer: {d}", .{
-                destination_service.min_gas_on_transfer,
+            // Check if gas limit meets destination's minimum threshold (LOW check)
+            span.debug("Checking gas limit {d} against destination's min threshold: {d}", .{
+                gas_limit, destination_service.min_gas_on_transfer,
             });
             if (gas_limit < destination_service.min_gas_on_transfer) {
-                span.debug("Gas limit too low, returning LOW error (base 10 gas already charged)", .{});
+                span.debug("Gas limit below minimum threshold, returning LOW error", .{});
                 return HostCallError.LOW;
             }
 
@@ -562,8 +562,8 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Deducting {d} from source service balance", .{amount});
             source_service.balance -= @intCast(amount);
 
-            // Charge additional gas on success (v0.7.2 PR #488)
-            span.debug("charging {d} gas (on_transfer gas limit)", .{gas_limit});
+            // Charge transfer gas from sender (refunded after processing per §12.16)
+            span.debug("charging {d} gas (transfer gas, refunded after processing)", .{gas_limit});
             exec_ctx.gas -= @intCast(gas_limit);
 
             if (exec_ctx.gas < 0) {

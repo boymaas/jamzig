@@ -6,7 +6,6 @@ const HashSet = @import("../datastruct/hash_set.zig").HashSet;
 
 const execution = @import("execution.zig");
 const AccumulationServiceStats = execution.AccumulationServiceStats;
-const TransferServiceStats = execution.TransferServiceStats;
 const OuterAccumulationResult = execution.OuterAccumulationResult;
 const ProcessAccumulationResult = execution.ProcessAccumulationResult;
 
@@ -34,17 +33,14 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             self: Self,
             accumulated: []const types.WorkReport,
             execution_result: *OuterAccumulationResult,
-            transfer_stats: std.AutoHashMap(types.ServiceId, TransferServiceStats),
         ) !ProcessAccumulationResult {
             const span = trace.span(@src(), .compute_all_statistics);
             defer span.deinit();
 
-            // Calculate the AccumulateRoot
             const accumulate_root = try self.calculateAccumulateRoot(
                 execution_result.accumulation_outputs,
             );
 
-            // Calculate accumulation statistics
             const accumulation_stats = try self.calculateAccumulationStats(
                 accumulated,
                 &execution_result.gas_used_per_service,
@@ -54,7 +50,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             return ProcessAccumulationResult{
                 .accumulate_root = accumulate_root,
                 .accumulation_stats = accumulation_stats,
-                .transfer_stats = transfer_stats,
                 .invoked_services = execution_result.takeInvokedServices(),
             };
         }

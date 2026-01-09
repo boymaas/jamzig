@@ -65,62 +65,23 @@ pub fn invoke(
 
     span.debug("Found service account for ID {d}", .{service_id});
 
-    // v0.7.1: Calculate total incoming transfer amount for this service
-    var total_transfer_amount: types.Balance = 0;
+    // Count incoming transfers for this service (for operand_count)
+    // Balance crediting happens at batch start in outerAccumulation
     var transfer_count: usize = 0;
     for (incoming_transfers) |transfer| {
         if (transfer.destination == service_id) {
-            total_transfer_amount += transfer.amount;
             transfer_count += 1;
         }
     }
 
-    // v0.7.1: Create mutable context copy for balance updates
-    // The context struct is passed by value but contains pointers to shared state.
-    // Creating a mutable copy allows us to call getMutable on service_accounts.
-    var modified_context = context;
-
-    // Check code availability FIRST - before creating host_call_context
-    // This prevents use-after-free when host_call_context.deinit() is called
+    // Check code availability - if not available, return empty result
     span.debug("Checking code availability: code_hash={}", .{std.fmt.fmtSliceHexLower(&service_account.code_hash)});
     const code_key = state_keys.constructServicePreimageKey(service_id, service_account.code_hash);
     const code_preimage = service_account.getPreimage(code_key) orelse {
         span.err("Service code not available for hash: {s}", .{std.fmt.fmtSliceHexLower(&service_account.code_hash)});
-        // v0.7.1: Even when code unavailable, incoming transfers must still be credited
-        // per graypaper - transfers are applied before PVM invocation
-        if (total_transfer_amount > 0) {
-            const mutable_account = modified_context.service_accounts.getMutable(service_id) catch {
-                span.err("Failed to get mutable service account for transfer credit", .{});
-                return try AccumulationResult(params).createEmpty(allocator, modified_context, service_id);
-            } orelse {
-                span.err("Service account disappeared", .{});
-                return try AccumulationResult(params).createEmpty(allocator, modified_context, service_id);
-            };
-            mutable_account.balance += total_transfer_amount;
-            span.debug("Credited {d} to service {d} balance (code unavailable)", .{
-                total_transfer_amount, service_id,
-            });
-        }
-        // Return empty result - balance update is already in modified_context.service_accounts
-        return try AccumulationResult(params).createEmpty(allocator, modified_context, service_id);
+        return try AccumulationResult(params).createEmpty(allocator, context, service_id);
     };
     span.debug("Code available, total length: {d} bytes", .{code_preimage.len});
-
-    // v0.7.1: Update balance BEFORE PVM invocation per graypaper spec
-    if (total_transfer_amount > 0) {
-        const mutable_account = modified_context.service_accounts.getMutable(service_id) catch {
-            span.err("Failed to get mutable service account", .{});
-            return try AccumulationResult(params).createEmpty(allocator, context, service_id);
-        } orelse {
-            span.err("Service account disappeared", .{});
-            return try AccumulationResult(params).createEmpty(allocator, context, service_id);
-        };
-
-        mutable_account.balance += total_transfer_amount;
-        span.debug("Updated service {d} balance by +{d} from {d} incoming transfers", .{
-            service_id, total_transfer_amount, transfer_count,
-        });
-    }
 
     // Prepare accumulation arguments
     span.debug("Preparing accumulation arguments", .{});
@@ -128,9 +89,9 @@ pub fn invoke(
     defer args_buffer.deinit();
 
     const arguments = AccumulateArgs{
-        .timeslot = modified_context.time.current_slot,
+        .timeslot = context.time.current_slot,
         .service_id = service_id,
-        .operand_count = @intCast(accumulation_operands.len + transfer_count), // Work + transfers
+        .operand_count = @intCast(accumulation_operands.len + transfer_count),
     };
 
     span.trace("AccumulateArgs: timeslot={d}, service_id={d}, operand_count={d}", .{ arguments.timeslot, arguments.service_id, arguments.operand_count });
@@ -224,9 +185,8 @@ pub fn invoke(
     var host_call_context = try AccumulateHostCalls(params).Context.constructUsingRegular(.{
         .allocator = allocator,
         .service_id = service_id,
-        // Use modified context with updated balance (v0.7.1 transfer processing)
-        .context = modified_context,
-        .new_service_id = service_util.generateServiceId(&modified_context.service_accounts, service_id, modified_context.entropy, modified_context.time.current_slot),
+        .context = context,
+        .new_service_id = service_util.generateServiceId(&context.service_accounts, service_id, context.entropy, context.time.current_slot),
         .incoming_transfers = transfers_slice,
         .generated_transfers = std.ArrayList(TransferOperand).init(allocator),
         .accumulation_output = null,

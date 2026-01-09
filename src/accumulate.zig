@@ -79,12 +79,7 @@ pub fn processAccumulationReports(
 
     const accumulated = accumulatable[0..execution_result.accumulated_count];
 
-    // Step 4: Transfer stats (v0.7.1 inline processing - no separate step needed)
-    // Transfer stats are now tracked during accumulation, not post-processed
-    var transfer_stats = std.AutoHashMap(types.ServiceId, @import("accumulate/execution.zig").TransferServiceStats).init(allocator);
-    defer transfer_stats.deinit();
-
-    // Step 5: Update history
+    // Step 4: Update history
     const history_tracker = HistoryTracker(params){};
     try history_tracker.updateAccumulationHistory(xi, accumulated);
 
@@ -109,11 +104,10 @@ pub fn processAccumulationReports(
         execution_result.accumulation_outputs,
     );
 
-    // Step 8: Calculate statistics
+    // Step 5: Calculate statistics
     const stats_calculator = StatisticsCalculator(params).init(allocator);
     return try stats_calculator.computeAllStatistics(
         accumulated,
         &execution_result,
-        transfer_stats,
     );
 }
