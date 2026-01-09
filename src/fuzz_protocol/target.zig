@@ -433,6 +433,8 @@ pub fn TargetServer(comptime IOExecutor: type, comptime params: @import("../jam_
                     span.debug("Block imported successfully, sealed with tickets: {}", .{result.sealed_with_tickets});
 
                     // Store pending result for potential commit later
+                    // Free previous pending result if exists (prevents leak on consecutive imports)
+                    if (self.pending_result) |*prev| prev.deinit();
                     self.pending_result = result;
 
                     // Compute state root from uncommitted transition

@@ -42,12 +42,13 @@ pub fn transition(
         block.extrinsic.guarantees,
     );
 
-    const result = try reports.processGuaranteeExtrinsic(
+    var result = try reports.processGuaranteeExtrinsic(
         params,
         allocator,
         stx,
         validated,
     );
+    errdefer result.deinit(allocator);
 
     // Find the indices of validators who reported
     // Use kappa_prime (κ') as per graypaper: a'[v].guarantees += (κ'[v] ∈ reporters)
