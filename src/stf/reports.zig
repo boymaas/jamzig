@@ -13,14 +13,12 @@ pub const Error = error{};
 
 pub const ReportsResult = struct {
     result: reports.Result,
-    validator_indices: []const types.ValidatorIndex = &.{},
 
-    pub fn getValidatorIndices(self: *ReportsResult) []const types.ValidatorIndex {
-        return self.validator_indices;
+    pub fn getReporters(self: *const ReportsResult) []const types.Ed25519Public {
+        return self.result.reporters;
     }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.validator_indices);
         self.result.deinit(allocator);
         self.* = undefined;
     }
@@ -50,10 +48,7 @@ pub fn transition(
     );
     errdefer result.deinit(allocator);
 
-    // Find the indices of validators who reported
-    // Use kappa_prime (κ') as per graypaper: a'[v].guarantees += (κ'[v] ∈ reporters)
-    const kappa: *const state.Kappa = try stx.ensure(.kappa_prime);
-    const validator_indices = try kappa.findValidatorIndices(allocator, .Ed25519Public, result.reporters);
-
-    return .{ .validator_indices = validator_indices, .result = result };
+    // Return reporters as Ed25519 keys (set M from graypaper)
+    // validator_stats will iterate κ' and check membership per GP statistics.tex
+    return .{ .result = result };
 }
