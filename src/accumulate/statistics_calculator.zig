@@ -64,7 +64,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
 
             span.debug("Calculating AccumulateRoot from {d} accumulation outputs", .{accumulation_outputs.count()});
 
-            // Collect all outputs into an array for sorting
             var outputs = try std.ArrayList(execution.ServiceAccumulationOutput).initCapacity(self.allocator, accumulation_outputs.count());
             defer outputs.deinit();
 
@@ -93,7 +92,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
                 }.lessThan,
             );
 
-            // Prepare blobs for Merkle tree (as per graypaper eq. 24)
             var blobs = try std.ArrayList([]u8).initCapacity(self.allocator, outputs.items.len);
             defer meta.deinit.allocFreeEntriesAndAggregate(self.allocator, blobs);
 

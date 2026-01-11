@@ -63,8 +63,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             errdefer meta.deinit.deinitEntriesAndAggregate(self.allocator, queued);
 
             span.debug("Initialized accumulatable and queued containers", .{});
-
-            // Partition reports into immediate and queued based on dependencies
             const partition_result = try self.partitionReports(reports, &accumulatable_buffer, &queued);
             span.debug("Partitioned reports: {d} immediate, {d} queued", .{ partition_result.immediate_count, partition_result.queued_count });
 

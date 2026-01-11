@@ -25,13 +25,12 @@ pub fn HistoryTracker(comptime params: Params) type {
             const span = trace.span(@src(), .update_accumulation_history);
             defer span.deinit();
 
-            span.debug("Shifting down xi to make place for new entry", .{});
             try xi.shiftDown();
 
             span.debug("Adding {d} reports to accumulation history", .{accumulated.len});
             for (accumulated, 0..) |report, i| {
                 const work_package_hash = report.package_spec.hash;
-                span.trace("Adding report {d} to history, hash: {s}", .{ 
+                span.trace("Report {d} hash: {s}", .{ 
                     i, std.fmt.fmtSliceHexLower(&work_package_hash) 
                 });
                 try xi.addWorkPackage(work_package_hash);
@@ -68,7 +67,6 @@ pub fn HistoryTracker(comptime params: Params) type {
             const span = trace.span(@src(), .validate_history);
             defer span.deinit();
 
-            // Check for duplicates within each slot
             for (xi.entries, 0..) |slot, i| {
                 var seen = std.AutoHashMap(types.WorkPackageHash, void).init(span.allocator);
                 defer seen.deinit();

@@ -98,11 +98,10 @@ pub fn StateUpdater(comptime params: Params) type {
             var idx: usize = 0;
             outer: while (idx < queued.items.len) {
                 var wradeps = &queued.items[idx];
-                span.trace("Processing item {d}: hash={s}", .{ 
-                    idx, std.fmt.fmtSliceHexLower(&wradeps.work_report.package_spec.hash) 
+                span.trace("Processing item {d}: hash={s}", .{
+                    idx, std.fmt.fmtSliceHexLower(&wradeps.work_report.package_spec.hash)
                 });
 
-                // Check if this report was resolved
                 for (resolved_reports) |work_package_hash| {
                     if (std.mem.eql(u8, &wradeps.work_report.package_spec.hash, &work_package_hash)) {
                         span.debug("Found matching report, removing from queue at index {d}", .{idx});
@@ -112,7 +111,6 @@ pub fn StateUpdater(comptime params: Params) type {
                     }
                 }
 
-                // Update dependencies
                 if (wradeps.dependencies.count() > 0) {
                     for (resolved_reports) |work_package_hash| {
                         if (wradeps.dependencies.swapRemove(work_package_hash)) {

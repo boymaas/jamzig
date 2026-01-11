@@ -1,9 +1,3 @@
-//! Accumulation module - processes work reports through dependency resolution,
-//! execution, and state updates according to JAM specification §12
-//!
-//! This module provides the main public API for the accumulation process,
-//! coordinating the various subsystems involved in processing work reports.
-
 const std = @import("std");
 const types = @import("types.zig");
 const state_delta = @import("state_delta.zig");
@@ -41,12 +35,10 @@ pub fn processAccumulationReports(
 
     span.debug("Starting accumulation process with {d} reports", .{reports.len});
 
-    // Initialize state components
     const xi = try stx.ensure(.xi_prime);
     const vartheta = try stx.ensure(.vartheta_prime);
     const chi = try stx.ensure(.chi_prime);
 
-    // Step 1: Resolve dependencies and prepare reports
     const resolver = DependencyResolver(params).init(allocator);
     var prepared = try resolver.prepareReportsForAccumulation(
         xi,
@@ -60,11 +52,9 @@ pub fn processAccumulationReports(
         prepared.map_buffer.deinit();
     }
 
-    // Step 2: Calculate gas limits
     const gas_calculator = GasCalculator(params){};
     const gas_limit = gas_calculator.calculateGasLimit(chi);
 
-    // Step 3: Execute accumulation
     const accumulatable = prepared.accumulatable_buffer.items;
     var execution_result = try @import("accumulate/execution.zig").executeAccumulation(
         IOExecutor,
@@ -79,11 +69,9 @@ pub fn processAccumulationReports(
 
     const accumulated = accumulatable[0..execution_result.accumulated_count];
 
-    // Step 4: Update history
     const history_tracker = HistoryTracker(params){};
     try history_tracker.updateAccumulationHistory(xi, accumulated);
 
-    // Step 6: Update state
     const state_updater = StateUpdater(params).init(allocator);
     try state_updater.updateThetaState(
         vartheta,
@@ -97,14 +85,12 @@ pub fn processAccumulationReports(
         },
     );
 
-    // Step 7: Update theta with accumulation outputs
     const theta = try stx.ensure(.theta_prime);
     try state_updater.updateAccumulationOutputs(
         theta,
         execution_result.accumulation_outputs,
     );
 
-    // Step 5: Calculate statistics
     const stats_calculator = StatisticsCalculator(params).init(allocator);
     return try stats_calculator.computeAllStatistics(
         accumulated,
