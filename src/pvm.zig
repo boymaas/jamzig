@@ -31,7 +31,6 @@ pub const PVM = struct {
         wrapper: ?*const fn (u32, HostCallFn, *ExecutionContext, *anyopaque) HostCallResult = null,
     };
 
-    // Helper to log memory writes for execution trace
     fn logMemoryWrite(context: *ExecutionContext, addr: u32, value: u64, size: usize) void {
         context.exec_trace.logMemoryWrite(addr, value, size);
     }
@@ -249,8 +248,6 @@ pub const PVM = struct {
                             return .{ .terminal = .panic };
                         }
                     } else {
-                        // No host calls configured at all - return panic
-                        //
                         span.warn("No host calls configured at all - return panic", .{});
                         return .{ .terminal = .panic };
                     }
@@ -523,13 +520,11 @@ pub const PVM = struct {
             // Bit counting and manipulation instructions
             .count_set_bits_64 => {
                 const args = i.args.TwoReg;
-                // Count the 1 bits in register A using Brian Kernighan's algorithm
                 context.registers[args.first_register_index] = @popCount(context.registers[args.second_register_index]);
             },
 
             .count_set_bits_32 => {
                 const args = i.args.TwoReg;
-                // Count 1 bits in lower 32 bits only
                 const value = @as(u32, @truncate(context.registers[args.second_register_index]));
                 context.registers[args.first_register_index] = @popCount(value);
             },
@@ -708,12 +703,8 @@ pub const PVM = struct {
             .shlo_l_imm_32 => {
                 const args = i.args.TwoRegOneImm;
                 const shift = args.immediate & 0x1F;
-                // First truncate input to 32 bits then perform shift on 32-bit value
-
-                //The sequence of operations matters because slliw is specifically
-                //designed to maintain 32-bit behavior even on 64-bit machines. Any
-                //intermediate overflow should happen at the 32-bit level before
-                //sign extension.
+                // Intermediate overflow must happen at 32-bit level before sign extension
+                // to maintain slliw behavior on 64-bit machines
                 const input = @as(u32, @truncate(context.registers[args.second_register_index]));
                 const shifted = input << @intCast(shift);
                 context.registers[args.first_register_index] = signExtendToU64(u32, shifted);
@@ -739,7 +730,6 @@ pub const PVM = struct {
                 const args = i.args.TwoRegOneImm;
                 const result = signExtendToU64(
                     u32,
-                    // doing a normal wrapping substraction, letting zig take care of the details
                     @as(u32, @truncate((args.immediate -% context.registers[args.second_register_index]))),
                 );
                 context.registers[args.first_register_index] = result;
@@ -773,11 +763,8 @@ pub const PVM = struct {
             .shar_r_imm_alt_32 => {
                 const args = i.args.TwoRegOneImm;
                 const shift = context.registers[args.second_register_index] & 0x1F;
-                // First truncate and convert to signed 32-bit
                 const input = @as(i32, @bitCast(@as(u32, @truncate(args.immediate))));
-                // Perform arithmetic shift at 32-bit level
                 const shifted = input >> @intCast(shift);
-                // Sign extend result back to 64 bits
                 context.registers[args.first_register_index] = signExtendToU64(i32, shifted);
             },
             .cmov_iz_imm => {
@@ -838,10 +825,7 @@ pub const PVM = struct {
             },
             .rot_r_64_imm => {
                 const args = i.args.TwoRegOneImm;
-                // Rotate right by immediate value for 64-bit
-                // Mask shift value to 6 bits (0-63) as per spec
                 const shift = args.immediate & 0x3F;
-                // Rotate right using std.math.rotr
                 context.registers[args.first_register_index] = std.math.rotr(
                     u64,
                     context.registers[args.second_register_index],
@@ -850,34 +834,21 @@ pub const PVM = struct {
             },
             .rot_r_64_imm_alt => {
                 const args = i.args.TwoRegOneImm;
-                // Alternate version where rotate amount comes from register
-                // Mask shift value to 6 bits (0-63)
                 const shift = context.registers[args.second_register_index] & 0x3F;
-                // Rotate immediate value right
                 context.registers[args.first_register_index] = std.math.rotr(u64, args.immediate, shift);
             },
             .rot_r_32_imm => {
                 const args = i.args.TwoRegOneImm;
-                // Rotate right by immediate for 32-bit value
-                // Mask shift value to 5 bits (0-31)
                 const shift = args.immediate & 0x1F;
-                // Extract 32-bit value from register
                 const value = @as(u32, @truncate(context.registers[args.second_register_index]));
-                // Perform rotation
                 const result = std.math.rotr(u32, value, shift);
-                // Sign extend result back to 64 bits
                 context.registers[args.first_register_index] = signExtendToU64(u32, result);
             },
             .rot_r_32_imm_alt => {
                 const args = i.args.TwoRegOneImm;
-                // Alternate version where rotate amount comes from register
-                // Mask shift value to 5 bits (0-31)
                 const shift = context.registers[args.second_register_index] & 0x1F;
-                // Extract 32-bit value from immediate
                 const value = @as(u32, @truncate(args.immediate));
-                // Perform rotation
                 const result = std.math.rotr(u32, value, shift);
-                // Sign extend result back to 64 bits
                 context.registers[args.first_register_index] = signExtendToU64(u32, result);
             },
 
@@ -907,7 +878,6 @@ pub const PVM = struct {
             .load_imm_jump_ind => {
                 const args = i.args.TwoRegTwoImm;
 
-                // Defer register update until after jump validation
                 defer context.registers[args.first_register_index] = args.first_immediate;
                 const jump_dest = context.program.validateJumpAddress(
                     @truncate(context.registers[args.second_register_index] +% args.second_immediate),
@@ -1059,7 +1029,6 @@ pub const PVM = struct {
                     const rega = @as(i64, @bitCast(context.registers[args.first_register_index]));
                     const regb = @as(i64, @bitCast(context.registers[args.second_register_index]));
 
-                    // Check for the special overflow case
                     if (rega == -0x8000000000000000 and regb == -1) {
                         context.registers[args.third_register_index] = context.registers[args.first_register_index];
                     } else {
@@ -1213,14 +1182,14 @@ pub const PVM = struct {
             .and_inv => {
                 const args = i.args.ThreeReg;
                 const value_a = context.registers[args.first_register_index];
-                const value_b = ~context.registers[args.second_register_index]; // Invert second operand
+                const value_b = ~context.registers[args.second_register_index];
                 context.registers[args.third_register_index] = value_a & value_b;
             },
 
             .or_inv => {
                 const args = i.args.ThreeReg;
                 const value_a = context.registers[args.first_register_index];
-                const value_b = ~context.registers[args.second_register_index]; // Invert second operand
+                const value_b = ~context.registers[args.second_register_index];
                 context.registers[args.third_register_index] = value_a | value_b;
             },
 
@@ -1228,7 +1197,7 @@ pub const PVM = struct {
                 const args = i.args.ThreeReg;
                 const value_a = context.registers[args.first_register_index];
                 const value_b = context.registers[args.second_register_index];
-                context.registers[args.third_register_index] = ~(value_a ^ value_b); // XNOR is inverse of XOR
+                context.registers[args.third_register_index] = ~(value_a ^ value_b);
             },
 
             .max => {

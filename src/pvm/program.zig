@@ -39,9 +39,6 @@ pub const Program = struct {
         const span = trace.span(@src(), .decode);
         defer span.deinit();
         span.debug("Starting program decoding, raw size: {d} bytes", .{raw_program.len});
-        //span.trace("Raw program bytes: {any}", .{std.fmt.fmtSliceHexLower(raw_program)});
-
-        // Validate minimum header size (jump table length + item length + code length)
         if (raw_program.len < 3) {
             span.err("Program too short: {d} bytes, minimum required: 3", .{raw_program.len});
             return Error.ProgramTooShort;
@@ -77,7 +74,6 @@ pub const Program = struct {
 
         index += 1;
 
-        // Validate we can read code length
         if (index >= raw_program.len) {
             return Error.ProgramTooShort;
         }
@@ -85,11 +81,8 @@ pub const Program = struct {
         const code_length = try parseIntAndUpdateIndex(raw_program[index..], &index);
         span.debug("Code length: {d} bytes", .{code_length});
 
-        // Calculate required mask length (rounded up to nearest byte)
         const required_mask_bytes = (code_length + 7) / 8;
         span.debug("Required mask bytes: {d}", .{required_mask_bytes});
-
-        // Validate total required size (header + jump table + code + mask)
         const total_required_size = index +
             (jump_table_length * jump_table_item_length) +
             code_length +
@@ -102,7 +95,6 @@ pub const Program = struct {
         const jump_table_first_byte_index = index;
         const jump_table_length_in_bytes = jump_table_length * jump_table_item_length;
 
-        // Initialize jump table
         program.jump_table = try JumpTable.init(
             allocator,
             jump_table_item_length,
@@ -122,20 +114,17 @@ pub const Program = struct {
         program.mask = try allocator.dupe(u8, raw_program[mask_first_index..][0..mask_length_in_bytes]);
         errdefer allocator.free(program.mask);
 
-        // Make sure our mask has 1s exactly at program end
         const remaining_bits = (program.code.len) % 8;
         if (remaining_bits != 0) {
             const mask = ~((@as(u8, 1) << @intCast(remaining_bits)) - 1);
             @constCast(program.mask)[program.mask.len - 1] |= mask;
         }
 
-        // Trace mask bits
         const mask_span = span.child(@src(), .mask);
         defer mask_span.deinit();
         mask_span.debug("Mask length: {d} bytes", .{mask_length_in_bytes});
 
         for (program.mask) |byte| {
-            // For each byte, show its bits
             var bit_str: [8]u8 = undefined;
             for (0..8) |bit| {
                 bit_str[bit] = if ((byte >> @intCast(7 - bit)) & 1 == 1) '1' else '0';
@@ -143,10 +132,8 @@ pub const Program = struct {
             // mask_span.debug("Mask[{d:0>2}]: 0b{s} (0x{x:0>2})", .{ i, bit_str, byte });
         }
 
-        // Create a safe decoder for validation
         var decoder = Decoder.init(program.code, program.mask);
 
-        // Initialize basic block and always add 0 as first basic block
         var basic_blocks = std.ArrayList(u32).init(allocator);
         errdefer basic_blocks.deinit();
         try basic_blocks.append(0);
@@ -163,12 +150,8 @@ pub const Program = struct {
             };
             basic_span.trace("PC {d:0>4}: Instruction: {}", .{ pc, instruction });
 
-            // Check if this instruction terminates a basic block
-            // const inst_type = instruction.args_type;
             if (instruction.isTerminationInstruction()) {
-                // For branches, the next instruction starts a new basic block
                 const next_pc = pc + 1 + instruction.args.skip_l();
-                // Allow 8 byte padding for possible final instruction's immediate value
                 if (next_pc < program.code.len + Decoder.MaxInstructionSizeInBytes) {
                     try basic_blocks.append(next_pc);
                 } else {
@@ -182,7 +165,6 @@ pub const Program = struct {
         program.basic_blocks = try basic_blocks.toOwnedSlice();
         errdefer allocator.free(program.basic_blocks);
 
-        // Validate that all jump table destinations point to valid basic blocks
         const jump_span = span.child(@src(), .jump_validation);
         defer jump_span.deinit();
         jump_span.debug("Validating jump table destinations", .{});
@@ -192,12 +174,10 @@ pub const Program = struct {
             const destination = program.jump_table.getDestination(i);
             jump_span.trace("Jump table entry {d}: destination = {d:0>4}", .{ i, destination });
 
-            // Check if destination is within code bounds
             if (destination >= program.code.len) {
                 return Error.InvalidJumpDestination;
             }
 
-            // Check if destination is a valid basic block start using binary search
             const valid_destination = std.sort.binarySearch(
                 u32,
                 program.basic_blocks,
@@ -217,30 +197,21 @@ pub const Program = struct {
         return program;
     }
 
-    /// Validates an indirect jump address and returns the computed jump destination.
-    /// The function performs various validations including:
-    /// - Halt condition check (0xFFFF0000)
-    /// - Zero address check
-    /// - Range validation
-    /// - Alignment check (must be aligned to ZA)
-    /// - Basic block validation
     pub fn validateJumpAddress(self: *const Program, address: u32) JumpError!u32 {
         const span = trace.span(@src(), .validate_jump);
         defer span.deinit();
         span.debug("Validating jump address: {d:0>8} (0x{x:0>8})", .{ address, address });
 
         const halt_pc = 0xFFFF0000;
-        const ZA = 2; // Alignment requirement
+        const ZA = 2;
 
         span.trace("Jump table length: {d}, ZA: {d}, max valid address: {d}", .{ self.jump_table.len(), ZA, self.jump_table.len() * ZA });
 
-        // Check halt condition
         if (address == halt_pc) {
             span.trace("Detected halt address (0x{x:0>8})", .{halt_pc});
             return error.JumpAddressHalt;
         }
 
-        // Validate jump address
         if (address == 0) {
             span.trace("Invalid zero address", .{});
             return error.JumpAddressZero;
@@ -256,12 +227,10 @@ pub const Program = struct {
             return error.JumpAddressNotAligned;
         }
 
-        // Compute jump destination
         const index = (address / ZA) - 1;
         const jump_dest = self.jump_table.getDestination(index);
         span.trace("Computed index: {d} from address {d}/ZA-1, jump destination: {d}", .{ index, address, jump_dest });
 
-        // Validate jump destination is in a basic block using binary search (basic_blocks is sorted)
         if (std.sort.binarySearch(u32, self.basic_blocks, jump_dest, struct {
             fn orderU32(ctx: u32, item: u32) std.math.Order {
                 return std.math.order(ctx, item);

@@ -17,7 +17,7 @@ pub const ExecutionContext = struct {
     decoder: Decoder,
     registers: [13]u64,
     memory: Memory,
-    // NOTE: we cannot use HostCallsConfig directly here due to circular dep, but we can use a forward declaration
+    // Cannot use HostCallsConfig directly due to circular dependency
     host_calls: ?*const anyopaque, // Will be cast to *const PVM.HostCallsConfig when used
 
     gas: i64,
@@ -49,7 +49,6 @@ pub const ExecutionContext = struct {
             return error.MetadataSizeTooLarge;
         }
 
-        // metadata: will be optimized out
         _ = program_blob[result.bytes_read..][0..result.value];
         const standard_program_format = program_blob[result.bytes_read + result.value ..];
 
@@ -79,7 +78,6 @@ pub const ExecutionContext = struct {
         span.debug("Initializing with standard program code format", .{});
         span.trace("Program code size: {d} bytes, input size: {d} bytes", .{ program_code.len, input.len });
 
-        // To keep track wehere we are
         var remaining_bytes = program_code[0..];
 
         if (remaining_bytes.len < 11) {
@@ -87,13 +85,9 @@ pub const ExecutionContext = struct {
             return error.IncompleteHeader;
         }
 
-        // first 3 is lenght of read only
         const read_only_size_in_bytes = std.mem.readInt(u24, program_code[0..3], .little);
-        // next 3 is lenght of read write
         const read_write_size_in_bytes = std.mem.readInt(u24, program_code[3..6], .little);
-        // next 2 is heap in pages
         const heap_size_in_pages = std.mem.readInt(u16, program_code[6..8], .little);
-        // next 3 is size of stack
         const stack_size_in_bytes = std.mem.readInt(u24, program_code[8..11], .little);
 
         span.debug("Header parsed: RO={d} bytes, RW={d} bytes, heap={d} pages, stack={d} bytes", .{
@@ -103,7 +97,6 @@ pub const ExecutionContext = struct {
             stack_size_in_bytes,
         });
 
-        // Register we are just behind the header
         remaining_bytes = remaining_bytes[11..];
 
         if (remaining_bytes.len < read_only_size_in_bytes + read_write_size_in_bytes) {
@@ -114,9 +107,7 @@ pub const ExecutionContext = struct {
             return error.MemoryDataSegmentTooSmall;
         }
 
-        // then read the length of read only
         const read_only_data = remaining_bytes[0..read_only_size_in_bytes];
-        // then read the length of write only
         const read_write_data = remaining_bytes[read_only_size_in_bytes..][0..read_write_size_in_bytes];
 
         span.trace("Read-only data: {any}", .{std.fmt.fmtSliceHexLower(read_only_data[0..@min(16, read_only_data.len)])});
@@ -125,10 +116,8 @@ pub const ExecutionContext = struct {
         span.trace("Read-write data: {any}", .{std.fmt.fmtSliceHexLower(read_write_data[0..@min(16, read_write_data.len)])});
         if (read_write_data.len > 16) span.trace("... ({d} more bytes)", .{read_write_data.len - 16});
 
-        // Update we are at the beginning of our code_data_segment
         remaining_bytes = remaining_bytes[read_only_size_in_bytes + read_write_size_in_bytes ..];
 
-        // read lenght of code
         if (remaining_bytes.len < 4) {
             span.err("Code data segment too small for code length: need 4 bytes, got {d}", .{remaining_bytes.len});
             return error.ProgramCodeFormatCodeDataSegmentTooSmall;
@@ -150,7 +139,6 @@ pub const ExecutionContext = struct {
         span.trace("Code data starts with: {any}", .{std.fmt.fmtSliceHexLower(code_data[0..@min(16, code_data.len)])});
         if (code_data.len > 16) span.trace("... ({d} more bytes)", .{code_data.len - 16});
 
-        // then read the actual codeu
         return try initWithMemorySegments(
             allocator,
             code_data,
@@ -194,7 +182,6 @@ pub const ExecutionContext = struct {
         );
     }
 
-    // simple initialization using only the program
     pub fn initWithMemorySegments(
         allocator: Allocator,
         raw_program: []const u8,
@@ -262,8 +249,6 @@ pub const ExecutionContext = struct {
         }
 
         span.debug("Program decoded successfully, creating execution context", .{});
-        // Initialize registers according to specification
-        // Determine trace mode from tracing scope
         const trace_mode = blk: {
             // Check for pvm_exec=compact
             if (@import("tracing").findScope("pvm_exec_compact") != null) {
@@ -289,14 +274,13 @@ pub const ExecutionContext = struct {
         };
     }
 
-    /// Initialize the registers
     pub fn initRegisters(self: *@This(), input_len: usize) void {
         const span = trace.span(@src(), .init_registers);
         defer span.deinit();
         span.debug("Initializing registers", .{});
 
-        self.registers[0] = HALT_PC_VALUE; // 0xFFFF0000 Halt PC value
-        self.registers[1] = Memory.STACK_BASE_ADDRESS; // Stack pointer
+        self.registers[0] = HALT_PC_VALUE;
+        self.registers[1] = Memory.STACK_BASE_ADDRESS;
         self.registers[7] = Memory.INPUT_ADDRESS;
         self.registers[8] = input_len;
 
@@ -307,11 +291,9 @@ pub const ExecutionContext = struct {
             self.registers[8],
         });
 
-        // Initialize register tracking for execution trace
         self.exec_trace.initRegisterTracking(&self.registers);
     }
 
-    /// Clear all registers by setting them to zero
     pub fn clearRegisters(self: *@This()) void {
         const span = trace.span(@src(), .clear_registers);
         defer span.deinit();
@@ -322,8 +304,6 @@ pub const ExecutionContext = struct {
         span.debug("Registers reset to zero", .{});
     }
 
-    /// Construct the return value by looking determining if we can
-    /// read the range between registers 7 and 8. If the range is invalid we return []
     pub fn readSliceBetweenRegister7AndRegister8(self: *@This()) Memory.MemorySlice {
         const span = trace.span(@src(), .return_value_as_slice);
         defer span.deinit();
@@ -351,7 +331,6 @@ pub const ExecutionContext = struct {
         defer span.deinit();
         span.debug("Deinitializing execution context", .{});
 
-        // Hostcalls are not owned by us
         span.debug("Deinitializing memory", .{});
         self.memory.deinit();
 
@@ -367,7 +346,6 @@ pub const ExecutionContext = struct {
         defer span.deinit();
         span.debug("Setting host calls", .{});
 
-        // Replace with the new one (will be cast to HostCallsConfig when used)
         self.host_calls = new_host_calls;
 
         span.debug("Host calls set successfully", .{});
@@ -411,13 +389,11 @@ pub const ExecutionContext = struct {
         span.debug("Dynamic memory allocation set successfully", .{});
     }
 
-    /// Override the stack size by reallocating stack pages
     pub fn overrideStackSize(self: *ExecutionContext, new_stack_size_bytes: u32) !void {
         const span = trace.span(@src(), .override_stack_size);
         defer span.deinit();
         span.debug("Overriding stack size to {d} bytes", .{new_stack_size_bytes});
 
-        // Validate minimum size and alignment
         const MIN_STACK_SIZE = 4096;
         if (new_stack_size_bytes < MIN_STACK_SIZE) {
             span.err("Stack size {d} is below minimum {d}", .{ new_stack_size_bytes, MIN_STACK_SIZE });
@@ -429,19 +405,16 @@ pub const ExecutionContext = struct {
             return error.InvalidStackSize;
         }
 
-        // Calculate new stack size in pages
         const new_stack_size_pages = new_stack_size_bytes / 4096;
         const current_stack_size_pages = self.memory.stack_size_in_pages;
 
         span.debug("Current stack: {d} pages, new stack: {d} pages", .{ current_stack_size_pages, new_stack_size_pages });
 
-        // If the size is the same, no work needed
         if (new_stack_size_pages == current_stack_size_pages) {
             span.debug("Stack size unchanged, no reallocation needed", .{});
             return;
         }
 
-        // Find and remove existing stack pages
         const current_stack_bottom = try Memory.STACK_BOTTOM_ADDRESS(@intCast(current_stack_size_pages));
 
         self.memory.page_table.freePages(current_stack_bottom, current_stack_size_pages) catch |err| {
@@ -451,9 +424,6 @@ pub const ExecutionContext = struct {
 
         span.debug("Removing {d} existing stack pages starting at 0x{X:0>8}", .{ current_stack_size_pages, current_stack_bottom });
 
-        // Remove existing stack pages from page table
-
-        // Allocate new stack pages
         const new_stack_bottom = try Memory.STACK_BOTTOM_ADDRESS(@intCast(new_stack_size_pages));
         span.debug("Allocating {d} new stack pages starting at 0x{X:0>8}", .{ new_stack_size_pages, new_stack_bottom });
 
@@ -463,7 +433,6 @@ pub const ExecutionContext = struct {
             Memory.Page.Flags.ReadWrite,
         );
 
-        // Update memory system's stack size
         self.memory.stack_size_in_pages = @intCast(new_stack_size_pages);
 
         span.debug("Stack size override completed successfully", .{});
@@ -476,7 +445,6 @@ pub const ExecutionContext = struct {
 
         try writer.writeAll("\x1b[1mPROGRAM DECOMPILATION\x1b[0m\n\n");
 
-        // Print register state
         span.debug("Writing register state", .{});
         try writer.writeAll("Registers:\n");
         for (self.registers, 0..) |reg, i| {
@@ -503,14 +471,12 @@ pub const ExecutionContext = struct {
                 entry.pc,
             });
 
-            // Print raw bytes (up to 16)
             const raw_bytes = entry.raw;
             const max_bytes = @min(raw_bytes.len, 16);
             for (raw_bytes[0..max_bytes]) |byte| {
                 try writer.print("{x:0>2} ", .{byte});
             }
 
-            // Pad remaining space for alignment
             var i: usize = max_bytes;
             while (i < 16) : (i += 1) {
                 try writer.writeAll("   ");
@@ -531,7 +497,6 @@ pub const ExecutionContext = struct {
 
         span.debug("Context window: start_pc={d}, size={d} bytes", .{ start_pc, context_size * 2 });
 
-        // Print here the state of the PC
         std.debug.print("\x1b[1mDEBUG STATE AROUND CURRENT PC @ {}\x1b[0m\n\n", .{self.pc});
 
         var iter = self.decoder.iterator();
@@ -549,14 +514,12 @@ pub const ExecutionContext = struct {
                 entry.pc,
             });
 
-            // Print raw bytes (up to 16)
             const raw_bytes = entry.raw;
             const max_bytes = @min(raw_bytes.len, 16);
             for (raw_bytes[0..max_bytes]) |byte| {
                 try writer.print("{x:0>2} ", .{byte});
             }
 
-            // Pad remaining space for alignment
             var i: usize = max_bytes;
             while (i < 16) : (i += 1) {
                 try writer.writeAll("   ");
