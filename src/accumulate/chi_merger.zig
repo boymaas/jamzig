@@ -1,18 +1,3 @@
-/// Chi Merger - Implements the R() function for chi field updates per graypaper §12.17
-///
-/// Per v0.7.1 graypaper, chi field updates use R(o, a, b):
-///   R(o, a, b) = b  when a = o   (manager didn't change → use privileged service's value)
-///             = a  otherwise     (manager changed → use manager's value)
-///
-/// Fields requiring R():
-///   - assigners[c]: R(original, manager's, assigner[c]'s) per core
-///   - delegator:    R(original, manager's, delegator's)
-///   - registrar:    R(original, manager's, registrar's)
-///
-/// Fields NOT using R() (direct from manager):
-///   - manager
-///   - always_accumulators
-
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
@@ -61,12 +46,8 @@ pub fn ChiMerger(comptime params: Params) type {
             };
         }
 
-        /// Apply R() function to merge chi fields from manager and privileged services
-        ///
-        /// Arguments:
-        ///   - manager_chi: Manager service's post-state chi (e* in graypaper), or null if manager didn't accumulate
-        ///   - service_chi_map: Map from service_id to that service's post-state chi
-        ///   - output_chi: Mutable chi to write merged values into
+        /// Apply R() function per graypaper §12.17: R(o,a,b) = b when a=o, else a
+        /// Manager and privileged services may both modify chi; R() selects winner
         pub fn merge(
             self: *const Self,
             manager_chi: ?*const Chi,

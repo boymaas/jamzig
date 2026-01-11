@@ -514,10 +514,12 @@ fn runTraceSummary(allocator: std.mem.Allocator, collection: *const TraceCollect
             switch (result) {
                 .@"error" => |err_info| {
                     had_error = true;
+                    if (error_details) |prev| allocator.free(prev);
                     error_details = try std.fmt.allocPrint(allocator, "{s} - {s}", .{ @errorName(err_info.err), err_info.context });
                 },
                 .mismatch => {
                     had_error = true;
+                    if (error_details) |prev| allocator.free(prev);
                     error_details = try allocator.dupe(u8, "State root mismatch");
                 },
                 .no_op => {

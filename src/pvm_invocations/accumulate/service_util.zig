@@ -10,29 +10,27 @@ const trace = @import("tracing").scoped(.accumulate);
 /// Services below this can only be created by the Registrar (graypaper definitions.tex)
 const C_MIN_PUBLIC_INDEX: u32 = 0x10000; // 65536 = 2^16
 
-/// Checks if a service ID is available and finds the next available one if not
-/// Graypaper eq. newserviceindex: check((i - C_minpublicindex + 1) mod (2^32 - 2^8 - C_minpublicindex) + C_minpublicindex)
+// (graypaper eq. newserviceindex)
 pub fn check(service_accounts: *const state.Delta.Snapshot, candidate_id: types.ServiceId) types.ServiceId {
     const span = trace.span(@src(), .check_service_id);
     defer span.deinit();
-    span.debug("Checking service ID availability: {d}", .{candidate_id});
 
-    // If the ID is not already used, return it
-    if (service_accounts.contains(candidate_id) == false) {
-        span.debug("Service ID {d} is available", .{candidate_id});
-        return candidate_id;
+    // Available range: [C_minpublicindex, 2^32-256)
+    const modulo: u32 = @intCast(std.math.pow(u64, 2, 32) - 0x100 - C_MIN_PUBLIC_INDEX);
+
+    var current_id = candidate_id;
+    var iterations: u32 = 0;
+
+    while (iterations < modulo) : (iterations += 1) {
+        if (!service_accounts.contains(current_id)) {
+            span.debug("Service ID {d} available after {d} iterations", .{ current_id, iterations });
+            return current_id;
+        }
+        current_id = C_MIN_PUBLIC_INDEX + ((current_id - C_MIN_PUBLIC_INDEX + 1) % modulo);
     }
 
-    span.debug("Service ID {d} is already used, calculating next ID", .{candidate_id});
-
-    // check((i - C_minpublicindex + 1) mod (2^32 - 2^8 - C_minpublicindex) + C_minpublicindex)
-    // Available range: [C_minpublicindex, 2^32-256) = [65536, 2^32-256)
-    const modulo: u32 = @intCast(std.math.pow(u64, 2, 32) - 0x100 - C_MIN_PUBLIC_INDEX);
-    const next_id: u32 = C_MIN_PUBLIC_INDEX + ((candidate_id - C_MIN_PUBLIC_INDEX + 1) % modulo);
-    span.debug("Next candidate ID: {d}", .{next_id});
-
-    // Recursive call to check the next candidate
-    return check(service_accounts, next_id);
+    // Should never reach here - would mean all ~4B service IDs are taken
+    unreachable;
 }
 
 /// Generates a deterministic service ID based on creator service, entropy, and timeslot

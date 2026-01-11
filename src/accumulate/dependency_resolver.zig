@@ -1,10 +1,3 @@
-//! Dependency resolution for work reports according to JAM §12.5-12.8
-//!
-//! This module handles the complex dependency chains between work reports,
-//! ensuring they are processed in the correct order to maintain state consistency.
-//! Uses topological sorting and iterative resolution to handle complex
-//! dependency graphs while detecting circular dependencies.
-
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
@@ -70,8 +63,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             errdefer meta.deinit.deinitEntriesAndAggregate(self.allocator, queued);
 
             span.debug("Initialized accumulatable and queued containers", .{});
-
-            // Partition reports into immediate and queued based on dependencies
             const partition_result = try self.partitionReports(reports, &accumulatable_buffer, &queued);
             span.debug("Partitioned reports: {d} immediate, {d} queued", .{ partition_result.immediate_count, partition_result.queued_count });
 

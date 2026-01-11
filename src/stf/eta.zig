@@ -27,13 +27,11 @@ pub fn transition(
             std.fmt.fmtSliceHexLower(&eta_current[0]),
         });
 
-        // Rotate the entropy values
         eta_prime[3] = eta_current[2];
         eta_prime[2] = eta_current[1];
         eta_prime[1] = eta_current[0];
     }
 
-    // Update eta[0] with new entropy
     const entropy = @import("../entropy.zig");
     eta_prime[0] = entropy.update(eta_current[0], new_entropy);
 

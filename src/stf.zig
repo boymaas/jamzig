@@ -137,7 +137,6 @@ pub fn stateTransition(
         params,
         stx,
         block.extrinsic.preimages,
-        block.header.author_index,
     );
 
     try recent_history.transition(
@@ -169,14 +168,11 @@ pub fn stateTransition(
     return stx;
 }
 
-// Public exports
 pub const authorization = @import("stf/authorization.zig");
-pub const core_allocation = @import("stf/core_allocation.zig");
 pub const disputes = @import("stf/disputes.zig");
 pub const eta = @import("stf/eta.zig");
 pub const recent_history = @import("stf/recent_history.zig");
 pub const safrole = @import("stf/safrole.zig");
-pub const services = @import("stf/services.zig");
 pub const time = @import("stf/time.zig");
 pub const reports = @import("stf/reports.zig");
 pub const validator_stats = @import("stf/validator_stats.zig");

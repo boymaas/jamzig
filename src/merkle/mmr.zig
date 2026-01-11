@@ -1,62 +1,47 @@
 const std = @import("std");
-const utils = @import("utils.zig");
 const types = @import("types.zig");
 const encoder = @import("../codec/encoder.zig");
 
 const Hash = types.Hash;
 const Entry = ?Hash;
 
-/// MMR using ArrayList for internal peak management.
-/// This provides automatic growth while maintaining clear ownership semantics.
 pub const MMR = struct {
-    /// Internal storage for peaks. MMR owns this memory.
     peaks: std.ArrayList(?Hash),
-    
-    /// Initialize a new empty MMR
+
     pub fn init(allocator: std.mem.Allocator) MMR {
         return .{
             .peaks = std.ArrayList(?Hash).init(allocator),
         };
     }
-    
-    /// Initialize MMR with a specific capacity
+
     pub fn initCapacity(allocator: std.mem.Allocator, capacity: usize) !MMR {
         return .{
             .peaks = try std.ArrayList(?Hash).initCapacity(allocator, capacity),
         };
     }
-    
-    /// Create MMR from an owned slice.
-    /// IMPORTANT: This function takes ownership of the slice. The slice must have
-    /// been allocated with the same allocator that will be used for future operations.
-    /// After calling this function, the caller must NOT free the slice - it will be
-    /// freed by MMR.deinit().
+
+    /// Takes ownership of slice - caller must NOT free it afterward.
     pub fn fromOwnedSlice(allocator: std.mem.Allocator, owned: []?Hash) MMR {
         return .{
             .peaks = std.ArrayList(?Hash).fromOwnedSlice(allocator, owned),
         };
     }
-    
-    /// Get the peaks as a slice
+
     pub fn items(self: *const MMR) []const ?Hash {
         return self.peaks.items;
     }
-    
-    /// Transfer ownership of the peaks array to the caller.
-    /// After calling this function, the MMR is no longer valid and
-    /// the caller is responsible for freeing the returned slice.
+
+    /// Transfers ownership to caller - MMR is invalid after this.
     pub fn toOwnedSlice(self: *MMR) ![]?Hash {
         return try self.peaks.toOwnedSlice();
     }
-    
-    /// Clean up MMR resources
+
     pub fn deinit(self: *MMR) void {
         self.peaks.deinit();
         self.* = undefined;
     }
 };
 
-/// Filter nulls from the MMR sequence to get the actual peaks
 pub fn filterNulls(mrange: []const Entry, buffer: []Hash) []Hash {
     var count: usize = 0;
     for (mrange) |maybe_hash| {
@@ -68,11 +53,8 @@ pub fn filterNulls(mrange: []const Entry, buffer: []Hash) []Hash {
     return buffer[0..count];
 }
 
-/// Computes the super peak (root) of the MMR
 pub fn superPeak(mrange: []const Entry, hasher: anytype) Hash {
-    // The maximum number of peaks for n leaves is floor(log2(n)) + 1. For
-    // practical MMR sizes (up to millions of entries), this means we rarely
-    // need more than 32 peaks. (8.589.934.591)
+    // 32 peaks supports 8+ billion leaves
     std.debug.assert(mrange.len <= 32);
 
     var buffer: [32]Hash = undefined;
@@ -81,18 +63,14 @@ pub fn superPeak(mrange: []const Entry, hasher: anytype) Hash {
 }
 
 fn superPeakInner(h: []Hash, hasher: anytype) Hash {
-    // Base case: empty sequence returns zero hash
     if (h.len == 0) {
         return [_]u8{0} ** 32;
     }
 
-    // Single peak case returns the peak directly
     if (h.len == 1) {
         return h[0];
     }
 
-    // Recursive case: combine peaks according to specification
-    // Recursively process h[0..(h.len-1)] peaks
     var mr = superPeakInner(h[0..(h.len - 1)], hasher);
 
     var hash: [32]u8 = undefined;
@@ -105,25 +83,20 @@ fn superPeakInner(h: []Hash, hasher: anytype) Hash {
     return hash;
 }
 
-/// Appends a leaf to the MMR. May allocate if internal storage needs to grow.
 pub fn append(mrange: *MMR, leaf: Hash, hasher: anytype) !void {
     _ = try P(mrange, leaf, 0, hasher);
 }
 
-/// Helper function for MMR append operation
 fn P(mrange: *MMR, leaf: Hash, n: usize, hasher: anytype) !*MMR {
     if (n >= mrange.peaks.items.len) {
-        // Base case: extend MMR with new leaf
         try mrange.peaks.append(leaf);
         return mrange;
     }
 
     if (mrange.peaks.items[n] == null) {
-        // Available slot case: place leaf
         return R(mrange, n, leaf);
     }
 
-    // Combine and recurse case per specification
     var combined: [32]u8 = undefined;
     var H = hasher.init(.{});
     H.update(&mrange.peaks.items[n].?);
@@ -138,7 +111,6 @@ fn P(mrange: *MMR, leaf: Hash, n: usize, hasher: anytype) !*MMR {
     );
 }
 
-/// Updates MMR peak at index i
 fn R(s: *MMR, i: usize, v: Entry) *MMR {
     if (std.meta.eql(s.peaks.items[i], v)) {
         return s;
@@ -147,12 +119,9 @@ fn R(s: *MMR, i: usize, v: Entry) *MMR {
     return s;
 }
 
-/// Encodes MMR peaks to writer
 pub fn encodePeaks(mrange: []const ?Hash, writer: anytype) !void {
-    // First encode the length
     try writer.writeAll(encoder.encodeInteger(mrange.len).as_slice());
 
-    // Then encode each peak with presence bit
     for (mrange) |maybe_hash| {
         if (maybe_hash) |hash| {
             try writer.writeByte(1);
@@ -171,7 +140,7 @@ const testing = std.testing;
 test "superPeak calculation" {
     const allocator = std.testing.allocator;
     const Blake2b_256 = std.crypto.hash.blake2.Blake2b(256);
-    
+
     var mmr = MMR.init(allocator);
     defer mmr.deinit();
 

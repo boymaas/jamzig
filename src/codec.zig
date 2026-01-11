@@ -8,7 +8,6 @@ pub const DecodingContext = @import("codec/context.zig").DecodingContext;
 
 const trace = @import("tracing").scoped(.codec);
 
-// Tests
 comptime {
     _ = @import("codec/tests.zig");
     _ = @import("codec/encoder/tests.zig");
@@ -17,8 +16,6 @@ comptime {
 }
 
 const util = @import("codec/util.zig");
-
-// ---- Error Sets ----
 
 /// Errors that can occur during deserialization
 pub const DeserializationError = error{
@@ -34,14 +31,7 @@ pub const DeserializationError = error{
     InvalidSliceLengthMismatch,
 };
 
-// ---- Constants ----
-
-/// Maximum value that can be encoded in a single byte
-const SINGLE_BYTE_MAX = 0x80;
-/// Marker byte indicating 8-byte fixed-length integer follows
-const EIGHT_BYTE_MARKER = 0xff;
-
-// ---- Context Types ----
+const constants = @import("codec/constants.zig");
 
 /// Generic deserialization context type - use DeserializationContext() to create
 pub fn DeserializationContext(comptime Params: type, comptime Reader: type) type {
@@ -59,8 +49,6 @@ pub fn SerializationContext(comptime Params: type, comptime Writer: type) type {
         writer: Writer,
     };
 }
-
-// ---- Deserialization ----
 
 /// Wrapper type for deserialized values that manages arena allocation cleanup
 pub fn Deserialized(T: anytype) type {
@@ -246,11 +234,11 @@ pub fn readIntegerWithContext(reader: anytype, context: ?*DecodingContext) !u64 
         return 0;
     }
 
-    if (first_byte < SINGLE_BYTE_MAX) {
+    if (first_byte < constants.SINGLE_BYTE_MAX) {
         return first_byte;
     }
 
-    if (first_byte == EIGHT_BYTE_MARKER) {
+    if (first_byte == constants.EIGHT_BYTE_MARKER) {
         var buf: [8]u8 = undefined;
         reader.readNoEof(&buf) catch |err| {
             if (context) |ctx| {
@@ -285,8 +273,6 @@ pub fn readIntegerWithContext(reader: anytype, context: ?*DecodingContext) !u64 
     span.trace("varlen_value: {d} (remainder={d} + multiple={d})", .{ final_value, remainder, dl.integer_multiple });
     return final_value;
 }
-
-// ---- Common Helper Functions ----
 
 /// Helper function to deserialize a sized field (used by structs and unions)
 fn deserializeSizedField(
@@ -352,8 +338,6 @@ fn serializeSizedField(
         try serializeInternal(std.meta.Child(FieldType), params, writer, item);
     }
 }
-
-// ---- Type-specific Deserialization Functions ----
 
 fn deserializeBool(reader: anytype, context: ?*DecodingContext) !bool {
     const byte = reader.readByte() catch |err| {
@@ -511,7 +495,6 @@ fn deserializeUnion(comptime T: type, comptime params: anytype, allocator: std.m
         return err;
     };
 
-    // There is always a union tag type available.
     if (unionInfo.tag_type == null) {
         union_span.err("Union tag type is null, we need one");
     }
@@ -703,8 +686,6 @@ fn deserializeArray(comptime T: type, comptime len: usize, comptime params: anyt
     return result;
 }
 
-// ---- Serialization ----
-
 /// Serializes a value to a writer using the JAM codec format.
 ///
 /// Parameters:
@@ -754,8 +735,6 @@ pub fn writeInteger(value: u64, writer: anytype) !void {
     span.trace("encoded: {d} bytes, data: {s}", .{ encoded.len, std.fmt.fmtSliceHexLower(encoded.as_slice()) });
     try writer.writeAll(encoded.as_slice());
 }
-
-// ---- Type-specific Serialization Functions ----
 
 fn serializeBool(writer: anytype, value: bool) !void {
     try writer.writeByte(if (value) 1 else 0);
@@ -912,9 +891,7 @@ pub fn serializeInternal(comptime T: type, comptime params: anytype, writer: any
     span.debug("type: {s}", .{@typeName(T)});
 
     switch (@typeInfo(T)) {
-        .void => {
-            // void serializes to nothing (0 bytes)
-        },
+        .void => {},
         .bool => return try serializeBool(writer, value),
         .int => return try serializeInt(T, writer, value),
         .optional => return try serializeOptional(T, params, writer, value),

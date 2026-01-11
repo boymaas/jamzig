@@ -37,9 +37,8 @@ pub const Id = enum(u32) {
 /// Default catchall handler that follows the graypaper specification
 /// Deducts 10 gas and sets R7 to WHAT return code
 pub fn defaultHostCallCatchall(context: *@import("../pvm/execution_context.zig").ExecutionContext, _: *anyopaque) HostCallError!@import("../pvm/execution_context.zig").ExecutionContext.HostCallResult {
-    // Deduct 10 gas as per graypaper for non-existent host calls
+    // Graypaper: deduct 10 gas for non-existent host calls
     context.gas -= 10;
-    // Set R7 to WHAT (unknown host call)
     context.registers[7] = @intFromEnum(ReturnCode.WHAT);
     return .play;
 }

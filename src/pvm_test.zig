@@ -15,13 +15,11 @@ test "pvm:jamduna_service_code:machine_invocation" {
 
     const raw_program = @embedFile("pvm_test/fixtures/jam_duna_service_code.pvm");
 
-    // Add empty metadata prefix (encodeInteger(0) = [0x00])
     const program_code = [_]u8{0x00} ++ raw_program;
 
     var map = pvmlib.PVM.HostCallMap{};
     defer map.deinit(allocator);
 
-    // Create HostCallsConfig with empty map and no catchall
     const host_calls_config = pvmlib.PVM.HostCallsConfig{
         .map = map,
     };
@@ -89,7 +87,6 @@ test "pvm:simple" {
         std.debug.print("Expected .halt got {any}\n", .{status});
     }
 
-    // Check final register values
     const expected_registers = [_]u32{ 4294901760, 0, 0, 0, 0, 0, 0, 55, 0, 0, 34, 0, 0 };
 
     for (expected_registers, 0..) |expected, i| {

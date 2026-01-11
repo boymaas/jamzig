@@ -84,13 +84,6 @@ pub fn encode(
     span.debug("Successfully completed gamma state encoding", .{});
 }
 
-//  _____         _   _
-// |_   _|__  ___| |_(_)_ __   __ _
-//   | |/ _ \/ __| __| | '_ \ / _` |
-//   | |  __/\__ \ |_| | | | | (_| |
-//   |_|\___||___/\__|_|_| |_|\__, |
-//                            |___/
-
 test "encode" {
     const testing = std.testing;
     const allocator = std.testing.allocator;

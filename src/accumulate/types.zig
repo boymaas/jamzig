@@ -1,8 +1,3 @@
-//! Type definitions specific to the accumulation process
-//!
-//! This module contains all types used across the accumulation subsystem,
-//! providing a central location for type definitions to avoid circular dependencies.
-
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");

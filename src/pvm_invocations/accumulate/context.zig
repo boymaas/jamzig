@@ -71,6 +71,8 @@ pub fn AccumulationContext(params: Params) type {
         /// Commit state changes for a specific service.
         /// Per graypaper §12.17: stagingset' = (acc(delegator)_poststate)_stagingset
         /// Only the original delegator's validator_keys changes are committed.
+        /// Per graypaper §12.17: ∀ c ∈ coreindex: authqueue'[c] = acc(assigners[c])_poststate_authqueue[c]
+        /// Only the original assigners' authorization queue changes are committed.
         /// NOTE: privileges (chi) is NOT committed here - handled by R() resolution
         /// in applyChiRResolution() after all services complete.
         pub fn commitForService(self: *@This(), service_id: types.ServiceId) !void {
@@ -78,7 +80,17 @@ pub fn AccumulationContext(params: Params) type {
             if (service_id == self.original_delegator) {
                 self.validator_keys.commit();
             }
-            self.authorizer_queue.commit();
+
+            // Only commit authorizer_queue if this service is an original assigner
+            // Per graypaper §12.17: authqueue'[c] = acc(assigners[c])_poststate_authqueue[c]
+            const is_assigner = for (self.original_assigners) |assigner| {
+                if (service_id == assigner) break true;
+            } else false;
+
+            if (is_assigner) {
+                self.authorizer_queue.commit();
+            }
+
             // NOTE: privileges NOT committed here - handled by R() resolution
             // See accumulate/chi_merger.zig and execution.zig applyChiRResolution()
             try self.service_accounts.commit();

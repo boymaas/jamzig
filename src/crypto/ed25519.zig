@@ -1,6 +1,5 @@
 const std = @import("std");
 
-// FFI declaration for Rust ed25519-consensus library (ZIP-215 compliant)
 extern fn ed25519_verify(
     public_key: [*]const u8,
     signature: [*]const u8,
@@ -8,61 +7,38 @@ extern fn ed25519_verify(
     message_len: usize,
 ) c_int;
 
-/// ZIP-215 compliant Ed25519 signature verification.
-///
-/// This implementation uses the ed25519-consensus Rust crate which implements
-/// ZIP-215 validation rules, ensuring consistent signature validation across
-/// all JAM implementations regardless of the signing library used.
-///
-/// ZIP-215 guarantees:
-/// - Deterministic validation criteria
-/// - Consistency between batch and individual verification
-/// - Backwards compatibility with all existing Ed25519 signatures
+// Uses ed25519-consensus (ZIP-215) for deterministic validation across all JAM implementations
 pub const Ed25519 = struct {
-    /// Length of an Ed25519 public key in bytes
     pub const public_length = 32;
-    /// Length of an Ed25519 signature in bytes
     pub const signature_length = 64;
 
     pub const Error = error{
-        /// The signature did not verify against the public key and message
         InvalidSignature,
     };
 
-    /// An Ed25519 public key (32 bytes)
     pub const PublicKey = struct {
         bytes: [public_length]u8,
 
-        /// Create a public key from raw bytes
         pub fn fromBytes(bytes: [public_length]u8) PublicKey {
             return .{ .bytes = bytes };
         }
 
-        /// Return the public key as raw bytes
         pub fn toBytes(pk: PublicKey) [public_length]u8 {
             return pk.bytes;
         }
     };
 
-    /// An Ed25519 signature (64 bytes)
     pub const Signature = struct {
         bytes: [signature_length]u8,
 
-        /// Create a signature from raw bytes
         pub fn fromBytes(bytes: [signature_length]u8) Signature {
             return .{ .bytes = bytes };
         }
 
-        /// Return the signature as raw bytes
         pub fn toBytes(sig: Signature) [signature_length]u8 {
             return sig.bytes;
         }
 
-        /// Verify this signature against a message and public key.
-        ///
-        /// Uses ZIP-215 compliant verification rules via the ed25519-consensus
-        /// Rust library. This ensures consistent validation across all JAM
-        /// implementations.
         pub fn verify(sig: Signature, message: []const u8, public_key: PublicKey) Error!void {
             const rc = ed25519_verify(
                 &public_key.bytes,

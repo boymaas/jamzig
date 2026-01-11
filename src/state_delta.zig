@@ -69,7 +69,6 @@ pub fn StateTransition(comptime params: Params) type {
             return ptr;
         }
 
-        /// Returns base or prime value. Creates prime by cloning base if needed.
         pub fn ensure(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(STBaseType(State, field), field) {
             const builtin = @import("builtin");
             const name = @tagName(field);
@@ -101,7 +100,6 @@ pub fn StateTransition(comptime params: Params) type {
             }
         }
 
-        /// Creates transient value. One-time operation, debug-mode enforced. Transferring ownership
         pub fn createTransient(self: *Self, comptime field: STAccessors(State), value: STBaseType(State, field)) Error!void {
             const builtin = @import("builtin");
 
@@ -125,7 +123,6 @@ pub fn StateTransition(comptime params: Params) type {
             prime_field.* = value;
         }
 
-        /// initialize the transient by deepCloning the base. Will return a pointer to the cloned value
         pub fn initTransientWithBase(self: *Self, comptime field: STAccessors(State)) Error!STAccessorPointerType(STBaseType(State, field), field) {
             const builtin = @import("builtin");
             const name = @tagName(field);
@@ -150,7 +147,6 @@ pub fn StateTransition(comptime params: Params) type {
             return &prime_field.*.?;
         }
 
-        /// Returns field value. Debug mode enforces existence.
         pub inline fn get(self: *Self, comptime field: STAccessors(State)) !STAccessorPointerType(STBaseType(State, field), field) {
             const builtin = @import("builtin");
 
@@ -228,20 +224,16 @@ pub fn StateTransition(comptime params: Params) type {
             };
         }
 
-        /// Clones base and merges prime into it
         pub fn cloneBaseAndMergeWithPrime(self: *Self) !State {
             var cloned = try self.base.deepClone(self.allocator);
             try cloned.merge(&self.prime, self.allocator);
             return cloned;
         }
 
-        /// Merges into base destroying prime. We are overriding the *const pointer
-        /// to base to make this work. Prime will be all nulls after
         pub fn mergePrimeOntoBase(self: *Self) !void {
             try @constCast(self.base).merge(&self.prime, self.allocator);
         }
 
-        /// Create a merged view of base + prime without cloning data.
         /// This creates a view state that combines committed state (base) with pending changes (prime).
         /// The returned state should NOT be deinitialized - it's just a view.
         pub fn createMergedView(self: *const Self) State {
@@ -283,7 +275,6 @@ pub fn StateTransition(comptime params: Params) type {
             allocator.destroy(self);
         }
 
-        /// Creates a view struct containing *const pointers to the latest version of each field
         pub fn buildPrimeView(self: *Self) state.JamStateView(params) {
             var view = state.JamStateView(params).init();
 
@@ -302,7 +293,6 @@ pub fn StateTransition(comptime params: Params) type {
 
             return view;
         }
-        /// Creates a view struct containing *const pointers to the latest version of each field
         pub fn buildBaseView(self: *Self) state.JamStateView(params) {
             var view = state.JamStateView(params).init();
 

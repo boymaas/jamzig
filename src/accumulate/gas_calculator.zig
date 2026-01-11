@@ -1,8 +1,3 @@
-//! Gas limit calculations for accumulation according to JAM equations
-//!
-//! This module computes gas limits for the accumulation process based on
-//! system parameters and free service allocations.
-
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");

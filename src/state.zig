@@ -9,157 +9,122 @@ const Params = @import("jam_params.zig").Params;
 /// a specific functional segment, allowing partitioned state management.
 pub fn JamState(comptime params: Params) type {
     return struct {
-        /// α: Core authorization state and associated queues.
-        /// Manipulated in: src/authorization.zig
+        /// α - src/authorization.zig
         alpha: ?Alpha(params.core_count, params.max_authorizations_pool_items) = null,
 
-        /// β: Metadata of the latest block, including block number, timestamps, and cryptographic references.
-        /// Manipulated in: src/recent_blocks.zig
+        /// β - src/recent_blocks.zig
         beta: ?Beta = null,
 
-        /// γ: List of current validators and their states, such as stakes and identities.
-        /// Manipulated in: src/safrole.zig
+        /// γ - src/safrole.zig
         gamma: ?Gamma(params.validators_count, params.epoch_length) = null,
 
-        /// δ: Service accounts state, managing all service-related data (similar to smart contracts).
-        /// Manipulated in: src/services.zig
+        /// δ - src/services.zig
         delta: ?Delta = null,
 
-        /// η: On-chain entropy pool used for randomization and consensus mechanisms.
-        /// Manipulated in: src/safrole.zig
+        /// η - src/safrole.zig
         eta: ?Eta = null,
 
-        /// ι: Validators enqueued for activation in the upcoming epoch.
-        /// Manipulated in: src/safrole.zig
+        /// ι - src/safrole.zig
         iota: ?Iota = null,
 
-        /// κ: Active validator set currently responsible for validating blocks and maintaining the network.
-        /// Manipulated in: src/safrole.zig
+        /// κ - src/safrole.zig
         kappa: ?Kappa = null,
 
-        /// λ: Archived validators who have been removed or rotated out of the active set.
-        /// Manipulated in: src/safrole.zig
+        /// λ - src/safrole.zig
         lambda: ?Lambda = null,
 
-        /// ρ: State related to each core’s current assignment, including work packages and reports.
-        /// Manipulated in: src/core_assignments.zig
+        /// ρ - src/core_assignments.zig
         rho: ?Rho(params.core_count) = null,
 
-        /// τ: Current time, represented in terms of epochs and slots.
-        /// Manipulated in: src/safrole.zig
+        /// τ - src/safrole.zig
         tau: ?Tau = null,
 
-        /// φ: Authorization queue for tasks or processes awaiting authorization by the network.
-        /// Manipulated in: src/authorization.zig
+        /// φ - src/authorization.zig
         phi: ?Phi(params.core_count, params.max_authorizations_queue_items) = null,
 
-        /// χ: Privileged service identities, which may have special roles within the protocol.
-        /// Manipulated in: src/services.zig
+        /// χ - src/services.zig
         chi: ?Chi(params.core_count) = null,
 
-        /// ψ: Judgement state, tracking disputes or reports about validators or state transitions.
-        /// Manipulated in: src/disputes.zig
+        /// ψ - src/disputes.zig
         psi: ?Psi = null,
 
-        /// π: Validator performance statistics, tracking penalties, rewards, and other metrics.
-        /// Manipulated in: src/validator_stats.zig
+        /// π - src/validator_stats.zig
         pi: ?Pi = null,
 
-        /// ξ: Epochs worth history of accumulated work reports
+        /// ξ - History of accumulated work reports
         xi: ?Xi(params.epoch_length) = null,
 
-        /// ϑ (vartheta): List of available and/or audited but not yet accumulated work
-        /// reports (v0.6.7: renamed from theta)
+        /// ϑ (vartheta) - Work reports ready for accumulation (v0.6.7: renamed from theta)
         vartheta: ?VarTheta(params.epoch_length) = null,
 
-        /// θ (theta): The most recent accumulation outputs
-        /// (v0.6.7: new component, stores service/hash pairs from last accumulation)
+        /// θ (theta) - Most recent accumulation outputs (v0.6.7: new component)
         theta: ?Theta = null,
 
-        /// ancestry: Historical block headers for lookup-anchor validation
-        /// Provides O(1) lookup for header hash -> timeslot mapping
-        /// Used for validating lookup-anchors in work reports
+        /// ancestry - Historical block headers for lookup-anchor validation
         ancestry: ?Ancestry = null,
 
-        /// Initialize Alpha component
         pub fn initAlpha(self: *JamState(params), _: std.mem.Allocator) !void {
             self.alpha = Alpha(params.core_count, params.max_authorizations_pool_items).init();
         }
 
-        /// Initialize Beta component (max_blocks should be 10)
         /// TODO: check if this max_blocks is in the params
         pub fn initBeta(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.beta = try Beta.init(allocator, params.recent_history_size);
         }
 
-        /// Initialize Gamma component
         pub fn initGamma(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.gamma = try Gamma(params.validators_count, params.epoch_length).init(allocator);
         }
 
-        /// Initialize Delta component
         pub fn initDelta(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.delta = Delta.init(allocator);
         }
 
-        /// Initialize Phi component
         pub fn initPhi(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.phi = try Phi(params.core_count, params.max_authorizations_queue_items).init(allocator);
         }
 
-        /// Initialize Chi component
         pub fn initChi(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.chi = try Chi(params.core_count).init(allocator);
         }
 
-        /// Initialize Psi component
         pub fn initPsi(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.psi = Psi.init(allocator);
         }
 
-        /// Initialize Pi component
         pub fn initPi(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.pi = try Pi.init(allocator, params.validators_count, params.core_count);
         }
 
-        /// Initialize Xi component
         pub fn initXi(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.xi = Xi(params.epoch_length).init(allocator);
         }
 
-        /// Initialize Rho component
         pub fn initRho(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.rho = Rho(params.core_count).init(allocator);
         }
 
-        /// Initialize Vartheta component (work reports queue)
         pub fn initVartheta(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.vartheta = VarTheta(params.epoch_length).init(allocator);
         }
 
-        /// Initialize Theta component (accumulation outputs)
         pub fn initTheta(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.theta = Theta.init(allocator);
         }
 
-        /// Initialize Ancestry component (historical block headers for lookup-anchor validation)
         pub fn initAncestry(self: *JamState(params), allocator: std.mem.Allocator) !void {
             self.ancestry = Ancestry.init(allocator);
         }
 
-        /// Initialize Eta component
         pub fn initEta(self: *JamState(params)) !void {
             // TODO: std.mem.zeroes
             self.eta = [_]types.Entropy{[_]u8{0} ** 32} ** 4;
         }
 
-        /// Initialize Tau component
         pub fn initTau(self: *JamState(params)) !void {
             self.tau = 0;
         }
 
-        /// Initialize all components necessary for Safrole operation
-        /// This includes: gamma, eta, iota, kappa, lambda, and tau
         pub fn initSafrole(self: *JamState(params), allocator: std.mem.Allocator) !void {
             // Initialize required components
             try self.initEta();
@@ -171,7 +136,6 @@ pub fn JamState(comptime params: Params) type {
             self.lambda = try types.ValidatorSet.init(allocator, params.validators_count);
         }
 
-        /// Initialize a new JamState
         pub fn init(
             // TODO: maybe remove parameter
             _: std.mem.Allocator,
@@ -179,17 +143,14 @@ pub fn JamState(comptime params: Params) type {
             return JamState(params){};
         }
 
-        /// Initialize an empty genesis state with all components properly initialized
         pub fn initGenesis(allocator: std.mem.Allocator) !JamState(params) {
             return initGenesisWithOptions(allocator, .{ .enable_ancestry = true });
         }
 
-        /// Initialize options for genesis state
         pub const InitOptions = struct {
             enable_ancestry: bool = true,
         };
 
-        /// Initialize an empty genesis state with configurable options
         pub fn initGenesisWithOptions(allocator: std.mem.Allocator, options: InitOptions) !JamState(params) {
             var state = try JamState(params).init(allocator);
 
@@ -284,8 +245,6 @@ pub fn JamState(comptime params: Params) type {
             return clone;
         }
 
-        /// Destructively merges `other` state into this one.
-        /// Non-null fields from `other` override corresponding fields here.
         /// NOTE: Performs a simple state merge operation for Milestone 1.
         /// Future versions will implement optimized merge strategies.
         pub fn merge(
@@ -298,7 +257,6 @@ pub fn JamState(comptime params: Params) type {
             }
         }
 
-        /// Deinitialize and free resources
         pub fn deinit(self: *JamState(params), allocator: std.mem.Allocator) void {
             inline for (std.meta.fields(@This())) |field| {
                 self.deinitField(&field, allocator);
@@ -306,7 +264,6 @@ pub fn JamState(comptime params: Params) type {
             self.* = undefined;
         }
 
-        /// Format
         pub fn format(
             self: *const @This(),
             comptime fmt: []const u8,
@@ -352,7 +309,6 @@ pub fn JamStateView(comptime params: Params) type {
             return Self{};
         }
 
-        /// creates a view from a JamState
         pub fn fromJamState(state: *const JamState(params)) @This() {
             var view = @This(){};
 
@@ -378,7 +334,7 @@ pub const safrole_state = @import("safrole_state.zig");
 pub const services = @import("services.zig");
 pub const pending_reports = @import("reports_pending.zig");
 pub const authorizer_queue = @import("authorizer_queue.zig");
-pub const services_priviledged = @import("services_priviledged.zig");
+pub const services_privileged = @import("services_privileged.zig");
 pub const disputes = @import("disputes.zig");
 pub const validator_stats = @import("validator_stats.zig");
 pub const ancestry = @import("ancestry.zig");
@@ -402,7 +358,7 @@ pub const Lambda = types.Lambda;
 pub const Rho = pending_reports.Rho;
 pub const Tau = types.TimeSlot;
 pub const Phi = authorizer_queue.Phi;
-pub const Chi = services_priviledged.Chi;
+pub const Chi = services_privileged.Chi;
 pub const Psi = disputes.Psi;
 pub const Pi = validator_stats.Pi;
 pub const Ancestry = ancestry.Ancestry;

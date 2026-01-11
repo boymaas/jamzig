@@ -92,28 +92,19 @@ fn testDecodeAndCompare(comptime test_case: TestCase) !void {
     const DomainType = @field(types, test_case.domain_type);
     const VectorType = @field(codec_test.json_types, test_case.domain_type);
 
-    // Load the binary test vector data
     var decoded = try loader.loadAndDeserializeTestVector(DomainType, TINY_PARAMS, allocator, bin_path);
     defer decoded.deinit(allocator);
 
-    // const format = @import("types/fmt.zig").format;
-    // std.debug.print("decoded:\n{s}\n", .{format(decoded)});
-
-    // Load the json expeceted vector data
     var vector = try codec_test.CodecTestVector(VectorType).build_from(allocator, json_path);
     defer vector.deinit();
 
-    // Convert the json into domain objects
     const expected: DomainType = try convert.convert(VectorType, DomainType, allocator, vector.expected.value);
     defer convert.generic.free(allocator, expected);
 
-    // TODO: how exactly are the complex types compared? Trace into this
     try std.testing.expectEqualDeep(expected, decoded);
 
-    // Serialize the decoded value
     const serialized = try codec.serializeAlloc(DomainType, TINY_PARAMS, allocator, decoded);
     defer allocator.free(serialized);
 
-    // Compare the serialized result with the original binary data
     try std.testing.expectEqualSlices(u8, vector.binary, serialized);
 }

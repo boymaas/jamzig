@@ -27,13 +27,6 @@ pub fn merklizeStateDictionary(
     return merkle.jamMerkleRoot(entries);
 }
 
-//  _   _       _ _  _____         _
-// | | | |_ __ (_) ||_   _|__  ___| |_
-// | | | | '_ \| | __|| |/ _ \/ __| __|
-// | |_| | | | | | |_ | |  __/\__ \ |_
-//  \___/|_| |_|_|\__||_|\___||___/\__|
-//
-
 test "merklizeState" {
     const allocator = std.testing.allocator;
     const TINY = @import("jam_params.zig").TINY_PARAMS;

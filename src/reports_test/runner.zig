@@ -18,7 +18,7 @@ pub fn buildValidatorStatsInput(test_case: *const tvector.TestCase) stats.Valida
         .assurances = &[_]types.AvailAssurance{}, // Empty as test vectors don't include assurances
         .tickets_count = 0, // No tickets in the test vector
         .preimages = &[_]types.Preimage{}, // No preimages in the test vector
-        .guarantor_validators = &[_]types.ValidatorIndex{}, // Empty for test vectors
+        .guarantor_reporters = &[_]types.Ed25519Public{}, // Empty for test vectors
         .assurance_validators = &[_]types.ValidatorIndex{}, // Empty for test vectors
     };
 }
@@ -57,15 +57,12 @@ pub fn validateAndProcessGuaranteeExtrinsic(
     // Process the statistics
     var empty_accumulate_stats = std.AutoHashMap(types.ServiceId, @import("../accumulate.zig").execution.AccumulationServiceStats).init(allocator);
     defer empty_accumulate_stats.deinit();
-    var empty_transfer_stats = std.AutoHashMap(types.ServiceId, @import("../accumulate.zig").execution.TransferServiceStats).init(allocator);
-    defer empty_transfer_stats.deinit();
     var empty_invoked_services = std.AutoArrayHashMap(types.ServiceId, void).init(allocator);
     defer empty_invoked_services.deinit();
 
     const accumulate_result = @import("../accumulate.zig").ProcessAccumulationResult{
         .accumulate_root = [_]u8{0} ** 32,
         .accumulation_stats = empty_accumulate_stats,
-        .transfer_stats = empty_transfer_stats,
         .invoked_services = empty_invoked_services,
     };
 

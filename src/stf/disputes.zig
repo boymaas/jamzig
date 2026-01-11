@@ -26,14 +26,12 @@ pub fn transition(
     const psi_prime: *state.Psi = try stx.ensure(.psi_prime);
     const rho_prime: *state.Rho(params.core_count) = try stx.ensure(.rho_prime);
 
-    // Map current_kappa to extract Edwards public keys
     const current_kappa_keys = try current_kappa.getEd25519PublicKeys(allocator);
     defer allocator.free(current_kappa_keys);
 
     const current_lambda_keys = try current_lambda.getEd25519PublicKeys(allocator);
     defer allocator.free(current_lambda_keys);
 
-    // Verify correctness of the disputes extrinsic
     try disputes.verifyDisputesExtrinsicPre(
         xtdisputes,
         psi_prime,

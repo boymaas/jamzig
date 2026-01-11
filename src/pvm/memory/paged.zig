@@ -249,16 +249,13 @@ pub const Memory = struct {
     read_only_size_in_pages: u32,
     stack_size_in_pages: u32,
     heap_size_in_pages: u32,
-    heap_top: u32 = 0, // Current top of the heap
+    heap_top: u32 = 0,
 
-    // Controls whether dynamic memory allocation is allowed beyond the initial heap size
+    // Dynamic allocation control allows growth beyond initial heap size
     dynamic_allocation_enabled: bool = false,
 
-    // Artificial limit on how many allocations we allow
-    // mainly for the fuzzer, this is not in the spec
+    // Artificial limit for fuzzer, not in spec
     heap_allocation_limit: ?u32 = null,
-
-    // Memory layout constants
     pub const Z_Z: u32 = 0x10000; // 2^16 = 65,536 - Major zone size
     pub const Z_P: u32 = 0x1000; // 2^12 = 4,096 - Page size
     pub const Z_I: u32 = 0x1000000; // 2^24 - Standard input data size
@@ -299,11 +296,9 @@ pub const Memory = struct {
         defer span.deinit();
         span.debug("Creating deep clone of memory system", .{});
 
-        // Initialize a new empty memory system
         var new_memory = try Memory.initEmpty(allocator, self.dynamic_allocation_enabled);
         errdefer new_memory.deinit();
 
-        // Clone all pages
         const clone_span = span.child(@src(), .clone_pages);
         defer clone_span.deinit();
         clone_span.debug("Cloning {d} pages", .{self.page_table.pages.items.len});
@@ -313,14 +308,11 @@ pub const Memory = struct {
         for (self.page_table.pages.items) |page| {
             clone_span.trace("Cloning page at 0x{X:0>8} with flags {s}", .{ page.address, @tagName(page.flags) });
 
-            // Allocate new page data
             const new_data = try allocator.alloc(u8, Memory.Z_P);
             errdefer allocator.free(new_data);
 
-            // Copy page data
             @memcpy(new_data, page.data);
 
-            // Create new page and add to page table
             const new_page = Page{
                 .data = new_data,
                 .address = page.address,
@@ -329,16 +321,13 @@ pub const Memory = struct {
             try new_memory.page_table.pages.append(new_page);
         }
 
-        // Copy memory properties
         new_memory.input_size_in_bytes = self.input_size_in_bytes;
         new_memory.read_only_size_in_pages = self.read_only_size_in_pages;
         new_memory.stack_size_in_pages = self.stack_size_in_pages;
         new_memory.heap_size_in_pages = self.heap_size_in_pages;
         new_memory.heap_allocation_limit = self.heap_allocation_limit;
 
-        // Clone last violation if present
         if (self.last_violation) |violation| {
-            // Create a new violation info
             var new_violation = ViolationInfo{
                 .violation_type = violation.violation_type,
                 .address = violation.address,
@@ -346,9 +335,7 @@ pub const Memory = struct {
                 .page = null,
             };
 
-            // If the violation had a page reference, find the corresponding page in the new memory
             if (violation.page) |old_page| {
-                // Find the corresponding page in the new memory by address
                 for (new_memory.page_table.pages.items) |*new_page| {
                     if (new_page.address == old_page.address) {
                         new_violation.page = new_page;
@@ -364,7 +351,6 @@ pub const Memory = struct {
         return new_memory;
     }
 
-    /// Aligns size to the next page boundary (Z_P = 4096)
     fn alignToPageSize(size_in_bytes: usize) !u32 {
         const span = trace.span(@src(), .align_to_page);
         defer span.deinit();
@@ -376,7 +362,6 @@ pub const Memory = struct {
         return aligned_size;
     }
 
-    /// Does a bytes to pages
     fn sizeInBytesToPages(size: usize) !u16 {
         const span = trace.span(@src(), .bytes_to_pages);
         defer span.deinit();
@@ -387,7 +372,6 @@ pub const Memory = struct {
         return pages;
     }
 
-    /// does a pages to bytes
     fn pagesToSizeInBytes(pages: u16) usize {
         const span = trace.span(@src(), .pages_to_bytes);
         defer span.deinit();
@@ -398,7 +382,6 @@ pub const Memory = struct {
         return bytes;
     }
 
-    /// Aligns size to the next section boundary (Z_Z = 65536)
     fn alignToSectionSize(size_in_bytes: usize) !u32 {
         const span = trace.span(@src(), .align_to_section);
         defer span.deinit();
@@ -424,19 +407,18 @@ pub const Memory = struct {
         span.debug("Checking memory layout limits", .{});
         span.trace("Input sizes - RO: {d} bytes, Heap: {d} bytes, Stack: {d} bytes", .{ ro_size_in_bytes, heap_size_in_bytes, stack_size_in_bytes });
 
-        // Calculate sizes in terms of major zones (Z_Z)
         const ro_zones = try alignToSectionSize(ro_size_in_bytes);
         const heap_zones = try alignToSectionSize(heap_size_in_bytes);
         const stack_zones = try alignToSectionSize(stack_size_in_bytes);
 
         span.trace("Section-aligned sizes - RO: 0x{X}, Heap: 0x{X}, Stack: 0x{X}", .{ ro_zones, heap_zones, stack_zones });
 
-        // Check the memory layout equation: 5Z_Z + ⌈|o|/Z_Z⌉ + ⌈|w|/Z_Z⌉ + ⌈s/Z_Z⌉ + Z_I ≤ 2^32
-        var total: u64 = 5 * Z_Z; // Fixed zones
+        // Graypaper equation: 5Z_Z + ⌈|o|/Z_Z⌉ + ⌈|w|/Z_Z⌉ + ⌈s/Z_Z⌉ + Z_I ≤ 2^32
+        var total: u64 = 5 * Z_Z;
         total += ro_zones;
         total += heap_zones;
         total += stack_zones;
-        total += Z_I; // Input data section
+        total += Z_I;
 
         span.debug("Memory layout calculation: 5*Z_Z + RO + Heap + Stack + Z_I = {d} bytes (0x{X})", .{ total, total });
         span.trace("Fixed zones: {d}, Input (Z_I): {d}", .{ 5 * Z_Z, Z_I });
@@ -450,7 +432,6 @@ pub const Memory = struct {
     }
 
     pub fn initEmpty(allocator: Allocator, dynamic_allocation: bool) !Memory {
-        // Initialize page table
         var page_table = PageTable.init(allocator);
         errdefer page_table.deinit();
 
@@ -478,37 +459,30 @@ pub const Memory = struct {
         defer span.deinit();
         span.debug("Starting memory initialization", .{});
 
-        // Initialize page table
         var page_table = PageTable.init(allocator);
         errdefer page_table.deinit();
 
-        // Calculate section sizes
         const read_only_aligned_size_in_bytes = try alignToPageSize(read_only_size_in_bytes);
         const heap_aligned_size_in_bytes = @as(usize, @as(u32, heap_size_in_pages) * Z_P);
         const stack_aligned_size_in_bytes = try alignToPageSize(stack_size_in_bytes);
 
-        // Verify memory limits
         try checkMemoryLimits(
             read_only_aligned_size_in_bytes,
             heap_aligned_size_in_bytes,
             stack_aligned_size_in_bytes,
         );
 
-        // Allocate the ReadOnly section
         try page_table.allocatePages(
             READ_ONLY_BASE_ADDRESS,
             try sizeInBytesToPages(read_only_size_in_bytes),
             .ReadOnly,
         );
 
-        // Allocate the Heap section
         const heap_base = try HEAP_BASE_ADDRESS(read_only_aligned_size_in_bytes);
         try page_table.allocatePages(heap_base, heap_size_in_pages, .ReadWrite);
 
-        // Allocate the Input section
         try page_table.allocatePages(INPUT_ADDRESS, try sizeInBytesToPages(input_size_in_bytes), .ReadOnly);
 
-        // Allocate the Stack section
         const stack_size_in_pages = try sizeInBytesToPages(stack_aligned_size_in_bytes);
         try page_table.allocatePages(try STACK_BOTTOM_ADDRESS(stack_size_in_pages), stack_size_in_pages, .ReadWrite);
 
@@ -520,7 +494,7 @@ pub const Memory = struct {
             .read_only_size_in_pages = try sizeInBytesToPages(read_only_size_in_bytes),
             .stack_size_in_pages = stack_size_in_pages,
             .heap_size_in_pages = heap_size_in_pages,
-            .heap_top = heap_base, // Initialize heap_top to the start of the heap
+            .heap_top = heap_base,
             .dynamic_allocation_enabled = dynamic_allocation,
         };
     }
@@ -541,12 +515,10 @@ pub const Memory = struct {
         span.trace("Read-only: {d} bytes, Read-write: {d} bytes, Input: {d} bytes", .{ read_only.len, read_write.len, input.len });
         span.trace("Stack size: {d} bytes, Heap size: {d} pages", .{ stack_size_in_bytes, heap_size_in_pages });
 
-        // Calculate section sizes rounded to page boundaries
         const ro_pages: u32 = @intCast(try sizeInBytesToPages(read_only.len));
         const heap_pages: u32 = @intCast(heap_size_in_pages + try sizeInBytesToPages(read_write.len));
         span.debug("Calculated pages - Read-only: {d}, Heap: {d}", .{ ro_pages, heap_pages });
 
-        // Initialize the memory system with the calculated capacities
         const memory_init_span = span.child(@src(), .memory_init_capacity);
         defer memory_init_span.deinit();
         memory_init_span.debug("Initializing memory with capacity", .{});
@@ -565,7 +537,6 @@ pub const Memory = struct {
             memory.deinit();
         }
 
-        // Initialize read-only section
         if (read_only.len > 0) {
             const ro_span = span.child(@src(), .init_readonly);
             defer ro_span.deinit();
@@ -579,7 +550,6 @@ pub const Memory = struct {
             ro_span.debug("Read-only section initialized", .{});
         }
 
-        // Initialize heap section with read-write data
         if (read_write.len > 0) {
             const rw_span = span.child(@src(), .init_readwrite);
             defer rw_span.deinit();
@@ -594,7 +564,6 @@ pub const Memory = struct {
             rw_span.debug("Read-write section initialized", .{});
         }
 
-        // Initialize input section
         if (input.len > 0) {
             const input_span = span.child(@src(), .init_input);
             defer input_span.deinit();
@@ -608,12 +577,9 @@ pub const Memory = struct {
             input_span.debug("Input section initialized", .{});
         }
 
-        // Stack is already zero-initialized by initWithCapacity
         span.debug("Stack is zero-initialized, size: {d} bytes", .{stack_size_in_bytes});
 
-        // Initialize heap_top to the end of the allocated heap section (section-aligned)
-        // This matches PolkaVM's behavior where the heap starts at the section boundary,
-        // not immediately after the RW data. This ensures compatibility with PolkaVM.
+        // Heap starts at section boundary (not immediately after RW data) for PolkaVM compatibility
         const heap_base = try HEAP_BASE_ADDRESS(@intCast(ro_pages * Z_P));
         memory.heap_top = heap_base + (@as(u32, heap_pages) * Z_P);
 
@@ -640,18 +606,15 @@ pub const Memory = struct {
 
         span.debug("Allocating {d} contiguous pages at address 0x{X:0>8} with flags {s}", .{ num_pages, address, @tagName(flags) });
 
-        // Ensure address is page aligned
         if (address % Z_P != 0) {
             span.err("Unaligned address 0x{X:0>8} - must be aligned to page size (0x{X})", .{ address, Z_P });
             return error.UnalignedAddress;
         }
         span.trace("Address is properly aligned to page boundary", .{});
 
-        // Calculate total memory size
         const total_size = num_pages * Z_P;
         span.trace("Total allocation size: {d} bytes (0x{X})", .{ total_size, total_size });
 
-        // Allocate the new pages
         const alloc_span = span.child(@src(), .allocate_pages);
         defer alloc_span.deinit();
         alloc_span.debug("Allocating {d} pages in page table", .{num_pages});
@@ -659,16 +622,12 @@ pub const Memory = struct {
         span.debug("Page allocation successful", .{});
     }
 
-    /// Get the heap start address according to graypaper specification
-    /// h = 2*ZZ + Z(|o|) where Z(x) = ZZ * ceil(x / ZZ)
     pub fn getHeapStart(self: *const Memory) u32 {
         const span = trace.span(@src(), .get_heap_start);
         defer span.deinit();
 
-        // Calculate read-only section size in bytes
         const readonly_size_bytes = @as(u32, self.read_only_size_in_pages) * Z_P;
 
-        // Use HEAP_BASE_ADDRESS which performs the same calculation
         const heap_start = HEAP_BASE_ADDRESS(readonly_size_bytes) catch unreachable;
 
         span.debug("Heap start calculation: readonly_size={d}, heap_start=0x{X:0>8}", .{ readonly_size_bytes, heap_start });
@@ -699,14 +658,12 @@ pub const Memory = struct {
             return false;
         }
 
-        // Calculate the range of pages this spans
         const start_page = (addr / Z_P) * Z_P;
         const end_addr = addr + size - 1; // Last byte address
         const end_page = (end_addr / Z_P) * Z_P;
 
         span.trace("Range spans pages from 0x{X:0>8} to 0x{X:0>8}", .{ start_page, end_page });
 
-        // Check each page in the range
         var current_page = start_page;
         while (current_page <= end_page) : (current_page += Z_P) {
             if (self.isPageValid(current_page)) {
@@ -719,35 +676,29 @@ pub const Memory = struct {
         return false;
     }
 
-    /// Graypaper-compliant sbrk implementation
-    /// Returns the previous heap pointer and extends heap linearly
     pub fn sbrk(self: *Memory, size: u32) !u32 {
         const span = trace.span(@src(), .sbrk);
         defer span.deinit();
         span.debug("sbrk called with size={d} bytes", .{size});
 
-        // Initialize heap_top if not set
         if (self.heap_top == 0) {
             self.heap_top = self.getHeapStart();
             span.debug("Initialized heap_top to 0x{X:0>8}", .{self.heap_top});
         }
 
-        // Special case: size 0 should return current heap pointer without allocation
+        // Graypaper spec: size 0 returns current heap pointer without allocation
         if (size == 0) {
             span.debug("Zero-size sbrk, returning current heap pointer: 0x{X:0>8}", .{self.heap_top});
             return self.heap_top;
         }
 
-        // Record current heap pointer to return
         const result = self.heap_top;
 
-        // Calculate next page boundary from current heap pointer
         const next_page_boundary = nextPageBoundary(self.heap_top);
         const new_heap_pointer = self.heap_top + size;
 
         span.debug("Current heap: 0x{X:0>8}, next boundary: 0x{X:0>8}, new heap: 0x{X:0>8}", .{ self.heap_top, next_page_boundary, new_heap_pointer });
 
-        // Check if we need to allocate new pages
         if (new_heap_pointer > next_page_boundary) {
             const final_boundary = nextPageBoundary(new_heap_pointer);
             const idx_start = next_page_boundary / Z_P;
@@ -756,16 +707,13 @@ pub const Memory = struct {
 
             span.debug("Allocating {d} pages from index {d} to {d}", .{ page_count, idx_start, idx_end });
 
-            // Convert page indices to addresses and allocate
             const start_address = idx_start * Z_P;
             try self.page_table.allocatePages(start_address, page_count, .ReadWrite);
 
-            // Update heap size tracking
             self.heap_size_in_pages += @intCast(page_count);
             span.debug("Heap size increased to {d} pages", .{self.heap_size_in_pages});
         }
 
-        // Advance the heap pointer
         self.heap_top = new_heap_pointer;
 
         span.debug("sbrk successful, returning previous heap pointer: 0x{X:0>8}", .{result});
@@ -811,7 +759,6 @@ pub const Memory = struct {
         const bytes_in_first = Memory.Z_P - offset;
         span.trace("Found page at 0x{X:0>8}, offset: 0x{X}, bytes available: {d}", .{ first_page.page.address, offset, bytes_in_first });
 
-        // If it fits in first page, read directly
         if (size <= bytes_in_first) {
             const result = @as(T, @bitCast(first_page.page.data[offset..][0..size].*));
             span.debug("Read value: 0x{X} (fits in single page)", .{result});
@@ -820,20 +767,17 @@ pub const Memory = struct {
 
         span.debug("Cross-page read detected ({d} bytes span two pages)", .{size});
 
-        // Cross-page read - use stack buffer
         var buf: [@sizeOf(T)]u8 = undefined;
 
-        // Copy from first page
         @memcpy(buf[0..bytes_in_first], first_page.page.data[offset..][0..bytes_in_first]);
         span.trace("Read {d} bytes from first page: {any}", .{ bytes_in_first, std.fmt.fmtSliceHexLower(buf[0..bytes_in_first]) });
 
-        // Get and copy from second page, this should aways have enough
         const next_page = first_page.nextContiguous() orelse {
             const next_addr = first_page.page.address + Memory.Z_P;
             span.err("Page fault - missing contiguous page at 0x{X:0>8}", .{next_addr});
             self.last_violation = ViolationInfo{
                 .violation_type = .NonAllocated,
-                .address = next_addr, // Address where next page should be
+                .address = next_addr,
                 .attempted_size = size,
                 .page = first_page.page,
             };
@@ -853,12 +797,11 @@ pub const Memory = struct {
         buffer: []const u8,
         allocator: ?std.mem.Allocator = null,
 
-        // Take ownership of the buffer, this object is not responsible for freeing it anymore
-        // but it will point to the buffer, which could be internal memory. If it was pointing
-        // to internal memory, we will dupe so the caller can safely use it
+        // If buffer points to internal memory, dupe it for caller safety.
+        // Otherwise transfer ownership by clearing allocator reference.
         pub fn takeBufferOwnership(self: *MemorySlice, allocator: std.mem.Allocator) ![]const u8 {
             if (self.allocator) |_| {
-                self.allocator = null; // Clear allocator reference
+                self.allocator = null;
                 return self.buffer;
             } else {
                 const result = try allocator.dupe(u8, self.buffer);
@@ -867,7 +810,6 @@ pub const Memory = struct {
         }
 
         pub fn deinit(self: *@This()) void {
-            // if we have an allocator we own the slice and should free it
             if (self.allocator) |alloc| {
                 alloc.free(self.buffer);
             }
@@ -889,13 +831,11 @@ pub const Memory = struct {
         defer span.deinit();
         span.debug("Reading slice of {d} bytes from address 0x{X:0>8}", .{ size, address });
 
-        // Special case for zero-size reads
         if (size == 0) {
             span.debug("Zero-size read requested, returning empty slice", .{});
             return .{ .buffer = &[_]u8{} };
         }
 
-        // Find the page containing the starting address
         const first_page = self.page_table.findPageOfAddresss(address) orelse {
             const aligned_addr = @divTrunc(address, Z_P) * Z_P;
             span.err("Page fault - non-allocated memory at 0x{X:0>8} (aligned: 0x{X:0>8})", .{ address, aligned_addr });
@@ -910,12 +850,10 @@ pub const Memory = struct {
 
         span.trace("Found first page at 0x{X:0>8} with flags {s}", .{ first_page.page.address, @tagName(first_page.page.flags) });
 
-        // Calculate offset and available bytes in the first page
         const offset = address - first_page.page.address;
         const bytes_in_first_page = Z_P - offset;
         span.trace("Offset in first page: 0x{X}, bytes available: {d}", .{ offset, bytes_in_first_page });
 
-        // If the entire read fits in the first page, return a slice directly
         if (size <= bytes_in_first_page) {
             const result = first_page.page.data[offset..][0..size];
             if (size <= 64) {
@@ -927,22 +865,18 @@ pub const Memory = struct {
             return .{ .buffer = result };
         }
 
-        // For cross-page reads, we need to allocate a buffer and copy the data
         span.debug("Cross-page read detected, allocating buffer for {d} bytes", .{size});
         var buffer = try self.allocator.alloc(u8, size);
         errdefer self.allocator.free(buffer);
 
-        // Copy data from the first page
         @memcpy(buffer[0..bytes_in_first_page], first_page.page.data[offset..Z_P]);
         span.trace("Copied {d} bytes from first page", .{bytes_in_first_page});
 
-        // Copy data from subsequent pages
         var bytes_read = bytes_in_first_page;
         var remaining = size - bytes_read;
         var current_page = first_page;
 
         while (remaining > 0) {
-            // Get the next contiguous page
             current_page = current_page.nextContiguous() orelse {
                 const next_addr = current_page.page.address + Z_P;
                 span.err("Page fault - missing contiguous page at 0x{X:0>8}", .{next_addr});
@@ -957,7 +891,6 @@ pub const Memory = struct {
             };
             span.trace("Reading from next page at 0x{X:0>8}", .{current_page.page.address});
 
-            // Determine how many bytes to copy from this page
             const bytes_to_copy = @min(remaining, Z_P);
             @memcpy(buffer[bytes_read..][0..bytes_to_copy], current_page.page.data[0..bytes_to_copy]);
 
@@ -978,7 +911,6 @@ pub const Memory = struct {
 
     pub fn readSliceOwned(self: *Memory, address: u32, size: usize) ![]const u8 {
         const slice = try self.readSlice(address, size);
-        // either was already owned, and otherwise we dupe
         if (slice.allocator) |_| {
             return slice.buffer;
         } else {
@@ -992,7 +924,6 @@ pub const Memory = struct {
         defer span.deinit();
         span.debug("Writing slice of {d} bytes to address 0x{X:0>8}", .{ slice.len, address });
 
-        // Find the page containing the address
         const page = self.page_table.findPageOfAddresss(address) orelse {
             const aligned_addr = @divTrunc(address, Z_P) * Z_P;
             span.err("Page fault - non-allocated memory at 0x{X:0>8} (aligned: 0x{X:0>8})", .{ address, aligned_addr });
@@ -1006,7 +937,6 @@ pub const Memory = struct {
         };
         span.trace("Found page at 0x{X:0>8} with flags {s}", .{ page.page.address, @tagName(page.page.flags) });
 
-        // Check write permissions
         if (page.page.flags == .ReadOnly) {
             span.err("Write protection violation at 0x{X:0>8} - page is ReadOnly", .{address});
             self.last_violation = ViolationInfo{
@@ -1018,26 +948,21 @@ pub const Memory = struct {
             return Error.PageFault;
         }
 
-        // Check if write would cross page boundary
         const offset = address - page.page.address;
         const end_offset = offset + slice.len;
         span.trace("Write range: offset 0x{X} to 0x{X} (page size: 0x{X})", .{ offset, end_offset, Z_P });
 
-        // Support cross-page writes
         if (end_offset > Z_P) {
             span.trace("Cross-page write detected - splitting write across pages", .{});
 
-            // Write to first page (remaining bytes in current page)
             const first_page_bytes = Z_P - offset;
             @memcpy(page.page.data[offset..Z_P], slice[0..first_page_bytes]);
             span.trace("Wrote {d} bytes to first page at offset 0x{X}", .{ first_page_bytes, offset });
 
-            // Write remaining bytes to subsequent pages
             var remaining_slice = slice[first_page_bytes..];
             var current_address = page.page.address + Z_P;
 
             while (remaining_slice.len > 0) {
-                // Find or create the next page
                 const next_page = self.page_table.findPageOfAddresss(current_address) orelse {
                     span.err("Page fault during cross-page write at address 0x{X:0>8}", .{current_address});
                     self.last_violation = ViolationInfo{
@@ -1049,7 +974,6 @@ pub const Memory = struct {
                     return Error.PageFault;
                 };
 
-                // Check write permissions on subsequent page
                 if (next_page.page.flags == .ReadOnly) {
                     span.err("Write protection violation during cross-page write at 0x{X:0>8}", .{current_address});
                     self.last_violation = ViolationInfo{
@@ -1061,19 +985,16 @@ pub const Memory = struct {
                     return Error.PageFault;
                 }
 
-                // Write to this page
                 const bytes_to_write = @min(remaining_slice.len, Z_P);
                 @memcpy(next_page.page.data[0..bytes_to_write], remaining_slice[0..bytes_to_write]);
                 span.trace("Wrote {d} bytes to page at 0x{X:0>8}", .{ bytes_to_write, current_address });
 
-                // Update for next iteration
                 remaining_slice = remaining_slice[bytes_to_write..];
                 current_address += Z_P;
             }
 
             span.debug("Successfully completed cross-page write of {d} bytes", .{slice.len});
         } else {
-            // Single page write
             @memcpy(page.page.data[offset..][0..slice.len], slice);
             span.debug("Successfully wrote {d} bytes within single page", .{slice.len});
         }
@@ -1085,9 +1006,7 @@ pub const Memory = struct {
         }
     }
 
-    /// Initilialize a slice to memory not cross-page, will err on cross page
-    /// access. Does not check ReadWrite permissions can also write to ReadOnly
-    /// segments.
+    // Bypasses ReadWrite permissions - used only during initialization
     pub fn initMemory(self: *Memory, address: u32, slice: []const u8) !void {
         const span = trace.span(@src(), .memory_init_data);
         defer span.deinit();
@@ -1103,29 +1022,24 @@ pub const Memory = struct {
         var page_count: usize = 0;
 
         while (remaining.len > 0) {
-            // Find the page containing the current address
             const page_result = self.page_table.findPageOfAddresss(current_addr) orelse {
                 span.err("Page fault at address 0x{X:0>8} - page not found", .{current_addr});
                 return Error.PageFault;
             };
 
-            // Calculate offset and available space in current page
             const offset = current_addr - page_result.page.address;
             const available_in_page = Z_P - offset;
             const bytes_to_write = @min(remaining.len, available_in_page);
 
             span.trace("Writing to page {d} at address 0x{X:0>8}, offset 0x{X}, {d} bytes", .{ page_count, page_result.page.address, offset, bytes_to_write });
 
-            // Show a sample of the data being written
             if (bytes_to_write > 0) {
                 const sample_size = @min(bytes_to_write, 32);
                 span.trace("Data sample: {any}", .{std.fmt.fmtSliceHexLower(remaining[0..sample_size])});
             }
 
-            // Write data to current page
             @memcpy(page_result.page.data[offset..][0..bytes_to_write], remaining[0..bytes_to_write]);
 
-            // If we need to continue to next page, verify it exists and is contiguous
             if (remaining.len > bytes_to_write) {
                 const next_page = page_result.nextContiguous() orelse {
                     const expected_addr = page_result.page.address + Z_P;
@@ -1135,7 +1049,6 @@ pub const Memory = struct {
                 span.debug("Moving to next contiguous page at 0x{X:0>8}", .{next_page.page.address});
             }
 
-            // Update pointers for next iteration
             remaining = remaining[bytes_to_write..];
             current_addr += bytes_to_write;
             page_count += 1;
@@ -1151,16 +1064,15 @@ pub const Memory = struct {
         span.debug("Writing {d}-bit integer 0x{X} to address 0x{X:0>8}", .{ @bitSizeOf(T), value, address });
 
         const size = @sizeOf(T);
-        comptime std.debug.assert(size <= 8); // Only handle up to u64
+        comptime std.debug.assert(size <= 8);
         comptime std.debug.assert(@typeInfo(T) == .int);
 
-        // First verify all required pages exist
         const page = self.page_table.findPageOfAddresss(address) orelse {
             const aligned_addr = @divTrunc(address, Z_P) * Z_P;
             span.err("Page fault - non-allocated memory at 0x{X:0>8} (aligned: 0x{X:0>8})", .{ address, aligned_addr });
             self.last_violation = ViolationInfo{
                 .violation_type = .NonAllocated,
-                .address = aligned_addr, // since this falls outside any page, we just round it
+                .address = aligned_addr,
                 .attempted_size = size,
                 .page = null,
             };
@@ -1171,7 +1083,6 @@ pub const Memory = struct {
         const bytes_in_first = Z_P - offset;
         span.trace("Found page at 0x{X:0>8}, offset: 0x{X}, bytes available: {d}", .{ page.page.address, offset, bytes_in_first });
 
-        // Check if we need a second page
         const need_second_page = size > bytes_in_first;
         if (need_second_page) {
             span.debug("Cross-page write detected ({d} bytes span two pages)", .{size});
@@ -1192,7 +1103,6 @@ pub const Memory = struct {
         else
             null;
 
-        // Check page permissions
         if (page.page.flags == .ReadOnly) {
             span.err("Write protection violation at 0x{X:0>8} - page is ReadOnly", .{address});
             self.last_violation = ViolationInfo{
@@ -1215,17 +1125,14 @@ pub const Memory = struct {
             return Error.PageFault;
         }
 
-        // Now perform the actual write, knowing all pages exist and are writable
         var bytes: [size]u8 = undefined;
         std.mem.writeInt(T, &bytes, value, .little);
         span.trace("Value as bytes: {any}", .{std.fmt.fmtSliceHexLower(&bytes)});
 
-        // Write to first page
         const first_write_size = @min(size, bytes_in_first);
         @memcpy(page.page.data[offset..][0..first_write_size], bytes[0..first_write_size]);
         span.trace("Wrote {d} bytes to first page at offset 0x{X}", .{ first_write_size, offset });
 
-        // Write to second page if needed
         if (next_contiguous) |next| {
             const bytes_in_second = size - bytes_in_first;
             @memcpy(next.page.data[0..bytes_in_second], bytes[bytes_in_first..size]);
@@ -1284,15 +1191,12 @@ pub const Memory = struct {
             regions.deinit();
         }
 
-        // Iterate through all pages in the page table
         for (self.page_table.pages.items) |page| {
             span.trace("Snapshotting page at address 0x{X:0>8}", .{page.address});
 
-            // Duplicate the page data for the snapshot
             const page_data = try allocator.dupe(u8, page.data);
             errdefer allocator.free(page_data);
 
-            // Create memory region for this page
             try regions.append(.{
                 .address = page.address,
                 .data = page_data,

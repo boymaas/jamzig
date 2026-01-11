@@ -5,12 +5,6 @@ const std = @import("std");
 // semantics) is left implicit though limited to being at most 16.
 pub const MaxInstructionSizeInBytes = 16;
 
-//  ___           _                   _   _
-// |_ _|_ __  ___| |_ _ __ _   _  ___| |_(_) ___  _ __
-//  | || '_ \/ __| __| '__| | | |/ __| __| |/ _ \| '_ \
-//  | || | | \__ \ |_| |  | |_| | (__| |_| | (_) | | | |
-// |___|_| |_|___/\__|_|   \__,_|\___|\__|_|\___/|_| |_|
-
 pub const Instruction = enum(u8) {
     // A.5.1. Instructions without Arguments
     trap = 0,
@@ -68,29 +62,29 @@ pub const Instruction = enum(u8) {
     // A.5.9. Instructions with Arguments of Two Registers
     move_reg = 100,
     sbrk = 101,
-    count_set_bits_64 = 102, // New
-    count_set_bits_32 = 103, // New
-    leading_zero_bits_64 = 104, // New
-    leading_zero_bits_32 = 105, // New
-    trailing_zero_bits_64 = 106, // New
-    trailing_zero_bits_32 = 107, // New
-    sign_extend_8 = 108, // New
-    sign_extend_16 = 109, // New
-    zero_extend_16 = 110, // New
-    reverse_bytes = 111, // New
+    count_set_bits_64 = 102,
+    count_set_bits_32 = 103,
+    leading_zero_bits_64 = 104,
+    leading_zero_bits_32 = 105,
+    trailing_zero_bits_64 = 106,
+    trailing_zero_bits_32 = 107,
+    sign_extend_8 = 108,
+    sign_extend_16 = 109,
+    zero_extend_16 = 110,
+    reverse_bytes = 111,
 
     // A.5.10. Instructions with Arguments of Two Registers & One Immediate
-    store_ind_u8 = 120, // ID changed
-    store_ind_u16 = 121, // ID changed
-    store_ind_u32 = 122, // ID changed
-    store_ind_u64 = 123, // ID changed
-    load_ind_u8 = 124, // ID changed
-    load_ind_i8 = 125, // ID changed
-    load_ind_u16 = 126, // ID changed
-    load_ind_i16 = 127, // ID changed
-    load_ind_u32 = 128, // ID changed
-    load_ind_i32 = 129, // ID changed
-    load_ind_u64 = 130, // ID changed
+    store_ind_u8 = 120,
+    store_ind_u16 = 121,
+    store_ind_u32 = 122,
+    store_ind_u64 = 123,
+    load_ind_u8 = 124,
+    load_ind_i8 = 125,
+    load_ind_u16 = 126,
+    load_ind_i16 = 127,
+    load_ind_u32 = 128,
+    load_ind_i32 = 129,
+    load_ind_u64 = 130,
     add_imm_32 = 131,
     and_imm = 132,
     xor_imm = 133,
@@ -118,74 +112,66 @@ pub const Instruction = enum(u8) {
     shlo_l_imm_alt_64 = 155,
     shlo_r_imm_alt_64 = 156,
     shar_r_imm_alt_64 = 157,
-    rot_r_64_imm = 158, // New
-    rot_r_64_imm_alt = 159, // New
-    rot_r_32_imm = 160, // New
-    rot_r_32_imm_alt = 161, // New
+    rot_r_64_imm = 158,
+    rot_r_64_imm_alt = 159,
+    rot_r_32_imm = 160,
+    rot_r_32_imm_alt = 161,
 
     // A.5.11. Instructions with Arguments of Two Registers & One Offset
-    branch_eq = 170, // ID changed
-    branch_ne = 171, // ID changed
-    branch_lt_u = 172, // ID changed
-    branch_lt_s = 173, // ID changed
-    branch_ge_u = 174, // ID changed
-    branch_ge_s = 175, // ID changed
+    branch_eq = 170,
+    branch_ne = 171,
+    branch_lt_u = 172,
+    branch_lt_s = 173,
+    branch_ge_u = 174,
+    branch_ge_s = 175,
 
     // A.5.12. Instructions with Arguments of Two Registers and Two Immediates
-    load_imm_jump_ind = 180, // ID changed
+    load_imm_jump_ind = 180,
 
     // A.5.13. Instructions with Arguments of Three Registers
-    add_32 = 190, // ID changed
-    sub_32 = 191, // ID changed
-    mul_32 = 192, // ID changed
-    div_u_32 = 193, // ID changed
-    div_s_32 = 194, // ID changed
-    rem_u_32 = 195, // ID changed
-    rem_s_32 = 196, // ID changed
-    shlo_l_32 = 197, // ID changed
-    shlo_r_32 = 198, // ID changed
-    shar_r_32 = 199, // ID changed
-    add_64 = 200, // ID changed
-    sub_64 = 201, // ID changed
-    mul_64 = 202, // ID changed
-    div_u_64 = 203, // ID changed
-    div_s_64 = 204, // ID changed
-    rem_u_64 = 205, // ID changed
-    rem_s_64 = 206, // ID changed
-    shlo_l_64 = 207, // ID changed
-    shlo_r_64 = 208, // ID changed
-    shar_r_64 = 209, // ID changed
-    @"and" = 210, // ID changed
-    xor = 211, // ID changed
-    @"or" = 212, // ID changed
-    mul_upper_s_s = 213, // ID changed
-    mul_upper_u_u = 214, // ID changed
-    mul_upper_s_u = 215, // ID changed
-    set_lt_u = 216, // ID changed
-    set_lt_s = 217, // ID changed
-    cmov_iz = 218, // ID changed
-    cmov_nz = 219, // ID changed
-    rot_l_64 = 220, // New
-    rot_l_32 = 221, // New
-    rot_r_64 = 222, // New
-    rot_r_32 = 223, // New
-    and_inv = 224, // New
-    or_inv = 225, // New
-    xnor = 226, // New
-    max = 227, // New
-    max_u = 228, // New
-    min = 229, // New
-    min_u = 230, // New
+    add_32 = 190,
+    sub_32 = 191,
+    mul_32 = 192,
+    div_u_32 = 193,
+    div_s_32 = 194,
+    rem_u_32 = 195,
+    rem_s_32 = 196,
+    shlo_l_32 = 197,
+    shlo_r_32 = 198,
+    shar_r_32 = 199,
+    add_64 = 200,
+    sub_64 = 201,
+    mul_64 = 202,
+    div_u_64 = 203,
+    div_s_64 = 204,
+    rem_u_64 = 205,
+    rem_s_64 = 206,
+    shlo_l_64 = 207,
+    shlo_r_64 = 208,
+    shar_r_64 = 209,
+    @"and" = 210,
+    xor = 211,
+    @"or" = 212,
+    mul_upper_s_s = 213,
+    mul_upper_u_u = 214,
+    mul_upper_s_u = 215,
+    set_lt_u = 216,
+    set_lt_s = 217,
+    cmov_iz = 218,
+    cmov_nz = 219,
+    rot_l_64 = 220,
+    rot_l_32 = 221,
+    rot_r_64 = 222,
+    rot_r_32 = 223,
+    and_inv = 224,
+    or_inv = 225,
+    xnor = 226,
+    max = 227,
+    max_u = 228,
+    min = 229,
+    min_u = 230,
 };
 
-//     _                                         _  _____
-//    / \   _ __ __ _ _   _ _ __ ___   ___ _ __ | ||_   _|   _ _ __   ___
-//   / _ \ | '__/ _` | | | | '_ ` _ \ / _ \ '_ \| __|| || | | | '_ \ / _ \
-//  / ___ \| | | (_| | |_| | | | | | |  __/ | | | |_ | || |_| | |_) |  __/
-// /_/   \_\_|  \__, |\__,_|_| |_| |_|\___|_| |_|\__||_| \__, | .__/ \___|
-//              |___/                                    |___/|_|
-
-/// Represents a PVM instruction type with its opcode range and operand structure
 pub const InstructionType = enum {
     // Instructions with no arguments (A.5.1)
     NoArgs, // 0-1: trap, fallthrough

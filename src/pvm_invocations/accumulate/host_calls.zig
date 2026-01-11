@@ -16,13 +16,10 @@ const HostCallError = host_calls.HostCallError;
 
 const PVM = @import("../../pvm.zig").PVM;
 
-// Add tracing import
 const trace = @import("tracing").scoped(.host_calls);
 
-// Import shared encoding utilities
 const encoding_utils = @import("../encoding_utils.zig");
 
-// Import accumulate module for TransferOperand
 const pvm_accumulate = @import("../accumulate.zig");
 
 pub fn HostCalls(comptime params: Params) type {
@@ -122,11 +119,9 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             pub fn deepClone(self: *const @This()) !@This() {
-                // Create a new context with the same allocator
                 var cloned_preimages = std.AutoHashMap(ProvidedKey, []const u8).init(self.allocator);
                 errdefer cloned_preimages.deinit();
 
-                // Clone all provided preimages
                 var iter = self.provided_preimages.iterator();
                 while (iter.next()) |entry| {
                     const data_copy = try self.allocator.dupe(u8, entry.value_ptr.*);
@@ -163,7 +158,6 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             pub fn deinit(self: *@This()) void {
-                // Free all provided preimage data
                 var iter = self.provided_preimages.iterator();
                 while (iter.next()) |entry| {
                     self.allocator.free(entry.value_ptr.*);
@@ -279,7 +273,7 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Reading always-accumulate services from memory at 0x{x}", .{always_accumulate_ptr});
 
             // Calculate required memory size: each entry is 12 bytes (4 bytes service ID + 8 bytes gas)
-            const required_memory_size = always_accumulate_count * 12;
+            const required_memory_size = always_accumulate_count *| 12;
 
             // Read memory for always-accumulate services
             var always_accumulate_data: PVM.Memory.MemorySlice = if (always_accumulate_count > 0)
@@ -417,7 +411,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Get registers per graypaper B.7: [o, g, m]
             const code_hash_ptr = exec_ctx.registers[7]; // Pointer to new code hash (o)
             const min_gas_limit = exec_ctx.registers[8]; // New gas limit for accumulate (g)
-            const min_memo_gas = exec_ctx.registers[9]; // New gas limit for on_transfer (m)
+            const min_memo_gas = exec_ctx.registers[9]; // Minimum gas threshold for transfers (m)
 
             span.debug("Host call: upgrade service {d}", .{ctx_regular.service_id});
             span.debug("Code hash ptr: 0x{x}, Min gas: {d}, Min memo gas: {d}", .{
@@ -469,7 +463,7 @@ pub fn HostCalls(comptime params: Params) type {
             // Get registers per graypaper B.7: [d, a, l, o]
             const destination_id = exec_ctx.registers[7]; // Destination service ID
             const amount = exec_ctx.registers[8]; // Amount to transfer
-            const gas_limit = exec_ctx.registers[9]; // Gas limit for on_transfer
+            const gas_limit = exec_ctx.registers[9]; // Gas limit (charged now, refunded after processing)
             const memo_ptr = exec_ctx.registers[10]; // Pointer to memo data
 
             span.debug("Host call: transfer from service {d} to {d}", .{
@@ -507,12 +501,12 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.WHO;
             };
 
-            // Check if gas limit is high enough for destination service's on_transfer (LOW check)
-            span.debug("Checking gas limit against destination service's min_gas_on_transfer: {d}", .{
-                destination_service.min_gas_on_transfer,
+            // Check if gas limit meets destination's minimum threshold (LOW check)
+            span.debug("Checking gas limit {d} against destination's min threshold: {d}", .{
+                gas_limit, destination_service.min_gas_on_transfer,
             });
             if (gas_limit < destination_service.min_gas_on_transfer) {
-                span.debug("Gas limit too low, returning LOW error (base 10 gas already charged)", .{});
+                span.debug("Gas limit below minimum threshold, returning LOW error", .{});
                 return HostCallError.LOW;
             }
 
@@ -562,8 +556,8 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Deducting {d} from source service balance", .{amount});
             source_service.balance -= @intCast(amount);
 
-            // Charge additional gas on success (v0.7.2 PR #488)
-            span.debug("charging {d} gas (on_transfer gas limit)", .{gas_limit});
+            // Charge transfer gas from sender (refunded after processing per §12.16)
+            span.debug("charging {d} gas (transfer gas, refunded after processing)", .{gas_limit});
             exec_ctx.gas -= @intCast(gas_limit);
 
             if (exec_ctx.gas < 0) {
@@ -1140,15 +1134,20 @@ pub fn HostCalls(comptime params: Params) type {
             };
 
             // Calculate storage footprint for the preimage
-            const additional_storage_size: u64 = 81 + preimage_size; // 81 bytes overhead + preimage size
+            // Use saturating arithmetic - if overflow, balance check will fail anyway
+            const additional_storage_size: u64 = 81 +| preimage_size;
 
             // Check if service has enough balance to store this data
             span.debug("Checking if service has enough balance to store preimage", .{});
             const footprint = service_account.getStorageFootprint(params);
-            const additional_balance_needed = params.min_balance_per_item +
-                params.min_balance_per_octet * additional_storage_size;
+            const storage_cost = params.min_balance_per_octet *| additional_storage_size;
+            const additional_balance_needed = params.min_balance_per_item +| storage_cost;
 
-            if (service_account.balance - additional_balance_needed < footprint.a_t) {
+            // Check overflow-safe: balance >= additional AND balance - additional >= threshold
+            // Equivalent to: balance < additional OR balance - additional < threshold => FULL
+            if (additional_balance_needed > service_account.balance or
+                service_account.balance - additional_balance_needed < footprint.a_t)
+            {
                 span.debug("Insufficient balance for soliciting preimage, returning FULL", .{});
                 return HostCallError.FULL;
             }
@@ -1521,7 +1520,7 @@ pub fn HostCalls(comptime params: Params) type {
             const offset = exec_ctx.registers[8]; // Offset (f)
             const limit = exec_ctx.registers[9]; // Length limit (l)
             const selector = exec_ctx.registers[10]; // Data selector
-            const index1 = @as(u32, @intCast(exec_ctx.registers[11])); // Index 1
+            const index1: u32 = @truncate(exec_ctx.registers[11]); // Index 1
 
             span.debug("Host call: fetch selector={d} index1={d}", .{ selector, index1 });
             span.debug("Output ptr: 0x{x}, offset: {d}, limit: {d}", .{ output_ptr, offset, limit });
@@ -1604,56 +1603,19 @@ pub fn HostCalls(comptime params: Params) type {
                     }
                 },
 
-                16 => {
-                    // Selector 16: Encoded transfer sequence (v0.7.1 uses generated_transfers)
-                    if (ctx_regular.generated_transfers.items.len > 0) {
-                        const transfers_data = encoding_utils.encodeTransfers(ctx_regular.allocator, ctx_regular.generated_transfers.items) catch {
-                            span.err("Failed to encode transfer sequence", .{});
-                            return HostCallError.NONE;
-                        };
-                        span.debug("Transfer sequence encoded successfully, count={d}", .{ctx_regular.generated_transfers.items.len});
-                        data_to_fetch = transfers_data;
-                        needs_cleanup = true;
-                    } else {
-                        span.debug("No deferred transfers available in accumulate context", .{});
-                        return HostCallError.NONE;
-                    }
-                },
-
-                17 => {
-                    // Selector 17: Specific transfer by index (v0.7.1 uses generated_transfers)
-                    if (ctx_regular.generated_transfers.items.len > 0) {
-                        if (index1 < ctx_regular.generated_transfers.items.len) {
-                            const transfer_item = &ctx_regular.generated_transfers.items[index1];
-                            const transfer_data = encoding_utils.encodeTransfer(ctx_regular.allocator, transfer_item) catch {
-                                span.err("Failed to encode transfer", .{});
-                                return HostCallError.NONE;
-                            };
-                            span.debug("Transfer encoded successfully: index={d}", .{index1});
-                            data_to_fetch = transfer_data;
-                            needs_cleanup = true;
-                        } else {
-                            span.debug("Transfer index out of bounds: index={d}, count={d}", .{ index1, ctx_regular.generated_transfers.items.len });
-                            return HostCallError.NONE;
-                        }
-                    } else {
-                        span.debug("No generated transfers available in accumulate context", .{});
-                        return HostCallError.NONE;
-                    }
-                },
-
-                2...13 => {
-                    // Selectors 2-13 are for work package/refine contexts only
+                2...13, 16, 17 => {
+                    // Selectors 2-13 and 16-17 not available in accumulate context per graypaper
                     // 2-3: Header data (Refine only)
                     // 4-6: Work reports (Refine only)
                     // 7-13: Work package data (Is-Authorized/Refine only)
-                    span.debug("Selector {d} not available in accumulate context (work package/refine only)", .{selector});
+                    // 16-17: Not defined for accumulate (only selectors 0,1,14,15 valid)
+                    span.debug("Selector {d} not available in accumulate context", .{selector});
                     return HostCallError.NONE;
                 },
 
                 else => {
                     // Invalid selector
-                    span.debug("Invalid fetch selector: {d} (valid for accumulate: 0,1,14,15,16,17)", .{selector});
+                    span.debug("Invalid fetch selector: {d} (valid for accumulate: 0,1,14,15)", .{selector});
                     return HostCallError.NONE;
                 },
             }

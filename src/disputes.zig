@@ -34,8 +34,6 @@ pub const Psi = struct {
         };
     }
 
-    // Register an offender
-    // TODO: add the test
     pub fn registerOffender(self: *Psi, key: PublicKey) !void {
         if (self.punish_set.contains(key)) {
             return error.OffenderAlreadyReported;
@@ -43,15 +41,12 @@ pub const Psi = struct {
         try self.punish_set.put(key, {});
     }
 
-    // Register a set of offenders
-    // TODO: add the test
     pub fn registerOffenders(self: *Psi, keys: []const PublicKey) !void {
         for (keys) |key| {
             try self.registerOffender(key);
         }
     }
 
-    // Get offenders slice - no allocation, slice is owned by Psi
     pub fn offendersSlice(self: *const Psi) []const PublicKey {
         return self.punish_set.keys();
     }
@@ -60,19 +55,20 @@ pub const Psi = struct {
         return self.punish_set.contains(key);
     }
 
-    // Get offenders with allocation (when ownership is needed)
     pub fn offendersOwned(self: *const Psi, allocator: Allocator) ![]PublicKey {
         return try allocator.dupe(PublicKey, self.punish_set.keys());
     }
 
-    // Deep clone functionality
     pub fn deepClone(self: *const Psi) !Psi {
-        return Psi{
-            .good_set = try self.good_set.clone(),
-            .bad_set = try self.bad_set.clone(),
-            .wonky_set = try self.wonky_set.clone(),
-            .punish_set = try self.punish_set.clone(),
-        };
+        var result: Psi = undefined;
+        result.good_set = try self.good_set.clone();
+        errdefer result.good_set.deinit();
+        result.bad_set = try self.bad_set.clone();
+        errdefer result.bad_set.deinit();
+        result.wonky_set = try self.wonky_set.clone();
+        errdefer result.wonky_set.deinit();
+        result.punish_set = try self.punish_set.clone();
+        return result;
     }
 
     pub fn deinit(self: *Psi) void {
@@ -83,7 +79,6 @@ pub const Psi = struct {
         self.* = undefined;
     }
 
-    // Format implementation
     pub fn format(
         self: *const @This(),
         comptime fmt: []const u8,
@@ -99,7 +94,6 @@ pub const Psi = struct {
     }
 };
 
-// Process disputes extrinsic implementation
 pub fn processDisputesExtrinsic(
     comptime core_count: u32,
     psi_prime: *Psi,
@@ -107,7 +101,6 @@ pub fn processDisputesExtrinsic(
     extrinsic: DisputesExtrinsic,
     validator_count: usize,
 ) !void {
-    // Safety assertions
     std.debug.assert(core_count > 0);
     std.debug.assert(validator_count > 0);
 
@@ -120,7 +113,6 @@ pub fn processDisputesExtrinsic(
         extrinsic.faults.len,
     });
 
-    // Process verdicts
     for (extrinsic.verdicts, 0..) |verdict, i| {
         const verdict_span = span.child(@src(), .process_verdict);
         defer verdict_span.deinit();
@@ -146,10 +138,8 @@ pub fn processDisputesExtrinsic(
         }
     }
 
-    // Clear punish set before processing new offenders
     psi_prime.punish_set.clearRetainingCapacity();
 
-    // Process culprits
     const culprits_span = span.child(@src(), .process_culprits);
     defer culprits_span.deinit();
     culprits_span.debug("Processing {d} culprits", .{extrinsic.culprits.len});
@@ -162,7 +152,6 @@ pub fn processDisputesExtrinsic(
         try psi_prime.punish_set.put(culprit.key, {});
     }
 
-    // Process faults
     const faults_span = span.child(@src(), .process_faults);
     defer faults_span.deinit();
     faults_span.debug("Processing {d} faults", .{extrinsic.faults.len});
@@ -240,7 +229,6 @@ fn verifyVerdictSignatures(
         else
             return VerificationError.BadJudgementAge;
 
-        // ZIP-215 compliant verification
         const public_key = ed25519.PublicKey.fromBytes(validator_key);
 
         const message = if (judgment.vote)
@@ -312,7 +300,6 @@ pub fn verifyDisputesExtrinsicPre(
     validator_count: usize,
     current_epoch: u32,
 ) VerificationError!void {
-    // Safety assertions
     std.debug.assert(validator_count > 0);
     std.debug.assert(kappa.len == validator_count);
     std.debug.assert(lambda.len == validator_count);
@@ -328,7 +315,6 @@ pub fn verifyDisputesExtrinsicPre(
         extrinsic.faults.len,
     });
 
-    // Check if verdicts are sorted and unique
     try verifyOrderedUnique(
         extrinsic.verdicts,
         Verdict,
@@ -338,7 +324,6 @@ pub fn verifyDisputesExtrinsicPre(
         VerificationError.VerdictsNotSortedUnique,
     );
 
-    // Verify all signatures
     for (extrinsic.verdicts) |verdict| {
         try verifyVerdictSignatures(verdict, kappa, lambda, validator_count, current_epoch);
     }
@@ -347,8 +332,6 @@ pub fn verifyDisputesExtrinsicPre(
     try verifyFaultSignatures(extrinsic.faults);
 
     for (extrinsic.verdicts) |verdict| {
-
-        // Check if the verdict has already been judged
         if (current_state.good_set.contains(verdict.target) or
             current_state.bad_set.contains(verdict.target) or
             current_state.wonky_set.contains(verdict.target))
@@ -356,7 +339,6 @@ pub fn verifyDisputesExtrinsicPre(
             return VerificationError.AlreadyJudged;
         }
 
-        // Check if judgements are sorted and unique
         try verifyOrderedUnique(
             verdict.votes,
             Judgment,
@@ -366,7 +348,6 @@ pub fn verifyDisputesExtrinsicPre(
             VerificationError.JudgementsNotSortedUnique,
         );
 
-        // Verify vote split
         const positive_votes = countPositiveJudgments(verdict);
         if (positive_votes != validator_count * 2 / 3 + 1 and
             positive_votes != 0 and
@@ -376,7 +357,6 @@ pub fn verifyDisputesExtrinsicPre(
         }
     }
 
-    // Check if culprits are sorted and unique
     try verifyOrderedUnique(
         extrinsic.culprits,
         Culprit,
@@ -386,7 +366,6 @@ pub fn verifyDisputesExtrinsicPre(
         VerificationError.CulpritsNotSortedUnique,
     );
 
-    // Check if faults are sorted and unique
     try verifyOrderedUnique(
         extrinsic.faults,
         Fault,
@@ -396,26 +375,18 @@ pub fn verifyDisputesExtrinsicPre(
         VerificationError.FaultsNotSortedUnique,
     );
 
-    // Check for enough culprits and faults
     try verifyVerdictRequirements(extrinsic.verdicts, extrinsic.culprits, extrinsic.faults, validator_count);
 
-    // Verify culprits
     for (extrinsic.culprits) |culprit| {
         if (current_state.punish_set.contains(culprit.key)) {
             return VerificationError.OffenderAlreadyReported;
         }
     }
 
-    // Verify faults
     for (extrinsic.faults) |fault| {
         if (current_state.punish_set.contains(fault.key)) {
             return VerificationError.OffenderAlreadyReported;
         }
-
-        // check if the key is part of either the kappa or the lambda set
-        // if (isKeyInSet(fault.key, kappa) or isKeyInSet(fault.key, lambda)) {
-        //     return VerificationError.FaultKeyNotInValidatorSet;
-        // }
     }
 }
 
@@ -432,16 +403,13 @@ pub fn verifyDisputesExtrinsicPost(
         extrinsic.faults.len,
     });
 
-    // Verify culprits
     for (extrinsic.culprits) |culprit| {
         if (!posterior_state.bad_set.contains(culprit.target)) {
             return VerificationError.CulpritsVerdictNotBad;
         }
     }
 
-    // Verify faults
     for (extrinsic.faults) |fault| {
-        // Check if this after state transition this is correct
         const in_good_set = posterior_state.good_set.contains(fault.target);
         const in_bad_set = posterior_state.bad_set.contains(fault.target);
         if ((fault.vote and !in_bad_set) or (!fault.vote and !in_good_set)) {

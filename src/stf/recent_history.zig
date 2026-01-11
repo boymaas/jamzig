@@ -11,8 +11,6 @@ const trace = tracing.scoped(.stf);
 
 pub const Error = error{};
 
-/// Updates the parent block's state root in Beta before reports transition
-/// This ensures that guarantees can validate against the correct state root
 pub fn updateParentBlockStateRoot(
     comptime params: Params,
     stx: *StateTransition(params),
@@ -21,13 +19,11 @@ pub fn updateParentBlockStateRoot(
     const span = trace.span(@src(), .update_parent_block_state_root);
     defer span.deinit();
 
-    // Get beta_prime to ensure we're modifying the state
     var beta_prime: *state.Beta = try stx.ensure(.beta_prime);
 
     span.debug("Updating parent block state root in beta_prime", .{});
     span.debug("Parent state root from header: {s}", .{std.fmt.fmtSliceHexLower(&parent_state_root)});
 
-    // Log current state of blocks
     if (beta_prime.recent_history.blocks.items.len > 0) {
         const last_block = beta_prime.recent_history.blocks.items[beta_prime.recent_history.blocks.items.len - 1];
         span.debug("Last block hash: {s}, current state root: {s}", .{
@@ -54,6 +50,5 @@ pub fn transition(
     span.trace("Current beta block count: {d}", .{beta_prime.recent_history.blocks.items.len});
 
     const RecentBlock = @import("../recent_blocks.zig").RecentBlock;
-    // Transition β with information from the new block
     try beta_prime.import(try RecentBlock.fromBlock(params, stx.allocator, new_block, accumulate_root));
 }

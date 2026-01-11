@@ -54,7 +54,6 @@ pub fn decodeInteger(buffer: []const u8) !DecodeResult {
     }
 
     if (first_byte == constants.EIGHT_BYTE_MARKER) {
-        // Special case: 8-byte fixed-length integer
         if (buffer.len < 9) {
             return errors.DecodingError.InsufficientData;
         }
@@ -70,7 +69,6 @@ pub fn decodeInteger(buffer: []const u8) !DecodeResult {
         return errors.DecodingError.InsufficientData;
     }
 
-    // Extract the remainder value from the buffer
     const remainder = decodeFixedLengthInteger(u64, buffer[1 .. dl.l + 1]);
 
     return DecodeResult{

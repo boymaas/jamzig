@@ -66,7 +66,7 @@ comptime {
 
     _ = @import("services.zig");
     _ = @import("services_snapshot.zig");
-    _ = @import("services_priviledged.zig");
+    _ = @import("services_privileged.zig");
 
     _ = @import("state_keys.zig");
     _ = @import("state_recovery.zig");
