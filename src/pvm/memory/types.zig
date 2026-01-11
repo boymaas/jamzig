@@ -8,15 +8,13 @@ pub const MemorySlice = struct {
     buffer: []const u8,
     allocator: ?Allocator = null,
 
-    /// Take ownership of the buffer, this object is not responsible for freeing it anymore
-    /// but it will point to the buffer, which could be internal memory. If it was pointing
-    /// to internal memory, we will dupe so the caller can safely use it
+    // If buffer points to internal memory, dupe it for caller safety.
+    // Otherwise transfer ownership by clearing allocator reference.
     pub fn takeBufferOwnership(self: *MemorySlice, allocator: Allocator) ![]const u8 {
         if (self.allocator) |_| {
-            self.allocator = null; // Clear allocator reference
+            self.allocator = null;
             return self.buffer;
         } else {
-            // Buffer is internal memory, create a copy for the caller
             const owned_copy = try allocator.dupe(u8, self.buffer);
             return owned_copy;
         }

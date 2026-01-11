@@ -35,7 +35,7 @@ pub const FlatMemory = struct {
     heap_top: u32,
     heap_data: []u8,
 
-    // Compatiblity fields
+    // Compatibility fields
     read_only_size_in_pages: u32,
     stack_size_in_pages: u32,
     heap_size_in_pages: u32,
@@ -76,10 +76,8 @@ pub const FlatMemory = struct {
         const span = trace.span(@src(), .memory_init);
         defer span.deinit();
 
-        // Convert stack size from bytes to pages
         const stack_size_in_pages = try shared.sizeInBytesToPages(stack_size_in_bytes);
 
-        // Create memory with the given data
         var memory = try init(
             allocator,
             read_only.len,
@@ -90,7 +88,6 @@ pub const FlatMemory = struct {
             dynamic_allocation,
         );
 
-        // Initialize the memory segments
         if (read_only.len > 0) {
             @memcpy(memory.read_only_data[0..read_only.len], read_only);
         }
@@ -114,11 +111,9 @@ pub const FlatMemory = struct {
         const span = trace.span(@src(), .init);
         defer span.deinit();
 
-        // Calculate aligned sizes
         const heap_initial_size = try shared.alignToPageSize(read_write_size_in_bytes) + (heap_size_in_pages * Z_P);
         const stack_size = stack_size_in_pages * Z_P;
 
-        // Pre-allocate all memory regions
         const read_only_data: []u8 = if (read_only_size_in_bytes > 0) blk: {
             const data = try allocator.alloc(u8, read_only_size_in_bytes);
             @memset(data, 0);
@@ -131,24 +126,18 @@ pub const FlatMemory = struct {
             break :blk data;
         } else &[_]u8{};
 
-        // Pre-allocate heap with 4x capacity for growth (4x is a common growth factor that
-        // balances memory usage vs reallocation frequency)
+        // 4x capacity growth factor balances memory usage vs reallocation frequency
         const heap_base = try HEAP_BASE_ADDRESS(read_only_size_in_bytes);
         const stack_bottom = try STACK_BOTTOM_ADDRESS(stack_size_in_pages);
 
-        // Calculate maximum heap space available (space between heap base and stack bottom)
-        // This is determined by the PVM memory layout as defined in the graypaper
         const max_heap_space = stack_bottom - heap_base;
         _ = max_heap_space;
 
-        // Allocate minimal heap - at least one page for growth, or just enough for initial data
         const heap_data = try allocator.alloc(u8, heap_initial_size);
         @memset(heap_data, 0);
 
-        // Copy input data
         const input_data = try allocator.dupe(u8, input_data_bytes);
 
-        // Calculate base addresses (already calculated above for capacity check)
         const read_only_base = READ_ONLY_BASE_ADDRESS;
         const input_base = INPUT_ADDRESS;
         const stack_base = STACK_BASE_ADDRESS;
@@ -172,7 +161,7 @@ pub const FlatMemory = struct {
             .input_size_in_bytes = @intCast(input_data_bytes.len),
             .input_data = input_data,
             .heap_base = heap_base,
-            .heap_top = heap_base + heap_initial_size, // Only initial read-write data is accessible
+            .heap_top = heap_base + heap_initial_size,
             .heap_data = heap_data,
             .read_only_size_in_pages = try shared.sizeInBytesToPages(read_only_size_in_bytes),
             .stack_size_in_pages = stack_size_in_pages,
@@ -190,10 +179,7 @@ pub const FlatMemory = struct {
         self.* = undefined;
     }
 
-    /// Direct memory pointer lookup - O(1) with range checks
-    /// Returns either a successful pointer or violation information
     inline fn getMemoryPtr(self: *FlatMemory, address: u32, size: usize, check_write: bool) MemoryAccessResult {
-        // Check stack region
         if (address >= self.stack_bottom and address < self.stack_base) {
             if (address +| size <= self.stack_base) {
                 const offset = address - self.stack_bottom;
@@ -201,8 +187,6 @@ pub const FlatMemory = struct {
             }
         }
 
-        // Check heap region
-        //
         // CRITICAL: Use heap_data.len, NOT heap_top for bounds checking
         //
         // Graypaper defines ram_access as sequence[2^32/4096] - PAGE-INDEXED permissions (overview.tex:176)
@@ -222,7 +206,6 @@ pub const FlatMemory = struct {
         // while heap_top is just an optimization cursor (not a permission boundary).
         const heap_limit = self.heap_base + @as(u32, @intCast(self.heap_data.len));
         if (address >= self.heap_base and address < heap_limit) {
-            // Check for overflow: address + size must not wrap around
             const end_addr = address +| size;
             if (end_addr <= heap_limit and end_addr >= address) {
                 const offset = address - self.heap_base;
@@ -230,7 +213,6 @@ pub const FlatMemory = struct {
             }
         }
 
-        // Check read-only section
         const ro_end = self.read_only_base + self.read_only_size;
         if (address >= self.read_only_base and address < ro_end) {
             if (address +| size <= ro_end) {
@@ -249,7 +231,6 @@ pub const FlatMemory = struct {
             }
         }
 
-        // Check input
         const input_end = self.input_base + self.input_size_in_bytes;
         if (address >= self.input_base and address < input_end) {
             if (address +| size <= input_end) {
@@ -268,7 +249,6 @@ pub const FlatMemory = struct {
             }
         }
 
-        // Page fault - address not in any valid region
         const violation = ViolationInfo{
             .violation_type = .NonAllocated,
             .address = (address +| @as(u32, @intCast(size))) & ~(Z_P - 1),
@@ -402,13 +382,12 @@ pub const FlatMemory = struct {
         }
     }
 
-    /// Initialize memory (for program loading)
+    // Bypasses write permission checks - used only during initialization
     pub fn initMemory(self: *FlatMemory, address: u32, data: []const u8) !void {
         const span = trace.span(@src(), .memory_init);
         defer span.deinit();
         span.debug("Initializing memory at 0x{X:0>8} with {d} bytes", .{ address, data.len });
 
-        // Direct memory write without permission checks (for initialization)
         switch (self.getMemoryPtr(address, data.len, false)) {
             .success => |ptr| {
                 @memcpy(ptr[0..data.len], data);
@@ -436,29 +415,24 @@ pub const FlatMemory = struct {
         const new_top = brk: {
             const r = @addWithOverflow(old_top, size);
 
-            // Critical boundary checks
-            // Check for overflow
             if (r[1] == 1) {
                 span.err("Arithmetic overflow detected: 0x{X:0>8} + {d} overflows", .{ old_top, size });
-                return 0; // Return 0 on failure (per spec)
+                return 0;
             }
             break :brk r[0];
         };
 
-        // Check stack collision
         if (new_top >= self.stack_bottom) {
             span.err("Stack collision: new heap top 0x{X:0>8} >= stack bottom 0x{X:0>8}", .{ new_top, self.stack_bottom });
-            return 0; // Return 0 on failure (per spec)
+            return 0;
         }
 
-        // Calculate current and required capacity in pages
         const current_heap_size = self.heap_top - self.heap_base;
         const new_heap_size = new_top - self.heap_base;
 
         const current_capacity_pages = try shared.sizeInBytesToPages(current_heap_size);
         const required_capacity_pages = try shared.sizeInBytesToPages(new_heap_size);
 
-        // Only reallocate if we need more pages
         if (required_capacity_pages > current_capacity_pages) {
             const new_capacity_bytes = required_capacity_pages * Z_P;
             span.debug("Growing heap from {d} pages to {d} pages ({d} to {d} bytes)", .{ current_capacity_pages, required_capacity_pages, self.heap_data.len, new_capacity_bytes });
@@ -468,7 +442,6 @@ pub const FlatMemory = struct {
                 return 0;
             };
 
-            // Zero-initialize the new memory
             @memset(self.heap_data[current_heap_size..new_capacity_bytes], 0);
         }
 
@@ -502,7 +475,6 @@ pub const FlatMemory = struct {
         const span = trace.span(@src(), .memory_deep_clone);
         defer span.deinit();
 
-        // Clone all memory regions
         const read_only_data = if (self.read_only_data.len > 0)
             try allocator.dupe(u8, self.read_only_data)
         else
@@ -542,35 +514,28 @@ pub const FlatMemory = struct {
 
     // Test API functions - cleaner interface for test setup and validation
 
-    /// Initialize empty memory for testing
     pub fn initEmpty(allocator: Allocator, dynamic: bool) !FlatMemory {
-        // Create minimal memory with small sections for testing
         return init(allocator, 0, 0, 0, 0, &[_]u8{}, dynamic);
     }
 
-    /// Allocate a single page at a specific address for testing
     pub fn allocatePageAt(self: *FlatMemory, address: u32, writable: bool) !void {
         return self.allocatePagesAt(address, Z_P, writable);
     }
 
-    /// Allocate memory region for testing
     pub fn allocatePagesAt(self: *FlatMemory, address: u32, size: u32, writable: bool) !void {
         const span = trace.span(@src(), .allocate_test_region);
         defer span.deinit();
         _ = writable;
 
-        // Calculate page-aligned size
         const aligned_size = try shared.alignToPageSize(size);
         span.trace("Allocating test region at 0x{X:0>8} of size {d} bytes (aligned to {d} bytes)\n", .{ address, size, aligned_size });
 
-        // Check if the address matches the start of the heap
         if (address == self.read_only_base) {
             span.trace("Allocating {d} read only pages", .{aligned_size / Z_P});
             const new_data = try self.allocator.realloc(self.read_only_data, aligned_size);
             @memset(new_data, 0);
             self.read_only_data = new_data;
             self.read_only_size = @intCast(new_data.len);
-            // There are some addresses requiring multiple heap pages
         } else if (address >= self.heap_base) {
             const pages = ((address +| aligned_size) - self.heap_base) / Z_P;
             span.trace("Allocating {d} heap pages", .{pages});
@@ -582,8 +547,6 @@ pub const FlatMemory = struct {
             self.heap_data = new_heap_data;
             self.heap_top = self.heap_base + @as(u32, @intCast(new_heap_data.len));
         } else {
-            // For non-heap addresses, this is not implemented
-            // Tests should use standard init functions for other memory regions
             std.debug.panic("allocateTestRegion: address 0x{X:0>8} not supported (expected heap at 0x{X:0>8})\n", .{ address, self.heap_base });
         }
     }
@@ -611,7 +574,6 @@ pub const FlatMemory = struct {
             regions.deinit();
         }
 
-        // Helper function to add pages for a memory section
         const addPagesForSection = struct {
             fn add(
                 region_list: *std.ArrayList(MemoryRegion),
