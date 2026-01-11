@@ -6,8 +6,11 @@ const state = @import("../state.zig");
 const state_delta = @import("../state_delta.zig");
 const jam_params = @import("../jam_params.zig");
 const meta = @import("../meta.zig");
+const services = @import("../services.zig");
 
 const HashSet = @import("../datastruct/hash_set.zig").HashSet;
+const DeltaSnapshot = @import("../services_snapshot.zig").DeltaSnapshot;
+const Delta = services.Delta;
 
 const trace = @import("tracing").scoped(.accumulate);
 
@@ -37,12 +40,6 @@ pub const AccumulationServiceStats = struct {
     accumulated_count: u32,
 };
 
-/// Statistics for transfers targeting a single service within a block (Part of 'X' stats).
-pub const TransferServiceStats = struct {
-    transfer_count: u32 = 0,
-    gas_used: u64 = 0,
-};
-
 /// Result of the outer accumulation function
 pub const OuterAccumulationResult = struct {
     accumulated_count: usize,
@@ -68,14 +65,11 @@ pub const OuterAccumulationResult = struct {
 pub const ProcessAccumulationResult = struct {
     accumulate_root: types.AccumulateRoot,
     accumulation_stats: std.AutoHashMap(types.ServiceId, AccumulationServiceStats),
-    transfer_stats: std.AutoHashMap(types.ServiceId, TransferServiceStats),
-    invoked_services: std.AutoArrayHashMap(types.ServiceId, void), // v0.7.2: Track ALL invoked services
+    invoked_services: std.AutoArrayHashMap(types.ServiceId, void),
 
     pub fn deinit(self: *@This(), _: std.mem.Allocator) void {
-        // Deinit maps
         self.accumulation_stats.deinit();
-        self.transfer_stats.deinit();
-        self.invoked_services.deinit(); // v0.7.2
+        self.invoked_services.deinit();
         self.* = undefined;
     }
 };
@@ -156,6 +150,7 @@ pub fn outerAccumulation(
         }
 
         // Process reports in parallel with pending transfers
+        // Balance crediting happens inside singleServiceAccumulation after context cloning
         var parallelized_result = try parallelizedAccumulation(
             IOExecutor,
             io_executor,
@@ -218,7 +213,9 @@ pub fn outerAccumulation(
 
         // Apply context changes from all service dimensions (after preimages are applied)
         // This commits the dimension state to the context's Delta
-        try parallelized_result.applyContextChanges();
+        // Uses two-phase commit: deletions collected first, then applied globally to prevent
+        // ejected services from being restored by their own concurrent modifications.
+        try parallelized_result.applyContextChanges(allocator);
 
         span.debug("Applied state changes for all services", .{});
 
@@ -316,11 +313,53 @@ pub fn ParallelizedAccumulationResult(params: jam_params.Params) type {
             };
         }
 
-        /// Apply context changes from all service dimensions
-        pub fn applyContextChanges(self: *@This()) !void {
+        /// Apply context changes from all service dimensions.
+        /// Per graypaper Eq. 12.17: δ' = (δ ∪ n) \ m
+        /// First apply all modifications (∪ n), then enforce deletions (\ m).
+        /// See: https://github.com/davxy/jam-conformance/discussions/148
+        pub fn applyContextChanges(self: *@This(), allocator: std.mem.Allocator) !void {
+            const span = trace.span(@src(), .apply_context_changes);
+            defer span.deinit();
+
+            // Phase 1: Collect ALL deleted service IDs from ALL snapshots
+            var global_deletions = std.AutoHashMap(types.ServiceId, void).init(allocator);
+            defer global_deletions.deinit();
+
+            var first_snapshot: ?*const DeltaSnapshot = null;
+            {
+                var it = self.service_results.iterator();
+                while (it.next()) |entry| {
+                    const snapshot = &entry.value_ptr.collapsed_dimension.context.service_accounts;
+                    if (first_snapshot == null) first_snapshot = snapshot;
+                    var deleted_it = snapshot.deleted_services.keyIterator();
+                    while (deleted_it.next()) |id| {
+                        try global_deletions.put(id.*, {});
+                    }
+                }
+            }
+
+            if (global_deletions.count() > 0) {
+                span.debug("Collected {d} global deletions across all services", .{global_deletions.count()});
+            }
+
+            // Phase 2: Normal commits (apply all modifications)
             var it = self.service_results.iterator();
             while (it.next()) |entry| {
                 try entry.value_ptr.collapsed_dimension.commit();
+            }
+
+            // Phase 3: Enforce deletions - remove all globally deleted services
+            if (global_deletions.count() > 0) {
+                if (first_snapshot) |snapshot| {
+                    const destination: *Delta = @constCast(snapshot.original);
+                    var deletion_it = global_deletions.keyIterator();
+                    while (deletion_it.next()) |deleted_id| {
+                        if (destination.accounts.fetchRemove(deleted_id.*)) |removed| {
+                            span.debug("Final cleanup: removed globally deleted service {d}", .{deleted_id.*});
+                            @constCast(&removed.value).deinit();
+                        }
+                    }
+                }
             }
         }
 
@@ -575,14 +614,33 @@ pub fn singleServiceAccumulation(
     const span = trace.span(@src(), .single_service_accumulation);
     defer span.deinit();
 
-    // Assertions - function parameters are guaranteed to be valid
+    // Make context mutable for balance crediting
+    var mutable_context = context;
 
-    // Filter transfers for this service
+    // Get service account upfront - exit early if service doesn't exist (may have been ejected)
+    const dest_account = mutable_context.service_accounts.getMutable(service_id) catch {
+        return try pvm_accumulate.AccumulationResult(params).createEmpty(allocator, mutable_context, service_id);
+    } orelse {
+        return try pvm_accumulate.AccumulationResult(params).createEmpty(allocator, mutable_context, service_id);
+    };
+
+    // Count transfers and sum gas/amount for this service
     var transfers_for_service_count: usize = 0;
+    var transfers_gas: types.Gas = 0;
+    var total_transfer_amount: u64 = 0;
+
     for (incoming_transfers) |transfer| {
         if (transfer.destination == service_id) {
             transfers_for_service_count += 1;
+            transfers_gas += transfer.gas_limit;
+            total_transfer_amount += transfer.amount;
         }
+    }
+
+    // Credit all transfers at once (per graypaper: balance credited before PVM invocation)
+    if (total_transfer_amount > 0) {
+        dest_account.balance += total_transfer_amount;
+        span.trace("Credited {d} to service {d} balance", .{ total_transfer_amount, service_id });
     }
 
     span.debug("Starting accumulation for service {d} with {d} operands, {d} transfers", .{
@@ -591,29 +649,21 @@ pub fn singleServiceAccumulation(
 
     // Calculate gas limit: from operands OR from transfers
     const operands_gas = if (service_operands) |so| so.calcGasLimit() else 0;
-    const transfers_gas = blk: {
-        var total: types.Gas = 0;
-        for (incoming_transfers) |transfer| {
-            if (transfer.destination == service_id) {
-                total += transfer.gas_limit;
-            }
-        }
-        break :blk total;
-    };
 
     // Either privileged service OR has operands OR has incoming transfers
-    const gas_limit = context.privileges.getReadOnly().always_accumulate.get(service_id) orelse
+    const gas_limit = mutable_context.privileges.getReadOnly().always_accumulate.get(service_id) orelse
         (operands_gas + transfers_gas);
 
-    // Exit early if we have a gas_limit of 0
+    // Exit early if gas_limit is 0 (no PVM execution needed)
+    // Balance crediting already happened above before this check
     if (gas_limit == 0) {
-        return try pvm_accumulate.AccumulationResult(params).createEmpty(allocator, context, service_id);
+        return try pvm_accumulate.AccumulationResult(params).createEmpty(allocator, mutable_context, service_id);
     }
 
     return try pvm_accumulate.invoke(
         params,
         allocator,
-        context,
+        mutable_context,
         service_id,
         gas_limit,
         if (service_operands) |so| so.accumulationOperandSlice() else &[_]AccumulationOperand{},

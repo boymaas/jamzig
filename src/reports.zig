@@ -283,8 +283,11 @@ pub fn processGuaranteeExtrinsic(
         }
     }
 
+    const reported_slice = try reported.toOwnedSlice();
+    errdefer allocator.free(reported_slice);
+
     return .{
-        .reported = try reported.toOwnedSlice(),
+        .reported = reported_slice,
         .reporters = try reporters.toOwnedSlice(),
     };
 }

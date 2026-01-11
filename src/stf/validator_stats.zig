@@ -15,7 +15,7 @@ pub const ValidatorStatsInput = struct {
     assurances: []const types.AvailAssurance,
     tickets_count: u32,
     preimages: []const types.Preimage,
-    guarantor_validators: []const types.ValidatorIndex,
+    guarantor_reporters: []const types.Ed25519Public,
     assurance_validators: []const types.ValidatorIndex,
 
     pub const Empty = ValidatorStatsInput{
@@ -24,7 +24,7 @@ pub const ValidatorStatsInput = struct {
         .assurances = &[_]types.AvailAssurance{},
         .tickets_count = 0,
         .preimages = &[_]types.Preimage{},
-        .guarantor_validators = &[_]types.ValidatorIndex{},
+        .guarantor_reporters = &[_]types.Ed25519Public{},
         .assurance_validators = &[_]types.ValidatorIndex{},
     };
 
@@ -35,14 +35,14 @@ pub const ValidatorStatsInput = struct {
             .assurances = block.extrinsic.assurances.data,
             .tickets_count = @intCast(block.extrinsic.tickets.data.len),
             .preimages = block.extrinsic.preimages.data,
-            .guarantor_validators = &[_]types.ValidatorIndex{},
+            .guarantor_reporters = &[_]types.Ed25519Public{},
             .assurance_validators = &[_]types.ValidatorIndex{},
         };
     }
 
-    pub fn fromBlockWithValidators(
+    pub fn fromBlockWithReporters(
         block: *const types.Block,
-        guarantor_validators: []const types.ValidatorIndex,
+        guarantor_reporters: []const types.Ed25519Public,
         assurance_validators: []const types.ValidatorIndex,
     ) ValidatorStatsInput {
         return ValidatorStatsInput{
@@ -51,7 +51,7 @@ pub const ValidatorStatsInput = struct {
             .assurances = block.extrinsic.assurances.data,
             .tickets_count = @intCast(block.extrinsic.tickets.data.len),
             .preimages = block.extrinsic.preimages.data,
-            .guarantor_validators = guarantor_validators,
+            .guarantor_reporters = guarantor_reporters,
             .assurance_validators = assurance_validators,
         };
     }
@@ -117,9 +117,19 @@ pub fn transitionWithInput(
         stats.octets_across_preimages += total_octets;
     }
 
-    for (input.guarantor_validators) |validator_index| {
-        var stats = try pi.getValidatorStats(validator_index);
-        stats.reports_guaranteed += 1;
+    // GP statistics.tex: a'[v].guarantees = a[v].guarantees + (κ'[v] ∈ M)
+    // Iterate through κ' and check if each validator's Ed25519 key is in reporters set M
+    const kappa_prime: *const state.Kappa = try stx.ensure(.kappa_prime);
+
+    for (kappa_prime.validators, 0..) |validator, v| {
+        // Check if this validator's Ed25519 key is in the reporters set
+        for (input.guarantor_reporters) |reporter_key| {
+            if (std.mem.eql(u8, &validator.ed25519, &reporter_key)) {
+                var stats = try pi.getValidatorStats(@intCast(v));
+                stats.reports_guaranteed += 1;
+                break;
+            }
+        }
     }
 
     for (input.assurance_validators) |validator_index| {
@@ -156,9 +166,6 @@ pub fn transitionWithInput(
         service_stats.accumulate_count += stats_I.accumulated_count;
         service_stats.accumulate_gas_used += stats_I.gas_used;
     }
-
-    // GP v0.7.1: on_transfers stats removed (GP #457)
-    _ = accumulate_result.transfer_stats;
 }
 
 pub fn transition(
@@ -173,9 +180,9 @@ pub fn transition(
     const span = trace.span(@src(), .validator_stats);
     defer span.deinit();
 
-    const input = ValidatorStatsInput.fromBlockWithValidators(
+    const input = ValidatorStatsInput.fromBlockWithReporters(
         block,
-        reports_result.validator_indices,
+        reports_result.getReporters(),
         assurance_result.validator_indices,
     );
 
