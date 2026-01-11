@@ -119,15 +119,17 @@ pub fn transitionWithInput(
 
     // GP statistics.tex: a'[v].guarantees = a[v].guarantees + (κ'[v] ∈ M)
     // Iterate through κ' and check if each validator's Ed25519 key is in reporters set M
-    const kappa_prime: *const state.Kappa = try stx.ensure(.kappa_prime);
+    if (input.guarantor_reporters.len > 0) {
+        const kappa_prime: *const state.Kappa = try stx.ensure(.kappa_prime);
 
-    for (kappa_prime.validators, 0..) |validator, v| {
-        // Check if this validator's Ed25519 key is in the reporters set
-        for (input.guarantor_reporters) |reporter_key| {
-            if (std.mem.eql(u8, &validator.ed25519, &reporter_key)) {
-                var stats = try pi.getValidatorStats(@intCast(v));
-                stats.reports_guaranteed += 1;
-                break;
+        for (kappa_prime.validators, 0..) |validator, v| {
+            // Check if this validator's Ed25519 key is in the reporters set
+            for (input.guarantor_reporters) |reporter_key| {
+                if (std.mem.eql(u8, &validator.ed25519, &reporter_key)) {
+                    var stats = try pi.getValidatorStats(@intCast(v));
+                    stats.reports_guaranteed += 1;
+                    break;
+                }
             }
         }
     }

@@ -18,7 +18,7 @@ pub fn buildValidatorStatsInput(test_case: *const tvector.TestCase) stats.Valida
         .assurances = &[_]types.AvailAssurance{}, // Empty as test vectors don't include assurances
         .tickets_count = 0, // No tickets in the test vector
         .preimages = &[_]types.Preimage{}, // No preimages in the test vector
-        .guarantor_validators = &[_]types.ValidatorIndex{}, // Empty for test vectors
+        .guarantor_reporters = &[_]types.Ed25519Public{}, // Empty for test vectors
         .assurance_validators = &[_]types.ValidatorIndex{}, // Empty for test vectors
     };
 }
