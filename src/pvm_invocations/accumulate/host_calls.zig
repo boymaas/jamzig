@@ -16,13 +16,10 @@ const HostCallError = host_calls.HostCallError;
 
 const PVM = @import("../../pvm.zig").PVM;
 
-// Add tracing import
 const trace = @import("tracing").scoped(.host_calls);
 
-// Import shared encoding utilities
 const encoding_utils = @import("../encoding_utils.zig");
 
-// Import accumulate module for TransferOperand
 const pvm_accumulate = @import("../accumulate.zig");
 
 pub fn HostCalls(comptime params: Params) type {
@@ -122,11 +119,9 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             pub fn deepClone(self: *const @This()) !@This() {
-                // Create a new context with the same allocator
                 var cloned_preimages = std.AutoHashMap(ProvidedKey, []const u8).init(self.allocator);
                 errdefer cloned_preimages.deinit();
 
-                // Clone all provided preimages
                 var iter = self.provided_preimages.iterator();
                 while (iter.next()) |entry| {
                     const data_copy = try self.allocator.dupe(u8, entry.value_ptr.*);
@@ -163,7 +158,6 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             pub fn deinit(self: *@This()) void {
-                // Free all provided preimage data
                 var iter = self.provided_preimages.iterator();
                 while (iter.next()) |entry| {
                     self.allocator.free(entry.value_ptr.*);
