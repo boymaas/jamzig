@@ -202,9 +202,29 @@ pub const FlatMemory = struct {
         }
 
         // Check heap region
-        if (address >= self.heap_base and address < self.heap_top) {
+        //
+        // CRITICAL: Use heap_data.len, NOT heap_top for bounds checking
+        //
+        // Graypaper defines ram_access as sequence[2^32/4096] - PAGE-INDEXED permissions (overview.tex:176)
+        // This makes byte-granular permissions impossible; only full pages can be marked W/R/⊥
+        //
+        // When sbrk(n) marks range [x, x+n) writable per spec (pvm.tex:441):
+        // → Must set ram_access[page] = W for all pages overlapping [x, x+n)
+        // → ENTIRE pages become writable, including bytes beyond n
+        //
+        // Example: sbrk(500) allocates page [0x33000, 0x34000)
+        //   heap_top = 0x33000 + 500 = 0x331f4 (cursor for next sbrk)
+        //   heap_data.len = 4096 (entire page allocated)
+        //   Bytes [0x331f4, 0x34000) are WRITABLE per graypaper (same page)
+        //   Programs can legally read/write this "gap" - it's not a bug!
+        //
+        // Therefore heap_data.len represents all pages with ram_access=W (graypaper-compliant)
+        // while heap_top is just an optimization cursor (not a permission boundary).
+        const heap_limit = self.heap_base + @as(u32, @intCast(self.heap_data.len));
+        if (address >= self.heap_base and address < heap_limit) {
             // Check for overflow: address + size must not wrap around
-            if (address +| size <= self.heap_top) {
+            const end_addr = address +| size;
+            if (end_addr <= heap_limit and end_addr >= address) {
                 const offset = address - self.heap_base;
                 return .{ .success = self.heap_data.ptr + offset };
             }
