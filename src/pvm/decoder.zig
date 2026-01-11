@@ -79,14 +79,12 @@ pub const Decoder = struct {
         pub inline fn zeroes(len: u8) CodeSlice {
             var self = CodeSlice{ .len = len };
 
-            // fill the length with 0
             for (0..len) |idx| {
                 self.buffer[idx] = 0x00;
             }
             return self;
         }
 
-        // Initialize from slice
         pub inline fn fromSlice(slice: []const u8) Error!CodeSlice {
             std.debug.assert(slice.len <= MaxInstructionSizeInBytes);
             var self = CodeSlice{ .len = @intCast(slice.len) };
@@ -94,15 +92,12 @@ pub const Decoder = struct {
             return self;
         }
 
-        // Initialize from slice, when len extends code slice
         pub inline fn fromSliceExtended(slice: []const u8, len: u8) CodeSlice {
             std.debug.assert(len > slice.len);
             var self = CodeSlice{ .len = len };
-            // copy slice into buffer
             for (slice, self.buffer[0..slice.len]) |s, *b| {
                 b.* = s;
             }
-            // fill the extended length with 0
             for (slice.len..len) |idx| {
                 self.buffer[idx] = 0x00;
             }
@@ -116,23 +111,18 @@ pub const Decoder = struct {
         }
         const end = pc + len;
         if (pc <= self.code.len and end > self.code.len) {
-            // we are extending the code, return 0 buffer
             return CodeSlice.fromSliceExtended(self.code[pc..], @intCast(len));
         } else if (pc > self.code.len) {
-            // if pc is outside of code.len
             return CodeSlice.zeroes(@intCast(len));
         }
-        // just return the code slice
         return try CodeSlice.fromSlice(self.code[pc..][0..len]);
     }
 
     pub fn getMaskAt(self: *const @This(), mask_index: u32) u8 {
         if (mask_index < self.mask.len) {
-            // If this is the last byte of the mask, handle padding
             if (mask_index == self.mask.len - 1) {
                 const remaining_bits = self.code.len % 8;
                 if (remaining_bits > 0) {
-                    // Set all bits after the code length to 1
                     const padding_mask = @as(u8, 0xFF) << @intCast(remaining_bits);
                     return self.mask[mask_index] | padding_mask;
                 }
