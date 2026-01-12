@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const testing = std.testing;
 
@@ -19,31 +20,26 @@ const state_dictionary = @import("../state_dictionary.zig");
 const tracing = @import("tracing");
 const trace = tracing.scoped(.trace_runner);
 
-// Type aliases for common configurations
 const EmbeddedFuzzer = fuzzer_mod.Fuzzer(
     io.SequentialExecutor,
     embedded_target.EmbeddedTarget(io.SequentialExecutor, jam_params.TINY_PARAMS),
     jam_params.TINY_PARAMS,
 );
 
-// Entropy validation function for debugging epoch 0 issues
 // NOTE: I checked the eta serializatoin adn deserialization against the format
 fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedFuzzer, header: types.Header) !void {
     const span = trace.span(@src(), .validate_initial_entropy);
     defer span.deinit();
 
-    // Get the fuzz protocol state from the target
     const header_hash = std.mem.asBytes(&header.parent);
     var fuzz_state = try fuzzer.getState(header_hash.*);
     defer fuzz_state.deinit(fuzzer.allocator);
 
-    // Convert fuzz state to JAM state
     var target_state = try state_converter.fuzzStateToJamState(params, fuzzer.allocator, fuzz_state);
     defer target_state.deinit(fuzzer.allocator);
 
     const time = params.Time().init(target_state.tau.?, header.slot);
 
-    // Only validate for epoch 0
     if (time.current_epoch != 0) {
         span.debug("Skipping entropy validation - not epoch 0 (epoch={d})", .{time.current_epoch});
         return;
@@ -51,7 +47,6 @@ fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedF
 
     span.debug("=== ENTROPY VALIDATION FOR EPOCH 0 ===", .{});
 
-    // Get entropy values
     const eta = target_state.eta.?;
     span.debug("Current eta values:", .{});
     span.debug("  eta[0] (accumulator): {s}", .{std.fmt.fmtSliceHexLower(&eta[0])});
@@ -59,12 +54,10 @@ fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedF
     span.debug("  eta[2] (2 epochs ago): {s}", .{std.fmt.fmtSliceHexLower(&eta[2])});
     span.debug("  eta[3] (3 epochs ago): {s}", .{std.fmt.fmtSliceHexLower(&eta[3])});
 
-    // Show validator sets
     span.debug("Validator set info:", .{});
     span.debug("  kappa.len: {d}", .{target_state.kappa.?.len()});
     span.debug("  gamma.k.len: {d}", .{target_state.gamma.?.k.len()});
 
-    // Generate fallback key sequence using different entropy values to debug
     const entropy_options = [_]struct { name: []const u8, value: [32]u8 }{
         .{ .name = "eta[0]", .value = eta[0] },
         .{ .name = "eta[1]", .value = eta[1] },
@@ -75,46 +68,39 @@ fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedF
     for (entropy_options) |entropy_option| {
         span.debug("Testing with {s}:", .{entropy_option.name});
 
-        // Compute expected author for first 12 slots
         for (0..12) |slot| {
             const expected_index = entropy_handler.deriveKeyIndex(entropy_option.value, slot, target_state.kappa.?.len());
             span.debug("  Slot {d}: Expected author index = {d} (using {s})", .{ slot, expected_index, entropy_option.name });
         }
     }
 
-    // Show all validator sets and their relationships
     span.debug("", .{});
     span.debug("=== VALIDATOR SETS OVERVIEW ===", .{});
 
-    // Lambda (λ) - Archived validators
     if (target_state.lambda) |lambda| {
         span.debug("Lambda (archived validators): {d} validators", .{lambda.len()});
     } else {
         span.debug("Lambda: not set", .{});
     }
 
-    // Kappa (κ) - Active validator set
     if (target_state.kappa) |kappa| {
         span.debug("Kappa (active validators): {d} validators", .{kappa.len()});
     } else {
         span.debug("Kappa: not set", .{});
     }
 
-    // Gamma.k (γ.k) - Next epoch's validator set
     if (target_state.gamma) |gamma| {
         span.debug("Gamma.k (next epoch validators): {d} validators", .{gamma.k.len()});
     } else {
         span.debug("Gamma.k: not set", .{});
     }
 
-    // Iota (ι) - Upcoming validator set (after gamma.k)
     if (target_state.iota) |iota| {
         span.debug("Iota (upcoming validators): {d} validators", .{iota.len()});
     } else {
         span.debug("Iota: not set", .{});
     }
 
-    // Check if gamma.s contains keys (not tickets) and show their indices in all validator sets
     if (target_state.gamma) |gamma| {
         switch (gamma.s) {
             .keys => |keys| {
@@ -122,11 +108,9 @@ fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedF
                 span.debug("=== GAMMA.S.KEYS MAPPING ACROSS ALL VALIDATOR SETS ===", .{});
                 span.debug("Found {d} keys in gamma.s.keys", .{keys.len});
 
-                // For each key in gamma.s.keys, find its index in ALL validator sets
                 for (keys, 0..) |gamma_key, gamma_index| {
                     span.debug("  gamma.s.keys[{d}]:", .{gamma_index});
 
-                    // Search in Lambda
                     if (target_state.lambda) |lambda| {
                         for (lambda.validators, 0..) |validator, index| {
                             if (std.mem.eql(u8, &gamma_key, &validator.bandersnatch)) {
@@ -136,7 +120,6 @@ fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedF
                         }
                     }
 
-                    // Search in Kappa
                     if (target_state.kappa) |kappa| {
                         for (kappa.validators, 0..) |validator, index| {
                             if (std.mem.eql(u8, &gamma_key, &validator.bandersnatch)) {
@@ -146,7 +129,6 @@ fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedF
                         }
                     }
 
-                    // Search in Gamma.k
                     for (gamma.k.validators, 0..) |validator, index| {
                         if (std.mem.eql(u8, &gamma_key, &validator.bandersnatch)) {
                             span.debug("    -> Gamma.k index: {d}", .{index});
@@ -154,7 +136,6 @@ fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedF
                         }
                     }
 
-                    // Search in Iota
                     if (target_state.iota) |iota| {
                         for (iota.validators, 0..) |validator, index| {
                             if (std.mem.eql(u8, &gamma_key, &validator.bandersnatch)) {
@@ -176,7 +157,6 @@ fn validateInitialEntropy(comptime params: jam_params.Params, fuzzer: *EmbeddedF
     span.debug("=== END ENTROPY VALIDATION ===", .{});
 }
 
-// Trace processing result types
 pub const Success = struct { post_root: [32]u8 };
 pub const Fork = struct { expected_parent: [32]u8, actual_parent: [32]u8 };
 pub const NoOp = struct { error_name: []const u8 };
@@ -199,7 +179,6 @@ pub const TraceResult = union(enum) {
     }
 };
 
-// Lazy-loading trace iterator
 pub const TraceIterator = struct {
     allocator: std.mem.Allocator,
     loader: trace_runner.Loader,
@@ -222,7 +201,6 @@ pub const TraceIterator = struct {
 
         span.debug("Loading transition {d}: {s}", .{ self.index, transition_pair.bin.name });
 
-        // Load and parse only when requested
         return try self.loader.loadTestVector(self.allocator, transition_pair.bin.path);
     }
 
@@ -241,7 +219,6 @@ pub const TraceIterator = struct {
     }
 };
 
-// Create iterator for lazy trace loading
 pub fn traceIterator(
     allocator: std.mem.Allocator,
     loader: trace_runner.Loader,
@@ -250,7 +227,6 @@ pub fn traceIterator(
     const span = trace.span(@src(), .create_trace_iterator);
     defer span.deinit();
 
-    // Collect state transition file pairs (but don't load content)
     var transitions = try state_transitions.collectStateTransitions(dir, allocator);
     span.debug("Found {d} transition files in {s}", .{ transitions.items().len, dir });
 
@@ -262,7 +238,6 @@ pub fn traceIterator(
     };
 }
 
-// Main trace processing function
 pub fn processTrace(
     comptime params: jam_params.Params,
     fuzzer: *EmbeddedFuzzer,
@@ -275,7 +250,6 @@ pub fn processTrace(
     if (is_first) {
         span.debug("Processing first trace - initializing state", .{});
 
-        // Initialize state from pre-state dictionary
         var pre_dict = transition.preStateAsMerklizationDict(fuzzer.allocator) catch |err| {
             span.err("Failed to get pre-state dictionary: {s}", .{@errorName(err)});
             return TraceResult{ .@"error" = .{ .err = err, .context = try fuzzer.allocator.dupe(u8, "Failed to load pre-state dictionary") } };
@@ -288,16 +262,13 @@ pub fn processTrace(
         };
         defer fuzz_state.deinit(fuzzer.allocator);
 
-        // Get block header for setState call
         const block = transition.block();
 
-        // Send state to embedded target
         const actual_state_root = fuzzer.setState(block.*.header, fuzz_state) catch |err| {
             span.err("Failed to set state on target: {s}", .{@errorName(err)});
             return TraceResult{ .@"error" = .{ .err = err, .context = try fuzzer.allocator.dupe(u8, "Failed to initialize target state") } };
         };
 
-        // Verify pre-state root matches
         const expected_pre_root = transition.preStateRoot();
         if (!std.mem.eql(u8, &expected_pre_root, &actual_state_root)) {
             span.err("Pre-state root mismatch", .{});
@@ -309,31 +280,24 @@ pub fn processTrace(
 
         span.debug("State initialized successfully", .{});
 
-        // Validate initial entropy for epoch 0 debugging
         try validateInitialEntropy(params, fuzzer, block.*.header);
     }
 
-    // Get both pre and post state roots for no-op detection
     const expected_pre_root = transition.preStateRoot();
     const expected_post_root = transition.postStateRoot();
 
-    // Check if this is expected to be a no-op (post-state should equal pre-state)
     const is_expected_no_op = std.mem.eql(u8, &expected_pre_root, &expected_post_root);
 
-    // Import the block
     const block = transition.block();
 
-    // Send the block
     var block_result = try fuzzer.sendBlock(block);
     defer block_result.deinit(fuzzer.allocator);
 
     const send_block_target_state_root = switch (block_result) {
         .success => |root| root,
         .import_error => |err_msg| {
-            // Block import error - check if this was expected (no-op) or an actual error
             if (is_expected_no_op) {
                 span.debug("Block import failed as expected (no-op): {s}", .{err_msg});
-                // Duplicate error message before block_result.deinit() frees it
                 const error_name_copy = try fuzzer.allocator.dupe(u8, err_msg);
                 return TraceResult{ .no_op = .{ .error_name = error_name_copy } };
             } else {
@@ -346,8 +310,6 @@ pub fn processTrace(
         },
     };
 
-    // If this is an expected no_op and sendBlock send_block_target_state_root is not expected_pre_root
-    // we can give an explantory error here
     if (is_expected_no_op and !std.mem.eql(u8, &expected_pre_root, &send_block_target_state_root)) {
         span.err("Expected no-op but state changed unexpectedly", .{});
         span.err("Pre-state root:  {s}", .{std.fmt.fmtSliceHexLower(&expected_pre_root)});
@@ -356,7 +318,6 @@ pub fn processTrace(
         return TraceResult{ .@"error" = .{ .err = error.UnexpectedStateChange, .context = try fuzzer.allocator.dupe(u8, "Block was expected to be no-op but changed state") } };
     }
 
-    // Block processed successfully - compare the target state root with expected
     if (!std.mem.eql(u8, &expected_post_root, &send_block_target_state_root)) {
         span.err("Post-state root mismatch", .{});
         span.err("Trace post state root: {s}", .{std.fmt.fmtSliceHexLower(&expected_post_root)});
@@ -365,10 +326,8 @@ pub fn processTrace(
         span.err("Post-state root mismatch", .{});
         span.err("Trace pre state root    : {s}", .{std.fmt.fmtSliceHexLower(&expected_pre_root)});
 
-        // Print detailed state diff
         span.debug("Fetching states for diff analysis...", .{});
 
-        // Get actual state from fuzzer
         const header_hash = try block.header.header_hash(params, fuzzer.allocator);
         var fuzz_target_state = try fuzzer.getState(header_hash);
         defer fuzz_target_state.deinit(fuzzer.allocator);
@@ -376,7 +335,6 @@ pub fn processTrace(
         var fuzz_target_jam_state = try state_converter.fuzzStateToJamState(params, fuzzer.allocator, fuzz_target_state);
         defer fuzz_target_jam_state.deinit(fuzzer.allocator);
 
-        // Get expected state from transition
         var expected_dict = transition.postStateAsMerklizationDict(fuzzer.allocator) catch |err| {
             span.err("Failed to get expected state dictionary for diff: {s}", .{@errorName(err)});
             return TraceResult{ .mismatch = .{
@@ -389,8 +347,6 @@ pub fn processTrace(
         var expected_jam_state = try state_dictionary.reconstruct.reconstructState(params, fuzzer.allocator, &expected_dict);
         defer expected_jam_state.deinit(fuzzer.allocator);
 
-        // Ensure that the state we got from the fuzz target has the same root we got back from
-        // the sendBlock command
         const fuzz_target_jam_state_root = try fuzz_target_jam_state.buildStateRoot(fuzzer.allocator);
         if (!std.mem.eql(u8, &fuzz_target_jam_state_root, &send_block_target_state_root)) {
             std.debug.print("\x1b[31mInternal fuzz target consistency check failed: state root from sendBlock() does not match getState() result\x1b[0m\n", .{});
@@ -421,7 +377,6 @@ pub fn processTrace(
     return TraceResult{ .success = .{ .post_root = send_block_target_state_root } };
 }
 
-// Report generation types
 pub const Summary = struct {
     total: usize,
     success: usize,
@@ -457,7 +412,6 @@ pub const ConformanceReport = struct {
 
         const writer = output.writer();
 
-        // Summary section
         try writer.print("\n=== Conformance Test Results ===\n");
         try writer.print("Total: {d} traces\n", .{self.summary.total});
         try writer.print("Success: {d}\n", .{self.summary.success});
@@ -467,7 +421,6 @@ pub const ConformanceReport = struct {
         try writer.print("Errors: {d}\n", .{self.summary.errors});
         try writer.print("\n");
 
-        // No-op blocks section
         if (self.no_op_blocks.len > 0) {
             try writer.print("=== No-op Blocks ===\n");
             for (self.no_op_blocks) |no_op| {
@@ -476,7 +429,6 @@ pub const ConformanceReport = struct {
             try writer.print("\n");
         }
 
-        // Failures section
         if (self.failures.len > 0) {
             try writer.print("=== Failures ===\n");
             for (self.failures) |failure| {
@@ -520,7 +472,6 @@ pub const ConformanceReport = struct {
     }
 };
 
-// Generate comprehensive report from trace results
 pub fn generateReport(
     allocator: std.mem.Allocator,
     results: []TraceResult,
@@ -589,7 +540,6 @@ pub fn generateReport(
     };
 }
 
-// Simple result struct for compatibility with jamtestvectors
 pub const TraceRunResult = struct {
     results: []TraceResult,
     allocator: std.mem.Allocator,
@@ -601,7 +551,6 @@ pub const TraceRunResult = struct {
     }
 };
 
-// Compatibility function for jamtestvectors.zig
 pub fn runTracesInDir(
     comptime IOExecutor: type,
     executor: *IOExecutor,
@@ -610,26 +559,20 @@ pub fn runTracesInDir(
     allocator: std.mem.Allocator,
     test_dir: []const u8,
 ) !TraceRunResult {
-    // Create embedded fuzzer
     var fuzzer = try fuzzer_mod.createEmbeddedFuzzer(params, executor, allocator, 0);
     defer fuzzer.destroy();
 
-    // Connect and handshake
     try fuzzer.connectToTarget();
     try fuzzer.performHandshake();
 
-    // Create trace iterator
     var iter = try traceIterator(allocator, loader, test_dir);
     defer iter.deinit();
 
-    // Get total count for progress output
     const total_traces = iter.count();
 
-    // Collect results
     var results = std.ArrayList(TraceResult).init(allocator);
     errdefer results.deinit();
 
-    // Process traces
     var is_first = true;
     var trace_count: usize = 0;
     while (try iter.next()) |transition| {
@@ -637,18 +580,15 @@ pub fn runTracesInDir(
 
         trace_count += 1;
 
-        // Extract filename from the current transition path
         const current_pair = iter.getCurrentStateTransitionPair().?;
         const full_path = current_pair.bin.path;
         const filename = std.fs.path.basename(full_path);
 
-        // Show progress
         std.debug.print("Processing trace {d}/{d}: {s}\n", .{ trace_count, total_traces, filename });
 
         const result = try processTrace(params, fuzzer, transition, is_first);
         try results.append(result);
 
-        // Fail on errors or mismatches (keeps original behavior)
         switch (result) {
             .@"error" => |err| return err.err,
             .mismatch => return error.StateMismatch,

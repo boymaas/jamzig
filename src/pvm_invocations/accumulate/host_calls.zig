@@ -62,7 +62,6 @@ pub fn HostCalls(comptime params: Params) type {
             provided_preimages: std.AutoHashMap(ProvidedKey, []const u8),
 
             pub fn commit(self: *@This()) !void {
-                // Per graypaper §12.17: only the original delegator's staging set (iota) is used
                 try self.context.commitForService(self.service_id);
             }
 
@@ -83,7 +82,6 @@ pub fn HostCalls(comptime params: Params) type {
                         key.size,
                     });
 
-                    // Get mutable service account
                     const service = self.context.service_accounts.getMutable(key.service_id) catch {
                         span.debug("Failed to get mutable service account {d}, skipping", .{key.service_id});
                         continue;
@@ -92,18 +90,14 @@ pub fn HostCalls(comptime params: Params) type {
                         continue;
                     };
 
-                    // Check if still needed (R function from graypaper)
-                    // Only apply if lookup still has status []
                     const lookup = service.getPreimageLookup(key.service_id, key.hash, key.size);
                     if (lookup != null and lookup.?.asSlice().len == 0) {
                         span.debug("Preimage still needed (status []), applying to service", .{});
 
-                        // Store preimage in service (δ[s]_p[hash(p)] = p)
                         const preimage_key = state_keys.constructServicePreimageKey(key.service_id, key.hash);
                         // TODO: OPTIMIZE we can optimize here to take ownership of the data
                         try service.dupeAndAddPreimage(preimage_key, data);
 
-                        // Update lookup status from [] to [τ'] (δ[s]_l[(hash(p), |p|)] = [τ'])
                         try service.registerPreimageAvailable(
                             key.service_id,
                             key.hash,
@@ -253,7 +247,6 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper B.7: [m, a, v, r, o, n] = registers[7..+6]
             const manager_service_id: u32 = @truncate(exec_ctx.registers[7]); // m: Manager service ID
             const assign_ptr: u32 = @truncate(exec_ctx.registers[8]); // a: Pointer to assign service IDs array
             const validator_service_id: u32 = @truncate(exec_ctx.registers[9]); // v: Validator service ID
@@ -265,17 +258,10 @@ pub fn HostCalls(comptime params: Params) type {
                 manager_service_id, validator_service_id, registrar_service_id, always_accumulate_count,
             });
 
-            // NOTE: that the order of these checks follows the graypaper
-            // specification exactly, to ensure we return the correct error
-            // codes.
-
-            // Read always-accumulate service definitions from memory
             span.debug("Reading always-accumulate services from memory at 0x{x}", .{always_accumulate_ptr});
 
-            // Calculate required memory size: each entry is 12 bytes (4 bytes service ID + 8 bytes gas)
             const required_memory_size = always_accumulate_count *| 12;
 
-            // Read memory for always-accumulate services
             var always_accumulate_data: PVM.Memory.MemorySlice = if (always_accumulate_count > 0)
                 exec_ctx.memory.readSlice(@truncate(always_accumulate_ptr), required_memory_size) catch {
                     span.err("Memory access failed while reading always-accumulate services", .{});
@@ -285,45 +271,36 @@ pub fn HostCalls(comptime params: Params) type {
                 .{ .buffer = &[_]u8{} };
             defer always_accumulate_data.deinit();
 
-            // Create a new always-accumulate services map
             var always_accumulate_services = std.AutoHashMap(types.ServiceId, types.Gas).init(ctx_regular.allocator);
             defer always_accumulate_services.deinit();
 
-            // Parse the always-accumulate services from the memory
             var k: usize = 0;
             while (k < always_accumulate_count) : (k += 1) {
                 const offset = k * 12;
 
-                // Read service ID (4 bytes) and gas limit (8 bytes)
                 const service_id = std.mem.readInt(u32, always_accumulate_data.buffer[offset..][0..4], .little);
                 const gas_limit = std.mem.readInt(u64, always_accumulate_data.buffer[offset + 4 ..][0..8], .little);
 
                 span.debug("Always-accumulate service {d}: ID={d}, gas={d}", .{ k, service_id, gas_limit });
 
-                // Add to the map
                 always_accumulate_services.put(service_id, gas_limit) catch {
                     span.err("Failed to add service to always-accumulate map", .{});
                     return .{ .terminal = .panic };
                 };
             }
 
-            // Create a list of assign service IDs
             var assign_services = std.ArrayList(types.ServiceId).init(ctx_regular.allocator);
             defer assign_services.deinit();
 
-            // Read assign service IDs from memory
-            // Graypaper: 𝐚 = decode_4(memory[a..a+4C]) where C = core_count
             const assign_memory_size = params.core_count * 4; // Each service ID is 4 bytes
             span.debug("Reading assign service IDs from memory at 0x{x}, size={d} bytes ({d} cores)", .{ assign_ptr, assign_memory_size, params.core_count });
 
-            // Read memory for assign service IDs (exactly C service IDs)
             var assign_data = exec_ctx.memory.readSlice(@truncate(assign_ptr), assign_memory_size) catch {
                 span.err("Memory access failed while reading assign service IDs", .{});
                 return .{ .terminal = .panic };
             };
             defer assign_data.deinit();
 
-            // Parse exactly C service IDs from memory
             var i: usize = 0;
             while (i < params.core_count) : (i += 1) {
                 const offset = i * 4;
@@ -331,15 +308,12 @@ pub fn HostCalls(comptime params: Params) type {
 
                 span.debug("Assign service {d}: ID={d}", .{ i, service_id });
 
-                // Add to the list
                 assign_services.append(service_id) catch {
                     span.err("Failed to add service to assign list", .{});
                     return .{ .terminal = .panic };
                 };
             }
 
-            // Check if manager, validator, and registrar service IDs are in the u32 domain
-            // Graypaper: returns WHO when (m, v, r) ∉ serviceid^3
             if (exec_ctx.registers[7] > std.math.maxInt(u32) or
                 exec_ctx.registers[9] > std.math.maxInt(u32) or
                 exec_ctx.registers[10] > std.math.maxInt(u32))
@@ -351,29 +325,22 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.WHO;
             }
 
-            // Get mutable privileges (no authorization check per v0.7.1 graypaper)
             const current_privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Could not get mutable privileges", .{});
                 return HostCallError.FULL;
             };
 
-            // Update privileges
             span.debug("Updating privileges", .{});
 
-            // Update the manager, validator, and registrar service IDs
             current_privileges.manager = manager_service_id;
             current_privileges.designate = validator_service_id;
             current_privileges.registrar = registrar_service_id;
 
-            // Update the assign service IDs list
-            // Chi.assign must have exactly C elements
             std.debug.assert(assign_services.items.len == params.core_count);
             std.debug.assert(current_privileges.assign.len == params.core_count);
 
-            // Copy the new assign services directly (maintains exactly C elements)
             @memcpy(&current_privileges.assign, assign_services.items);
 
-            // Update the always-accumulate services
             current_privileges.always_accumulate.clearRetainingCapacity();
             var it = always_accumulate_services.iterator();
             while (it.next()) |entry| {
@@ -383,7 +350,6 @@ pub fn HostCalls(comptime params: Params) type {
                 };
             }
 
-            // Return success
             span.debug("Services blessed successfully", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -408,7 +374,6 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper B.7: [o, g, m]
             const code_hash_ptr = exec_ctx.registers[7]; // Pointer to new code hash (o)
             const min_gas_limit = exec_ctx.registers[8]; // New gas limit for accumulate (g)
             const min_memo_gas = exec_ctx.registers[9]; // Minimum gas threshold for transfers (m)
@@ -418,7 +383,6 @@ pub fn HostCalls(comptime params: Params) type {
                 code_hash_ptr, min_gas_limit, min_memo_gas,
             });
 
-            // Read code hash from memory
             span.debug("Reading code hash from memory at 0x{x}", .{code_hash_ptr});
             var code_hash = exec_ctx.memory.readHash(@truncate(code_hash_ptr)) catch {
                 span.err("Memory access failed while reading code hash", .{});
@@ -427,7 +391,6 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Code hash: {s}", .{std.fmt.fmtSliceHexLower(&code_hash)});
 
-            // Get mutable service account - this is always the current service
             span.debug("Getting mutable service account ID: {d}", .{ctx_regular.service_id});
             const service_account = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable instance of service account", .{});
@@ -437,13 +400,11 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            // Update the service account code hash and gas limits
             span.debug("Updating service account properties", .{});
             service_account.code_hash = code_hash;
             service_account.min_gas_accumulate = min_gas_limit;
             service_account.min_gas_on_transfer = min_memo_gas;
 
-            // Success result
             span.debug("Service upgraded successfully", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -460,7 +421,6 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper B.7: [d, a, l, o]
             const destination_id = exec_ctx.registers[7]; // Destination service ID
             const amount = exec_ctx.registers[8]; // Amount to transfer
             const gas_limit = exec_ctx.registers[9]; // Gas limit (charged now, refunded after processing)
@@ -473,8 +433,6 @@ pub fn HostCalls(comptime params: Params) type {
                 amount, gas_limit, memo_ptr,
             });
 
-            // Charge base gas FIRST (g' = g - 10 per graypaper wrapper pattern)
-            // Per graypaper line 816: g = 10 + t where t=0 for panic/WHO/LOW/CASH, t=l for OK
             span.debug("charging 10 gas (base cost)", .{});
             exec_ctx.gas -= 10;
 
@@ -483,8 +441,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .out_of_gas };
             }
 
-            // Read memo data from memory AFTER charging base gas
-            // Per graypaper: Memory error results in panic with t=0 (base 10 gas already charged)
             span.debug("Reading memo data from memory at 0x{x}", .{memo_ptr});
             var memo_slice = exec_ctx.memory.readSlice(@truncate(memo_ptr), params.transfer_memo_size) catch {
                 span.err("Memory access failed while reading memo data (10 gas already charged)", .{});
@@ -494,14 +450,12 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Memo data: {s}", .{std.fmt.fmtSliceHexLower(memo_slice.buffer)});
 
-            // Check if destination service exists (WHO check - after charging base gas)
             span.debug("Looking up destination service account", .{});
             const destination_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
                 span.debug("Destination service not found, returning WHO error (base 10 gas already charged)", .{});
                 return HostCallError.WHO;
             };
 
-            // Check if gas limit meets destination's minimum threshold (LOW check)
             span.debug("Checking gas limit {d} against destination's min threshold: {d}", .{
                 gas_limit, destination_service.min_gas_on_transfer,
             });
@@ -510,7 +464,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.LOW;
             }
 
-            // Get source service account (only after WHO and LOW checks per graypaper spec)
             span.debug("Looking up source service account", .{});
             const source_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable of service account", .{});
@@ -520,8 +473,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            // Check if transfer would leave balance below min_balance threshold (CASH check)
-            // Corrected spec (v0.7.1 had typo): CASH when b < self.min_balance where b = balance - amount
             const min_balance = source_service.getStorageFootprint(params).a_t;
 
             span.debug("Checking source balance {d} - amount {d} = {d} against min_balance {d}", .{
@@ -533,11 +484,9 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.CASH;
             }
 
-            // Create a memo buffer and copy data from memory
             var memo: [params.transfer_memo_size]u8 = [_]u8{0} ** params.transfer_memo_size;
             @memcpy(&memo, memo_slice.buffer[0..params.transfer_memo_size]);
 
-            // Create transfer for inline processing (v0.7.1)
             const transfer_operand = pvm_accumulate.TransferOperand{
                 .sender = ctx_regular.service_id,
                 .destination = @intCast(destination_id),
@@ -546,17 +495,14 @@ pub fn HostCalls(comptime params: Params) type {
                 .gas_limit = @intCast(gas_limit),
             };
 
-            // Add to generated_transfers for inline processing (v0.7.1)
             span.debug("Adding transfer to generated_transfers for next service", .{});
             ctx_regular.generated_transfers.append(transfer_operand) catch {
                 return .{ .terminal = .panic };
             };
 
-            // Deduct the amount from the source service's balance
             span.debug("Deducting {d} from source service balance", .{amount});
             source_service.balance -= @intCast(amount);
 
-            // Charge transfer gas from sender (refunded after processing per §12.16)
             span.debug("charging {d} gas (transfer gas, refunded after processing)", .{gas_limit});
             exec_ctx.gas -= @intCast(gas_limit);
 
@@ -565,7 +511,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .out_of_gas };
             }
 
-            // Return success
             span.debug("Transfer scheduled successfully", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -590,72 +535,57 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper B.7: [c, o, a] = ω[7..+3]
             const core_index = exec_ctx.registers[7]; // c: Core index to assign
             const output_ptr = exec_ctx.registers[8]; // o: Pointer to authorizer queue data
             const new_assign_service = exec_ctx.registers[9]; // a: New assign service ID
 
             // IMPORTANT: Check memory accessibility FIRST before validating core index
-            // This fixes conformance test 1756548741 where memory check must precede core validation
 
-            // Read authorizer hashes from memory - each hash is 32 bytes, and we need to read params.max_authorizations_queue_items of them
             span.debug("Reading authorizer hashes from memory at 0x{x}", .{output_ptr});
 
-            // Calculate the total size of all authorizer hashes
             const total_size: u32 = 32 * @as(u32, params.max_authorizations_queue_items);
 
-            // Read all hashes at once (this will panic if memory is invalid)
             var hashes_data = exec_ctx.memory.readSlice(@truncate(output_ptr), total_size) catch {
                 span.err("Memory access failed while reading authorizer hashes", .{});
                 return .{ .terminal = .panic };
             };
             defer hashes_data.deinit();
 
-            // NOW check if core index is valid: c < C
-            // This check happens AFTER memory validation
             if (core_index >= params.core_count) {
                 span.debug("Invalid core index {d}, returning CORE error", .{core_index});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.CORE);
                 return .play;
             }
 
-            // Get mutable access to privileges (Chi) to check authorization and update
             const privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Problem getting mutable privileges", .{});
                 return .{ .terminal = .panic };
             };
 
-            // Authorization check: x_s must equal (x_u)_a[c]
-            // Only the current assign service for this core can update it
             if (ctx_regular.service_id != privileges.assign[core_index]) {
                 span.debug("Service {d} is not the assign service for core {d} (current assign: {d}), returning HUH", .{ ctx_regular.service_id, core_index, privileges.assign[core_index] });
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
                 return .play;
             }
 
-            // Check if new assign service ID is within serviceid domain (u32)
             if (new_assign_service > std.math.maxInt(u32)) {
                 span.debug("New assign service ID {d} exceeds u32 range, returning WHO", .{new_assign_service});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.WHO);
                 return .play;
             }
 
-            // Create a sequence of authorizer hashes
             const authorizer_hashes = std.mem.bytesAsSlice(types.AuthorizerHash, hashes_data.buffer);
 
             for (authorizer_hashes, 0..) |hash, i| {
                 span.trace("Authorizer hash {d}: {s}", .{ i, std.fmt.fmtSliceHexLower(&hash) });
             }
 
-            // Get mutable access to the authorizer queue
             span.debug("Updating authorizer queue for core {d}", .{core_index});
             const auth_queue: *state.Phi(params.core_count, params.max_authorizations_queue_items) = ctx_regular.context.authorizer_queue.getMutable() catch {
                 span.err("Problem getting mutable authorizer queue", .{});
                 return .{ .terminal = .panic };
             };
 
-            // Update BOTH components as per graypaper:
-            // 1. (x'_u)_q[c] = q (new authorizer queue)
             for (0..params.max_authorizations_queue_items) |i| {
                 auth_queue.setAuthorization(core_index, i, authorizer_hashes[i]) catch {
                     span.err("Failed to set authorization at index {d} for core {d}", .{ i, core_index });
@@ -663,11 +593,9 @@ pub fn HostCalls(comptime params: Params) type {
                 };
             }
 
-            // 2. (x'_u)_a[c] = a (new assign service)
             privileges.assign[core_index] = @intCast(new_assign_service);
             span.debug("Updated assign service for core {d} to service {d}", .{ core_index, new_assign_service });
 
-            // Return success
             span.debug("Core assigned successfully", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -691,20 +619,13 @@ pub fn HostCalls(comptime params: Params) type {
 
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
 
-            // According to graypaper B.7, the checkpoint operation:
-            // 1. Sets the exceptional dimension to the value of the regular dimension
-            // 2. Returns the remaining gas in register 7
-
             span.debug("Host call: checkpoint - cloning regular context to exceptional", .{});
 
-            // Clone the regular context to the exceptional context
-            // This involves a deep copy of all state to ensure complete isolation
             host_ctx.exceptional.deinit();
             host_ctx.exceptional = host_ctx.regular.deepClone() catch {
                 return .{ .terminal = .panic };
             };
 
-            // Return the remaining gas as per the specification
             exec_ctx.registers[7] = @intCast(exec_ctx.gas);
 
             span.debug("Checkpoint created successfully, remaining gas: {d}", .{exec_ctx.gas});
@@ -736,8 +657,6 @@ pub fn HostCalls(comptime params: Params) type {
             const min_memo_gas = exec_ctx.registers[10];
             const free_storage_offset = exec_ctx.registers[11];
 
-            // Validate code length is within N_32 (u32 range)
-            // Per graypaper l ∉ N_32 leads to PANIC
             if (code_len_raw > std.math.maxInt(u32)) {
                 span.err("Code length {d} exceeds u32 range, returning PANIC", .{code_len_raw});
                 return .{ .terminal = .panic };
@@ -748,7 +667,6 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Code hash ptr: 0x{x}, Code len: {d}", .{ code_hash_ptr, code_len });
             span.debug("Min gas limit: {d}, Min memo gas: {d}, Free storage: {d}", .{ min_gas_limit, min_memo_gas, free_storage_offset });
 
-            // Read code hash from memory
             span.debug("Reading code hash from memory at 0x{x}", .{code_hash_ptr});
             var code_hash = exec_ctx.memory.readHash(@truncate(code_hash_ptr)) catch {
                 span.err("Memory access failed while reading code hash", .{});
@@ -757,7 +675,6 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Code hash: {s}", .{std.fmt.fmtSliceHexLower(&code_hash)});
 
-            // Check free storage grant permission: only manager can grant free storage
             if (free_storage_offset != 0) {
                 const privileges = ctx_regular.context.privileges.getReadOnly();
                 if (ctx_regular.service_id != privileges.manager) {
@@ -774,14 +691,12 @@ pub fn HostCalls(comptime params: Params) type {
             // in memory. After we created we are ensured that the getMutable pointer will be valid
             // for as long we are not adding to the container.
 
-            // Create the new service account first
             span.debug("Creating new service account with ID: {d}", .{ctx_regular.new_service_id});
             var new_account = ctx_regular.context.service_accounts.createService(ctx_regular.new_service_id) catch {
                 span.err("Failed to create new service account", .{});
                 return .{ .terminal = .panic };
             };
 
-            // Get the calling service account
             span.debug("Looking up calling service account: {d}", .{ctx_regular.service_id});
             const calling_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable instance", .{});
@@ -791,7 +706,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            // Set all properties except balance
             span.debug("Setting new account properties", .{});
             new_account.code_hash = code_hash;
             new_account.min_gas_accumulate = min_gas_limit;
@@ -802,16 +716,13 @@ pub fn HostCalls(comptime params: Params) type {
             new_account.last_accumulation_slot = 0;
             new_account.balance = 0; // Temporary, will be set after footprint calculation
 
-            // Solicit preimage - this updates the footprint tracking
             span.debug("Integrating preimage lookup", .{});
             new_account.solicitPreimage(ctx_regular.new_service_id, code_hash, code_len, ctx_regular.context.time.current_slot) catch {
                 span.err("Failed to integrate preimage lookup, out of memory", .{});
-                // Rollback service creation
                 _ = ctx_regular.context.service_accounts.removeService(ctx_regular.new_service_id) catch {};
                 return .{ .terminal = .panic };
             };
 
-            // Now calculate the actual threshold balance using getStorageFootprint
             const footprint = new_account.getStorageFootprint(params);
             const initial_balance = footprint.a_t;
 
@@ -822,28 +733,22 @@ pub fn HostCalls(comptime params: Params) type {
                 initial_balance, calling_service.balance,
             });
 
-            // Check if caller has enough balance
             const calling_footprint = calling_service.getStorageFootprint(params);
             if (calling_service.balance -| initial_balance < calling_footprint.a_t) {
                 span.debug("Insufficient balance to create new service, under footprint, returning CASH error", .{});
-                // Rollback service creation
                 _ = ctx_regular.context.service_accounts.removeService(ctx_regular.new_service_id) catch {};
                 return HostCallError.CASH;
             }
 
-            // Set the balance and deduct from caller
             new_account.balance = initial_balance;
             calling_service.balance -= initial_balance;
             span.debug("Set new service balance to {d}, deducted from calling service", .{initial_balance});
 
-            // Success result
             span.debug("Service created successfully, returning service ID: {d}", .{
                 ctx_regular.new_service_id,
             });
             exec_ctx.registers[7] = ctx_regular.new_service_id; // Return the new service ID on success
-            // now prepare the next one
             const intermediate_service_id = 0x100 + ((ctx_regular.new_service_id - 0x100 + 42) % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
-            // update the next service id
             ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, intermediate_service_id);
             return .play;
         }
@@ -867,15 +772,12 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper B.7: [d, o]
             const target_service_id = exec_ctx.registers[7]; // Service ID to eject (d)
             const hash_ptr = exec_ctx.registers[8]; // Hash pointer (o)
 
             span.debug("Host call: eject service {d}", .{target_service_id});
             span.debug("Hash pointer: 0x{x}", .{hash_ptr});
 
-            // Per graypaper: Read hash from memory FIRST (before service checks)
-            // This ensures memory errors have priority over protocol errors
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
             const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
                 span.err("Memory access failed while reading hash", .{});
@@ -883,19 +785,16 @@ pub fn HostCalls(comptime params: Params) type {
             };
             span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
-            // Check if target service is current service (can't eject self)
             if (target_service_id == ctx_regular.service_id) {
                 span.debug("Cannot eject current service, returning WHO error", .{});
                 return HostCallError.WHO;
             }
 
-            // Get target service account (must exist)
             const target_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(target_service_id)) orelse {
                 span.debug("Target service not found, returning WHO error", .{});
                 return HostCallError.WHO;
             };
 
-            // Get the current_service
             const current_service = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable instance of current service", .{});
                 return .{ .terminal = .panic };
@@ -904,18 +803,9 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            // FIX for conformance test 1756548706:
-            // Graypaper B.7 specifies that ejection is allowed if:
-            // 1. Current service's code hash matches target service's code hash, OR
-            // 2. The provided hash equals E_32(x_s) where x_s is the current service ID
-            // E_32 means 32-byte fixed-length encoding of the service ID (little-endian)
-
-            // Create E_32(x_s) - 32-byte fixed-length encoding of current service ID
             var e32_service_id = std.mem.zeroes([32]u8);
-            // Encode the 4-byte service ID into the first 4 bytes (little-endian)
             std.mem.writeInt(u32, e32_service_id[0..4], @intCast(ctx_regular.service_id), .little);
 
-            // provided hash must equal E_32(x_s) (special authorization)
             const hash_is_e32_service = std.mem.eql(u8, &target_service.code_hash, &e32_service_id);
 
             if (!hash_is_e32_service) {
@@ -927,8 +817,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.WHO;
             }
 
-            // Per graypaper, check if the lookup status has a valid record
-            // First determine the length
             const footprint = target_service.getStorageFootprint(params);
             const l = @max(81, footprint.a_o) - 81;
             const lookup_status = target_service.getPreimageLookup(@intCast(target_service_id), hash, @intCast(l)) orelse {
@@ -936,8 +824,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.HUH;
             };
 
-            // Seems we should only have one preimage_lookup and nothing in the storage
-            // that is the only way this can a_i
             if (footprint.a_i != 2) {
                 return HostCallError.HUH;
             }
@@ -945,36 +831,28 @@ pub fn HostCalls(comptime params: Params) type {
             const current_timeslot = ctx_regular.context.time.current_slot;
             const status = lookup_status.asSlice();
 
-            // Check various conditions for lookup status per graypaper B.7
-            // d_i != 2: The lookup item index must be 2
             if (status.len != 2) {
                 span.debug("Lookup status length is not 2, returning HUH error", .{});
                 return HostCallError.HUH;
             }
 
-            // Check if time condition is met for preimage expungement
             if (status[1].? >= current_timeslot -| params.preimage_expungement_period) {
                 span.debug("Preimage not yet expired, returning HUH error", .{});
                 return HostCallError.HUH;
             }
 
-            // All checks passed, can eject the service
             span.debug("Ejecting service {d}", .{target_service_id});
 
             const target_balance = target_service.balance;
 
-            // Remove the service from the state, do this first, as this could fail
-            // and we do not want to have altered state
             _ = ctx_regular.context.service_accounts.removeService(@intCast(target_service_id)) catch {
                 span.err("Failed to remove service", .{});
                 return .{ .terminal = .panic };
             };
 
-            // Transfer the ejected service's balance to the current service
             span.debug("Transferring balance {d} from ejected service to current service", .{target_balance});
             current_service.balance += target_balance;
 
-            // Return success
             span.debug("Service ejected successfully", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -1000,14 +878,12 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper B.7: [o, z]
             const hash_ptr = exec_ctx.registers[7]; // Hash pointer (o)
             const preimage_size = exec_ctx.registers[8]; // Preimage size (z)
 
             span.debug("Host call: query preimage for service {d}", .{ctx_regular.service_id});
             span.debug("Hash ptr: 0x{x}, Preimage size: {d}", .{ hash_ptr, preimage_size });
 
-            // Read hash from memory
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
             const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
                 span.err("Memory access failed while reading hash", .{});
@@ -1016,16 +892,12 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
-            // Get service account
             span.debug("Getting service account ID: {d}", .{ctx_regular.service_id});
             const service_account = ctx_regular.context.service_accounts.getReadOnly(ctx_regular.service_id) orelse {
                 span.err("Service account not found", .{});
                 return .{ .terminal = .panic };
             };
 
-            // Query preimage status
-            // Note: Accessing service_account.getPreimageLookup is equivalent to graypaper's (x_s)_l notation
-            // Both refer to the same preimage lookup table data structure in the service state
             span.debug("Querying preimage status", .{});
             const lookup_status = service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size)) orelse {
                 span.debug("Preimage lookup not found, returning NONE", .{});
@@ -1033,15 +905,8 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.NONE;
             };
 
-            // Encode result according to graypaper section B.7
             var result: u64 = 0;
             var result_high: u64 = 0;
-
-            // Per graypaper the encoding is:
-            // - 0,0 if empty entry: a = []
-            // - 1 + 2^32 * x,0 if available since time x: a = [x]
-            // - 2 + 2^32 * x,y if unavailable since time y, was available from x: a = [x,y]
-            // - 3 + 2^32 * x,y + 2^32 * z if available since z, was available from x until y: a = [x,y,z]
 
             span.debug("Preimage status found", .{});
 
@@ -1049,37 +914,31 @@ pub fn HostCalls(comptime params: Params) type {
 
             switch (status.len) {
                 0 => {
-                    // Preimage is requested but not supplied
                     span.debug("Status: requested but not supplied", .{});
                     result = 0;
                     result_high = 0;
                 },
                 1 => {
-                    // Preimage is available since time status[0]
                     span.debug("Status: available since time {d}", .{status[0].?});
                     result = 1 + ((@as(u64, status[0].?) << 32));
                     result_high = 0;
                 },
                 2 => {
-                    // Preimage was available from time status[0] until status[1]
                     span.debug("Status: unavailable, was available from {d} until {d}", .{ status[0].?, status[1].? });
                     result = 2 + ((@as(u64, status[0].?) << 32));
                     result_high = status[1].?;
                 },
                 3 => {
-                    // Preimage is available since time status[2], was available from status[0] until status[1]
                     span.debug("Status: available since {d}, previously from {d} until {d}", .{ status[2].?, status[0].?, status[1].? });
                     result = 3 + ((@as(u64, status[0].?) << 32));
                     result_high = status[1].? + ((@as(u64, status[2].?) << 32));
                 },
                 else => {
-                    // Invalid status length, should never happen
                     span.err("Invalid preimage status length: {d}", .{status.len});
                     return .{ .terminal = .panic };
                 },
             }
 
-            // Set result registers
             exec_ctx.registers[7] = result;
             exec_ctx.registers[8] = result_high;
 
@@ -1107,14 +966,12 @@ pub fn HostCalls(comptime params: Params) type {
             const ctx_regular: *Dimension = &host_ctx.regular;
             const current_timeslot = ctx_regular.context.time.current_slot;
 
-            // Get registers per graypaper B.7: [o, z]
             const hash_ptr = exec_ctx.registers[7]; // Hash pointer
             const preimage_size = exec_ctx.registers[8]; // Preimage size
 
             span.debug("Host call: solicit preimage for service {d}", .{ctx_regular.service_id});
             span.debug("Hash ptr: 0x{x}, Preimage size: {d}", .{ hash_ptr, preimage_size });
 
-            // Read hash from memory
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
             const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
                 span.err("Memory access failed while reading hash", .{});
@@ -1123,7 +980,6 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
-            // Get mutable service account
             span.debug("Getting mutable service account ID: {d}", .{ctx_regular.service_id});
             const service_account = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable instance of service account", .{});
@@ -1133,18 +989,13 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.HUH;
             };
 
-            // Calculate storage footprint for the preimage
-            // Use saturating arithmetic - if overflow, balance check will fail anyway
             const additional_storage_size: u64 = 81 +| preimage_size;
 
-            // Check if service has enough balance to store this data
             span.debug("Checking if service has enough balance to store preimage", .{});
             const footprint = service_account.getStorageFootprint(params);
             const storage_cost = params.min_balance_per_octet *| additional_storage_size;
             const additional_balance_needed = params.min_balance_per_item +| storage_cost;
 
-            // Check overflow-safe: balance >= additional AND balance - additional >= threshold
-            // Equivalent to: balance < additional OR balance - additional < threshold => FULL
             if (additional_balance_needed > service_account.balance or
                 service_account.balance - additional_balance_needed < footprint.a_t)
             {
@@ -1152,15 +1003,12 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.FULL;
             }
 
-            // Try to solicit the preimage
             span.debug("Attempting to solicit preimage", .{});
 
             if (service_account.solicitPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot)) |_| {
-                // Success, preimage solicited
                 span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size))});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             } else |err| {
-                // Handle errors per graypaper: OutOfMemory → PANIC, others → HUH
                 switch (err) {
                     error.OutOfMemory => {
                         span.err("Out of memory while soliciting preimage", .{});
@@ -1200,14 +1048,12 @@ pub fn HostCalls(comptime params: Params) type {
             var ctx_regular = &host_ctx.regular;
             const current_timeslot = ctx_regular.context.time.current_slot;
 
-            // Get registers: [o, z] - hash pointer and size
             const hash_ptr = exec_ctx.registers[7];
             const preimage_size = exec_ctx.registers[8];
 
             span.debug("Host call: forget preimage", .{});
             span.debug("Hash ptr: 0x{x}, Hash size: {d}", .{ hash_ptr, preimage_size });
 
-            // Read hash from memory
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
             const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
                 span.err("Memory access failed while reading hash", .{});
@@ -1216,7 +1062,6 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
-            // Get mutable service account
             span.debug("Getting mutable service account ID: {d}", .{ctx_regular.service_id});
             const service_account = ctx_regular.context.service_accounts.getMutable(ctx_regular.service_id) catch {
                 span.err("Could not get mutable instance of service account", .{});
@@ -1226,15 +1071,12 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.HUH;
             };
 
-            // Try to forget the preimage, this either succeeds and mutates the service, or fails and it did not mutate
             span.debug("Attempting to forget preimage", .{});
-            // span.trace("Service Account: {}", .{types.fmt.format(service_account.preimage_lookup)});
             service_account.forgetPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch |err| {
                 span.err("Error while forgetting preimage: {}", .{err});
                 return HostCallError.HUH;
             };
 
-            // Success result
             span.debug("Preimage forgotten successfully", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -1259,26 +1101,21 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers: hash pointer to read from
             const hash_ptr = exec_ctx.registers[7];
 
             span.debug("Host call: yield accumulation result", .{});
             span.debug("Hash pointer: 0x{x}", .{hash_ptr});
 
-            // Read hash from memory
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
             const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
-                // Error: memory access failed
                 span.err("Memory access failed while reading hash", .{});
                 return .{ .terminal = .panic };
             };
 
             span.debug("Accumulation output hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
-            // Set the accumulation output
             ctx_regular.accumulation_output = hash;
 
-            // Return success
             span.debug("Yield successful", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -1292,7 +1129,6 @@ pub fn HostCalls(comptime params: Params) type {
             const span = trace.span(@src(), .host_call_designate);
             defer span.deinit();
 
-            // Graypaper specifies exactly 336 bytes per validator
             const VALIDATOR_DATA_SIZE = 336;
             comptime {
                 std.debug.assert(@sizeOf(types.ValidatorData) == VALIDATOR_DATA_SIZE);
@@ -1309,29 +1145,23 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get register per graypaper: [o] - offset to validator keys
             const offset_ptr = exec_ctx.registers[7]; // Offset to validator keys array
 
             span.debug("Host call: designate validators", .{});
             span.debug("Offset pointer: 0x{x}", .{offset_ptr});
 
-            // Calculate total size needed: VALIDATOR_DATA_SIZE bytes per validator * V validators
             const validator_count: u32 = params.validators_count;
             const total_size: u32 = VALIDATOR_DATA_SIZE * validator_count;
 
             span.debug("Reading {d} validators, total size: {d} bytes", .{ validator_count, total_size });
 
-            // Per graypaper: Read memory FIRST, then check privilege
-            // If memory read fails (v = error), panic takes precedence over privilege check
             var validator_data = exec_ctx.memory.readSlice(@truncate(offset_ptr), total_size) catch {
                 span.err("Memory access failed while reading validator keys", .{});
                 return .{ .terminal = .panic };
             };
             defer validator_data.deinit();
 
-            // Now check if current service has the validator privilege (x_s = (x_u)_v)
             const privileges: *const state.Chi(params.core_count) = ctx_regular.context.privileges.getReadOnly();
-            // Note: Chi field 'designate' represents the delegator/validator service
             if (privileges.designate != ctx_regular.service_id) {
                 span.debug("Service {d} does not have validator privilege, current validator service is {?d}", .{
                     ctx_regular.service_id, privileges.designate,
@@ -1340,23 +1170,13 @@ pub fn HostCalls(comptime params: Params) type {
                 return .play;
             }
 
-            // Parse the validator keys directly from memory using bytesAsSlice
-            // Each validator is exactly VALIDATOR_DATA_SIZE bytes:
-            // - 32 bytes: Bandersnatch public key
-            // - 32 bytes: Ed25519 public key
-            // - 144 bytes: BLS public key
-            // - 128 bytes: Metadata
-
-            // Verify the buffer size is correct
             if (validator_data.buffer.len != validator_count * VALIDATOR_DATA_SIZE) {
                 span.err("Invalid validator data size: expected {d}, got {d}", .{ validator_count * VALIDATOR_DATA_SIZE, validator_data.buffer.len });
                 return .{ .terminal = .panic };
             }
 
-            // Cast the byte buffer directly to ValidatorData slice - no allocation needed!
             const validators = std.mem.bytesAsSlice(types.ValidatorData, validator_data.buffer);
 
-            // Log validator keys for debugging
             for (validators, 0..) |validator, i| {
                 span.trace("Validator {d}: bandersnatch={s}, ed25519={s}", .{
                     i,
@@ -1365,13 +1185,11 @@ pub fn HostCalls(comptime params: Params) type {
                 });
             }
 
-            // Update the staging validator set (iota)
             const validator_keys = ctx_regular.context.validator_keys.getMutable() catch {
                 span.err("Problem getting mutable validator keys", .{});
                 return .{ .terminal = .panic };
             };
 
-            // Replace the entire validator set - duplicate the data since validator_data.buffer will be freed
             ctx_regular.allocator.free(validator_keys.validators);
             validator_keys.validators = ctx_regular.allocator.dupe(types.ValidatorData, validators) catch {
                 span.err("Failed to duplicate validator data", .{});
@@ -1380,7 +1198,6 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.debug("Updated staging validator set with {d} validators", .{validator_count});
 
-            // Return success
             span.debug("Validators designated successfully", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -1405,7 +1222,6 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            // Get registers per graypaper: [service_id*, data_ptr, data_size]
             const service_id_reg = exec_ctx.registers[7]; // Service ID (s* - can be current service if 2^64-1)
             const data_ptr = exec_ctx.registers[8]; // Data pointer (o)
             const data_size = exec_ctx.registers[9]; // Data size (z)
@@ -1413,13 +1229,10 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Host call: provide", .{});
             span.debug("Service ID reg: {d}, data ptr: 0x{x}, data size: {d}", .{ service_id_reg, data_ptr, data_size });
 
-            // Determine the actual service ID using graypaper convention
             const service_id: types.ServiceId = host_calls.resolveTargetService(ctx_regular, service_id_reg);
 
             span.debug("Providing data for service: {d}", .{service_id});
 
-            // Per graypaper: Read memory FIRST, then check service existence
-            // Order matters: PANIC for memory error takes precedence over WHO for missing service
             span.debug("Reading {d} bytes from memory at 0x{x}", .{ data_size, data_ptr });
             var data_slice = exec_ctx.memory.readSlice(@truncate(data_ptr), @truncate(data_size)) catch {
                 span.err("Memory access failed while reading provide data", .{});
@@ -1427,34 +1240,28 @@ pub fn HostCalls(comptime params: Params) type {
             };
             defer data_slice.deinit();
 
-            // Check if the service exists (after memory read per graypaper)
             const service_account = ctx_regular.context.service_accounts.getReadOnly(service_id) orelse {
                 span.debug("Service {d} not found, returning WHO error", .{service_id});
                 return HostCallError.WHO;
             };
 
-            // Hash the data
             var data_hash: [32]u8 = undefined;
             std.crypto.hash.blake2.Blake2b256.hash(data_slice.buffer, &data_hash, .{});
 
             span.trace("Data hash: {s}", .{std.fmt.fmtSliceHexLower(&data_hash)});
 
-            // Check if preimage was solicited (must have status [])
             const lookup = service_account.getPreimageLookup(service_id, data_hash, @intCast(data_size));
             if (lookup == null) {
-                // Not solicited - no lookup exists
                 span.debug("Preimage not solicited (no lookup exists), returning HUH", .{});
                 return HostCallError.HUH;
             }
 
             const status = lookup.?.asSlice();
             if (status.len != 0) {
-                // Wrong status - only [] (empty) is valid for providing
                 span.debug("Preimage has wrong status (len={d}), only empty status [] allowed, returning HUH", .{status.len});
                 return HostCallError.HUH;
             }
 
-            // Check for duplicate provision
             const key = ProvidedKey{
                 .service_id = service_id,
                 .hash = data_hash,
@@ -1465,9 +1272,6 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.HUH;
             }
 
-            // Store in context (x_p), NOT in service
-            // The data will be applied to services after accumulation completes
-            // Create a copy of the data for storage
             const data_owned = data_slice.takeBufferOwnership(ctx_regular.allocator) catch {
                 span.err("Failed to take ownership of data buffer", .{});
                 return .{ .terminal = .panic };
@@ -1483,7 +1287,6 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.debug("Provision stored in context for post-accumulation integration", .{});
 
-            // Return success
             span.debug("Provision added successfully", .{});
             exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             return .play;
@@ -1525,13 +1328,11 @@ pub fn HostCalls(comptime params: Params) type {
             span.debug("Host call: fetch selector={d} index1={d}", .{ selector, index1 });
             span.debug("Output ptr: 0x{x}, offset: {d}, limit: {d}", .{ output_ptr, offset, limit });
 
-            // Determine what data to fetch based on selector
             var data_to_fetch: ?[]const u8 = null;
             var needs_cleanup = false;
 
             switch (selector) {
                 0 => {
-                    // Return JAM parameters as encoded bytes per graypaper
                     span.debug("Encoding JAM chain constants", .{});
                     const encoded_constants = encoding_utils.encodeJamParams(ctx_regular.allocator, params) catch {
                         span.err("Failed to encode JAM chain constants", .{});
@@ -1543,14 +1344,11 @@ pub fn HostCalls(comptime params: Params) type {
                 },
 
                 1 => {
-                    // Selector 1: Current random accumulator (η'₀)
                     span.debug("Random accumulator available from accumulate context", .{});
                     data_to_fetch = ctx_regular.context.entropy[0..];
                 },
 
                 14 => {
-                    // Selector 14: Encoded sequence of ALL inputs (transfers + work)
-                    // Per graypaper accone: Ψ_A(..., i^T ++ i^U) where i^T=transfers, i^U=work
                     const combined_data = encoding_utils.encodeCombinedInputs(
                         ctx_regular.allocator,
                         ctx_regular.incoming_transfers,
@@ -1569,14 +1367,11 @@ pub fn HostCalls(comptime params: Params) type {
                 },
 
                 15 => {
-                    // Selector 15: Specific input by index
-                    // Per graypaper: inputs = i^T ++ i^U (transfers first, then work)
                     const transfer_count = ctx_regular.incoming_transfers.len;
                     const total_count = transfer_count + ctx_regular.operands.len;
 
                     if (index1 < total_count) {
                         if (index1 < transfer_count) {
-                            // Index in transfer range
                             const transfer_item = &ctx_regular.incoming_transfers[index1];
                             const transfer_data = encoding_utils.encodeTransferAsInput(ctx_regular.allocator, transfer_item) catch {
                                 span.err("Failed to encode transfer input", .{});
@@ -1586,7 +1381,6 @@ pub fn HostCalls(comptime params: Params) type {
                             data_to_fetch = transfer_data;
                             needs_cleanup = true;
                         } else {
-                            // Index in work operand range
                             const operand_index = index1 - transfer_count;
                             const operand = &ctx_regular.operands[operand_index];
                             const operand_data = encoding_utils.encodeOperandTuple(ctx_regular.allocator, operand) catch {
@@ -1614,7 +1408,6 @@ pub fn HostCalls(comptime params: Params) type {
                 },
 
                 else => {
-                    // Invalid selector
                     span.debug("Invalid fetch selector: {d} (valid for accumulate: 0,1,14,15)", .{selector});
                     return HostCallError.NONE;
                 },
@@ -1622,13 +1415,11 @@ pub fn HostCalls(comptime params: Params) type {
             defer if (needs_cleanup and data_to_fetch != null) ctx_regular.allocator.free(data_to_fetch.?);
 
             if (data_to_fetch) |data| {
-                // Calculate what to return based on offset and limit
                 const f = @min(offset, data.len);
                 const l = @min(limit, data.len - f);
 
                 span.debug("Fetching {d} bytes from offset {d} from data_to_fetch", .{ l, f });
 
-                // Double check if we have any data to fetch
                 // TODO: double check this in other memory access patterns
                 const v = data[f..][0..l];
                 if (v.len == 0) {
@@ -1637,13 +1428,11 @@ pub fn HostCalls(comptime params: Params) type {
                     return .play;
                 }
 
-                // Write data to memory
                 exec_ctx.memory.writeSlice(@truncate(output_ptr), data[f..][0..l]) catch {
                     span.err("Memory access failed while writing fetch data", .{});
                     return .{ .terminal = .panic };
                 };
 
-                // Return the total length of the data
                 exec_ctx.registers[7] = data.len;
                 span.debug("Fetch successful, total length: {d}", .{data.len});
             }

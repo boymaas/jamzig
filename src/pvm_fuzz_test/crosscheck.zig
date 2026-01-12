@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const PVM = @import("../pvm.zig").PVM;
 const InstructionWithArgs = PVM.InstructionWithArgs;
@@ -226,14 +227,11 @@ pub const CrossCheck = struct {
     };
 
     pub fn init(allocator: std.mem.Allocator) !Self {
-        // Initialize memory buffer
         const memory = try allocator.alloc(u8, 0x1000);
         errdefer allocator.free(memory);
 
-        // Clear memory
         @memset(memory, 0);
 
-        // Initialize registers
         const registers: [13]u64 = std.mem.zeroes([13]u64);
 
         return Self{
@@ -268,27 +266,22 @@ pub const CrossCheck = struct {
     pub fn compareInstruction(self: *Self, instruction: InstructionWithArgs) !ComparisonResult {
         try polkavm_env.initPolkaVMEnvironment();
 
-        // Setup PVM environment
         var pvm = try pvm_env.TestEnvironment.init(self.allocator);
         defer pvm.deinit();
 
-        // Copy initial memory and registers to PVM
         for (0..self.initial_registers.len) |i| {
             pvm.setRegister(i, self.initial_registers[i]);
         }
         try pvm.setMemory(0, self.initial_memory);
 
-        // Setup PolkaVM environment
         var polkavm = try polkavm_env.TestEnvironment.init(self.allocator);
         defer polkavm.deinit();
 
-        // Copy initial memory and registers to PolkaVM
         for (0..self.initial_registers.len) |i| {
             polkavm.setRegister(i, self.initial_registers[i]);
         }
         polkavm.setMemory(0, self.initial_memory);
 
-        // Execute the instruction in both environments
         const pvm_result = try pvm.executeInstruction(instruction);
         const polkavm_result = try polkavm.executeInstruction(instruction);
 
@@ -305,10 +298,8 @@ test "crosscheck:instructions" {
     var crosscheck = try CrossCheck.init(allocator);
     defer crosscheck.deinit();
 
-    // Set up register r1 with a test value
     crosscheck.setRegister(1, 4278059008);
 
-    // Create an add_imm_64 instruction that tests negative immediate
     const instruction = InstructionWithArgs{ .instruction = .add_imm_64, .args = .{
         .TwoRegOneImm = .{
             .first_register_index = 1,
@@ -325,13 +316,10 @@ test "crosscheck:instructions" {
         instruction.args.TwoRegOneImm.immediate,
     });
 
-    // Execute the instruction in both environments and compare
     var comparison = try crosscheck.compareInstruction(instruction);
     defer comparison.deinit(allocator);
 
-    // Generate and print difference report
     try comparison.getDifferenceReport(std.io.getStdErr().writer());
 
-    // Verify that results match
     try std.testing.expect(comparison.matchesExactly());
 }

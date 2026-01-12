@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const testing = std.testing;
 const types = @import("../types.zig");
@@ -19,32 +20,27 @@ pub fn decode(
     var validator_set = try ValidatorSet.init(allocator, validators_count);
     errdefer validator_set.deinit(allocator);
 
-    // Read each validator's data sequentially
     for (validator_set.validators, 0..) |*validator, i| {
         try context.push(.{ .array_index = i });
         
-        // Read bandersnatch public key
         try context.push(.{ .field = "bandersnatch" });
         reader.readNoEof(&validator.bandersnatch) catch |err| {
             return context.makeError(error.EndOfStream, "failed to read bandersnatch key: {s}", .{@errorName(err)});
         };
         context.pop();
 
-        // Read ed25519 public key
         try context.push(.{ .field = "ed25519" });
         reader.readNoEof(&validator.ed25519) catch |err| {
             return context.makeError(error.EndOfStream, "failed to read ed25519 key: {s}", .{@errorName(err)});
         };
         context.pop();
 
-        // Read bls public key
         try context.push(.{ .field = "bls" });
         reader.readNoEof(&validator.bls) catch |err| {
             return context.makeError(error.EndOfStream, "failed to read bls key: {s}", .{@errorName(err)});
         };
         context.pop();
 
-        // Read metadata
         try context.push(.{ .field = "metadata" });
         reader.readNoEof(&validator.metadata) catch |err| {
             return context.makeError(error.EndOfStream, "failed to read metadata: {s}", .{@errorName(err)});
@@ -84,7 +80,6 @@ test "decode validator_datas - single validator" {
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
-    // Write validator data
     try buffer.appendSlice(&[_]u8{1} ** 32); // bandersnatch
     try buffer.appendSlice(&[_]u8{2} ** 32); // ed25519
     try buffer.appendSlice(&[_]u8{3} ** 144); // bls
@@ -113,7 +108,6 @@ test "decode validator_datas - multiple validators" {
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
-    // Write three validators with different data
     for (0..3) |i| {
         const val: u8 = @intCast(i + 1);
         try buffer.appendSlice(&[_]u8{val} ** 32); // bandersnatch
@@ -141,7 +135,6 @@ test "decode validator_datas - insufficient data" {
     const allocator = testing.allocator;
     const validators_count: u32 = 1;
 
-    // Test truncated bandersnatch key
     {
         var context = DecodingContext.init(allocator);
         defer context.deinit();
@@ -154,7 +147,6 @@ test "decode validator_datas - insufficient data" {
         try testing.expectError(error.EndOfStream, decode(allocator, &context, validators_count, fbs.reader()));
     }
 
-    // Test truncated ed25519 key
     {
         var context = DecodingContext.init(allocator);
         defer context.deinit();
@@ -168,7 +160,6 @@ test "decode validator_datas - insufficient data" {
         try testing.expectError(error.EndOfStream, decode(allocator, &context, validators_count, fbs.reader()));
     }
 
-    // Test truncated bls key
     {
         var context = DecodingContext.init(allocator);
         defer context.deinit();
@@ -192,11 +183,9 @@ test "decode validator_datas - roundtrip" {
     var context = DecodingContext.init(allocator);
     defer context.deinit();
 
-    // Create original validator set
     var original = try ValidatorSet.init(allocator, validators_count);
     defer original.deinit(allocator);
 
-    // Set test data
     original.items()[0] = .{
         .bandersnatch = [_]u8{1} ** 32,
         .ed25519 = [_]u8{2} ** 32,
@@ -210,20 +199,16 @@ test "decode validator_datas - roundtrip" {
         .metadata = [_]u8{8} ** 128,
     };
 
-    // Encode
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
     try encoder.encode(&original, buffer.writer());
 
-    // Decode
     var fbs = std.io.fixedBufferStream(buffer.items);
     var decoded = try decode(allocator, &context, validators_count, fbs.reader());
     defer decoded.deinit(allocator);
 
-    // Verify set size
     try testing.expectEqual(original.len(), decoded.len());
 
-    // Verify validator data
     for (original.items(), decoded.items()) |orig, dec| {
         try testing.expectEqualSlices(u8, &orig.bandersnatch, &dec.bandersnatch);
         try testing.expectEqualSlices(u8, &orig.ed25519, &dec.ed25519);

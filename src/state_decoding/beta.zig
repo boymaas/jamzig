@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const testing = std.testing;
 const types = @import("../types.zig");
@@ -59,7 +60,6 @@ fn decodeRecentHistory(
     try context.push(.{ .component = "beta" });
     defer context.pop();
 
-    // Read number of blocks
     try context.push(.{ .field = "blocks_count" });
     const blocks_len = codec.readInteger(reader) catch |err| {
         return context.makeError(error.EndOfStream, "failed to read blocks count: {s}", .{@errorName(err)});
@@ -80,7 +80,6 @@ fn decodeRecentHistory(
         defer block_span.deinit();
         block_span.debug("Decoding block {d} of {d}", .{ i + 1, blocks_len });
 
-        // Read header hash
         try context.push(.{ .field = "header_hash" });
         var header_hash: Hash = undefined;
         reader.readNoEof(&header_hash) catch |err| {
@@ -89,7 +88,6 @@ fn decodeRecentHistory(
         block_span.trace("Read header hash: {s}", .{std.fmt.fmtSliceHexLower(&header_hash)});
         context.pop();
 
-        // Read beefy root (v0.6.7: just the root, not full MMR)
         try context.push(.{ .field = "beefy_root" });
         var beefy_root: Hash = undefined;
         reader.readNoEof(&beefy_root) catch |err| {
@@ -98,7 +96,6 @@ fn decodeRecentHistory(
         block_span.trace("Read beefy root: {s}", .{std.fmt.fmtSliceHexLower(&beefy_root)});
         context.pop();
 
-        // Read state root
         try context.push(.{ .field = "state_root" });
         var state_root: Hash = undefined;
         reader.readNoEof(&state_root) catch |err| {
@@ -107,7 +104,6 @@ fn decodeRecentHistory(
         block_span.trace("Read state root: {s}", .{std.fmt.fmtSliceHexLower(&state_root)});
         context.pop();
 
-        // Read work reports
         try context.push(.{ .field = "work_reports" });
         const reports_span = block_span.child(@src(), .work_reports);
         defer reports_span.deinit();
@@ -145,7 +141,6 @@ fn decodeRecentHistory(
         }
         context.pop(); // work_reports
 
-        // Create BlockInfo and add to history (v0.6.7 structure)
         const block_info = RecentHistory.BlockInfo{
             .header_hash = header_hash,
             .beefy_root = beefy_root,
@@ -174,7 +169,6 @@ fn decodeBeefyBelt(
     defer span.deinit();
     span.debug("Starting beefy belt decoding", .{});
 
-    // Read MMR peaks
     const peaks_len = codec.readInteger(reader) catch |err| {
         return context.makeError(error.EndOfStream, "failed to read MMR peaks length: {s}", .{@errorName(err)});
     };

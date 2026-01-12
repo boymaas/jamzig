@@ -31,10 +31,8 @@ pub fn GenesisConfig(params: jam_params.Params) type {
 
             var config: GenesisConfig(params) = undefined;
 
-            // set some details
             config.initial_slot = 0;
 
-            // Initialize validator keys
             var validator_keys = try allocator.alloc(ValidatorKeySet, params.validators_count);
             errdefer allocator.free(validator_keys);
 
@@ -53,7 +51,6 @@ pub fn GenesisConfig(params: jam_params.Params) type {
 
             config.validator_keys = validator_keys;
 
-            // Generate initial entropy using ChaCha8 PRNG seeded with input seed
             span.debug("Generating initial entropy values", .{});
             var entropy: [4][32]u8 = undefined;
             for (0..4) |i| {
@@ -71,27 +68,14 @@ pub fn GenesisConfig(params: jam_params.Params) type {
             defer span.deinit();
             span.debug("Building JAM state from genesis config", .{});
 
-            // Initialize an empty genesis state with all components initialized
             var state = try jamstate.JamState(params).initGenesis(allocator);
 
             errdefer state.deinit(allocator);
 
-            // Set the initial entropy values and timeslot from config
             state.eta.? = self.initial_entropy;
             state.tau.? = self.initial_slot;
 
-            // Setup the initial validator set
-            //
-            // Determinism: All nodes must start with exactly the same validator ordering to reach consensus. Any shuffling would need to be deterministic and thus wouldn't add real randomization anyway.
-            // Security: The initial ordering doesn't matter because:
-            //
-            // Block authoring in the first epoch uses the fallback function F(), which provides pseudo-random selection
-            // The ticket system will naturally create randomization starting from the second epoch
-            // The validator rotation system ensures proper cycling of responsibilities
-            //
-            // Simplicity: Starting with identical ordered sets makes the genesis state simpler to verify and reduces the chance of consensus errors during chain startup.
 
-            // First, create initial validator set from the provided keys
             for (state.kappa.?.validators, 0..params.validators_count) |*validator, i| {
                 const key = self.validator_keys[i];
                 validator.* = .{
@@ -102,25 +86,11 @@ pub fn GenesisConfig(params: jam_params.Params) type {
                 };
             }
 
-            // Create copies for lambda, iota
             std.mem.copyForwards(types.ValidatorData, state.lambda.?.validators, state.kappa.?.validators);
             std.mem.copyForwards(types.ValidatorData, state.iota.?.validators, state.kappa.?.validators);
 
-            // Initialize safrole, so same order in gamma.?.k
-            // γk (gamma_k)    : We start with the genesis validators since these are the active
-            //                   validators for the first epoch.
-            // γz (gamma_z)    : We need to create the ring root immediately so that validators
-            //                   can start submitting tickets for the next epoch.
-            // γa (gamma_a)    : Starts empty since no tickets have been submitted yet.
-            // η (eta)         : We need all four entropy values for various protocol functions.
-            //                   We initialize them deterministically based on genesis
-            //                   configuration to ensure all nodes start with the same values.
-            // γs (gamma_s)    : Most importantly, we use the fallback function to create our
-            //                   initial slot assignments. This gives us a deterministic but
-            //                   pseudo-random sequence of block authors for the first epoch.
             std.mem.copyForwards(types.ValidatorData, state.gamma.?.k.validators, state.kappa.?.validators);
 
-            // Gamma_s with initial empty tickets from the start
             state.gamma.?.s.deinit(allocator);
             state.gamma.?.s = .{
                 .keys = try safrole.epoch_handler.entropyBasedKeySelector(
@@ -131,7 +101,6 @@ pub fn GenesisConfig(params: jam_params.Params) type {
                 ),
             };
 
-            // Calculate gamma_z (Bandersnatch ring root) from gamma_k validators
             {
                 const pub_keys = try state.gamma.?.k.getBandersnatchPublicKeys(allocator);
                 defer allocator.free(pub_keys);
@@ -172,7 +141,6 @@ const ValidatorKeySet = struct {
     }
 };
 
-// Manages entropy generation and VRF output for block production
 const EntropyManager = struct {
     pub fn generateVrfOutputFallback(author_keys: *const ValidatorKeySet, eta_prime: *const types.Eta) !types.BandersnatchVrfOutput {
         const span = trace.span(@src(), .generate_vrf_output_fallback);
@@ -208,7 +176,6 @@ const EntropyManager = struct {
         const vrf_output = try generateVrfOutputFallback(&author_keys, eta_prime);
         span.trace("VRF output: {any}", .{std.fmt.fmtSliceHexLower(&vrf_output)});
 
-        // Now sign with our Bandersnatch keypair
         const context = "jam_entropy" ++ vrf_output;
         span.trace("Signing context: {s}", .{context});
         span.trace("Using public key: {any}", .{std.fmt.fmtSliceHexLower(&author_keys.bandersnatch_keypair.public_key.toBytes())});
@@ -231,7 +198,6 @@ const EntropyManager = struct {
         defer span.deinit();
         span.debug("Generating entropy source using ticket method", .{});
 
-        // Now sign with our Bandersnatch keypair
         const context = "jam_entropy" ++ ticket.id;
         span.trace("Signing context: {s}", .{context});
         span.trace("Using public key: {any}", .{std.fmt.fmtSliceHexLower(&author_keys.bandersnatch_keypair.public_key.toBytes())});
@@ -251,7 +217,6 @@ const EntropyManager = struct {
     }
 };
 
-// Manages ticket registries for tracking validator tickets across epochs
 const TicketRegistry = struct {
     const Entry = struct {
         validator_index: types.ValidatorIndex,
@@ -281,9 +246,6 @@ const TicketRegistry = struct {
         defer span.deinit();
         span.debug("Rotating ticket registries at epoch boundary", .{});
 
-        // Tickets submitted in epoch N are used for block production in epoch N+1.
-        // This rotation ensures we always have the correct mapping when looking up
-        // which validator created a winning ticket.
         const temp = self.previous;
         self.previous = self.current;
         self.current = temp;
@@ -302,7 +264,6 @@ const TicketRegistry = struct {
     }
 };
 
-// Parameter structs for cleaner function signatures
 const SealParams = struct {
     allocator: std.mem.Allocator,
     header: *const types.Header,
@@ -318,7 +279,6 @@ const TicketGenerationParams = struct {
     gamma_z: types.Hash,
 };
 
-// Generates block seals using different strategies (fallback vs ticket-based)
 const BlockSealGenerator = struct {
     pub fn generateBlockSealFallback(
         allocator: std.mem.Allocator,
@@ -336,7 +296,6 @@ const BlockSealGenerator = struct {
         span.trace("Using context: {s}", .{context});
         span.trace("Using author public key: {any}", .{std.fmt.fmtSliceHexLower(&author_keys.bandersnatch_keypair.public_key.toBytes())});
 
-        // Create bandersnatch signature
         span.debug("Serializing unsigned header", .{});
         const header_unsigned = try codec.serializeAlloc(
             types.HeaderUnsigned,
@@ -347,7 +306,6 @@ const BlockSealGenerator = struct {
         defer allocator.free(header_unsigned);
         span.trace("Unsigned header bytes: {any}", .{std.fmt.fmtSliceHexLower(header_unsigned)});
 
-        // Generate and return the seal signature
         span.debug("Generating Bandersnatch signature", .{});
         const signature = try author_keys.bandersnatch_keypair
             .sign(context, header_unsigned);
@@ -375,7 +333,6 @@ const BlockSealGenerator = struct {
         span.trace("Using context: {s}", .{context});
         span.trace("Using author public key: {any}", .{std.fmt.fmtSliceHexLower(&author_keys.bandersnatch_keypair.public_key.toBytes())});
 
-        // Create bandersnatch signature
         span.debug("Serializing unsigned header", .{});
         const header_unsigned = try codec.serializeAlloc(
             types.HeaderUnsigned,
@@ -386,7 +343,6 @@ const BlockSealGenerator = struct {
         defer allocator.free(header_unsigned);
         span.trace("Unsigned header bytes: {any}", .{std.fmt.fmtSliceHexLower(header_unsigned)});
 
-        // Generate and return the seal signature
         span.debug("Generating Bandersnatch signature", .{});
         const signature = try author_keys.bandersnatch_keypair
             .sign(context, header_unsigned);
@@ -398,9 +354,7 @@ const BlockSealGenerator = struct {
     }
 };
 
-// Manages ticket submission logic and generation
 const TicketSubmissionManager = struct {
-    // Constants for ticket submission probability
     const PROBABILITY_RANGE = 10;
     const PROBABILITY_THRESHOLD = 2; // 20% chance when random value < 2 out of 10
 
@@ -426,7 +380,6 @@ const TicketSubmissionManager = struct {
         defer span.deinit();
         span.debug("Generating ticket for validator {d}", .{validator_index});
 
-        // Create prover for this validator
         var prover = try ring_vrf.RingProver.init(
             validator.bandersnatch_keypair.secret_key.toBytes(),
             gamma_k_keys,
@@ -434,7 +387,6 @@ const TicketSubmissionManager = struct {
         );
         defer prover.deinit();
 
-        // Sign with prover to generate ticket
         const vrf_input = "jam_ticket_seal" ++ eta_prime[2] ++ [_]u8{attempt_index};
         const vrf_proof = try prover.sign(
             vrf_input,
@@ -463,7 +415,6 @@ const TicketSubmissionManager = struct {
         );
         span.debug("  Ticket ID: {s}", .{std.fmt.fmtSliceHexLower(&ticket_id)});
 
-        // Create and return ticket
         const ticket = types.TicketEnvelope{
             .attempt = attempt_index,
             .signature = vrf_proof,
@@ -525,7 +476,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
         }
 
         pub fn deinit(self: *Self) void {
-            // config is owned by calling scope
             self.config.deinit(self.allocator);
             self.state.deinit(self.allocator);
             self.ticket_registry.deinit();
@@ -541,7 +491,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
         fn handleEpochTransition(self: *Self) void {
             if (self.block_time.isNewEpoch()) {
                 self.ticket_registry.rotateRegistries();
-                // Reset ticket counts for next epoch
                 self.tickets_submitted = std.mem.zeroes([params.validators_count]u8);
             }
         }
@@ -549,7 +498,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
         fn determineGammaSPrime(self: *Self, entropy: types.Entropy, kappa_prime: types.ValidatorSet) !struct { bool, types.GammaS } {
             const span = trace.span(@src(), .determine_gamma_s_prime);
             defer span.deinit();
-            // Determine gamma_s_prime based on ticket submission state
             if (self.block_time.priorWasInTicketSubmissionTail() and
                 self.block_time.isConsecutiveEpoch())
             {
@@ -596,7 +544,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
         fn calculateEtaPrimeWithoutEta0(self: *const Self, eta_current: *const types.Eta) types.Eta {
             var eta_prime = eta_current.*;
             if (self.block_time.isNewEpoch()) {
-                // Rotate the entropy values
                 eta_prime[3] = eta_current[2];
                 eta_prime[2] = eta_current[1];
                 eta_prime[1] = eta_current[0];
@@ -656,12 +603,10 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             header.seal = block_seal.toBytes();
         }
 
-        // Build the next block in the chain with proper sealing
         pub fn buildNextBlock(self: *Self) !types.Block {
             const span = trace.span(@src(), .build_next_block);
             defer span.deinit();
 
-            // Progress to next slot and update state root
             self.block_time = self.block_time.progressSlots(1);
             self.last_state_root = try self.state.buildStateRoot(self.allocator);
 
@@ -671,17 +616,13 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 self.block_time.current_slot_in_epoch,
             });
 
-            // Handle epoch transition if needed
             self.handleEpochTransition();
 
             // TODO: rotate the validator sets on a new epoch, now we have all the same validator sets
-            // as such this is not necessary
 
-            // Calculate eta_prime (taking into account if this is a newEpoch)
             const eta_current = &self.state.eta.?;
             var eta_prime_without_eta_0 = self.calculateEtaPrimeWithoutEta0(eta_current);
 
-            // Determine gamma_s_prime for block production
             var r = try self.determineGammaSPrime(
                 eta_prime_without_eta_0[2],
                 self.state.kappa.?, // FIXME: this would be kappa_prime, but now all validatorset are the same
@@ -689,11 +630,9 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             defer if (r[0]) r[1].deinit(self.allocator);
             const gamma_s_prime = r[1];
 
-            // Select block author and prepare block components
             const author_index = try self.selectBlockAuthor(eta_prime_without_eta_0[2], gamma_s_prime);
             span.debug("Selected block author index: {d}", .{author_index});
 
-            // Get the author keys
             const author_keys = self.config.validator_keys[author_index];
             const epoch_mark = try self.prepareEpochMark();
             const tickets_mark = try self.prepareTicketsMark();
@@ -705,10 +644,8 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             eta_prime_without_eta_0[0] = EntropyManager.updateEntropy(self.state.eta.?, try entropy_source.outputHash());
             const eta_prime = eta_prime_without_eta_0;
 
-            // Generate extrinsic content
             const extrinsic = try self.generateBlockContent(&eta_prime);
 
-            // Create header
             var header = types.Header{
                 .parent = self.last_header_hash orelse std.mem.zeroes(types.Hash),
                 .parent_state_root = self.last_state_root orelse std.mem.zeroes(types.Hash),
@@ -722,16 +659,13 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 .seal = undefined,
             };
 
-            // Seal the block
             try self.sealBlock(&header, gamma_s_prime, author_keys, &eta_prime_without_eta_0);
 
-            // Assemble complete block
             const block = types.Block{
                 .header = header,
                 .extrinsic = extrinsic,
             };
 
-            // Update block history
             self.last_header_hash = try block.header.header_hash(params, self.allocator);
 
             span.trace("block:\n{s}", .{types.fmt.format(&block)});
@@ -749,30 +683,20 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             var generated = std.ArrayList(TicketSubmissionManager.GeneratedTicket).init(self.allocator);
             defer generated.deinit();
 
-            // The ring
             const gamma_k_keys = try self.state.gamma.?.k.getBandersnatchPublicKeys(self.allocator);
             defer self.allocator.free(gamma_k_keys);
 
-            // Ring VRF verification ensures ticket authenticity without revealing
-            // validator identity, maintaining anonymity while preventing forgery.
-            // Each validator has a probabilistic chance to submit tickets to ensure
-            // fair distribution and prevent gaming of the system.
             for (self.config.validator_keys, 0..) |validator, index| {
-                // Validate validator index
                 if (index >= params.validators_count) {
                     span.err("Invalid validator index {d}", .{index});
                     continue;
                 }
 
-                // Skip if validator already submitted max tickets
                 if (self.tickets_submitted[index] >= params.max_ticket_entries_per_validator) {
                     span.trace("Validator {d} already submitted max tickets", .{index});
                     continue;
                 }
 
-                // Probabilistic submission prevents validators from gaming the system
-                // by submitting tickets at predictable times. The ~20% chance ensures
-                // reasonable ticket distribution across the submission period.
                 if (TicketSubmissionManager.shouldSubmitTicket(self.rng)) {
                     const attempt_index = self.tickets_submitted[index];
                     const generated_ticket = try TicketSubmissionManager.generateSingleTicket(
@@ -786,17 +710,14 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                     );
                     try generated.append(generated_ticket);
 
-                    // After creating the ticket and getting its ID:
                     const validator_index = try self.state.kappa.?.findValidatorIndex(
                         .BandersnatchPublic,
                         validator.bandersnatch_keypair.public_key.toBytes(),
                     );
                     try self.ticket_registry.registerTicket(generated_ticket.id, validator_index, attempt_index);
 
-                    // Increment ticket count for this validator
                     self.tickets_submitted[index] += 1;
 
-                    // Only include up to K tickets per block
                     if (generated.items.len >= params.max_tickets_per_extrinsic) {
                         span.debug("Reached max tickets per block ({d})", .{params.max_ticket_entries_per_validator});
                         break;
@@ -804,10 +725,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 }
             }
 
-            // Sort tickets by VRF output (ticket identifier)
-            // Sorting by VRF output ensures deterministic ordering that all nodes
-            // can replicate, maintaining consensus while preserving the unpredictability
-            // of which validators' tickets appear in which positions.
             if (generated.items.len > 0) {
                 span.debug("Sorting {d} tickets by VRF output", .{generated.items.len});
                 std.sort.insertion(
@@ -836,20 +753,16 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             defer span.deinit();
             span.debug("Using ticket-based author selection for slot {d}", .{slot_in_epoch});
 
-            // Validate slot index
             if (slot_in_epoch >= tickets.len) {
                 return error.InvalidSlotInEpoch;
             }
 
-            // Get ticket for this slot
             const ticket = tickets[slot_in_epoch];
             span.debug("Selected ticket: {s}", .{std.fmt.fmtSliceHexLower(&ticket.id)});
 
-            // Look up the validator who created this ticket
             if (self.ticket_registry.lookupTicket(ticket.id)) |entry| {
                 span.debug("Found ticket registry entry - validator: {d}, attempt: {d}", .{ entry.validator_index, entry.attempt });
 
-                // Validate the entry index matches
                 if (entry.attempt != ticket.attempt) {
                     span.err("Ticket attempt index mismatch entry.attempt {d} != ticket.attempt {d}", .{ entry.attempt, ticket.attempt });
                     return error.TicketAttemptMismatch;
@@ -857,7 +770,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
 
                 return entry.validator_index;
             }
-            // No valid author found
             span.err("Could not find validator ticket in the ticket_registry", .{});
             return error.ValidatorTicketNotFoundInRegistry;
         }
@@ -867,7 +779,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             defer span.deinit();
             span.debug("Using fallback key-based author selection for slot {d}", .{slot_in_epoch});
 
-            // Validate inputs
             if (keys.len != params.epoch_length) {
                 span.err("Invalid key count: expected {d}, got {d}", .{ params.validators_count, keys.len });
                 return error.InvalidKeyCount;
@@ -876,7 +787,6 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
                 return error.InvalidSlotInEpoch;
             }
 
-            // Encode the slot index into 4 bytes as per equation 6.26
             const validator_index = safrole.epoch_handler.deriveKeyIndex(
                 entropy,
                 slot_in_epoch,
@@ -891,16 +801,13 @@ pub fn BlockBuilder(comptime params: jam_params.Params) type {
             defer span.deinit();
             span.debug("Selecting block author for slot {d}", .{self.block_time.current_slot});
 
-            // Get index into gamma_s using current slot
             const slot_in_epoch = self.block_time.current_slot_in_epoch;
             span.debug("Slot in epoch: {d}", .{slot_in_epoch});
 
-            // Validate slot is within epoch bounds
             if (slot_in_epoch >= params.epoch_length) {
                 return error.InvalidSlotInEpoch;
             }
 
-            // Select based on gamma_s mode
             return switch (gamma_s_prime) {
                 .tickets => |tickets| try self.selectBlockAuthorFromTickets(tickets, slot_in_epoch),
                 .keys => |keys| try self.selectBlockAuthorFromKeys(keys, entropy, slot_in_epoch),
