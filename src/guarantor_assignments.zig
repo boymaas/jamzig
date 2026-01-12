@@ -7,11 +7,8 @@ const utils = @import("utils/sort.zig");
 const state = @import("state.zig");
 const StateTransition = @import("state_delta.zig").StateTransition;
 
-/// Combined result containing both assignments and the validator set used
 pub const GuarantorAssignmentResult = struct {
-    /// The permutation mapping validator index to core index
     assignments: []u32,
-    /// The validator set used (reference, not owned)
     validators: *const types.ValidatorSet,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -20,7 +17,6 @@ pub const GuarantorAssignmentResult = struct {
     }
 };
 
-/// Rotate core assignments by n positions
 pub fn rotateAssignments(
     comptime core_count: u32,
     cores: []u32,
@@ -31,8 +27,7 @@ pub fn rotateAssignments(
     }
 }
 
-/// Create core assignments using entropy and rotation
-/// Implementation of equation 11.21
+/// Equation 11.21
 pub fn permuteAssignments(
     comptime params: @import("jam_params.zig").Params,
     allocator: std.mem.Allocator,
@@ -47,7 +42,7 @@ pub fn permuteAssignments(
 
     var i: u32 = 0;
     while (i < params.validators_count) : (i += 1) {
-        const core = (i * params.core_count) / params.validators_count; // C·i/V
+        const core = (i * params.core_count) / params.validators_count;
         try assignments.append(core);
     }
 
@@ -69,8 +64,7 @@ const Result = struct {
     }
 };
 
-/// Get current guarantor assignments G
-/// Implementation of equation 11.22
+/// Equation 11.22
 pub fn buildForTimeSlot(
     comptime params: @import("jam_params.zig").Params,
     allocator: std.mem.Allocator,
@@ -85,8 +79,6 @@ pub fn buildForTimeSlot(
     };
 }
 
-/// Centralized function to determine guarantor assignments (G or G*)
-/// This encapsulates all logic for determining which assignments and validators to use
 pub fn determineGuarantorAssignments(
     comptime params: @import("jam_params.zig").Params,
     allocator: std.mem.Allocator,
@@ -110,7 +102,7 @@ pub fn determineGuarantorAssignments(
         const assignments = try permuteAssignments(
             params,
             allocator,
-            eta_prime[2], // η'₂
+            eta_prime[2],
             stx.time.current_slot,
         );
 
@@ -134,7 +126,7 @@ pub fn determineGuarantorAssignments(
             const assignments = try permuteAssignments(
                 params,
                 allocator,
-                eta_prime[2], // η'₂
+                eta_prime[2],
                 previous_slot,
             );
 
@@ -151,7 +143,7 @@ pub fn determineGuarantorAssignments(
             const assignments = try permuteAssignments(
                 params,
                 allocator,
-                eta_prime[3], // η'₃
+                eta_prime[3],
                 previous_slot,
             );
 

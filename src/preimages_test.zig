@@ -7,20 +7,11 @@ const runPreimagesTest = @import("preimages_test/runner.zig").runPreimagesTest;
 
 const BASE_PATH = "src/jamtestvectors/data/stf/preimages/";
 
-// Debug helper function
-fn printStateDiff(allocator: std.mem.Allocator, pre_state: *const tvector.State, post_state: *const tvector.State) !void {
-    const state_diff = try @import("disputes_test/diffz.zig").diffStates(allocator, pre_state, post_state);
-    defer allocator.free(state_diff);
-    std.debug.print("\nState Diff: {s}\n", .{state_diff});
-}
-
-// Tiny test vectors
 pub const TINY_PARAMS = jam_params.TINY_PARAMS;
 
 const loader = @import("jamtestvectors/loader.zig");
 
 fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, test_bin: []const u8) !void {
-    std.debug.print("\nRunning test: {s}\n", .{test_bin});
 
     var test_vector = try loader.loadAndDeserializeTestVector(
         tvector.TestCase,

@@ -3,21 +3,19 @@
 const std = @import("std");
 const Blake2b256 = std.crypto.hash.blake2.Blake2b256;
 
-/// Encodes a u32 into 4 bytes in little-endian format (E_4 from graypaper)
+/// E_4 from graypaper
 inline fn encodeU32(n: u32) [4]u8 {
     var bytes: [4]u8 = undefined;
     std.mem.writeInt(u32, &bytes, n, .little);
     return bytes;
 }
 
-/// Decodes 4 bytes in little-endian format to a u32 (E_4^(-1) from graypaper)
+/// E_4^(-1) from graypaper
 inline fn decodeU32(bytes: []const u8) u32 {
     return std.mem.readInt(u32, bytes[0..4], .little);
 }
 
-/// Derives entropy from a hash for the i-th position (Q function from graypaper F.2)
-/// 
-/// This implements Q(i, h) = E_4^(-1)(H(h ++ E_4(floor(i/8)))[(4i mod 32):(4i mod 32)+4])
+/// Q function from graypaper F.2: Q(i, h) = E_4^(-1)(H(h ++ E_4(floor(i/8)))[(4i mod 32):(4i mod 32)+4])
 pub fn deriveEntropy(i: usize, hash: [32]u8) u32 {
     const idx = i / 8;
     const encoded_idx = encodeU32(@intCast(idx));
@@ -32,11 +30,7 @@ pub fn deriveEntropy(i: usize, hash: [32]u8) u32 {
     return decodeU32(output[start .. start + 4]);
 }
 
-/// Core Fisher-Yates implementation used by all public functions
-/// 
-/// Preconditions:
-/// - sequence.len == result.len == seq_copy.len
-/// - hash.len == 32
+/// Preconditions: sequence.len == result.len == seq_copy.len, hash.len == 32
 fn shuffleCore(
     comptime T: type,
     sequence: []T,
@@ -63,11 +57,6 @@ fn shuffleCore(
     @memcpy(sequence, result);
 }
 
-/// Fisher-Yates shuffle with explicit allocation
-/// 
-/// Shuffles the sequence in-place using the provided hash as entropy source.
-/// Returns error if allocation fails.
-/// 
 /// Memory: Allocates 2 * sequence.len * @sizeOf(T) bytes
 pub fn shuffleWithHashAlloc(
     comptime T: type,
@@ -86,14 +75,9 @@ pub fn shuffleWithHashAlloc(
     shuffleCore(T, sequence, result, seq_copy, hash);
 }
 
-/// Maximum safe stack allocation size in bytes (500KB)
 const MAX_SAFE_STACK_BYTES: usize = 500 * 1024;
 
-/// Fisher-Yates shuffle with compile-time bounded stack allocation
-/// 
-/// Uses stack allocation for sequences up to max_size elements.
-/// Panics if sequence.len > max_size.
-/// 
+/// Uses stack allocation for sequences up to max_size elements. Panics if sequence.len > max_size.
 /// Memory: Uses 2 * max_size * @sizeOf(T) bytes of stack space
 pub fn shuffleWithHash(
     comptime T: type,

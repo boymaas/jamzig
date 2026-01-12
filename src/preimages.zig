@@ -24,7 +24,6 @@ fn comparePreimages(lhs: types.Preimage, rhs: types.Preimage) bool {
     return lhs.blob.len < rhs.blob.len;
 }
 
-/// Processes preimage extrinsics
 pub fn processPreimagesExtrinsic(
     comptime params: Params,
     stx: *state_delta.StateTransition(params),
@@ -108,7 +107,6 @@ pub fn processPreimagesExtrinsic(
     span.debug("Completed preimages extrinsic processing", .{});
 }
 
-/// Calculate hash of a preimage blob
 fn calculatePreimageHash(blob: []const u8) !types.OpaqueHash {
     var hash: types.OpaqueHash = undefined;
     std.crypto.hash.blake2.Blake2b256.hash(blob, &hash, .{});

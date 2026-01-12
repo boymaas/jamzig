@@ -1,4 +1,3 @@
-/// Enum representing all possible host call operations
 pub const Id = enum(u32) {
     gas = 0, // Host call for retrieving remaining gas counter
     fetch = 1, // Host call for fetching work packages
@@ -37,13 +36,11 @@ pub const Id = enum(u32) {
 /// Default catchall handler that follows the graypaper specification
 /// Deducts 10 gas and sets R7 to WHAT return code
 pub fn defaultHostCallCatchall(context: *@import("../pvm/execution_context.zig").ExecutionContext, _: *anyopaque) HostCallError!@import("../pvm/execution_context.zig").ExecutionContext.HostCallResult {
-    // Graypaper: deduct 10 gas for non-existent host calls
     context.gas -= 10;
     context.registers[7] = @intFromEnum(ReturnCode.WHAT);
     return .play;
 }
 
-/// Return codes for host call operations
 pub const ReturnCode = enum(u64) {
     OK = 0, // The return value indicating general success
     NONE = 0xFFFFFFFFFFFFFFFF, // The return value indicating an item does not exist (2^64 - 1)

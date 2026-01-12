@@ -100,7 +100,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
                 var service_id: [4]u8 = undefined;
                 std.mem.writeInt(u32, &service_id, item.service_id, .little);
                 blob_span.trace("Service ID bytes: {s}", .{std.fmt.fmtSliceHexLower(&service_id)});
-
                 blob_span.trace("Accumulation output: {s}", .{std.fmt.fmtSliceHexLower(&item.output)});
 
                 const blob = try self.allocator.dupe(u8, &(service_id ++ item.output));
@@ -125,7 +124,7 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             var accumulation_stats = std.AutoHashMap(types.ServiceId, AccumulationServiceStats).init(self.allocator);
             errdefer accumulation_stats.deinit();
 
-            span.debug("Calculating I (Accumulation) statistics for {d} accumulated reports", .{accumulated.len});
+            span.debug("Calculating accumulation statistics for {d} accumulated reports", .{accumulated.len});
 
             var service_gas_iter = service_gas_used.iterator();
             while (service_gas_iter.next()) |entry| {

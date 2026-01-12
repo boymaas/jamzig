@@ -11,7 +11,6 @@ test "entropy" {
     std.debug.print("Loaded test vector with {} tests\n", .{vector.tests.len});
 
     for (vector.tests, 0..) |shuffle_test, idx| {
-        // Create the initial sequence [0..input)
         var sequence = try allocator.alloc(u32, shuffle_test.input);
         defer allocator.free(sequence);
 
@@ -19,10 +18,8 @@ test "entropy" {
             sequence[i] = @intCast(i);
         }
 
-        // Perform the shuffle
         try fisher_yates.shuffleWithHashAlloc(u32, allocator, sequence, shuffle_test.entropy);
 
-        // Verify the result matches expected output
         try std.testing.expectEqualSlices(u32, shuffle_test.output, sequence);
 
         std.debug.print("Test case {}: Input={} passed\n", .{ idx + 1, shuffle_test.input });

@@ -3,13 +3,6 @@ const constants = @import("constants.zig");
 const errors = @import("errors.zig");
 const util = @import("util.zig");
 
-/// Decodes a fixed-length integer from bytes in little-endian format (eq. 271 reverse)
-///
-/// Parameters:
-/// - T: The integer type to decode into
-/// - buffer: Input buffer containing the encoded bytes
-///
-/// Returns: The decoded integer value
 pub fn decodeFixedLengthInteger(comptime T: type, buffer: []const u8) T {
     std.debug.assert(buffer.len > 0);
     std.debug.assert(buffer.len <= @sizeOf(T));
@@ -21,23 +14,11 @@ pub fn decodeFixedLengthInteger(comptime T: type, buffer: []const u8) T {
     return result;
 }
 
-/// Decodes an integer (0 to 2^64) from variable-length encoding (eq. 272)
-/// as described in the graypaper.
-/// Result of variable-length integer decoding
 pub const DecodeResult = struct {
-    /// The decoded integer value
     value: u64,
-    /// Number of bytes consumed from the input buffer
     bytes_read: usize,
 };
 
-/// Decodes a variable-length integer from a buffer
-///
-/// Parameters:
-/// - buffer: Input buffer containing the encoded integer
-///
-/// Returns: DecodeResult with the value and bytes consumed
-/// Errors: EmptyBuffer, InsufficientData
 pub fn decodeInteger(buffer: []const u8) !DecodeResult {
     if (buffer.len == 0) {
         return errors.DecodingError.EmptyBuffer;

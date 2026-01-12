@@ -11,7 +11,6 @@ const Params = @import("jam_params.zig").Params;
 
 const services = @import("services.zig");
 
-/// Encodes data using the provided writer function and returns an owned slice.
 fn encodeAndOwnSlice(
     allocator: std.mem.Allocator,
     encodeFn: anytype,
@@ -23,8 +22,6 @@ fn encodeAndOwnSlice(
     return buffer.toOwnedSlice();
 }
 
-/// Function that takes a slice and converts it to
-/// a fixed array of size
 fn sliceToFixedArray(comptime size: usize, slice: []const u8) [size]u8 {
     std.debug.assert(slice.len == size);
     var result: [size]u8 = undefined;
@@ -134,7 +131,6 @@ pub const MerklizationDictionaryDiff = struct {
         self.entries.items;
     }
 
-    // TODO: camelCase
     pub fn has_changes(self: *const MerklizationDictionaryDiff) bool {
         return self.entries.items.len > 0;
     }
@@ -156,7 +152,6 @@ pub const MerklizationDictionaryDiff = struct {
     }
 };
 
-// Enhanced dictionary entry with metadata
 pub const DictEntry = struct {
     key: types.StateKey,
     value: []const u8,
@@ -177,7 +172,6 @@ pub const DictEntry = struct {
 pub const MerklizationDictionary = struct {
     entries: std.AutoHashMap(types.StateKey, DictEntry),
 
-    // FIX: move these entries to a shared type file
     pub const MerkleEntry = @import("merkle.zig").Entry;
 
     pub fn init(allocator: std.mem.Allocator) MerklizationDictionary {
@@ -202,9 +196,6 @@ pub const MerklizationDictionary = struct {
         return buffer.toOwnedSlice();
     }
 
-    /// Returns a new owned slice of entries sorted by key.
-    /// The slice should be freed by the caller.
-    /// The values remain owned by the dictionary.
     pub fn toOwnedSliceSortedByKey(self: *const MerklizationDictionary) ![]MerkleEntry {
         const slice = try self.toOwnedSlice();
         const Context = struct {
@@ -216,9 +207,6 @@ pub const MerklizationDictionary = struct {
         return slice;
     }
 
-    /// Converts the dictionary to an array of KeyValue pairs for the fuzz protocol.
-    /// Returns a new owned slice that should be freed by the caller.
-    /// The values remain owned by the dictionary.
     pub const FuzzKeyValue = struct { key: [31]u8, value: []const u8 };
 
     pub fn toKeyValueArray(self: *const MerklizationDictionary) ![]FuzzKeyValue {
@@ -226,7 +214,7 @@ pub const MerklizationDictionary = struct {
         var it = self.entries.iterator();
         while (it.next()) |entry| {
             try buffer.append(.{
-                .key = entry.key_ptr.*, // StateKey is same as TrieKey ([31]u8)
+                .key = entry.key_ptr.*,
                 .value = entry.value_ptr.value,
             });
         }
@@ -238,17 +226,14 @@ pub const MerklizationDictionary = struct {
         var it = self.entries.iterator();
         while (it.next()) |entry| {
             try buffer.append(.{
-                .key = entry.key_ptr.*, // StateKey is same as TrieKey ([31]u8)
+                .key = entry.key_ptr.*,
                 .value = try self.entries.allocator.dupe(u8, entry.value_ptr.value),
             });
         }
         return buffer.toOwnedSlice();
     }
 
-    /// Puts an DictEntry in the dictionary, deallocates an existing one
-    /// takes ownership of the entry
     pub fn put(self: *MerklizationDictionary, entry: DictEntry) !void {
-        // Put or replace the entry
         if (try self.entries.fetchPut(entry.key, entry)) |existing| {
             @constCast(&existing.value).deinit(self.entries.allocator);
         }
@@ -263,19 +248,16 @@ pub const MerklizationDictionary = struct {
         self.* = undefined;
     }
 
-    /// Compare this dictionary with another and return their differences
     pub fn diff(self: *const MerklizationDictionary, other: *const MerklizationDictionary) !MerklizationDictionaryDiff {
         var result = MerklizationDictionaryDiff.init(self.entries.allocator);
         errdefer result.deinit();
 
-        // Check for added and changed entries
         var other_it = other.entries.iterator();
         while (other_it.next()) |other_entry| {
             const key = other_entry.key_ptr.*;
             const new_value = other_entry.value_ptr.*;
 
             if (self.entries.get(key)) |me_entry| {
-                // Entry exists in both - check if changed
                 if (!std.mem.eql(u8, me_entry.value, new_value.value)) {
                     try result.entries.append(.{
                         .key = key,
@@ -285,7 +267,6 @@ pub const MerklizationDictionary = struct {
                     });
                 }
             } else {
-                // Entry only in other - added
                 try result.entries.append(.{
                     .key = key,
                     .diff_type = .added,
@@ -294,11 +275,9 @@ pub const MerklizationDictionary = struct {
             }
         }
 
-        // Check for removed entries
         var self_it = self.entries.iterator();
         while (self_it.next()) |self_entry| {
             const key = self_entry.key_ptr.*;
-            // const old_value = self_entry.value_ptr.*;
 
             if (!other.entries.contains(key)) {
                 try result.entries.append(.{
@@ -328,7 +307,6 @@ pub const MerklizationDictionary = struct {
                 std.fmt.fmtSliceHexLower(&entry.key_ptr.*),
             });
 
-            // Format metadata based on type
             switch (entry.value_ptr.metadata) {
                 .state_component => |m| try writer.print("component: {d}, ", .{m.component_index}),
                 .delta_base => |m| try writer.print("service: {d}, ", .{m.service_index}),
@@ -351,8 +329,6 @@ pub const DictionaryConfig = struct {
     include_storage: bool = true,
 };
 
-/// Uses a config to conditionally enable or disable certain parts of the
-/// building process.
 pub fn buildStateMerklizationDictionaryWithConfig(
     comptime params: Params,
     allocator: std.mem.Allocator,
@@ -362,12 +338,9 @@ pub fn buildStateMerklizationDictionaryWithConfig(
     var map = std.AutoHashMap(types.StateKey, DictEntry).init(allocator);
     errdefer map.deinit();
 
-    // Helpers to ...
     const getOrInitManaged = @import("state_dictionary/utils.zig").getOrInitManaged;
 
-    // Encode the simple state components using specific encoders
     {
-        // Alpha (1)
         const alpha_key = state_keys.constructStateComponentKey(1);
         var alpha_managed = try getOrInitManaged(allocator, &state.alpha, .{});
         defer alpha_managed.deinit(allocator);
@@ -431,7 +404,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
             .value = psi_value,
         });
 
-        // Eta (6) does not contain allocations
         const eta_key = state_keys.constructStateComponentKey(6);
         const eta_managed = if (state.eta) |eta| eta else [_]types.Entropy{[_]u8{0} ** 32} ** 4;
         const eta_value = try encodeAndOwnSlice(allocator, state_encoder.encodeEta, .{&eta_managed});
@@ -489,7 +461,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
             .value = tau_value,
         });
 
-        // Chi (12)
         const chi_key = state_keys.constructStateComponentKey(12);
         var chi_managed = try getOrInitManaged(allocator, &state.chi, .{allocator});
         defer chi_managed.deinit(allocator);
@@ -509,7 +480,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
             .value = pi_value,
         });
 
-        // VarTheta (14) - v0.6.7: Work reports queue (renamed from Theta)
         const vartheta_key = state_keys.constructStateComponentKey(14);
         var vartheta_managed = try getOrInitManaged(allocator, &state.vartheta, .{allocator});
         defer vartheta_managed.deinit(allocator);
@@ -529,7 +499,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
             .value = xi_value,
         });
 
-        // Theta (16) - v0.6.7: NEW - Accumulation outputs (lastaccout)
         const theta_key = state_keys.constructStateComponentKey(16);
         var theta_managed = try getOrInitManaged(allocator, &state.theta, .{allocator});
         defer theta_managed.deinit(allocator);
@@ -540,7 +509,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
         });
     }
 
-    // Handle delta component (service accounts) specially
     if (config.include_storage) {
         var delta_managed = try getOrInitManaged(allocator, &state.delta, .{allocator});
         defer delta_managed.deinit(allocator);
@@ -550,7 +518,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                 const service_idx = service_entry.key_ptr.*;
                 const account = service_entry.value_ptr;
 
-                // Base account data
                 const base_key = state_keys.constructServiceBaseKey(service_idx);
                 var base_value = std.ArrayList(u8).init(allocator);
                 try state_encoder.delta.encodeServiceAccountBase(params, account, base_value.writer());
@@ -560,34 +527,22 @@ pub fn buildStateMerklizationDictionaryWithConfig(
                     .value = try base_value.toOwnedSlice(),
                 });
 
-                // All data entries - use the StateKey directly as it's already in final format
-                // With unified container, we process all data types together
                 var data_iter = account.data.iterator();
                 while (data_iter.next()) |data_entry| {
-                    const data_key = data_entry.key_ptr.*; // Already a properly formatted StateKey
+                    const data_key = data_entry.key_ptr.*;
                     const data_value = data_entry.value_ptr.*;
-
-                    // Check if we should include this entry based on config
-                    // Storage keys always included (when include_storage is true)
-                    // Preimage keys included only if include_preimages is true
-                    // Preimage lookup keys included only if include_preimages and include_preimage_timestamps are true
 
                     var should_include = false;
 
-                    // Identify key type by examining the interleaved pattern
                     if (data_key[3] == 255 and data_key[5] == 255 and data_key[7] == 255) {
                         if (data_key[1] == 255) {
-                            // Storage key (marker is 0xFFFFFFFF)
-                            should_include = true; // Already inside include_storage check
+                            should_include = true;
                         } else if (data_key[1] == 254) {
-                            // Preimage key (marker is 0xFFFFFFFE)
                             should_include = config.include_preimages;
                         } else {
-                            // Preimage lookup key (length < 0xFFFFFFFE)
                             should_include = config.include_preimages and config.include_preimage_timestamps;
                         }
                     } else {
-                        // Other preimage lookup keys
                         should_include = config.include_preimages and config.include_preimage_timestamps;
                     }
 
@@ -605,7 +560,6 @@ pub fn buildStateMerklizationDictionaryWithConfig(
     return .{ .entries = map };
 }
 
-/// builds the full buildStateMerklizationDictionary
 pub fn buildStateMerklizationDictionary(
     comptime params: Params,
     allocator: std.mem.Allocator,

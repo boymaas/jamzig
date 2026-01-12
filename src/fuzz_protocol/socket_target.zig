@@ -6,7 +6,6 @@ const target_interface = @import("target_interface.zig");
 
 const trace = @import("tracing").scoped(.fuzz_protocol);
 
-/// Socket-based target that communicates with external processes via Unix domain sockets
 pub const SocketTarget = struct {
     allocator: std.mem.Allocator,
     socket_path: []const u8,
@@ -28,7 +27,6 @@ pub const SocketTarget = struct {
         self.* = undefined;
     }
 
-    /// Connect to the target socket
     pub fn connectToTarget(self: *SocketTarget) !void {
         const span = trace.span(@src(), .connect_target);
         defer span.deinit();
@@ -38,7 +36,6 @@ pub const SocketTarget = struct {
         span.debug("Connected to target successfully", .{});
     }
 
-    /// Disconnect from target
     pub fn disconnect(self: *SocketTarget) void {
         const span = trace.span(@src(), .disconnect_target);
         defer span.deinit();
@@ -50,7 +47,6 @@ pub const SocketTarget = struct {
         }
     }
 
-    /// Send message to target via socket
     pub fn sendMessage(self: *SocketTarget, comptime params: @import("../jam_params.zig").Params, message: messages.Message) !void {
         const socket = self.socket orelse return error.NotConnected;
         const encoded = try messages.encodeMessage(params, self.allocator, message);
@@ -58,7 +54,6 @@ pub const SocketTarget = struct {
         try frame.writeFrame(socket, encoded);
     }
 
-    /// Read response message from target via socket
     pub fn readMessage(self: *SocketTarget, comptime params: @import("../jam_params.zig").Params) !messages.Message {
         const socket = self.socket orelse return error.NotConnected;
         const frame_data = try frame.readFrame(self.allocator, socket);
@@ -67,7 +62,6 @@ pub const SocketTarget = struct {
     }
 };
 
-// Compile-time validation that SocketTarget implements the target interface
 comptime {
     target_interface.validateTargetInterface(SocketTarget);
 }

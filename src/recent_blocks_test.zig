@@ -37,23 +37,19 @@ test "recent blocks: parsing all test cases" {
         );
         defer test_case.deinit(allocator);
 
-        // Test the RecentHistory implementation, H = 8 see GP
         var recent_history = try RecentHistory.init(allocator, 8);
         defer recent_history.deinit();
 
-        // Set up pre-state
         for (test_case.pre_state.beta.history) |block_info| {
             const block = try fromTestVectorBlockInfo(allocator, block_info);
             try recent_history.addBlockInfo(block);
         }
 
-        // Process the new block
         const recent_block = try fromTestVectorInputToRecentBlock(allocator, test_case.input);
         errdefer recent_block.deinit(allocator);
 
         try recent_history.import(recent_block);
 
-        // Verify the post-state
         try testing.expectEqual(test_case.post_state.beta.history.len, recent_history.blocks.items.len);
         for (test_case.post_state.beta.history, 0..) |expected_block, i| {
             const actual_block = recent_history.getBlockInfo(i) orelse
@@ -69,8 +65,6 @@ test "recent blocks: parsing all test cases" {
     }
 }
 
-/// Transforms the test vector input into a RecentBlock, which can be used to call our
-/// Beta (recent blocks) implementation.
 fn fromTestVectorInputToRecentBlock(allocator: std.mem.Allocator, input: tvector.Input) !RecentBlock {
     var work_packages = try allocator.alloc(ReportedWorkPackage, input.work_packages.len);
     for (input.work_packages, 0..) |wp, i| {
@@ -87,18 +81,13 @@ fn fromTestVectorInputToRecentBlock(allocator: std.mem.Allocator, input: tvector
     };
 }
 
-/// Converts a test vector BlockInfo into our internal BlockInfo structure.
-/// This function allocates memory for the beefy_mmr and work_report_hashes fields,
-/// so the caller is responsible for freeing this memory when it's no longer needed.
 fn fromTestVectorBlockInfo(allocator: std.mem.Allocator, block_info: tvector.BlockInfoTestVector) !BlockInfo {
     var block = BlockInfo{
         .header_hash = block_info.header_hash,
         .state_root = block_info.state_root,
-        // Test vectors have a single beefy_root instead of MMR peaks
         .beefy_mmr = try allocator.alloc(?Hash, 1),
         .work_reports = try allocator.alloc(ReportedWorkPackage, block_info.reported.len),
     };
-    // Store the beefy_root as the single element
     block.beefy_mmr[0] = block_info.beefy_root;
     for (block_info.reported, 0..) |report, i| {
         block.work_reports[i] = ReportedWorkPackage{
@@ -109,11 +98,6 @@ fn fromTestVectorBlockInfo(allocator: std.mem.Allocator, block_info: tvector.Blo
     return block;
 }
 
-/// Compares two BlockInfo structures for equality.
-/// This function checks if all fields of the expected and actual BlockInfo
-/// structures match, including header_hash, state_root, beefy_mmr, and work_report_hashes.
-/// It prints detailed error messages if any mismatch is found.
-/// Returns an error if any field doesn't match.
 fn compareBlocks(expected: BlockInfo, actual: BlockInfo, block_idx: usize) !void {
     if (!std.mem.eql(u8, &expected.header_hash, &actual.header_hash)) {
         std.debug.print("Block {d}: Header hash mismatch:\nExpected: {s}\nActual:   {s}\n", .{ block_idx, std.fmt.fmtSliceHexLower(&expected.header_hash), std.fmt.fmtSliceHexLower(&actual.header_hash) });

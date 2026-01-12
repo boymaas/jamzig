@@ -44,9 +44,6 @@ pub fn detectKeyType(key: types.StateKey) KeyType {
     return .unknown;
 }
 
-/// Legacy compatibility function for state reconstruction
-/// Extracts service index from old-style service base keys
-/// TEMPORARY: Used during transition period
 pub fn deconstructByteServiceIndexKey(key: types.StateKey) struct { byte: u8, service_index: u32 } {
     const service_bytes = [4]u8{
         key[1],
@@ -61,8 +58,6 @@ pub fn deconstructByteServiceIndexKey(key: types.StateKey) struct { byte: u8, se
     };
 }
 
-/// Legacy compatibility function for hash-based keys
-/// TEMPORARY: Used during transition period
 pub fn deconstructServiceIndexHashKey(key: types.StateKey) struct { service_index: u32, hash: LossyHash(27) } {
     var hash: [27]u8 = undefined;
 
@@ -86,8 +81,6 @@ pub fn deconstructServiceIndexHashKey(key: types.StateKey) struct { service_inde
     };
 }
 
-/// Legacy lossy hash type for compatibility
-/// TEMPORARY: Used during transition period
 pub fn LossyHash(comptime size: usize) type {
     return struct {
         hash: [size]u8,

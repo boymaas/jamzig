@@ -39,21 +39,16 @@ test "fuzzer_embedded_target_cycle" {
     const allocator = testing.allocator;
     const seed: u64 = 67890;
 
-    // Create executor for embedded target
     var executor = try io.SequentialExecutor.init(allocator);
     defer executor.deinit();
 
-    // Create embedded fuzzer (no socket, no background thread needed)
     var fuzzer_instance = try fuzzer_mod.createEmbeddedFuzzer(FUZZ_PARAMS, &executor, allocator, seed);
     defer fuzzer_instance.destroy();
 
-    // Connect to embedded target (sets state to .connected)
     try fuzzer_instance.connectToTarget();
 
-    // Perform handshake (sets state to .handshake_complete)
     try fuzzer_instance.performHandshake();
 
-    // Run a short fuzzing cycle
     var provider = try @import("../providers/providers.zig").SequoiaProvider(
         io.SequentialExecutor,
         FUZZ_PARAMS,
@@ -66,10 +61,4 @@ test "fuzzer_embedded_target_cycle" {
 
     var result = try provider.run(EmbeddedFuzzer, fuzzer_instance, null);
     defer result.deinit(allocator);
-
-    // Verify results - embedded target should work correctly
-    // try testing.expectEqual(@as(usize, 3), result.blocks_processed);
-    // try testing.expect(result.success);
-
-    // span.debug("Embedded fuzz cycle completed successfully with {d} blocks", .{result.blocks_processed});
 }

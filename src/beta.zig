@@ -1,16 +1,10 @@
-/// Beta component
-/// Contains both recent block history and the BEEFY belt (MMR of accumulation outputs)
 const std = @import("std");
 const types = @import("types.zig");
 const mmr = @import("merkle/mmr.zig");
 const Allocator = std.mem.Allocator;
 
-/// The Beta component containing recent history and BEEFY belt
 pub const Beta = struct {
-    /// β_H: Information on the most recent blocks
     recent_history: RecentHistory,
-
-    /// β_B: The Merkle Mountain Belt for accumulating Accumulation outputs
     beefy_belt: BeefyBelt,
 
     allocator: Allocator,
@@ -37,43 +31,30 @@ pub const Beta = struct {
         };
     }
 
-    /// Get the hash of the last block in recent history
     pub fn getLastBlockHash(self: *const Beta) types.Hash {
         return self.recent_history.getLastBlockHash();
     }
 
-    /// Update the state root of the parent block
     pub fn updateParentBlockStateRoot(self: *Beta, parent_state_root: types.Hash) void {
         self.recent_history.updateParentBlockStateRoot(parent_state_root);
     }
 
-    /// Get the state root of the most recent block in recent history
-    /// Returns null if no valid cached state root is available
     pub fn getLastBlockStateRoot(self: *const Beta) ?types.StateRoot {
         if (self.recent_history.blocks.items.len > 0) {
             const last_block = self.recent_history.blocks.items[self.recent_history.blocks.items.len - 1];
-            // Check if we have a valid (non-zero) state root
             const zero_hash = std.mem.zeroes(types.StateRoot);
             if (!std.mem.eql(u8, &last_block.state_root, &zero_hash)) {
                 return last_block.state_root;
             }
         }
-        return null; // No valid cached state root available
+        return null;
     }
 
-    /// Get block info by hash from recent history
     pub fn getBlockInfoByHash(self: *const Beta, hash: types.Hash) ?RecentHistory.BlockInfo {
         return self.recent_history.getBlockInfoByHash(hash);
     }
 
-    /// Import a new block into recent history
     pub fn import(self: *Beta, block: anytype) !void {
-        // For v0.6.7, we add to recent_history and update beefy_belt
-        // The block should have the necessary fields for both components
-        
-        // Update BEEFY belt with accumulation output root
-        // Per graypaper equation 27: β'_B ≡ A(β_B, M_B(s, H_K), H_K)
-        // For now, we use the accumulate_root directly as the MMR leaf
         try self.beefy_belt.append(block.accumulate_root);
         
         // Get the MMR root after appending

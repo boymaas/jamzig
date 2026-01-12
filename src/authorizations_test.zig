@@ -61,9 +61,6 @@ fn runTestCase(
     allocator: std.mem.Allocator,
     test_vector: *const jamtestvectors.TestCase(params),
 ) !void {
-    // try test_vector.debugPrintStateDiff(allocator);
-    // test_vector.debugInput();
-
     var current_state = try converters.buildTransientFromTestState(params, allocator, test_vector.pre_state);
     defer current_state.deinit(allocator);
 
@@ -74,7 +71,6 @@ fn runTestCase(
     );
     defer transition.deinit();
 
-    // Process authorizations
     const auths = try converters.convertToAuthorizerList(allocator, test_vector.input);
     defer allocator.free(auths);
 

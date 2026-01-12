@@ -5,9 +5,6 @@ const testing = std.testing;
 
 comptime {
     _ = @import("pvm_test/test_vectors.zig");
-    // TODO: disabled for now, need to reuild host_call bytecode
-    // using a 64bit enabled polkavm tool and waiting for test vectors
-    // _ = @import("pvm_test/host_call.zig");
 }
 
 test "pvm:jamduna_service_code:machine_invocation" {
@@ -44,9 +41,7 @@ test "pvm:simple" {
     const allocator = std.testing.allocator;
 
     const raw_program = [_]u8{
-        // Header
         0, 0, 33,
-        // Code
         51, 8, 1, //
         51, 9, 1, //
         40, 3, //
@@ -62,8 +57,6 @@ test "pvm:simple" {
         51, 9, //
         1, //
         50, 0, //
-
-        // Mask
         73, 147, 82, 213, 0, //
     };
 
@@ -116,12 +109,6 @@ test "pvm:game_of_life" {
 
     var execution_context = try pvmlib.PVM.ExecutionContext.initSimple(allocator, &raw_program, 1024, 4, std.math.maxInt(u32), false);
     defer execution_context.deinit(allocator);
-
-    // const status = try pvmlib.PVM.execute(&execution_context);
-    //
-    // if (status != .halt) {
-    //     std.debug.print("Expected .halt got {any}\n", .{status});
-    // }
 }
 
 fn printProgramDecompilation(allocator: std.mem.Allocator, path: []const u8) !void {

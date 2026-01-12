@@ -6,8 +6,6 @@ const io = @import("../io.zig");
 
 const trace = @import("tracing").scoped(.fuzz_protocol);
 
-/// Embedded target that processes messages directly using TargetServer logic
-/// This provides identical behavior to socket-based targets without network overhead
 pub fn EmbeddedTarget(comptime IOExecutor: type, comptime params: @import("../jam_params.zig").Params) type {
     return struct {
         allocator: std.mem.Allocator,
@@ -47,7 +45,6 @@ pub fn EmbeddedTarget(comptime IOExecutor: type, comptime params: @import("../ja
             self.* = undefined;
         }
 
-        /// Send message to embedded target
         pub fn sendMessage(self: *Self, comptime _: @import("../jam_params.zig").Params, message: messages.Message) !void {
             const span = trace.span(@src(), .embedded_send_message);
             defer span.deinit();
@@ -69,7 +66,6 @@ pub fn EmbeddedTarget(comptime IOExecutor: type, comptime params: @import("../ja
             }
         }
 
-        /// Read response from embedded target
         pub fn readMessage(self: *Self, comptime _: @import("../jam_params.zig").Params) !messages.Message {
             const span = trace.span(@src(), .embedded_read_message);
             defer span.deinit();

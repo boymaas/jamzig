@@ -29,8 +29,6 @@ pub const ServiceStatistics = struct {
         self.* = undefined;
     }
 
-    // encode would need to sort inplace
-
     pub fn decode(_: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
         const codec = @import("../codec.zig");
 

@@ -16,7 +16,6 @@ pub fn transition(
 ) !void {
     const span = trace.span(@src(), .transition_time);
     defer span.deinit();
-    span.debug("Starting time transition", .{});
 
     const current_tau = try stx.ensure(.tau);
     if (header_slot <= current_tau.*) {

@@ -18,9 +18,7 @@ pub const DiffResult = union(enum) {
 
     pub fn debugPrint(self: *const @This()) void {
         switch (self.*) {
-            .EmptyDiff => {
-                // std.debug.print("<empty diff>\n", .{});
-            },
+            .EmptyDiff => {},
             .Diff => |diff| {
                 std.debug.print("\n\n", .{});
                 std.debug.print("\x1b[38;5;208m+ = in expected, not in actual => add to actual\x1b[0m\n", .{});

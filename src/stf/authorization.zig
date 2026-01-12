@@ -20,9 +20,6 @@ pub fn transition(
     const span = trace.span(@src(), .authorization);
     defer span.deinit();
 
-    span.debug("Processing authorizations from guarantees in STF for slot {d}", .{stx.time.current_slot});
-    span.debug("Number of guarantees: {d}", .{xtguarantees.data.len});
-
     var authorizers = std.ArrayList(auth.CoreAuthorizer).init(stx.allocator);
     defer authorizers.deinit();
 
@@ -38,6 +35,4 @@ pub fn transition(
         stx,
         authorizers.items,
     );
-
-    span.debug("Authorization processing completed successfully", .{});
 }

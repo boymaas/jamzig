@@ -436,11 +436,9 @@ fn formatKeyPath(allocator: std.mem.Allocator, path: []const u8, key: anytype) !
     const KeyType = @TypeOf(key);
     const key_type_info = @typeInfo(KeyType);
 
-    // Special formatting for byte arrays (storage keys)
     if (key_type_info == .array and key_type_info.array.child == u8) {
         const key_bytes: []const u8 = &key;
 
-        // Check if all bytes are printable ASCII (32-126)
         var all_ascii = true;
         for (key_bytes) |byte| {
             if (byte < 32 or byte > 126) {
@@ -463,7 +461,6 @@ fn formatKeyPath(allocator: std.mem.Allocator, path: []const u8, key: anytype) !
         }
     }
 
-    // Default formatting for other key types
     return std.fmt.allocPrint(allocator, "{s}[{any}]", .{ path, key });
 }
 

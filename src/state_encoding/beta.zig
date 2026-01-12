@@ -14,8 +14,6 @@ const mmr = @import("../merkle/mmr.zig");
 
 const trace = @import("tracing").scoped(.codec);
 
-/// Encode Beta component (v0.6.7: contains recent_history and beefy_belt)
-/// As per graypaper: encode(recent_history, encode_MMR(beefy_belt))
 pub fn encode(self: *const Beta, writer: anytype) !void {
     const span = trace.span(@src(), .encode);
     defer span.deinit();
@@ -29,7 +27,6 @@ pub fn encode(self: *const Beta, writer: anytype) !void {
     span.debug("Beta encoding complete", .{});
 }
 
-/// Encode the recent history sub-component
 fn encodeRecentHistory(self: *const RecentHistory, writer: anytype) !void {
     const span = trace.span(@src(), .encode);
     defer span.deinit();
@@ -37,7 +34,6 @@ fn encodeRecentHistory(self: *const RecentHistory, writer: anytype) !void {
     span.trace("Number of blocks to encode: {d}", .{self.blocks.items.len});
 
     try writer.writeAll(encoder.encodeInteger(self.blocks.items.len).as_slice());
-    span.debug("Encoded block count", .{});
 
     for (self.blocks.items, 0..) |block, i| {
         const block_span = span.child(@src(), .block);
@@ -46,15 +42,12 @@ fn encodeRecentHistory(self: *const RecentHistory, writer: anytype) !void {
         block_span.trace("Header hash: {s}", .{std.fmt.fmtSliceHexLower(&block.header_hash)});
 
         try writer.writeAll(&block.header_hash);
-        block_span.debug("Encoded header hash", .{});
 
         block_span.trace("Beefy root: {s}", .{std.fmt.fmtSliceHexLower(&block.beefy_root)});
         try writer.writeAll(&block.beefy_root);
-        block_span.debug("Encoded beefy root", .{});
 
         block_span.trace("State root: {s}", .{std.fmt.fmtSliceHexLower(&block.state_root)});
         try writer.writeAll(&block.state_root);
-        block_span.debug("Encoded state root", .{});
 
         block_span.debug("Encoding {d} work reports", .{block.work_reports.len});
         try writer.writeAll(encoder.encodeInteger(block.work_reports.len).as_slice());
@@ -68,9 +61,6 @@ fn encodeRecentHistory(self: *const RecentHistory, writer: anytype) !void {
 
             try writer.writeAll(&report.hash);
             try writer.writeAll(&report.exports_root);
-            report_span.debug("Work report encoded", .{});
         }
-        block_span.debug("Block encoding complete", .{});
     }
-    span.debug("Recent history encoding complete", .{});
 }

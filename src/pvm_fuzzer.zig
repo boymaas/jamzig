@@ -22,7 +22,6 @@ pub fn main() !void {
     defer alloc.deinit();
     const allocator = alloc.allocator();
 
-    // Arguments parsing
     const params = comptime clap.parseParamsComptime(
         \\-h, --help                Display this help and exit.
         \\-v, --verbose             Enable verbose output
@@ -67,11 +66,9 @@ pub fn main() !void {
         .enable_cross_check = res.args.@"cross-check" != 0,
     };
 
-    // Initialize and run fuzzer
     var fuzzer = try PVMFuzzer.init(allocator, config);
     defer fuzzer.deinit();
 
-    // Print configuration
     if (res.args.@"test-seed") |test_case_seed| {
         @import("./pvm_test/fuzzer/polkavm_ffi.zig").initLogging();
         std.debug.print("\nRunning single test case with seed: {d}\n", .{test_case_seed});
@@ -79,7 +76,6 @@ pub fn main() !void {
         return;
     }
 
-    // Print configuration
     std.debug.print("PVM Fuzzer Configuration:\n", .{});
     std.debug.print("Initial Seed: {d}\n", .{config.initial_seed});
     std.debug.print("Number of Cases: {d}\n", .{config.num_cases});
@@ -93,7 +89,6 @@ pub fn main() !void {
 
     var run = try fuzzer.run();
 
-    // Print results
     const stats = run.results.getStats();
     const init_stats = run.init_errors.getStats();
 

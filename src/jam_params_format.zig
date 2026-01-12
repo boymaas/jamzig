@@ -1,15 +1,12 @@
 const std = @import("std");
 const jam_params = @import("jam_params.zig");
 
-/// Parameter metadata mapping field names to symbols and descriptions
 const ParamMetadata = struct {
     symbol: []const u8,
     description: []const u8,
 };
 
-/// Get metadata for a parameter field
 fn getParamMetadata(field_name: []const u8) ParamMetadata {
-    // This mapping is based on the comments in jam_params.zig
     const metadata_map = std.StaticStringMap(ParamMetadata).initComptime(.{
         .{ "audit_tranche_period", ParamMetadata{ .symbol = "A", .description = "The period, in seconds, between audit tranches" } },
         .{ "min_balance_per_item", ParamMetadata{ .symbol = "BI", .description = "The additional minimum balance required per item of elective service state" } },
@@ -59,7 +56,6 @@ fn getParamMetadata(field_name: []const u8) ParamMetadata {
     return metadata_map.get(field_name) orelse ParamMetadata{ .symbol = "?", .description = "Unknown parameter" };
 }
 
-/// Format parameters as human-readable text
 pub fn formatParamsText(params: jam_params.Params, params_type: []const u8, writer: anytype) !void {
     try writer.print("JAM Protocol Parameters ({s})\n", .{params_type});
     try writer.writeAll("=" ** 50);
@@ -67,17 +63,13 @@ pub fn formatParamsText(params: jam_params.Params, params_type: []const u8, writ
 
     const typeInfo = @typeInfo(jam_params.Params);
     inline for (typeInfo.@"struct".fields) |field| {
-        // Skip non-parameter fields
         if (comptime std.mem.eql(u8, field.name, "avail_bitfield_bytes")) {
-            // Do nothing for this field
         } else {
             const metadata = getParamMetadata(field.name);
             const value = @field(params, field.name);
 
-            // Print symbol and name
             try writer.print("{s:<4} - ", .{metadata.symbol});
 
-            // Convert snake_case to Title Case
             var first_word = true;
             var after_underscore = false;
             for (field.name) |c| {
@@ -99,7 +91,6 @@ pub fn formatParamsText(params: jam_params.Params, params_type: []const u8, writ
     }
 }
 
-/// Format parameters as JSON
 pub fn formatParamsJson(params: jam_params.Params, params_type: []const u8, writer: anytype) !void {
     try writer.writeAll("{\n");
     try writer.print("  \"params_type\": \"{s}\",\n", .{params_type});
@@ -108,9 +99,7 @@ pub fn formatParamsJson(params: jam_params.Params, params_type: []const u8, writ
     const typeInfo = @typeInfo(jam_params.Params);
     var first = true;
     inline for (typeInfo.@"struct".fields) |field| {
-        // Skip non-parameter fields
         if (comptime std.mem.eql(u8, field.name, "avail_bitfield_bytes")) {
-            // Do nothing for this field
         } else {
             if (!first) {
                 try writer.writeAll(",\n");

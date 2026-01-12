@@ -3,14 +3,9 @@ const types = @import("types.zig");
 const state_delta = @import("state_delta.zig");
 const Params = @import("jam_params.zig").Params;
 
-// Re-export key types from execution module
 pub const ProcessAccumulationResult = @import("accumulate/execution.zig").ProcessAccumulationResult;
 pub const DeferredTransfer = @import("pvm_invocations/accumulate.zig").DeferredTransfer;
-
-// Also re-export execution module for components that depend on it
 pub const execution = @import("accumulate/execution.zig");
-
-// Import internal modules
 const DependencyResolver = @import("accumulate/dependency_resolver.zig").DependencyResolver;
 const StatisticsCalculator = @import("accumulate/statistics_calculator.zig").StatisticsCalculator;
 const StateUpdater = @import("accumulate/state_updater.zig").StateUpdater;

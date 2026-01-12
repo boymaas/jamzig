@@ -20,7 +20,6 @@ pub fn processAuthorizations(
     stx: *state_delta.StateTransition(params),
     authorizers: []const CoreAuthorizer,
 ) !void {
-    // Preconditions
     std.debug.assert(authorizers.len <= params.core_count);
     comptime {
         std.debug.assert(params.core_count > 0);

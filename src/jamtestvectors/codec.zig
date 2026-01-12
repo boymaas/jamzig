@@ -8,9 +8,6 @@ pub fn CodecTestVector(comptime T: type) type {
 
         allocator: std.mem.Allocator,
 
-        /// Build the vector from the JSON file. The binary is loaded by stripping the JSON
-        /// and using the bin extension to load the binary associated as the expected binary format,
-        /// to which serialization and deserialization should conform.
         pub fn build_from(
             allocator: std.mem.Allocator,
             json_path: []const u8,
@@ -21,13 +18,11 @@ pub fn CodecTestVector(comptime T: type) type {
             const json_buffer = try file.readToEndAlloc(allocator, 5 * 1024 * 1024);
             defer allocator.free(json_buffer);
 
-            // configure json scanner to track diagnostics for easier debugging
             var diagnostics = std.json.Diagnostics{};
             var scanner = std.json.Scanner.initCompleteInput(allocator, json_buffer);
             scanner.enableDiagnostics(&diagnostics);
             defer scanner.deinit();
 
-            // parse from tokensource using the scanner
             const expected = std.json.parseFromTokenSource(
                 T,
                 allocator,
@@ -42,7 +37,6 @@ pub fn CodecTestVector(comptime T: type) type {
             };
             errdefer expected.deinit();
 
-            // Read the corresponding binary file
             const bin_path = try std.mem.replaceOwned(
                 u8,
                 allocator,

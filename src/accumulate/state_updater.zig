@@ -55,7 +55,6 @@ pub fn StateUpdater(comptime params: Params) type {
 
                     span.debug("Adding {d} queued items to time slot {d}", .{ queued.items.len, widx });
                     for (queued.items, 0..) |*wradeps, qidx| {
-                        // Only add items that still have dependencies
                         if (wradeps.dependencies.count() > 0) {
                             span.trace("Adding queued item {d} to slot {d}", .{ qidx, widx });
                             const cloned_wradeps = try wradeps.deepClone(self.allocator);
@@ -69,12 +68,10 @@ pub fn StateUpdater(comptime params: Params) type {
                     theta.clearTimeSlot(@intCast(widx));
                 } else if (i >= time.current_slot - time.prior_slot) {
                     span.debug("Processing entries for time slot {d}", .{widx});
-                    // Convert to managed to handle removals properly
                     var entries = theta.entries[widx].toManaged(self.allocator);
                     self.processQueueUpdates(&entries, try mapWorkPackageHash(map_buffer, accumulated));
                     theta.entries[widx] = entries.moveToUnmanaged();
 
-                    // Remove reports without dependencies
                     theta.removeReportsWithoutDependenciesAtSlot(@intCast(widx));
                 }
             }

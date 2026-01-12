@@ -23,7 +23,6 @@ pub const ThreadPoolTaskGroup = struct {
             fn run(group: *ThreadPoolTaskGroup, f: @TypeOf(func), a: @TypeOf(args)) void {
                 defer group.wg.finish();
 
-                // Set thread name for Tracy profiling (once per thread)
                 const thread_name_z = std.fmt.allocPrintZ(std.heap.page_allocator, "Worker-{d}", .{std.Thread.getCurrentId()}) catch "JAM-Worker";
                 defer if (!std.mem.eql(u8, thread_name_z, "JAM-Worker")) std.heap.page_allocator.free(thread_name_z);
                 tracy.SetThreadName(thread_name_z);
@@ -35,7 +34,7 @@ pub const ThreadPoolTaskGroup = struct {
                         {
                             group.error_mutex.lock();
                             defer group.error_mutex.unlock();
-                            group.error_list.append(err) catch {}; // best effort
+                            group.error_list.append(err) catch {};
                         }
                         const span = trace.span(@src(), .parallel_task_error);
                         defer span.deinit();

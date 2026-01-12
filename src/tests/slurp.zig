@@ -1,7 +1,5 @@
 const std = @import("std");
 
-// TODO: we have a utils slurp as well unify
-
 pub const SlurpedFile = struct {
     allocator: std.mem.Allocator,
     buffer: []const u8,

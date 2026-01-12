@@ -78,11 +78,6 @@ pub fn encodeJamParams(allocator: std.mem.Allocator, params_val: Params) ![]u8 {
     return try @import("../codec.zig").serializeAlloc(EncodeMap, .{}, allocator, constants);
 }
 
-/// Encode accumulation inputs (operand tuples only for now) for accumulate context.
-/// Per graypaper serialization.tex: each accinput element has discriminator prefix:
-///   0 + operand_tuple_encoding for operand tuples
-///   1 + transfer_encoding for deferred transfers
-/// Format: length_prefix + (disc + element)*
 pub fn encodeOperandTuples(allocator: std.mem.Allocator, operand_tuples: []const @import("accumulate.zig").AccumulationOperand) ![]u8 {
     const codec = @import("../codec.zig");
 
@@ -99,9 +94,6 @@ pub fn encodeOperandTuples(allocator: std.mem.Allocator, operand_tuples: []const
     return buffer.toOwnedSlice();
 }
 
-/// Encode single accumulation input (operand tuple) for accumulate context.
-/// Per graypaper: selector 15 returns `encode(i[index])` which is a single accinput.
-/// accinput encoding includes discriminator: 0 + operand_tuple_encoding
 pub fn encodeOperandTuple(allocator: std.mem.Allocator, operand_tuple: *const @import("accumulate.zig").AccumulationOperand) ![]u8 {
     var buffer = std.ArrayList(u8).init(allocator);
     errdefer buffer.deinit();
@@ -112,21 +104,16 @@ pub fn encodeOperandTuple(allocator: std.mem.Allocator, operand_tuple: *const @i
     return buffer.toOwnedSlice();
 }
 
-/// Encode transfers array for ontransfer context
 pub fn encodeTransfers(allocator: std.mem.Allocator, transfers: []const @import("accumulate/types.zig").DeferredTransfer) ![]u8 {
     const codec = @import("../codec.zig");
     return try codec.serializeAlloc([]const @import("accumulate/types.zig").DeferredTransfer, .{}, allocator, transfers);
 }
 
-/// Encode single transfer for ontransfer context
 pub fn encodeTransfer(allocator: std.mem.Allocator, transfer: *const @import("accumulate/types.zig").DeferredTransfer) ![]u8 {
     const codec = @import("../codec.zig");
     return try codec.serializeAlloc(@import("accumulate/types.zig").DeferredTransfer, .{}, allocator, transfer.*);
 }
 
-/// Encode combined inputs sequence (transfers + work operands)
-/// Per graypaper accone: Ψ_A(..., i^T ++ i^U) where i^T=transfers, i^U=work
-/// accinput ≡ operandtuple ∪ defxfer encoded as discriminated union
 pub fn encodeCombinedInputs(
     allocator: std.mem.Allocator,
     transfers: []const @import("accumulate.zig").TransferOperand,
@@ -153,7 +140,6 @@ pub fn encodeCombinedInputs(
     return buffer.toOwnedSlice();
 }
 
-/// Encode single transfer as accinput (with discriminator 1)
 pub fn encodeTransferAsInput(
     allocator: std.mem.Allocator,
     transfer: *const @import("accumulate.zig").TransferOperand,

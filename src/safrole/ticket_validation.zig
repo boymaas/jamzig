@@ -64,7 +64,6 @@ pub fn processTicketExtrinsic(
     };
     errdefer stx.allocator.free(verified_extrinsic);
 
-    // Chapter 6.7: The tickets should be in order of their implied identifier
     {
         const order_check_span = span.child(@src(), .check_order);
         defer order_check_span.deinit();

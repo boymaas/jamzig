@@ -12,7 +12,6 @@ pub fn encode(self: *const Eta, writer: anytype) !void {
     span.debug("Starting Eta encoding", .{});
     span.trace("Eta buffer length: {d}", .{self.len});
 
-    // First pass encoding
     const first_pass_span = span.child(@src(), .first_pass);
     defer first_pass_span.deinit();
 
@@ -25,10 +24,7 @@ pub fn encode(self: *const Eta, writer: anytype) !void {
         item_span.trace("Entropy data: {any}", .{std.fmt.fmtSliceHexLower(&entropy_item)});
 
         try writer.writeAll(&entropy_item);
-        item_span.debug("Successfully wrote entropy item", .{});
     }
-
-    span.debug("Completed Eta encoding", .{});
 }
 
 test "encode" {

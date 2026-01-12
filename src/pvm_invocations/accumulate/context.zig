@@ -9,17 +9,15 @@ const DeltaSnapshot = @import("../../services_snapshot.zig").DeltaSnapshot;
 
 const Params = @import("../../jam_params.zig").Params;
 
-// 12.13 State components needed for Accumulation
 pub fn AccumulationContext(params: Params) type {
     return struct {
-        service_accounts: DeltaSnapshot, // d ∈ D⟨N_S → A⟩
-        validator_keys: CopyOnWrite(state.Iota), // i ∈ ⟦K⟧_V
-        authorizer_queue: CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)), // q ∈ _C⟦H⟧^Q_H_C
-        privileges: CopyOnWrite(state.Chi(params.core_count)), // x ∈ (N_S, N_S, N_S, D⟨N_S → N_G⟩)
+        service_accounts: DeltaSnapshot,
+        validator_keys: CopyOnWrite(state.Iota),
+        authorizer_queue: CopyOnWrite(state.Phi(params.core_count, params.max_authorizations_queue_items)),
+        privileges: CopyOnWrite(state.Chi(params.core_count)),
         time: *const params.Time(),
 
-        // Additional context for fetch selectors (JAM graypaper §1.7.2)
-        entropy: types.Entropy, // η - entropy for current block (fetch selector 1)
+        entropy: types.Entropy,
 
         // Original chi values from input partial state (graypaper §12.17)
         // Used for R() function to select between manager and privileged services' changes.
@@ -57,14 +55,10 @@ pub fn AccumulationContext(params: Params) type {
             };
         }
 
-        // Removed deprecated authorizer hash functions
-
         pub fn commit(self: *@This()) !void {
-            // Commit changes from each CopyOnWrite component
             self.validator_keys.commit();
             self.authorizer_queue.commit();
             self.privileges.commit();
-            // Commit the changes f
             try self.service_accounts.commit();
         }
 
@@ -76,13 +70,10 @@ pub fn AccumulationContext(params: Params) type {
         /// NOTE: privileges (chi) is NOT committed here - handled by R() resolution
         /// in applyChiRResolution() after all services complete.
         pub fn commitForService(self: *@This(), service_id: types.ServiceId) !void {
-            // Only commit validator_keys if this service is the original delegator
             if (service_id == self.original_delegator) {
                 self.validator_keys.commit();
             }
 
-            // Only commit authorizer_queue if this service is an original assigner
-            // Per graypaper §12.17: authqueue'[c] = acc(assigners[c])_poststate_authqueue[c]
             const is_assigner = for (self.original_assigners) |assigner| {
                 if (service_id == assigner) break true;
             } else false;
@@ -91,26 +82,17 @@ pub fn AccumulationContext(params: Params) type {
                 self.authorizer_queue.commit();
             }
 
-            // NOTE: privileges NOT committed here - handled by R() resolution
-            // See accumulate/chi_merger.zig and execution.zig applyChiRResolution()
             try self.service_accounts.commit();
         }
 
-        // TODO: since its deepCloning the wrappers and not really the wrapped objects
-        // maybe we should rename this function as its not really a deepClone
         pub fn deepClone(self: @This()) !@This() {
             return @This(){
-                // Create a deep clone of the DeltaSnapshot,
                 .service_accounts = try self.service_accounts.deepClone(),
-                // Keep references to the other components as they are
                 .validator_keys = try self.validator_keys.deepClone(),
                 .authorizer_queue = try self.authorizer_queue.deepClone(),
                 .privileges = try self.privileges.deepClone(),
-                // The above deepClones clone the wrappers, the references stay intact
-                // since time is not a wrapper. We just pass the pointer, as this will never be mutated
                 .time = self.time,
                 .entropy = self.entropy,
-                // Original chi values are immutable, just copy them
                 .original_manager = self.original_manager,
                 .original_assigners = self.original_assigners,
                 .original_delegator = self.original_delegator,
@@ -119,14 +101,10 @@ pub fn AccumulationContext(params: Params) type {
         }
 
         pub fn deinit(self: *@This()) void {
-            // Deinitialize all CopyOnWrite components
             self.validator_keys.deinit();
             self.authorizer_queue.deinit();
             self.privileges.deinit();
-            // Deinitialize the DeltaSnapshot
             self.service_accounts.deinit();
-
-            // Set self to undefined to prevent use-after-free
             self.* = undefined;
         }
     };

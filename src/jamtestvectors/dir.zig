@@ -5,7 +5,6 @@ const loader = @import("loader.zig");
 
 const Params = @import("../jam_params.zig").Params;
 
-/// A collection of test vectors with lifecycle management
 pub fn TestVectorList(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -28,12 +27,10 @@ pub fn TestVectorList(comptime T: type) type {
             if (@hasDecl(T, "deinit")) {
                 const info = @typeInfo(@TypeOf(T.deinit));
                 if (info == .@"fn" and info.@"fn".params.len > 1) {
-                    // deinit takes an argument (likely allocator)
                     for (self.vectors.items) |*vector| {
                         vector.deinit(self.allocator);
                     }
                 } else {
-                    // deinit takes no arguments beyond self
                     for (self.vectors.items) |*vector| {
                         vector.deinit();
                     }
@@ -58,7 +55,6 @@ pub fn scan(
     allocator: Allocator,
     dir_path: []const u8,
 ) !TestVectorList(T) {
-    // Get ordered list of files
     var ordered_files = try OrderedFiles.getOrderedFiles(allocator, dir_path);
     defer ordered_files.deinit();
 
@@ -67,7 +63,6 @@ pub fn scan(
 
     std.debug.print("HELLO: {s}\n", .{dir_path});
 
-    // Process each JSON file in order
     for (ordered_files.items()) |entry| {
         std.debug.print("Loading test vector: {s}\n", .{entry.name});
 

@@ -73,7 +73,6 @@ pub fn StateTransition(comptime params: Params) type {
             const builtin = @import("builtin");
             const name = @tagName(field);
 
-            // Handle regular prime transitions
             const is_prime = comptime std.mem.endsWith(u8, name, "_prime");
             const base_name = if (is_prime) name[0 .. name.len - 6] else name;
             const prime_field = &@field(self.prime, base_name);
@@ -81,7 +80,7 @@ pub fn StateTransition(comptime params: Params) type {
             if (is_prime) {
                 if (prime_field.* == null) {
                     const base_field = &@field(self.base, base_name);
-                    if (comptime builtin.mode == .Debug) { // TODO: this should always panic right?
+                    if (comptime builtin.mode == .Debug) {
                         if (base_field.* == null) {
                             @panic("UninitializedBaseField: " ++ name);
                         }
@@ -91,7 +90,7 @@ pub fn StateTransition(comptime params: Params) type {
                 return &prime_field.*.?;
             } else {
                 const base_field = &@field(self.base, base_name);
-                if (comptime builtin.mode == .Debug) { // TODO: same here
+                if (comptime builtin.mode == .Debug) {
                     if (base_field.* == null) {
                         @panic("UninitializedBaseField: " ++ name);
                     }
@@ -105,14 +104,12 @@ pub fn StateTransition(comptime params: Params) type {
 
             const name = @tagName(field);
 
-            // Ensure we're only initializing prime states
             if (builtin.mode == .Debug and
                 !comptime std.mem.endsWith(u8, name, "_prime"))
             {
                 return Error.CanOnlyCreateTransient;
             }
 
-            // Handle prime state initialization
             const base_name = name[0 .. name.len - 6];
             const prime_field = &@field(self.prime, base_name);
 
@@ -127,7 +124,6 @@ pub fn StateTransition(comptime params: Params) type {
             const builtin = @import("builtin");
             const name = @tagName(field);
 
-            // Ensure we're only initializing prime states
             if ((!comptime std.mem.endsWith(u8, name, "_prime")) and
                 builtin.mode == .Debug)
             {
@@ -173,7 +169,6 @@ pub fn StateTransition(comptime params: Params) type {
                     return &base_field.*.?;
                 }
             } else {
-                // In release mode, just get the field directly
                 const field_ptr = if (comptime std.mem.endsWith(u8, name, "_prime"))
                     &@field(self.prime, base_name)
                 else
@@ -234,11 +229,8 @@ pub fn StateTransition(comptime params: Params) type {
             try @constCast(self.base).merge(&self.prime, self.allocator);
         }
 
-        /// This creates a view state that combines committed state (base) with pending changes (prime).
-        /// The returned state should NOT be deinitialized - it's just a view.
         pub fn createMergedView(self: *const Self) State {
             var merged_view = State{};
-            // No deinit needed, as we just want to create a view and then discard it
 
             // For each field, take from prime if present, otherwise from base
             inline for (std.meta.fields(State)) |field| {
@@ -253,9 +245,6 @@ pub fn StateTransition(comptime params: Params) type {
             return merged_view;
         }
 
-        /// Compute the state root of the transition result WITHOUT committing changes.
-        /// This creates a merged view of base + prime without cloning data.
-        ///
         /// IMPORTANT: This is used for fork detection in the fuzz protocol.
         /// We need to know the resulting state root before deciding whether to commit.
         pub fn computeStateRoot(self: *const Self, allocator: std.mem.Allocator) !types.StateRoot {
@@ -263,7 +252,6 @@ pub fn StateTransition(comptime params: Params) type {
             return try merged_view.buildStateRoot(allocator);
         }
 
-        /// frees all owned memory except non-owned self.base
         pub fn deinit(self: *Self) void {
             self.prime.deinit(self.allocator);
             self.* = undefined;
@@ -278,7 +266,6 @@ pub fn StateTransition(comptime params: Params) type {
         pub fn buildPrimeView(self: *Self) state.JamStateView(params) {
             var view = state.JamStateView(params).init();
 
-            // For each field, use prime if it exists, otherwise use base
             inline for (comptime std.meta.fieldNames(state.JamStateView(params))) |field_name| {
                 const prime_field = &@field(self.prime, field_name);
                 const base_field = &@field(self.base, field_name);
@@ -296,7 +283,6 @@ pub fn StateTransition(comptime params: Params) type {
         pub fn buildBaseView(self: *Self) state.JamStateView(params) {
             var view = state.JamStateView(params).init();
 
-            // For each field, use prime if it exists, otherwise use base
             inline for (comptime std.meta.fieldNames(state.JamStateView(params))) |field_name| {
                 const base_field = &@field(self.base, field_name);
 
@@ -311,9 +297,6 @@ pub fn StateTransition(comptime params: Params) type {
     };
 }
 
-// Rest of the helper functions remain the same...
-
-/// Returns the base type for a given field accessor
 pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
     const field_name = @tagName(field);
 
@@ -322,8 +305,6 @@ pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
     else
         field_name;
 
-    // Get the type of the base field
-    // Convert string to field enum
     @setEvalBranchQuota(8000);
     const field_enum = std.meta.stringToEnum(std.meta.FieldEnum(T), base_name) //
         orelse @compileError("Invalid field name: " ++ base_name);
@@ -331,7 +312,6 @@ pub fn STBaseType(comptime T: anytype, comptime field: anytype) type {
     return std.meta.Child(std.meta.fieldInfo(T, field_enum).type);
 }
 
-/// Returns the appropriate pointer type (*const or *) for a given field accessor
 pub fn STAccessorPointerType(comptime T: anytype, comptime field: anytype) type {
     const field_name = @tagName(field);
 
@@ -341,8 +321,6 @@ pub fn STAccessorPointerType(comptime T: anytype, comptime field: anytype) type 
         *const T;
 }
 
-// Generates all field variants (base + prime).
-// Unused variants are optimized out by the compiler.
 pub fn STAccessors(comptime T: type) type {
     const field_infos = std.meta.fields(T);
 

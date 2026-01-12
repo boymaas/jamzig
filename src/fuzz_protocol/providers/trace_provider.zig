@@ -55,7 +55,6 @@ pub fn TraceProvider(comptime params: jam_params.Params) type {
             self.* = undefined;
         }
 
-        /// Drive the trace replay process - this is the main entry point
         pub fn run(self: *Self, comptime FuzzerType: type, fuzzer: *FuzzerType, should_shutdown: ?*const fn () bool) !report.FuzzResult {
             const span = trace.span(@src(), .trace_provider_run);
             defer span.deinit();

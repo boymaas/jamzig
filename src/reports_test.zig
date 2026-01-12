@@ -10,7 +10,6 @@ pub const jam_params = @import("jam_params.zig");
 pub const TINY_PARAMS = jam_params.TINY_PARAMS;
 pub const FULL_PARAMS = jam_params.FULL_PARAMS;
 
-// Individual tiny test cases
 test "tiny/anchor_not_recent-1.bin" {
     const allocator = std.testing.allocator;
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/anchor_not_recent-1.bin");
@@ -174,7 +173,6 @@ test "tiny/different_core_same_guarantors-1.bin" {
     try runTest(TINY_PARAMS, allocator, BASE_PATH ++ "tiny/different_core_same_guarantors-1.bin");
 }
 
-// Run all tiny test vectors
 test "all.tiny.vectors" {
     const allocator = std.testing.allocator;
 
@@ -189,7 +187,6 @@ test "all.tiny.vectors" {
     }
 }
 
-// Helper function to run individual tests
 fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, test_bin: []const u8) !void {
     std.debug.print("\nRunning test: {s}\n", .{test_bin});
 

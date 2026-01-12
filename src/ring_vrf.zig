@@ -1,7 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
 
-// Opaque types for the Rust objects
 const Verifier = opaque {};
 const Prover = opaque {};
 
@@ -308,18 +307,15 @@ test "ring_vrf.basic: basic usage" {
     const ring_size: usize = 5;
     var public_keys: [ring_size]types.BandersnatchPublic = undefined;
 
-    // Generate some test public keys
     for (0..ring_size) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
         const key_pair = try bandersnatch.Bandersnatch.KeyPair.generateDeterministic(seed);
         public_keys[i] = key_pair.public_key.toBytes();
     }
 
-    // Create verifier
     var verifier = try RingVerifier.init(&public_keys);
     defer verifier.deinit();
 
-    // Create prover
     const prover_idx = 2;
     const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
     const key_pair = try bandersnatch.Bandersnatch.KeyPair.generateDeterministic(seed);
@@ -330,14 +326,12 @@ test "ring_vrf.basic: basic usage" {
     );
     defer prover.deinit();
 
-    // Test signing and verification
     const vrf_input = "test input";
     const aux_data = "test aux data";
 
     const signature = try prover.sign(vrf_input, aux_data);
     _ = try verifier.verify(vrf_input, aux_data, &signature);
 
-    // Test getting commitment
     _ = try verifier.get_commitment();
 }
 
@@ -345,33 +339,26 @@ test "ring_vrf.ietf: IETF VRF usage" {
     const ring_size: usize = 5;
     var public_keys: [ring_size]types.BandersnatchPublic = undefined;
 
-    // Generate some test public keys
     for (0..ring_size) |i| {
         const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, i));
         const key_pair = try bandersnatch.Bandersnatch.KeyPair.generateDeterministic(seed);
         public_keys[i] = key_pair.public_key.toBytes();
     }
 
-    // Create verifier
     var verifier = try RingVerifier.init(&public_keys);
     defer verifier.deinit();
 
-    // Create prover
     const prover_idx = 2;
     const seed = std.mem.asBytes(&std.mem.nativeToLittle(usize, prover_idx));
     const key_pair = try bandersnatch.Bandersnatch.KeyPair.generateDeterministic(seed);
     var prover = try RingProver.init(key_pair.secret_key.toBytes(), &public_keys, prover_idx);
     defer prover.deinit();
 
-    // Test signing and verification (IETF VRF)
     const vrf_input = "ietf test input";
     const aux_data = "ietf aux data";
 
-    // 1. IETF VRF sign
     const ietf_signature = try prover.signIetf(vrf_input, aux_data);
 
-    // 2. IETF VRF verify
-    //    You typically need to specify which ring index is the actual signer
     const signer_key_index = prover_idx;
     const vrf_output = try verifier.verifyIetf(vrf_input, aux_data, &ietf_signature, signer_key_index);
 

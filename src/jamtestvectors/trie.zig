@@ -40,7 +40,6 @@ pub const ParsedTrieTest = struct {
     }
 
     pub fn deinit(self: *ParsedTrieTest) void {
-        // iterate ove the values of input and free them
         var values = self.input.valueIterator();
         while (values.next()) |value| {
             self.allocator.free(value.*);
@@ -55,9 +54,6 @@ pub const TrieTestVector = struct {
 
     allocator: std.mem.Allocator,
 
-    /// Build the vector from the JSON file. The binary is loaded by stripping the JSON
-    /// and using the bin extension to load the binary associated as the expected binary format,
-    /// to which serialization and deserialization should conform.
     pub fn build_from(
         allocator: std.mem.Allocator,
         json_path: []const u8,
@@ -68,13 +64,11 @@ pub const TrieTestVector = struct {
         const json_buffer = try file.readToEndAlloc(allocator, 5 * 1024 * 1024);
         defer allocator.free(json_buffer);
 
-        // configure json scanner to track diagnostics for easier debugging
         var diagnostics = std.json.Diagnostics{};
         var scanner = std.json.Scanner.initCompleteInput(allocator, json_buffer);
         scanner.enableDiagnostics(&diagnostics);
         defer scanner.deinit();
 
-        // parse from tokensource using the scanner
         const trie_tests = std.json.parseFromTokenSource(
             []TrieTest,
             allocator,
@@ -124,6 +118,5 @@ test "test:vectors:trie: parsing the test vector" {
         std.debug.print("Parsed test vector with {} entries\n", .{trie_test.input.count()});
     }
 
-    // Test if the vector contains the binary type
     try std.testing.expectEqual(11, vector.tests.len);
 }

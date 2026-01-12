@@ -7,23 +7,13 @@ const diffz = @import("disputes_test/diffz.zig");
 
 const BASE_PATH = "src/jamtestvectors/data/stf/accumulate/";
 
-// Debug helper function
 fn printStateDiff(allocator: std.mem.Allocator, pre_state: *const tvector.State, post_state: *const tvector.State) !void {
     const state_diff = try diffz.diffStates(allocator, pre_state, post_state);
     defer allocator.free(state_diff);
     std.debug.print("\nState Diff: {s}\n", .{state_diff});
 }
 
-//  _____ _           __     __        _
-// |_   _(_)_ __  _   \ \   / /__  ___| |_ ___  _ __ ___
-//   | | | | '_ \| | | \ \ / / _ \/ __| __/ _ \| '__/ __|
-//   | | | | | | | |_| |\ V /  __/ (__| || (_) | |  \__ \
-//   |_| |_|_| |_|\__, | \_/ \___|\___|\__\___/|_|  |___/
-//                |___/
-
 pub const jam_params = @import("jam_params.zig");
-
-// Tiny test vectors
 pub const TINY_PARAMS = jam_params.TINY_PARAMS;
 
 const loader = @import("jamtestvectors/loader.zig");
@@ -162,8 +152,6 @@ fn runTest(comptime params: jam_params.Params, allocator: std.mem.Allocator, tes
     );
     defer test_vector.deinit(allocator);
 
-    // std.debug.print("{}", .{@import("./types/fmt.zig").format(test_vector)});
-
     try runAccumulateTest(params, allocator, test_vector);
 }
 
@@ -194,12 +182,6 @@ test "all.tiny.vectors" {
         std.debug.print("All tiny tests passed successfully.\n", .{});
     }
 }
-
-//  _____      _ _  __     __        _
-// |  ___|   _| | | \ \   / /__  ___| |_ ___  _ __ ___
-// | |_ | | | | | |  \ \ / / _ \/ __| __/ _ \| '__/ __|
-// |  _|| |_| | | |   \ V /  __/ (__| || (_) | |  \__ \
-// |_|   \__,_|_|_|    \_/ \___|\___|\__\___/|_|  |___/
 
 test "all.full.vectors" {
     const allocator = std.testing.allocator;

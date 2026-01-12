@@ -6,9 +6,6 @@ pub const jam_params = @import("../jam_params.zig");
 
 pub const BASE_PATH = "src/jamtestvectors/data/stf/accumulate/";
 
-// --------------------------------------------
-// -- Accumulation
-// --------------------------------------------
 pub const ReadyRecord = struct {
     report: types.WorkReport,
     dependencies: []types.WorkPackageHash,
@@ -64,13 +61,11 @@ pub const AlwaysAccumulateMapItem = struct {
     gas: types.Gas,
 };
 
-// TODO: this is introduced by the testvectors this maybe should be removed
-// to the jamtestvectors/accumulate as they are tv specific.
 pub const Privileges = struct {
     bless: types.ServiceId,
-    assign: []types.ServiceId, // Changed to array in v0.6.7
+    assign: []types.ServiceId,
     designate: types.ServiceId,
-    register: types.ServiceId, // v0.7.1: Registrar service privilege (GP #473)
+    register: types.ServiceId,
     always_acc: []AlwaysAccumulateMapItem,
 
     pub fn assign_size(params: jam_params.Params) usize {
@@ -86,22 +81,15 @@ pub const Privileges = struct {
 
 pub const AccumulateRoot = types.OpaqueHash;
 
-/// Represents the state for accumulate processing according to the GP
 pub const State = struct {
-    /// [H_t] Block's timeslot
     slot: types.TimeSlot,
-    /// [η] Current entropy
     entropy: types.Entropy,
-    /// [θ_r] Ready queue for accumulation
     ready_queue: ReadyQueue,
-    /// [θ_a] Accumulated queue
     accumulated: AccumulatedQueue,
-    /// [χ] Privileged service identities
     privileges: Privileges,
 
     statistics: jam_types.ServiceStatistics,
 
-    /// [δ] Service accounts
     accounts: []ServiceAccount,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -138,9 +126,8 @@ pub const StorageMapEntry = struct {
     }
 };
 
-/// ServiceInfo type for test vectors with additional fields (v0.6.7+)
 pub const ServiceInfoTestVector = struct {
-    version: u8, // v0.7.1: Service information version (GP #472)
+    version: u8,
     code_hash: types.OpaqueHash,
     balance: types.Balance,
     min_item_gas: types.Gas,
@@ -168,8 +155,8 @@ pub const ServiceInfoTestVector = struct {
 pub const Account = struct {
     service: ServiceInfoTestVector,
     storage: []StorageMapEntry,
-    preimage_blobs: []PreimageBlobEntry,  // v0.7.2: renamed from preimages
-    preimage_requests: []PreimageRequestEntry,  // v0.7.2: renamed from preimages_status, structure changed
+    preimage_blobs: []PreimageBlobEntry,
+    preimage_requests: []PreimageRequestEntry,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         for (self.preimage_blobs) |*entry| {
@@ -198,16 +185,14 @@ pub const PreimageBlobEntry = struct {
     }
 };
 
-/// Preimage request key (v0.7.2)
 pub const PreimageRequestKey = struct {
     hash: types.OpaqueHash,
     length: types.U32,
 };
 
-/// Preimage request entry (v0.7.2: renamed from PreimagesStatusMapEntry, structure changed)
 pub const PreimageRequestEntry = struct {
     key: PreimageRequestKey,
-    value: []types.TimeSlot, // SEQUENCE (SIZE(0..3)) OF TimeSlot
+    value: []types.TimeSlot,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.value);
@@ -216,9 +201,7 @@ pub const PreimageRequestEntry = struct {
 };
 
 pub const Input = struct {
-    /// [H_t] Block's timeslot
     slot: types.TimeSlot,
-    /// Work reports to accumulate
     reports: []types.WorkReport,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -289,7 +272,6 @@ test "tiny_load_and_dump" {
 test "decode_enqueue_and_unlock_chain_4" {
     const allocator = std.testing.allocator;
 
-    // Now focus on the problematic one
     std.debug.print("\n\nDetailed analysis of enqueue_and_unlock_chain-4...\n", .{});
     var test_vector = TestCase.buildFrom(
         jam_params.TINY_PARAMS,

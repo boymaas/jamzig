@@ -11,6 +11,4 @@ pub fn encode(set: *const types.ValidatorSet, writer: anytype) !void {
     span.trace("Validator set length: {d}", .{set.items().len});
 
     try codec.serializeSliceAsArray(types.ValidatorData, writer, set.items());
-
-    span.debug("Successfully encoded validator set", .{});
 }

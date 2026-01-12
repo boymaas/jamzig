@@ -1,5 +1,3 @@
-
-Removed 22 comments
 const std = @import("std");
 const clap = @import("clap");
 const tracing = @import("tracing");
