@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const services = @import("services.zig");
 
@@ -6,7 +7,6 @@ const ServiceAccount = services.ServiceAccount;
 const ServiceId = services.ServiceId;
 const Allocator = std.mem.Allocator;
 
-// Import the tracing module
 const trace = @import("tracing").scoped(.delta_snapshot);
 
 /// DeltaSnapshot provides a copy-on-write wrapper around the Delta state.
@@ -288,7 +288,6 @@ pub const DeltaSnapshot = struct {
                 }
 
                 // TODO: when error occurs here, we have this value both in destination
-                // and in modified_services
                 modify_span.trace("Adding modified service to destination", .{});
                 try destination.accounts.put(id, modified_entry.value_ptr.*);
             }
@@ -350,63 +349,49 @@ test "DeltaSnapshot basic functionality" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    // Create original Delta
     var original = Delta.init(allocator);
     defer original.deinit();
 
-    // Create a service in the original Delta
     const original_id: ServiceId = 1;
     const original_account = try original.getOrCreateAccount(original_id);
     original_account.balance = 1000;
 
-    // Create a snapshot
     var snapshot = DeltaSnapshot.init(&original);
     defer snapshot.deinit();
 
-    // Read a service from the snapshot (should read from original)
     const readonly_account = snapshot.getReadOnly(original_id);
     try testing.expect(readonly_account != null);
     try testing.expectEqual(readonly_account.?.balance, 1000);
 
-    // Modify a service in the snapshot
     const mutable_account = try snapshot.getMutable(original_id);
     try testing.expect(mutable_account != null);
     mutable_account.?.balance = 2000;
 
-    // Original should remain unchanged
     try testing.expectEqual(original_account.balance, 1000);
 
-    // Snapshot should reflect the change
     const readonly_after_change = snapshot.getReadOnly(original_id);
     try testing.expect(readonly_after_change != null);
     try testing.expectEqual(readonly_after_change.?.balance, 2000);
 
-    // Create a new service in the snapshot
     const new_id: ServiceId = 2;
     const new_account = try snapshot.createService(new_id);
     new_account.balance = 3000;
 
-    // Mark a service for deletion
     _ = try snapshot.removeService(original_id);
 
-    // Test service visibility after deletion
     try testing.expect(!snapshot.contains(original_id));
     try testing.expect(snapshot.contains(new_id));
 
-    // Verify changes are being tracked
     try testing.expect(snapshot.hasChanges());
 
-    // Commit changes back to the original Delta
     try snapshot.commit();
 
-    // Check that the changes were applied
     try testing.expect(!original.accounts.contains(original_id));
 
     const committed_account = original.getAccount(new_id);
     try testing.expect(committed_account != null);
     try testing.expectEqual(committed_account.?.balance, 3000);
 
-    // Snapshot should be empty after commit
     try testing.expect(!snapshot.hasChanges());
 }
 
@@ -414,39 +399,30 @@ test "DeltaSnapshot checkpoint functionality" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    // Create original Delta
     var original = Delta.init(allocator);
     defer original.deinit();
 
-    // Create a service in the original Delta
     const service_id: ServiceId = 1;
     var account = try original.getOrCreateAccount(service_id);
     account.balance = 1000;
 
-    // Create a snapshot
     var snapshot = DeltaSnapshot.init(&original);
     defer snapshot.deinit();
 
-    // Make a change to the snapshot
     var mutable_account = (try snapshot.getMutable(service_id)).?;
     mutable_account.balance = 2000;
 
-    // Create a checkpoint
     var checkpoint_snapshot = try snapshot.checkpoint();
     defer checkpoint_snapshot.deinit();
 
-    // Make more changes to the checkpoint
     mutable_account = (try checkpoint_snapshot.getMutable(service_id)).?;
     mutable_account.balance = 3000;
 
-    // Original snapshot should still show 2000
     const original_snapshot_account = snapshot.getReadOnly(service_id).?;
     try testing.expectEqual(original_snapshot_account.balance, 2000);
 
-    // Checkpoint snapshot should show 3000
     const checkpoint_account = checkpoint_snapshot.getReadOnly(service_id).?;
     try testing.expectEqual(checkpoint_account.balance, 3000);
 
-    // Original should still show 1000
     try testing.expectEqual(account.balance, 1000);
 }

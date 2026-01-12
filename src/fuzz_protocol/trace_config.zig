@@ -1,3 +1,5 @@
+
+Removed 14 comments
 const std = @import("std");
 const tracing = @import("tracing");
 
@@ -23,7 +25,6 @@ pub fn applyQuietScopes(quiet_scopes_str: []const u8) !void {
 
 /// Parse and apply trace configuration string
 pub fn applyTraceConfig(config_str: []const u8) !void {
-    // Parse config string like "pvm=debug,net=info"
     var iter = std.mem.splitSequence(u8, config_str, ",");
     while (iter.next()) |scope_config| {
         if (scope_config.len == 0) continue;
@@ -32,18 +33,15 @@ pub fn applyTraceConfig(config_str: []const u8) !void {
             const scope_name = scope_config[0..equals_pos];
             const level_str = scope_config[equals_pos + 1 ..];
 
-            // Parse level
             const level = tracing.LogLevel.fromString(level_str) catch {
                 std.debug.print("Warning: Invalid log level '{s}' for scope '{s}'\n", .{ level_str, scope_name });
                 continue;
             };
 
-            // Apply configuration
             tracing.setScope(scope_name, level) catch {
                 std.debug.print("Warning: Failed to set tracing for scope '{s}'\n", .{scope_name});
             };
         } else {
-            // Just scope name, default to debug
             tracing.setScope(scope_config, .debug) catch {
                 std.debug.print("Warning: Failed to set tracing for scope '{s}'\n", .{scope_config});
             };
@@ -64,9 +62,7 @@ pub fn configureTracing(args: struct {
         args.trace orelse "null",
         args.trace_quiet orelse "null",
     });
-    // Initialize runtime tracing if any trace options are provided
     if (args.trace_all != null or args.trace != null or args.trace_quiet != null) {
-        // Apply default level first if specified
         if (args.trace_all) |default_level_str| {
             const default_level = tracing.LogLevel.fromString(default_level_str) catch {
                 std.debug.print("Error: Invalid log level '{s}'\n", .{default_level_str});
@@ -77,19 +73,15 @@ pub fn configureTracing(args: struct {
             std.debug.print("Set default trace level to: {s}\n", .{default_level_str});
         }
 
-        // Apply quiet scopes (set them to info level)
         if (args.trace_quiet) |quiet_scopes| {
             try applyQuietScopes(quiet_scopes);
         }
 
-        // Then apply specific overrides if provided (these can override quiet scopes)
         if (args.trace) |trace_config| {
             try applyTraceConfig(trace_config);
         }
     }
 
-    // Apply verbose levels
-    // try tracing.setScope("codec", .info); // Keep codec quiet by default
 
     const SCOPES_TO_ENABLE = [_][]const u8{
         "fuzz_protocol",
@@ -97,10 +89,6 @@ pub fn configureTracing(args: struct {
         "jam_conformance_target",
         "stf",
         "header_validator",
-        // "accumulate",
-        // "reports",
-        // "host_calls",
-        // "safrole",
     };
 
     if (args.verbose == 1) {

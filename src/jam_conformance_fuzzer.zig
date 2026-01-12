@@ -1,3 +1,5 @@
+
+Removed 22 comments
 const std = @import("std");
 const clap = @import("clap");
 const tracing = @import("tracing");
@@ -53,7 +55,6 @@ pub fn main() !void {
     defer alloc.deinit();
     const allocator = alloc.allocator();
 
-    // Parse command line arguments
     const params = comptime clap.parseParamsComptime(
         \\-h, --help             Display this help and exit.
         \\-v, --verbose          Enable verbose output (can be repeated up to 5 times)
@@ -83,7 +84,6 @@ pub fn main() !void {
         return;
     }
 
-    // Configure tracing
     try trace_config.configureTracing(.{
         .verbose = res.args.verbose,
         .trace_all = null,
@@ -93,7 +93,6 @@ pub fn main() !void {
 
     const FUZZ_PARAMS = jam_params.TINY_PARAMS;
 
-    // Handle parameter dumping
     if (try param_formatter.handleParamDump(
         FUZZ_PARAMS,
         res.args.@"dump-params" != 0,
@@ -102,14 +101,12 @@ pub fn main() !void {
         return;
     }
 
-    // Extract configuration
     const socket_path = res.args.socket orelse "/tmp/jam_conformance.sock";
     const seed = res.args.seed orelse @as(u64, @intCast(std.time.timestamp()));
     const num_blocks = res.args.blocks orelse 100;
     const output_file = res.args.output;
     const trace_dir = res.args.@"trace-dir";
 
-    // Print configuration
     std.debug.print("JAM Conformance Fuzzer\n", .{});
     std.debug.print("======================\n", .{});
     std.debug.print("Socket path: {s}\n", .{socket_path});
@@ -127,8 +124,6 @@ pub fn main() !void {
     }
     std.debug.print("\n", .{});
 
-    // Setup signal handler for graceful shutdown
-    // Note: Using a global atomic is necessary for signal handlers which can't capture context
     const shutdown_requested = struct {
         var atomic: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
     };
@@ -137,8 +132,6 @@ pub fn main() !void {
         .handler = .{
             .handler = struct {
                 fn handler(_: c_int) callconv(.C) void {
-                    // Signal handlers must be async-signal-safe
-                    // Only set atomic flag, don't do I/O or complex operations
                     shutdown_requested.atomic.store(true, .monotonic);
                 }
             }.handler,
@@ -150,38 +143,31 @@ pub fn main() !void {
     std.posix.sigaction(std.posix.SIG.INT, &sigaction, null);
     std.posix.sigaction(std.posix.SIG.TERM, &sigaction, null);
 
-    // For our fuzzer we use a simple sequential executor
     var executor = try io.SequentialExecutor.init(allocator);
     defer executor.deinit();
 
-    // Create and run fuzzer
     var fuzzer = try fuzzer_mod.createSocketFuzzer(FUZZ_PARAMS, allocator, seed, socket_path);
     defer fuzzer.destroy();
 
     std.debug.print("Connecting to target at {s}...\n", .{socket_path});
 
-    // Connect to target
     fuzzer.connectToTarget() catch |err| {
         std.debug.print("Error: Failed to connect to target at {s}: {s}\n", .{ socket_path, @errorName(err) });
         return err;
     };
 
-    // Perform handshake
     try fuzzer.performHandshake();
     std.debug.print("Handshake completed successfully\n\n", .{});
 
-    // Create shutdown check function
     const check_shutdown = struct {
         fn check() bool {
             return shutdown_requested.atomic.load(.monotonic);
         }
     }.check;
 
-    // Run fuzzing cycle or trace mode using inverted control flow - providers drive the fuzzer
     var result = if (trace_dir) |dir| blk: {
         std.debug.print("Starting trace-based conformance testing from: {s}\n", .{dir});
 
-        // Create TraceProvider and let it drive the process
         var trace_provider = try block_providers.TraceProvider(FUZZ_PARAMS).init(allocator, .{
             .directory = dir,
         });
@@ -191,7 +177,6 @@ pub fn main() !void {
     } else blk: {
         std.debug.print("Starting conformance testing with {d} blocks...\n", .{num_blocks});
 
-        // Create SequoiaProvider and let it drive the process
         var sequoia_provider = try block_providers.SequoiaProvider(io.SequentialExecutor, FUZZ_PARAMS).init(&executor, allocator, .{
             .seed = seed,
             .num_blocks = num_blocks,
@@ -202,19 +187,15 @@ pub fn main() !void {
     };
     defer result.deinit(allocator);
 
-    // Check if we were interrupted
     if (shutdown_requested.atomic.load(.monotonic)) {
         std.debug.print("\nReceived signal, shutting down gracefully...\n", .{});
     }
 
-    // End session
     fuzzer.endSession();
 
-    // Generate report
     const report_text = try report.generateReport(FUZZ_PARAMS, allocator, result);
     defer allocator.free(report_text);
 
-    // Output report
     if (output_file) |file_path| {
         const file = try std.fs.cwd().createFile(file_path, .{});
         defer file.close();
@@ -224,7 +205,6 @@ pub fn main() !void {
         std.debug.print("\n{s}\n", .{report_text});
     }
 
-    // Print summary
     if (result.isSuccess()) {
         if (trace_dir) |_| {
             std.debug.print("\n✓ Conformance test PASSED - All traces processed successfully\n", .{});

@@ -1,8 +1,6 @@
+
 const std = @import("std");
 
-// each instruction's 'length' (defined as the number of contiguous octets
-// starting with the opcode which are needed to fully define the instruction's
-// semantics) is left implicit though limited to being at most 16.
 pub const MaxInstructionSizeInBytes = 16;
 
 pub const Instruction = enum(u8) {
@@ -265,16 +263,8 @@ pub const InstructionRanges = std.StaticStringMap(InstructionRange)
     IKV{ "ThreeReg", .{ .start = 190, .end = 230 } }, // Updated range to include new instructions
 });
 
-//  ___           _                   _   _                _
-// |_ _|_ __  ___| |_ _ __ _   _  ___| |_(_) ___  _ __    / \   _ __ __ _ ___
-//  | || '_ \/ __| __| '__| | | |/ __| __| |/ _ \| '_ \  / _ \ | '__/ _` / __|
-//  | || | | \__ \ |_| |  | |_| | (__| |_| | (_) | | | |/ ___ \| | | (_| \__ \
-// |___|_| |_|___/\__|_|   \__,_|\___|\__|_|\___/|_| |_/_/   \_\_|  \__, |___/
-//                                                                  |___/
-
 pub const InstructionArgs = union(InstructionType) {
 
-    // Instruction argument types
     // TODO: rename ..Type to ..Args
     pub const NoArgsType = struct { no_of_bytes_to_skip: u32 };
     pub const OneImmType = struct { no_of_bytes_to_skip: u32, immediate: u64 };
@@ -340,31 +330,18 @@ pub const InstructionArgs = union(InstructionType) {
         third_register_index: u8,
     };
 
-    // A.5.1
     NoArgs: NoArgsType,
-    // A.5.2
     OneImm: OneImmType,
-    // A.5.3
     OneRegOneExtImm: OneRegOneExtImmType,
-    // A.5.4
     TwoImm: TwoImmType,
-    // A.5.5
     OneOffset: OneOffsetType,
-    // A.5.6
     OneRegOneImm: OneRegOneImmType,
-    // A.5.7
     OneRegTwoImm: OneRegTwoImmType,
-    // A.5.8
     OneRegOneImmOneOffset: OneRegOneImmOneOffsetType,
-    // A.5.9
     TwoReg: TwoRegType,
-    // A.5.10
     TwoRegOneImm: TwoRegOneImmType,
-    // A.5.11
     TwoRegOneOffset: TwoRegOneOffsetType,
-    // A.5.12
     TwoRegTwoImm: TwoRegTwoImmType,
-    // A.5.13
     ThreeReg: ThreeRegType,
 
     pub fn skip_l(self: *const @This()) u32 {
@@ -696,9 +673,7 @@ pub const InstructionWithArgs = struct {
     }
 
     pub fn setBranchOrJumpTargetTo(self: *@This(), value: u32) !void {
-        // As these all work with an offset
         if (self.isBranch() or self.isBranchWithImm()) {
-            // ensure offset is not compressed
             try self.setOffset(@bitCast(@as(u32, value)));
         } else {
             switch (self.instruction) {

@@ -10,7 +10,6 @@ const tracing = @import("tracing");
 const trace = tracing.scoped(.stf);
 const tracy = @import("tracy");
 
-// Constants for seal contexts
 const SEAL_CONTEXT_TICKET = "jam_ticket_seal";
 const SEAL_CONTEXT_FALLBACK = "jam_fallback_seal";
 const ENTROPY_CONTEXT = "jam_entropy";
@@ -144,31 +143,23 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             const span = trace.span(@src(), .validate_header);
             defer span.deinit();
 
-            // Ensure state is initialized (only debugbuilds)
             _ = try state.debugCheckIfFullyInitialized();
 
             const time = params.Time().init(state.tau.?, header.slot);
             span.debug("Time initialized: {}", .{time});
 
-            // Phase:  Select appropriate entropy
             const eta_prime = self.selectEntropy(state, header);
 
-            // Phase: Determine ticket availability
             var tickets = try self.resolveTickets(state, header);
             defer tickets.deinit(self.allocator);
 
-            // Phase: Author validation (needs ticket information)
-            // Pass gamma.s for fallback mode key verification
             const author_key =
                 try self.validateAuthorConstraints(state, header, eta_prime, tickets.tickets, state.gamma.?.s);
 
             {
-                // Parallel signature verification using WorkGroup
-                // Create WorkGroup for parallel execution
                 var work_group = self.executor.createGroup();
                 defer work_group.deinit();
 
-                // Prepare seal context
                 const seal_context = SealContext{
                     .header = header,
                     .author_key = author_key,
@@ -177,13 +168,11 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                     .context_prefix = if (tickets.tickets != null) SEAL_CONTEXT_TICKET else SEAL_CONTEXT_FALLBACK,
                 };
 
-                // Spawn seal verification task
                 try work_group.spawn(validateSealWorker, .{
                     self,
                     seal_context,
                 });
 
-                // Spawn entropy verification task
                 try work_group.spawn(validateEntropySourceWorker, .{
                     self,
                     header,
@@ -199,13 +188,10 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 try work_group.waitAndCheckErrors();
             }
 
-            // Phase: Structural validation
             try self.validateStructuralConstraints(state, header, current_state_root, extrinsics);
 
-            // Phase: Timing validation
             try self.validateTimingConstraints(state, header);
 
-            // Phase: Marker timing validation
             try self.validateMarkerTiming(state, header, extrinsics);
 
             return ValidationResult{
@@ -225,7 +211,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             const span = trace.span(@src(), .validate_structural_constraints);
             defer span.deinit();
 
-            // Validate parent hash
             {
                 const parent_span = span.child(@src(), .parent_hash);
                 defer parent_span.deinit();
@@ -241,7 +226,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 }
             }
 
-            // Validate prior state root
             {
                 const state_root_span = span.child(@src(), .prior_state_root);
                 defer state_root_span.deinit();
@@ -254,7 +238,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 }
             }
 
-            // Validate extrinsic hash
             {
                 const extrinsic_span = span.child(@src(), .extrinsic_hash);
                 defer extrinsic_span.deinit();
@@ -280,19 +263,10 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
 
             const tau = state.tau.?;
 
-            // Check slot ordering
             if (header.slot <= tau) {
                 span.err("Header slot {d} not greater than state slot {d}", .{ header.slot, tau });
                 return HeaderValidationError.SlotNotGreaterThanParent;
             }
-
-            // Check for excessive slot gaps
-            // DISABLED: I cannot see this in the GP explicitly mentioned
-            // const slot_gap = header.slot - tau;
-            // if (slot_gap > self.config.max_slot_gap) {
-            //     span.err("Slot gap {d} exceeds maximum {d}", .{ slot_gap, self.config.max_slot_gap });
-            //     return HeaderValidationError.ExcessiveSlotGap;
-            // }
         }
 
         /// Validate author constraints and return author key
@@ -308,8 +282,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             const span = trace.span(@src(), .validate_author_constraints);
             defer span.deinit();
 
-            // Determine which validator set to use based on epoch transition
-            // According to graypaper: use posterior κ' which at epoch boundaries is γ_k
             const time = params.Time().init(state.tau.?, header.slot);
             const validators = if (time.isNewEpoch())
                 // TODO: gamma_k is no gamma_pedning
@@ -317,7 +289,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             else
                 state.kappa.?.validators; // Use kappa for regular blocks
 
-            // Validate author index
             if (header.author_index >= validators.len) {
                 span.err("Author index {d} out of bounds (max: {d})", .{
                     header.author_index,
@@ -326,11 +297,7 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 return HeaderValidationError.InvalidAuthorIndex;
             }
 
-            // Author validation depends on whether we're in ticket mode or fallback mode
             if (tickets) |ticket_list| {
-                // TICKET MODE: Author is self-declared via header.author_index
-                // The seal verification will prove they own the winning ticket
-                // (Only the ticket owner can produce a seal with matching ticket ID)
                 span.debug("Validating author in ticket mode", .{});
 
                 const winning_ticket = ticket_list[time.current_slot_in_epoch];
@@ -338,20 +305,14 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
 
                 span.debug("Ticket mode: author claims index {d}, ownership verified via seal", .{header.author_index});
             } else {
-                // FALLBACK MODE: Verify author key matches γ_s'[m'] as per graypaper
-                // Graypaper eq:slotkeysequence:
-                //   γ_s' = γ_s when e' = e (same epoch - use stored keys)
-                //   γ_s' = F(η'_2, κ') otherwise (epoch boundary - recompute)
                 span.debug("Validating author in fallback mode", .{});
 
                 const author_key = validators[header.author_index].bandersnatch;
 
                 if (time.isSameEpoch()) {
-                    // Same epoch: use stored gamma.s.keys
                     const expected_key = switch (gamma_s) {
                         .keys => |keys| keys[time.current_slot_in_epoch],
                         .tickets => {
-                            // This shouldn't happen - if we have tickets, we should be in ticket mode
                             span.err("Fallback mode entered but gamma.s contains tickets", .{});
                             return HeaderValidationError.InvalidAuthorIndex;
                         },
@@ -364,8 +325,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                         return HeaderValidationError.InvalidAuthorIndex;
                     }
                 } else {
-                    // Epoch boundary: compute expected author with F(η'_2, κ')
-                    // The expected author index is derived from entropy
                     const expected_index = @import("safrole/epoch_handler.zig").deriveKeyIndex(
                         eta_prime[2],
                         time.current_slot_in_epoch,
@@ -397,7 +356,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             const tau = state.tau.?;
             const transition_time = params.Time().init(tau, header.slot);
 
-            // Check epoch marker timing
             const should_have_epoch_marker = transition_time.isNewEpoch();
             const has_epoch_marker = header.epoch_mark != null;
 
@@ -411,18 +369,14 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 return HeaderValidationError.InvalidEpochMarkerTiming;
             }
 
-            // Validate epoch mark contents if present
             if (should_have_epoch_marker) {
                 try self.validateEpochMark(header, state);
             }
 
-            // Check tickets marker timing
             if (transition_time.didCrossTicketSubmissionEndInSameEpoch() and
                 // TODO: make a nice accessor for this
                 state.gamma.?.a.len == params.epoch_length)
             {
-                // When crossing ticket submission end, and our ticket
-                // accumulator is full tickets_mark is REQUIRED
                 if (header.tickets_mark == null) {
                     span.err("Missing required tickets marker when crossing ticket submission end", .{});
                     return HeaderValidationError.InvalidTicketsMarkerTiming;
@@ -432,10 +386,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 return HeaderValidationError.InvalidTicketsMarkerTiming;
             }
 
-            // Validate offenders mark matches disputes extrinsic (graypaper judgments.tex)
-            // Note: This is a preliminary check - we can only verify it's empty when disputes is empty
-            // Full validation requires processing disputes first, which happens in STF
-            // For now, we enforce the basic structural constraint
             if (extrinsics.disputes.culprits.len == 0 and extrinsics.disputes.faults.len == 0) {
                 if (header.offenders_mark.len > 0) {
                     span.err("Offenders mark not empty but no culprits or faults in disputes extrinsic", .{});
@@ -456,8 +406,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             const epoch_mark = header.epoch_mark.?;
             const eta = state.eta.?;
 
-            // Validate entropy field matches eta[0] (prior state)
-            // This will become eta_prime[1] after rotation in STF
             if (!std.mem.eql(u8, &epoch_mark.entropy, &eta[0])) {
                 span.err("Epoch mark entropy mismatch: expected eta[0]={s}, got {s}", .{
                     std.fmt.fmtSliceHexLower(&eta[0]),
@@ -466,8 +414,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 return HeaderValidationError.InvalidEpochMark;
             }
 
-            // Validate tickets_entropy field matches eta[1] (prior state)
-            // This will become eta_prime[2] after rotation in STF
             if (!std.mem.eql(u8, &epoch_mark.tickets_entropy, &eta[1])) {
                 span.err("Epoch mark tickets_entropy mismatch: expected eta[1]={s}, got {s}", .{
                     std.fmt.fmtSliceHexLower(&eta[1]),
@@ -476,8 +422,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 return HeaderValidationError.InvalidEpochMark;
             }
 
-            // Validate validators field matches iota (pending validators that become active next epoch)
-            // Epoch mark contains the NEXT validator set (iota), not current gamma.k
             const iota = state.iota.?;
             if (epoch_mark.validators.len != iota.validators.len) {
                 span.err("Epoch mark validators count mismatch: expected {}, got {}", .{
@@ -524,10 +468,8 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
 
             const time = params.Time().init(state.tau.?, header.slot);
 
-            // Determine if we are in ticketmode
             var needs_cleanup = false;
             const tickets: ?[]types.TicketBody =
-                // When we are on the boundary
                 if (time.priorWasInTicketSubmissionTail() and
                 time.isConsecutiveEpoch()) brl: {
                     if (state.gamma.?.a.len == params.epoch_length) {
@@ -536,14 +478,11 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                     } else {
                         break :brl null;
                     }
-                    // As long as we are in the same epoch, use tickets
                 } else if (time.isSameEpoch() and state.gamma.?.s == .tickets)
                     state.gamma.?.s.tickets
                 else
-                    // If we skipped an epoch or anything else fallback
                     null;
 
-            // No tickets available
             return TicketResolution{
                 .tickets = tickets,
                 .needs_cleanup = needs_cleanup,
@@ -575,7 +514,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             const span = trace.span(@src(), .validate_seal);
             defer span.deinit();
 
-            // Serialize unsigned header
             const unsigned_header_bytes = blk: {
                 const unsigned_header = types.HeaderUnsigned.fromHeaderShared(ctx.header);
                 break :blk try codec.serializeAlloc(
@@ -587,32 +525,26 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             };
             defer self.allocator.free(unsigned_header_bytes);
 
-            // Extract seal signature
             const seal_signature = crypto.bandersnatch.Bandersnatch.Signature.fromBytes(ctx.header.seal);
 
-            // Build context buffer
             const context_bytes = blk: {
                 const context_span = span.child(@src(), .seal_build_context);
                 defer context_span.deinit();
                 var context_buf: [MAX_CONTEXT_BUFFER_SIZE]u8 = undefined;
                 var context_len: usize = 0;
 
-                // Add context prefix
                 @memcpy(context_buf[context_len .. context_len + ctx.context_prefix.len], ctx.context_prefix);
                 context_len += ctx.context_prefix.len;
 
-                // Add entropy
                 @memcpy(context_buf[context_len .. context_len + 32], &ctx.entropy);
                 context_len += 32;
 
-                // Handle ticket-specific validation
                 if (ctx.tickets) |ticket_bodies| {
                     const ticket_span = span.child(@src(), .seal_validate_ticket);
                     defer ticket_span.deinit();
                     const slot_in_epoch = ctx.header.slot % params.epoch_length;
                     const ticket = ticket_bodies[slot_in_epoch];
 
-                    // Verify VRF output matches ticket ID
                     const seal_vrf_output = seal_signature.outputHash() catch {
                         span.err("Failed to extract VRF output from seal", .{});
                         return HeaderValidationError.TicketSealVerificationFailed;
@@ -626,7 +558,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                         return HeaderValidationError.InvalidTicketId;
                     }
 
-                    // Add ticket attempt to context
                     context_buf[context_len] = ticket.attempt;
                     context_len += 1;
                 }
@@ -634,7 +565,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 break :blk context_buf[0..context_len];
             };
 
-            // Verify signature
             {
                 const verify_span = span.child(@src(), .seal_verify_signature);
                 defer verify_span.deinit();
@@ -668,7 +598,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
             const span = trace.span(@src(), .validate_entropy_source);
             defer span.deinit();
 
-            // Parse seal signature to get VRF output
             const seal_output_hash = blk: {
                 const seal_output_hash_span = span.child(@src(), .entropy_extract_seal_output);
                 defer seal_output_hash_span.deinit();
@@ -679,7 +608,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 };
             };
 
-            // Build context: ENTROPY_CONTEXT ⌢ Y(Hs)
             const context_bytes = blk: {
                 var context_buf: [MAX_CONTEXT_BUFFER_SIZE]u8 = undefined;
                 var context_len: usize = 0;
@@ -693,7 +621,6 @@ pub fn HeaderValidator(comptime IOExecutor: type, comptime params: jam_params.Pa
                 break :blk context_buf[0..context_len];
             };
 
-            // Verify entropy source signature
             {
                 const verify_span = span.child(@src(), .entropy_verify_signature);
                 defer verify_span.deinit();

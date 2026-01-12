@@ -1,8 +1,4 @@
-//! Implementation of the ClientThread and Client. The design is
-//! straightforward: the ClientThread is equipped with a mailbox capable of
-//! receiving commands asynchronously. Upon execution of a command by the
-//! JamSnpClient, an event is generated that associates the invocation with its
-//! corresponding result.
+
 
 const std = @import("std");
 const uuid = @import("uuid");
@@ -68,7 +64,6 @@ pub const Builder = struct {
         const alloc = self._allocator orelse return error.AllocatorNotSet;
         const kp = self._keypair orelse return error.KeypairNotSet;
         const gh = self._genesis_hash orelse return error.GenesisHashNotSet;
-        // Note: We create it here, so the ClientThread takes ownership.
         var jclient = try JamSnpClient.initWithoutLoop(
             alloc,
             kp,
@@ -77,7 +72,6 @@ pub const Builder = struct {
         );
         errdefer jclient.deinit();
 
-        // 2. Initialize ClientThread
         return ClientThread.init(alloc, jclient);
     }
 };
@@ -96,7 +90,6 @@ pub const ClientThread = struct {
     mailbox: *Mailbox(Command, 64),
     event_queue: *Mailbox(Client.Event, 64), // Queue for events pushed by internal callbacks
 
-    // Keep track of pending command metadata to invoke callbacks upon completion event
     pending_connects: std.AutoHashMap(ConnectionId, CommandMetadata(anyerror!ConnectionId)),
     pending_streams: std.fifo.LinearFifo(Command.CreateStream, .Dynamic),
 
@@ -120,8 +113,6 @@ pub const ClientThread = struct {
         pub const CreateStream = struct {
             const Data = struct {
                 connection_id: ConnectionId,
-                // The initial byte sent to the server specifies the type of
-                // stream. This action initiates the stream on the server.
                 kind: StreamKind,
             };
             data: Data,
@@ -224,14 +215,12 @@ pub const ClientThread = struct {
 
         thread.pending_connects = std.AutoHashMap(ConnectionId, CommandMetadata(anyerror!ConnectionId)).init(alloc);
         thread.pending_streams = std.fifo.LinearFifo(Command.CreateStream, .Dynamic).init(alloc);
-        // Initialize other pending command maps here if needed
 
         thread.alloc = alloc;
 
         try client.attachToLoop(&thread.loop);
         thread.client = client;
 
-        // Register internal callbacks
         thread.registerClientCallbacks();
 
         return thread;
@@ -243,15 +232,10 @@ pub const ClientThread = struct {
         defer span.deinit();
         span.debug("Deinitializing ClientThread", .{});
 
-        // The sequence of operations is critical in this context. Initially,
-        // terminate the client, which will consequently dismantle the engine,
-        // thereby closing all active connections and streams. Subsequently,
-        // deallocate the remaining resources.
         self.client.deinit();
 
         self.pending_streams.deinit();
         self.pending_connects.deinit(); // Deinit pending command maps
-        // Deinit other pending command maps here
         self.event_queue.destroy(self.alloc);
         self.mailbox.destroy(self.alloc);
         self.stop.deinit();
@@ -264,7 +248,6 @@ pub const ClientThread = struct {
     }
 
     pub fn threadMain(self: *ClientThread) void {
-        // Handle errors gracefully
         self.threadMain_() catch |err| {
             const span = trace.span(@src(), .thread_main);
             defer span.deinit();
@@ -284,8 +267,6 @@ pub const ClientThread = struct {
         self.wakeup.wait(&self.loop, &self.wakeup_c, ClientThread, self, wakeupCallback);
         self.stop.wait(&self.loop, &self.stop_c, ClientThread, self, stopCallback);
 
-        // Initial notify might not be needed if setup doesn't queue commands
-        // try self.wakeup.notify();
         span.debug("Running event loop", .{});
         _ = try self.loop.run(.until_done);
 
@@ -293,11 +274,9 @@ pub const ClientThread = struct {
     }
 
     fn threadSetup(_: *ClientThread) !void {
-        // Perform any thread-specific setup
     }
 
     fn threadCleanup(_: *ClientThread) void {
-        // Perform any thread-specific cleanup
     }
 
     fn wakeupCallback(
@@ -312,7 +291,6 @@ pub const ClientThread = struct {
 
         _ = r catch |err| {
             span.err("Error in wakeup callback: {}", .{err});
-            // Consider pushing error event?
             return .rearm;
         };
 
@@ -320,7 +298,6 @@ pub const ClientThread = struct {
 
         thread.drainMailbox() catch |err| {
             span.err("Error processing mailbox: {}", .{err});
-            // Consider pushing error event?
         };
 
         span.debug("Rearming wakeup callback", .{});
@@ -371,13 +348,10 @@ pub const ClientThread = struct {
                 defer cmd_span.deinit();
                 cmd_span.debug("Connecting to endpoint: {}", .{cmd.data});
 
-                // Store metadata so we forward the metadata back to the client
                 try self.pending_connects.put(cmd.data.connection_id, cmd.metadata);
 
-                // The actual result (success or failure) comes via ConnectionEstablished/ConnectionFailed events
                 self.client.connect(cmd.data.endpoint, cmd.data.connection_id) catch |err| {
                     cmd_span.err("Connection attempt failed immediately: {}", .{err});
-                    // If connect() itself fails immediately, invoke callback with error
                     try self.pushEvent(.{ .connection_failed = .{
                         .endpoint = cmd.data.endpoint,
                         .connection_id = cmd.data.connection_id,
@@ -402,19 +376,12 @@ pub const ClientThread = struct {
                 defer cmd_span.deinit();
                 cmd_span.debug("Creating stream on connection {}", .{cmd.data.connection_id});
 
-                // Find the connection by ID
                 if (self.client.connections.get(cmd.data.connection_id)) |conn| {
 
-                    // Push the pending streams to the fifo, this has to be now, as createStream
-                    // calls lsquic which if there is enough capacity will call the callback immediately
                     try self.pending_streams.writeItem(cmd);
 
-                    // Create the stream, this will call lsquic to create it, we need to
-                    // wait until the StreamCreated event to know the stream ID.
                     conn.createStream();
                     cmd_span.debug("Stream creation requested to LSQUIC", .{});
-                    // Success/failure is signaled by the StreamCreated event later
-                    // Callback will be invoked in internalStreamCreatedCallback
                 } else {
                     cmd_span.warn("CreateStream command for unknown connection ID: {}", .{cmd.data.connection_id});
                     // FIXME: need to send an event here
@@ -432,8 +399,6 @@ pub const ClientThread = struct {
                         return; // Don't invoke success below
                     };
                     cmd_span.debug("Stream close requested successfully", .{});
-                    // Success/failure is signaled by the StreamClosed event later.
-                    // Invoke void callback immediately for destroy command intent.
                     // FIXME: generate an event here
                 } else {
                     cmd_span.warn("DestroyStream command for unknown stream ID: {}", .{cmd.data.stream_id});
@@ -447,22 +412,16 @@ pub const ClientThread = struct {
                 cmd_span.trace("Data: {any}", .{std.fmt.fmtSliceHexLower(cmd.data.data)});
 
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
-                    // This sets the buffer for the next onWrite callback
                     stream.setWriteBuffer(cmd.data.data, .owned, .datawritecompleted) catch |err| {
                         cmd_span.err("Failed to set write buffer for stream {}: {}", .{ cmd.data.stream_id, err });
                         // FIXME: generate an event here
                         return; // Don't proceed if buffer setting fails
                     };
-                    // Trigger the write callback
                     stream.wantWrite(true);
                     cmd_span.debug("Data queued successfully", .{});
-                    // Command success means data was buffered. Actual send success
-                    // comes via DataWriteCompleted/DataWriteError events.
-                    // Invoke void callback immediately for send command intent.
                     // FIXME: generate an event here
                 } else {
                     cmd_span.warn("SendData command for unknown stream ID: {}", .{cmd.data.stream_id});
-                    // FIXME generate and event here
                 }
             },
             .send_message => |cmd| {
@@ -472,17 +431,13 @@ pub const ClientThread = struct {
                 cmd_span.trace("Message first bytes: {any}", .{std.fmt.fmtSliceHexLower(if (cmd.data.message.len > 16) cmd.data.message[0..16] else cmd.data.message)});
 
                 if (self.client.streams.get(cmd.data.stream_id)) |stream| {
-                    // This creates a new buffer with length prefix and message data
                     stream.setMessageBuffer(cmd.data.message) catch |err| {
                         cmd_span.err("Failed to set message buffer for stream {}: {}", .{ cmd.data.stream_id, err });
                         // FIXME: generate an event here
                         return; // Don't proceed if buffer setting fails
                     };
-                    // Trigger the write callback
                     stream.wantWrite(true);
                     cmd_span.debug("Message queued successfully", .{});
-                    // Command success means message was buffered. Actual send success
-                    // comes via DataWriteCompleted/DataWriteError events.
                 } else {
                     cmd_span.warn("SendMessage command for unknown stream ID: {}", .{cmd.data.stream_id});
                 }
@@ -527,7 +482,6 @@ pub const ClientThread = struct {
                         return; // Don't invoke success below
                     };
                     cmd_span.debug("Stream flushed successfully", .{});
-                    // Success is immediate (or error)
                     // FIXME: generate an event here
                 } else {
                     cmd_span.warn("StreamFlush command for unknown stream ID: {}", .{cmd.data.stream_id});
@@ -546,7 +500,6 @@ pub const ClientThread = struct {
                         return; // Don't invoke success below
                     };
                     cmd_span.debug("Stream shutdown successful", .{});
-                    // Success is immediate (or error)
                     // FIXME: generate an event here
                 } else {
                     cmd_span.warn("StreamShutdown command for unknown stream ID: {}", .{cmd.data.stream_id});
@@ -560,11 +513,8 @@ pub const ClientThread = struct {
         return try std.Thread.spawn(.{}, ClientThread.threadMain, .{thread});
     }
 
-    // -- Internal Callback Handlers
-    // These run in the ClientThread's context and push events
 
     fn registerClientCallbacks(self: *ClientThread) void {
-        // Pass 'self' as context so callbacks can access the thread state (event_queue, pending_connects)
         self.client.setCallback(.connection_established, internalConnectionEstablishedCallback, self);
         self.client.setCallback(.connection_failed, internalConnectionFailedCallback, self);
         self.client.setCallback(.connection_closed, internalConnectionClosedCallback, self);
@@ -586,7 +536,6 @@ pub const ClientThread = struct {
         defer span.deinit();
         span.debug("Pushing event: {s}", .{@tagName(event)});
 
-        // Helper to push event, logs if queue is full
         if (self.event_queue.push(event, .instant) == 0) {
             span.err("Client event queue full, dropping event: {s}", .{@tagName(event)});
             return error.QueueFull;
@@ -600,12 +549,10 @@ pub const ClientThread = struct {
         span.debug("Connection established: ID={} endpoint={}", .{ connection_id, endpoint });
 
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
-        // Check if there was a pending connect command for this endpoint
         if (self.pending_connects.fetchRemove(connection_id)) |metadata| {
             try self.pushEvent(.{ .connected = .{ .connection_id = connection_id, .endpoint = endpoint, .metadata = metadata.value } });
             span.debug("Found pending connect command, invoking callback", .{});
         } else {
-            // This can happen if connection was established without an explicit API call? Or a race?
             std.debug.panic("No pending connect on: {}", .{connection_id});
         }
     }
@@ -615,17 +562,13 @@ pub const ClientThread = struct {
         defer span.deinit();
         span.err("Connection failed: endpoint={} error={}", .{ endpoint, err });
 
-        // Connection Failed event is triggered immediatly before adding to pending_connects
 
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
-        // The connection_id is not available in this callback, so we cannot use it for the event.
         if (self.pending_connects.fetchRemove(connection_id)) |metadata| {
             try self.pushEvent(.{ .connection_failed = .{ .endpoint = endpoint, .connection_id = connection_id, .err = err, .metadata = metadata.value } });
         } else {
             std.debug.panic("No pending connect on: {}", .{connection_id});
         }
-        // We should probably add the connection_id to this callback
-        // so we can use it here.
     }
 
     fn internalConnectionClosedCallback(connection_id: ConnectionId, context: ?*anyopaque) !void {
@@ -635,8 +578,6 @@ pub const ClientThread = struct {
 
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
 
-        // If we where trying to establish a connection but it closed we need to remove
-        // the pending connection
         if (self.pending_connects.fetchRemove(connection_id)) |metadata| {
             span.debug("Found pending connect command, invoking callback", .{});
             metadata.value.callWithResult(connection_id); // Call command callback with success (ConnectionId)
@@ -656,8 +597,6 @@ pub const ClientThread = struct {
             .local_initiated => {
                 span.debug("Local initiated stream", .{});
                 if (client_thread.pending_streams.readItem()) |cmd| {
-                    // Set the write buffer and trigger lsquic to send it by setting
-                    // wantWrite to true
                     try stream.setWriteBuffer(try client_thread.alloc.dupe(u8, std.mem.asBytes(&cmd.data.kind)), .owned, .none);
                     stream.wantWrite(true);
                     span.debug("Sending StreamKind to peer", .{});
@@ -668,15 +607,12 @@ pub const ClientThread = struct {
                         .metadata = cmd.metadata,
                     } });
                 } else {
-                    // This should never happen.
                     span.warn("StreamCreated event for connection {} with no pending stream command", .{stream.connection.id});
                     std.debug.panic("StreamCreated event for connection {} with no pending stream command", .{stream.connection.id});
                 }
             },
             .remote_initiated => {
                 span.debug("Remote initiated stream", .{});
-                // This is a server-initiated stream, we need to create a new stream
-                // object and push it to the event queue
                 span.debug("Reading StreamKind from peer", .{});
                 const stream_kind_buffer = try client_thread.alloc.alloc(u8, 1);
                 try stream.setReadBuffer(stream_kind_buffer, .owned, .none);
@@ -713,7 +649,6 @@ pub const ClientThread = struct {
         }
 
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
-        // Data might be partial from last read attempt. Copy it if needed.
         try self.pushEvent(.{ .data_end_of_stream = .{ .connection_id = connection_id, .stream_id = stream_id, .final_data = data_read } });
     }
 
@@ -723,7 +658,6 @@ pub const ClientThread = struct {
         span.err("Stream read error: connection={} stream={} error_code={d}", .{ connection_id, stream_id, error_code });
 
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
-        // Convert i32 error code to a Zig error if possible/meaningful
         try self.pushEvent(.{ .data_read_error = .{ .connection_id = connection_id, .stream_id = stream_id, .error_code = error_code } });
     }
 
@@ -751,9 +685,7 @@ pub const ClientThread = struct {
         span.debug("Write progress: connection={} stream={} bytes={d}/{d} ({d}%)", .{ connection_id, stream_id, bytes_written, total_size, if (total_size > 0) (bytes_written * 100) / total_size else 0 });
 
         const self: *ClientThread = @ptrCast(@alignCast(context.?));
-        // Optional: Push a progress event if desired by the application
         _ = self;
-        // self.pushEvent(.{ .data_write_progress = .{ ... } });
     }
 
     fn internalDataWriteErrorCallback(connection_id: ConnectionId, stream_id: StreamId, error_code: i32, context: ?*anyopaque) !void {

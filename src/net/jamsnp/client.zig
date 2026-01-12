@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const uuid = @import("uuid");
 const lsquic = @import("lsquic");
@@ -15,13 +16,11 @@ const Stream = @import("stream.zig").Stream;
 const toSocketAddress = @import("../ext.zig").toSocketAddress;
 const trace = @import("tracing").scoped(.network);
 
-// Use shared types
 pub const ConnectionId = shared.ConnectionId;
 pub const StreamId = shared.StreamId;
 pub const EventType = shared.CallbackType; // Use renamed type
 pub const CallbackHandler = shared.CallbackHandler;
 
-// -- JamSnpClient Struct
 
 pub const JamSnpClient = struct {
     /// Note on Stream Creation Callbacks and Timeouts:
@@ -77,7 +76,6 @@ pub const JamSnpClient = struct {
         .on_read = Stream(JamSnpClient).onStreamRead,
         .on_write = Stream(JamSnpClient).onStreamWrite,
         .on_close = Stream(JamSnpClient).onStreamClosed,
-        // Optional callbacks...
     },
 
     ssl_ctx: *ssl.SSL_CTX,
@@ -85,8 +83,6 @@ pub const JamSnpClient = struct {
 
     is_builder: bool,
 
-    // Using an array instead of HashMap for callbacks provides better performance
-    // as it avoids hash calculation and memory allocation overhead
     callback_handlers: [@typeInfo(EventType).@"enum".fields.len]CallbackHandler = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len,
 
     pub fn initWithLoop(
@@ -124,22 +120,18 @@ pub const JamSnpClient = struct {
         defer span.deinit();
         span.debug("Initializing JamSnpClient", .{});
 
-        // Initialize lsquic globally (idempotent check might be needed if used elsewhere)
         if (lsquic.lsquic_global_init(lsquic.LSQUIC_GLOBAL_CLIENT) != 0) {
             span.err("lsquic global initialization failed", .{});
             return error.LsquicInitFailed;
         }
 
-        // Create UDP socket
         span.debug("Creating UDP socket", .{});
         var socket = try network.Socket.create(.ipv6, .udp);
         errdefer socket.close();
 
-        // Create ALPN identifier
         const alpn_id = try common.buildAlpnIdentifier(allocator, chain_genesis_hash, is_builder);
         errdefer allocator.free(alpn_id);
 
-        // Configure SSL context
         const ssl_ctx = try common.configureSSLContext(
             allocator,
             keypair,
@@ -150,16 +142,13 @@ pub const JamSnpClient = struct {
         );
         errdefer ssl.SSL_CTX_free(ssl_ctx);
 
-        // Set up certificate verification
         span.debug("Setting up certificate verification", .{});
         ssl.SSL_CTX_set_cert_verify_callback(ssl_ctx, certificate_verifier.verifyCertificate, null);
 
-        // Initialize lsquic engine settings
         var engine_settings: lsquic.lsquic_engine_settings = .{};
         lsquic.lsquic_engine_init_settings(&engine_settings, 0);
         engine_settings.es_versions = 1 << lsquic.LSQVER_ID29; // IETF QUIC v1
 
-        // Check settings
         var error_buffer: [128]u8 = undefined;
         if (lsquic.lsquic_engine_check_settings(
             &engine_settings,
@@ -168,15 +157,12 @@ pub const JamSnpClient = struct {
             @sizeOf(@TypeOf(error_buffer)),
         ) != 0) {
             span.err("Client engine settings problem: {s}", .{error_buffer});
-            // Consider returning an error instead of panicking
             return error.LsquicEngineSettingsInvalid;
-            // std.debug.panic("Client engine settings problem: {s}", .{error_buffer});
         }
 
         const client = try allocator.create(JamSnpClient);
         errdefer client.deinit(); // Can now use errdefer safely
 
-        // Initialize client fields
         client.* = JamSnpClient{
             .allocator = allocator,
             .keypair = keypair,
@@ -204,11 +190,9 @@ pub const JamSnpClient = struct {
                 .ea_alpn = @ptrCast(alpn_id.ptr),
             },
             .ssl_ctx = ssl_ctx,
-            // Initialize the new handlers map
             .callback_handlers = [_]CallbackHandler{.{ .callback = null, .context = null }} ** @typeInfo(EventType).@"enum".fields.len,
         };
 
-        // Create lsquic engine
         span.debug("Creating LSQUIC engine", .{});
         client.lsquic_engine = lsquic.lsquic_engine_new(0, &client.lsquic_engine_api) orelse {
             span.err("lsquic engine creation failed", .{});
@@ -294,7 +278,6 @@ pub const JamSnpClient = struct {
         }
     }
 
-    // -- Callback Registration
 
     /// Sets the callback function and context for a specific event type.
     /// The caller is responsible for ensuring the `callback_fn_ptr` points to a
@@ -337,7 +320,6 @@ pub const JamSnpClient = struct {
         self.allocator.free(self.chain_genesis_hash);
         self.allocator.free(self.alpn);
 
-        // Cleanup remaining streams (Safety net)
         if (self.streams.count() > 0) {
             span.warn("Streams map not empty during deinit. Count: {d}", .{self.streams.count()});
             var stream_it = self.streams.iterator();
@@ -350,7 +332,6 @@ pub const JamSnpClient = struct {
         span.trace("Deinitializing streams map", .{});
         self.streams.deinit();
 
-        // Cleanup remaining connections (Safety net)
         if (self.connections.count() > 0) {
             span.warn("Connections map not empty during deinit. Count: {d}", .{self.connections.count()});
             var conn_it = self.connections.iterator();
@@ -363,13 +344,10 @@ pub const JamSnpClient = struct {
         span.trace("Deinitializing connections map", .{});
         self.connections.deinit();
 
-        // Cleanup callback handlers
-        // but good practice to clear references)
         for (&self.callback_handlers) |*handler| {
             handler.* = .{ .callback = null, .context = null };
         }
 
-        // Destroy the client object itself LAST
         span.trace("Destroying JamSnpClient object", .{});
         const alloc = self.allocator;
         self.* = undefined;
@@ -387,7 +365,6 @@ pub const JamSnpClient = struct {
         defer span.deinit();
         span.debug("Connecting to {s}:{d}", .{ address, port });
 
-        // Create the endpoint
         const parsable = try std.fmt.allocPrint(self.allocator, "{s}:{d}", .{ address, port });
         defer self.allocator.free(parsable);
 
@@ -395,7 +372,6 @@ pub const JamSnpClient = struct {
 
         const connection_id = uuid.v4.new();
 
-        // Call the main connect function
         try self.connect(peer_endpoint, connection_id);
 
         return connection_id;
@@ -406,10 +382,6 @@ pub const JamSnpClient = struct {
         defer span.deinit();
         span.debug("Connecting to {s}", .{peer_endpoint});
 
-        // Bind to a local address - must match interface type of peer
-        // On macOS, binding to :: (any) when connecting to ::1 causes the kernel
-        // to report source address as :: instead of ::1, making replies unreachable.
-        // Fix: bind to loopback when connecting to loopback.
         const local_address: network.Address = switch (peer_endpoint.address) {
             .ipv6 => |ipv6| if (std.mem.eql(u8, &ipv6.value, &network.Address.IPv6.loopback.value))
                 .{ .ipv6 = network.Address.IPv6.loopback }
@@ -425,7 +397,6 @@ pub const JamSnpClient = struct {
             return err;
         };
 
-        // Get the local socket address after binding
         const local_endpoint = self.socket.getLocalEndPoint() catch |err| {
             span.err("Failed to get local endpoint: {s}", .{@errorName(err)});
             return err;
@@ -433,16 +404,13 @@ pub const JamSnpClient = struct {
         span.debug("Bound to local endpoint: {}", .{local_endpoint});
 
         // TODO: double check if network.EndPoint.SockAddr maps to
-        // a std.posix sockaddr struct
         const local_sa = toSocketAddress(local_endpoint);
         const peer_sa = toSocketAddress(peer_endpoint);
 
-        // Create a connection context *before* calling lsquic_engine_connect
         span.trace("Creating connection context", .{});
         const conn = try Connection(JamSnpClient).create(self.allocator, self, null, peer_endpoint, connection_id); // Use refactored path
         errdefer conn.destroy(self.allocator); // destroy is now part of ClientConnection.Connection
 
-        // Create QUIC connection
 
         span.debug("Creating QUIC connection {*}", .{conn});
         if (lsquic.lsquic_engine_connect(
@@ -460,24 +428,20 @@ pub const JamSnpClient = struct {
             0, // token length
         ) == null) { // Check for NULL return (failure)
             span.err("lsquic_engine_connect failed", .{});
-            // Don't invoke callback here, let caller handle connect() error
             return error.ConnectionFailed;
         }
 
-        // Add to connections map *after* successful call to lsquic_engine_connect
         try self.connections.put(connection_id, conn);
 
         span.debug("Connection request initiated successfully for ID: {}", .{conn.id});
     }
 
-    // -- Logging
     pub fn enableSslCtxLogging(self: *@This()) void {
         const span = trace.span(@src(), .enable_ssl_ctx_logging);
         defer span.deinit();
         @import("../tests/logging.zig").enableDetailedSslCtxLogging(self.ssl_ctx);
     }
 
-    // --- Event Loop and C Interop Helpers
     fn onTick(
         maybe_self: ?*@This(),
         xev_loop: *xev.Loop,
@@ -501,32 +465,22 @@ pub const JamSnpClient = struct {
         span.trace("Processing connections via lsquic_engine_process_conns", .{});
         lsquic.lsquic_engine_process_conns(self.lsquic_engine);
 
-        // Determine next tick time based on lsquic's advice
         var delta: c_int = undefined;
         var timeout_in_ms: u64 = 100; // Default timeout if lsquic gives no advice
         span.trace("Checking for earliest connection activity", .{});
         if (lsquic.lsquic_engine_earliest_adv_tick(self.lsquic_engine, &delta) != 0) {
-            // lsquic provided a next tick time
             if (delta <= 0) {
-                // Need to tick immediately or very soon
                 timeout_in_ms = 0; // Schedule ASAP (or small value like 1ms?)
                 span.trace("Next tick scheduled immediately (delta={d})", .{delta});
             } else {
-                // Convert microseconds delta to milliseconds timeout
                 timeout_in_ms = @intCast(@divTrunc(delta, 1000));
-                // Add a minimum timeout? e.g., max(1, timeout_in_ms) ?
                 span.trace("Next tick scheduled in {d}ms (delta={d}us)", .{ timeout_in_ms, delta });
             }
         } else {
-            // No connections need ticking according to lsquic right now. Use default.
             span.trace("No specific next tick advised by lsquic, using default {d}ms", .{timeout_in_ms});
         }
 
-        // Clamp minimum timeout to avoid busy-waiting if delta is very small but non-zero
         if (timeout_in_ms == 0 and delta > 0) timeout_in_ms = 1;
-        // Or clamp maximum timeout?
-        // const max_timeout_ms: u64 = 5000;
-        // timeout_in_ms = @min(timeout_in_ms, max_timeout_ms);
 
         span.trace("Scheduling next tick with timeout: {d}ms", .{timeout_in_ms});
         self.tick.run(
@@ -555,7 +509,6 @@ pub const JamSnpClient = struct {
         defer span.deinit();
 
         errdefer |read_err| {
-            // Log specific read errors from xev
             span.err("xev UDP read failed: {s}", .{@errorName(read_err)});
             // TODO: Decide if this is fatal. Maybe just log and re-arm?
         }
@@ -565,7 +518,6 @@ pub const JamSnpClient = struct {
             return .rearm;
         };
         if (bytes_read == 0) {
-            // Should not happen with UDP? But handle defensively.
             span.warn("Received 0 bytes from UDP read, rearming.", .{});
             return .rearm;
         }
@@ -575,18 +527,15 @@ pub const JamSnpClient = struct {
             std.debug.panic("onPacketsIn called with null self context!", .{});
         };
 
-        // Get local address packet was received on (needed by lsquic)
         const local_endpoint = self.socket.getLocalEndPoint() catch |err| {
             std.debug.panic("Failed to get local endpoint in onPacketsIn: {s}", .{@errorName(err)});
         };
         span.trace("Packet received on local endpoint: {}", .{local_endpoint});
 
-        // Convert addresses to sockaddr format for lsquic
         // TODO: Check if network.EndPoint.SockAddr maps to sockaddr correctly
         const local_sa = &toSocketAddress(local_endpoint);
         // NOTE: this needs to be a stable pointer
         const peer_sa = &peer_address.any; // xev provides std.net.Address which has .any
-        // const peer_sa = peer_address.any;
 
         span.trace("Passing packet to lsquic engine", .{});
         if (lsquic.lsquic_engine_packet_in(
@@ -598,30 +547,23 @@ pub const JamSnpClient = struct {
             @ptrCast(self), // Pass client as connection context hint (lsquic might ignore for existing conn)
             0, // ECN value (0 = Not-ECT)
         ) != 0) {
-            // This indicates an error processing the packet *within lsquic*
             span.err("lsquic_engine_packet_in failed (return value != 0)", .{});
-            // What does non-zero return mean? Connection error? Engine error? Check docs.
             // TODO: Maybe log error and continue? Panicking might be too harsh.
             std.debug.panic("lsquic_engine_packet_in failed", .{});
         } else {
             span.trace("lsquic_engine_packet_in processed successfully", .{});
         }
 
-        // Always re-arm the UDP read to receive the next packet
         return .rearm;
     }
 
-    // Helper for lsquic engine API: provides SSL context for new connections
     fn getSslContext(
         peer_ctx: ?*anyopaque, // Context passed as 5th arg to lsquic_engine_connect
         _: ?*const lsquic.struct_sockaddr, // Remote address (unused here)
     ) callconv(.C) ?*lsquic.struct_ssl_ctx_st {
-        // In our client setup, peer_ctx is always the main client SSL_CTX
-        // Return the opaque pointer cast back to the SSL_CTX type
         return @ptrCast(peer_ctx.?);
     }
 
-    // Helper for lsquic engine API: sends packets out via the underlying socket
     fn sendPacketsOut(
         ctx: ?*anyopaque, // Context provided in lsquic_engine_api (the JamSnpClient*)
         specs_ptr: ?[*]const lsquic.lsquic_out_spec,
@@ -640,23 +582,15 @@ pub const JamSnpClient = struct {
 
         var packets_sent_count: c_int = 0;
         send_loop: for (specs) |*spec| {
-            // Note: lsquic often provides multiple iovecs per spec for coalescing.
-            // We need to send them as a single datagram using sendmsg or similar
-            // if we want to benefit from coalescing.
-            // The current simple loop sends each iovec as a separate packet,
-            // which is less efficient but easier to implement with basic sendTo.
 
             // TODO: Implement sendmsg for coalescing if performance is critical.
-            // For now, iterate iovecs (less efficient).
 
             const iov_slice = spec.iov[0..spec.iovlen];
             span.trace(" Processing spec with {d} iovecs to peer_ctx={*}", .{ spec.iovlen, spec.peer_ctx });
 
-            // Get destination address once per spec
             const dest_addr = std.net.Address.initPosix(@ptrCast(@alignCast(spec.dest_sa)));
             const dest_endpoint = network.EndPoint.fromSocketAddress(@ptrCast(@alignCast(spec.dest_sa)), dest_addr.getOsSockLen()) catch |err| {
                 span.err("Failed to convert destination sockaddr: {s}", .{@errorName(err)});
-                // Stop sending this batch if conversion fails
                 break :send_loop;
             };
 
@@ -668,32 +602,24 @@ pub const JamSnpClient = struct {
 
                 span.trace("  Sending iovec of {d} bytes to {}", .{ packet_len, dest_endpoint });
 
-                // Send the individual iovec using sendTo
                 _ = client.socket.sendTo(dest_endpoint, packet) catch |err| {
-                    // Handle send errors
                     span.warn("Failed to send packet spec to {}: {s}", .{ dest_endpoint, @errorName(err) });
-                    // Per lsquic docs, check errno:
                     switch (err) {
                         error.WouldBlock => { // Corresponds to EAGAIN/EWOULDBLOCK
                             span.warn("Socket send would block (EAGAIN). Stopping batch.", .{});
-                            // Stop processing this batch, lsquic expects us to return packets_sent_count
-                            // and call lsquic_engine_send_unsent_packets() later.
                             break :send_loop;
                         },
                         else => {
-                            // Unexpected error
                             span.err("Unhandled socket send error: {s}", .{@errorName(err)});
                             break :send_loop;
                         },
                     }
                 };
             }
-            // If we successfully sent all iovecs for this spec:
             packets_sent_count += 1;
         }
 
         span.trace("Attempted to send {d}/{d} packet specs", .{ packets_sent_count, specs_len });
-        // Return the number of specs whose iovecs were *all* successfully submitted for sending
         return packets_sent_count;
     }
 };

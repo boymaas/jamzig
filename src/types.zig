@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const types = @import("types.zig");
 const jam_params = @import("jam_params.zig");
@@ -13,7 +14,6 @@ pub const U64 = u64;
 pub const ByteSequence = []u8;
 pub const ByteArray32 = [32]u8;
 
-// State dictionary key type (31 bytes per JAM 0.6.6)
 pub const StateKey = [31]u8;
 
 pub const OpaqueHash = ByteArray32;
@@ -50,7 +50,6 @@ pub fn VarInt(comptime T: type) type {
     };
 }
 
-// Specific hash types
 pub const HeaderHash = OpaqueHash;
 pub const StateRoot = OpaqueHash;
 pub const BeefyRoot = OpaqueHash;
@@ -174,12 +173,10 @@ pub const WorkPackage = struct {
 
     /// Validates WorkPackage constraints according to JAM 0.6.6 specification
     pub fn validate(self: *const @This(), comptime params: @import("jam_params.zig").Params) !void {
-        // WA: Authorization code size limit (64,000 octets)
         if (self.authorization.len > params.max_authorization_code_size) {
             return error.AuthorizationCodeTooLarge;
         }
 
-        // I: Work items count constraint (1..4 in current implementation, 1..16 per spec)
         if (self.items.len == 0 or self.items.len > params.max_work_items_per_package) {
             return error.InvalidWorkItemsCount;
         }
@@ -259,8 +256,6 @@ pub const WorkExecResult = union(enum(u8)) {
     }
 
     pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
-        // First write the tag byte based on the union variant
-        // Per graypaper serialization.tex equation O
         const tag: u8 = switch (self.*) {
             .ok => 0,
             .out_of_gas => 1,
@@ -272,7 +267,6 @@ pub const WorkExecResult = union(enum(u8)) {
         };
         try writer.writeByte(tag);
 
-        // Write additional data for the ok variant only
         switch (self.*) {
             .ok => |data| {
                 const codec = @import("codec.zig");
@@ -290,7 +284,6 @@ pub const WorkExecResult = union(enum(u8)) {
         defer span.deinit();
         span.debug("Decoding WorkExecResult with tag: {d}", .{tag});
 
-        // Per graypaper serialization.tex equation O
         return switch (tag) {
             0 => blk: {
                 const codec = @import("codec.zig");
@@ -572,9 +565,7 @@ pub const ValidatorSet = struct {
         };
 
         for (self.validators, 0..) |validator, i| {
-            // std.debug.print("Comparing validator[{d}] key: {any} with search key: {any}\n", .{ i, &@field(validator, field_name), &key });
             if (std.mem.eql(u8, &@field(validator, field_name), &key)) {
-                // std.debug.print("Found validator[{d}] with key: {any}\n", .{ i, &key });
                 return @intCast(i);
             }
         }
@@ -666,7 +657,6 @@ pub const ValidatorSet = struct {
     }
 };
 
-// Safrole types
 pub const Lambda = ValidatorSet;
 pub const Kappa = ValidatorSet;
 pub const GammaK = ValidatorSet;
@@ -769,7 +759,6 @@ pub const Header = struct {
     ) !HeaderHash {
         const codec = @import("codec.zig");
         // TODO: optimize we can remove allocation here as we can calculate
-        // the max size of the header
         const header_with_seal = try codec.serializeAlloc(Header, params, allocator, self);
         defer allocator.free(header_with_seal);
 
@@ -882,13 +871,9 @@ pub const Fault = struct {
 };
 
 pub const DisputesRecords = struct {
-    // Good verdicts (psi_g)
     good: []WorkReportHash,
-    // Bad verdicts (psi_b)
     bad: []WorkReportHash,
-    // Wonky verdicts (psi_w)
     wonky: []WorkReportHash,
-    // Offenders (psi_o)
     offenders: []Ed25519Public,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -1034,7 +1019,6 @@ pub const AssurancesExtrinsic = struct {
 
         var cloned_count: usize = 0;
         errdefer {
-            // Clean up any successfully cloned items
             for (cloned_data[0..cloned_count]) |*item| {
                 item.deinit(allocator);
             }
@@ -1094,7 +1078,6 @@ pub const GuaranteesExtrinsic = struct {
 
         var cloned_count: usize = 0;
         errdefer {
-            // Clean up any successfully cloned items
             for (cloned_data[0..cloned_count]) |*item| {
                 item.deinit(allocator);
             }
@@ -1156,24 +1139,15 @@ pub const Extrinsic = struct {
         const codec = @import("codec.zig");
         const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
 
-        // According to graypaper equations 5.4-5.6:
-        // Hx ≡ H(E(H#(a)))
-        // where a = [ET(ET), EP(EP), g, EA(EA), ED(ED)]
-        // and g = E(↕[(H(w), E4(t), ↕a) | (w, t, a) −< EG])
 
-        // Step 1: Encode each component using their specific encoding functions
 
-        // ET(ET) - tickets encoding
         const tickets_encoded = try codec.serializeAlloc(TicketsExtrinsic, params, allocator, self.tickets);
         defer allocator.free(tickets_encoded);
 
-        // EP(EP) - preimages encoding
         const preimages_encoded = try codec.serializeAlloc(PreimagesExtrinsic, params, allocator, self.preimages);
         defer allocator.free(preimages_encoded);
 
-        // g = E(↕[(H(w), E4(t), ↕a) | (w, t, a) −< EG]) - guarantees special encoding
         const guarantees_encoded = blk: {
-            // Create the list of tuples (H(w), E4(t), ↕a) for each guarantee
             var guarantee_tuples = try allocator.alloc([]const u8, self.guarantees.data.len);
             defer {
                 for (guarantee_tuples) |tuple_bytes| {
@@ -1183,27 +1157,21 @@ pub const Extrinsic = struct {
             }
 
             for (self.guarantees.data, 0..) |guarantee, i| {
-                // Create tuple (H(w), E4(t), ↕a)
                 var tuple_buffer = std.ArrayList(u8).init(allocator);
                 defer tuple_buffer.deinit();
 
-                // H(w) - hash of the work report
                 const work_report_encoded = try codec.serializeAlloc(WorkReport, params, allocator, guarantee.report);
                 defer allocator.free(work_report_encoded);
 
                 var work_report_hash: OpaqueHash = undefined;
                 Blake2b256.hash(work_report_encoded, &work_report_hash, .{});
 
-                // E4(t) - slot encoded as 4 bytes little-endian
                 var slot_bytes: [4]u8 = undefined;
                 std.mem.writeInt(u32, &slot_bytes, guarantee.slot, .little);
 
-                // ↕a - signatures with length prefix
                 const signatures_encoded = try codec.serializeAlloc([]ValidatorSignature, params, allocator, guarantee.signatures);
                 defer allocator.free(signatures_encoded);
 
-                // Build the tuple by encoding (hash, slot_bytes, signatures)
-                // This should be encoded as a proper tuple, not just concatenated
                 const tuple_writer = tuple_buffer.writer();
                 try codec.serialize([32]u8, params, tuple_writer, work_report_hash);
                 try tuple_writer.writeAll(&slot_bytes);
@@ -1212,16 +1180,13 @@ pub const Extrinsic = struct {
                 guarantee_tuples[i] = try tuple_buffer.toOwnedSlice();
             }
 
-            // Now encode the list of tuples with length prefix: E(↕[...])
             var guarantees_list_buffer = std.ArrayList(u8).init(allocator);
             defer guarantees_list_buffer.deinit();
 
             const guarantees_writer = guarantees_list_buffer.writer();
 
-            // Write length prefix
             try codec.writeInteger(guarantee_tuples.len, guarantees_writer);
 
-            // Write each tuple
             for (guarantee_tuples) |tuple_bytes| {
                 try guarantees_writer.writeAll(tuple_bytes);
             }
@@ -1230,15 +1195,12 @@ pub const Extrinsic = struct {
         };
         defer allocator.free(guarantees_encoded);
 
-        // EA(EA) - assurances encoding
         const assurances_encoded = try codec.serializeAlloc(AssurancesExtrinsic, params, allocator, self.assurances);
         defer allocator.free(assurances_encoded);
 
-        // ED(ED) - disputes encoding
         const disputes_encoded = try codec.serializeAlloc(DisputesExtrinsic, params, allocator, self.disputes);
         defer allocator.free(disputes_encoded);
 
-        // Step 2: Hash each encoded component (H#(a))
         var component_hashes: [5]OpaqueHash = undefined;
         Blake2b256.hash(tickets_encoded, &component_hashes[0], .{});
         Blake2b256.hash(preimages_encoded, &component_hashes[1], .{});
@@ -1246,11 +1208,9 @@ pub const Extrinsic = struct {
         Blake2b256.hash(assurances_encoded, &component_hashes[3], .{});
         Blake2b256.hash(disputes_encoded, &component_hashes[4], .{});
 
-        // Step 3: Encode the array of hashes E(H#(a))
         const hashes_encoded = try codec.serializeAlloc([5]OpaqueHash, params, allocator, component_hashes);
         defer allocator.free(hashes_encoded);
 
-        // Step 4: Final hash H(E(H#(a)))
         var final_hash: OpaqueHash = undefined;
         Blake2b256.hash(hashes_encoded, &final_hash, .{});
 

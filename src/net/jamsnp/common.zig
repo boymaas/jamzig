@@ -18,7 +18,6 @@ pub fn buildAlpnIdentifier(allocator: std.mem.Allocator, chain_genesis_hash: []c
     var buffer = try std.ArrayList(u8).initCapacity(allocator, 64);
     const writer = buffer.writer();
 
-    // Format: jamnp-s/0/abcdef12 or jamnp-s/0/abcdef12/builder
     try writer.print("{s}/{s}/{s}", .{
         constants.PROTOCOL_PREFIX,
         constants.PROTOCOL_VERSION,
@@ -40,9 +39,7 @@ pub fn generateAltName(result: *[Base32.encodeLen(32) + 1]u8, pubkey: []const u8
     const span = trace.span(@src(), .alt_name_generation);
     defer span.deinit();
 
-    // Prefix with an e
     result[0] = 'e';
-    // Base32 encode the public key
     _ = Base32.encode(result[1 .. Base32.encodeLen(32) + 1], pubkey);
 
     span.debug("Generated Alt Name: {s}", .{result});
@@ -59,7 +56,6 @@ pub const X509Certificate = struct {
         span.debug("Creating X509 certificate with Ed25519 key", .{});
         span.trace("Public key: {s}", .{std.fmt.fmtSliceHexLower(&keypair.public_key.bytes)});
 
-        // Create private key from Ed25519 keypair
         const pkey = ssl.EVP_PKEY_new_raw_private_key(ssl.EVP_PKEY_ED25519, null, &keypair.secret_key.bytes, 32) orelse {
             span.err("Failed to create EVP_PKEY from Ed25519 private key", .{});
             @panic("EVP_PKEY_new_raw_private_key failed");
@@ -67,21 +63,18 @@ pub const X509Certificate = struct {
         defer ssl.EVP_PKEY_free(pkey);
         span.trace("Created EVP_PKEY from Ed25519 private key", .{});
 
-        // Create new X509 certificate
         const cert = ssl.X509_new() orelse {
             span.err("Failed to create X509 certificate", .{});
             @panic("X509_new failed");
         };
         span.trace("Created new X509 certificate", .{});
 
-        // Set version to X509v3
         if (ssl.X509_set_version(cert, ssl.X509_VERSION_3) == 0) {
             span.err("Failed to set X509 version", .{});
             @panic("X509_set_version failed");
         }
         span.trace("Set certificate version to X509v3", .{});
 
-        // Set serial number
         const serial = ssl.ASN1_INTEGER_new() orelse {
             span.err("Failed to create ASN1 integer for serial number", .{});
             @panic("ASN1_INTEGER_new failed");
@@ -101,7 +94,6 @@ pub const X509Certificate = struct {
         }
         span.trace("Applied serial number to certificate", .{});
 
-        // Set issuer (self-signed)
         const issuer = ssl.X509_get_issuer_name(cert) orelse {
             span.err("Failed to get issuer name", .{});
             @panic("X509_get_issuer_name failed");
@@ -122,47 +114,38 @@ pub const X509Certificate = struct {
         }
         span.trace("Added 'JamZig Node' as common name to issuer", .{});
 
-        // Set validity period
         if (ssl.X509_gmtime_adj(ssl.X509_get_notBefore(cert), 0) == null) {
             span.err("Failed to set notBefore time", .{});
             @panic("X509_gmtime_adj failed");
         }
         span.trace("Set notBefore time to current time", .{});
 
-        // 1000 years validity
         if (ssl.X509_gmtime_adj(ssl.X509_get_notAfter(cert), 60 * 60 * 24 * 365 * 1000) == null) {
             span.err("Failed to set notAfter time", .{});
             @panic("X509_gmtime_adj failed");
         }
         span.trace("Set notAfter time to 1000 years in the future", .{});
 
-        // Set subject name (same as issuer for self-signed)
         if (ssl.X509_set_subject_name(cert, issuer) == 0) {
             span.err("Failed to set subject name", .{});
             @panic("X509_set_subject_name failed");
         }
         span.trace("Set subject name to same as issuer (self-signed)", .{});
 
-        // Set public key
         if (ssl.X509_set_pubkey(cert, pkey) == 0) {
             span.err("Failed to set public key", .{});
             @panic("X509_set_pubkey failed");
         }
         span.trace("Set public key in certificate", .{});
 
-        // Add the required alternative name: 'e' + base32 encoded pubkey
         const pubkey = &keypair.public_key.bytes;
         span.trace("Adding SAN with encoded pubkey: {s}", .{std.fmt.fmtSliceHexLower(pubkey)});
 
-        // Generate the base32 encoded public key
         const size = comptime Base32.encodeLen(32) + 1;
         var alt_name: [size]u8 = undefined;
 
-        // Base32 encode the public key (32 bytes) - results in 52 chars
         generateAltName(&alt_name, pubkey);
 
-        // Create a string for the extension value in OpenSSL format
-        // The format is DNS:name
         var ext_value_buf: [128]u8 = undefined;
         const ext_value = std.fmt.bufPrintZ(&ext_value_buf, "DNS:{s}", .{alt_name}) catch {
             span.err("Failed to format DNS name", .{});
@@ -170,7 +153,6 @@ pub const X509Certificate = struct {
         };
         span.trace("Formatted SAN extension value: {s}", .{ext_value});
 
-        // Create extension using string format
         const ext = ssl.X509V3_EXT_nconf_nid(
             null, // conf
             null, // ctx
@@ -182,17 +164,14 @@ pub const X509Certificate = struct {
         };
         span.trace("Created X509 extension for subject alternative names", .{});
 
-        // Add the extension to the certificate
         if (ssl.X509_add_ext(cert, ext, -1) == 0) {
             span.err("Failed to add subject alternative name extension to certificate", .{});
             @panic("X509_add_ext failed");
         }
         span.trace("Added subject alternative name extension to certificate", .{});
 
-        // Free the extension now that it's been added
         ssl.X509_EXTENSION_free(ext);
 
-        // Sign the certificate with our private key
         if (ssl.X509_sign(cert, pkey, null) == 0) {
             span.err("Failed to sign certificate", .{});
             @panic("X509_sign failed");
@@ -226,10 +205,7 @@ pub fn configureSSLContext(
 
     errdefer ssl.SSL_CTX_free(ssl_ctx);
 
-    // ssl.SSL_CTX_set_info_callback(ssl_ctx, ssl_info_callback); // Register the callback
-    // span.trace("Registered SSL info callback", .{});
 
-    // Set TLS 1.3 protocol
     if (ssl.SSL_CTX_set_min_proto_version(ssl_ctx, ssl.TLS1_3_VERSION) == 0) {
         span.err("Failed to set minimum TLS protocol version to 1.3", .{});
         return error.SSLConfigurationFailed;
@@ -240,7 +216,6 @@ pub fn configureSSLContext(
     }
     span.trace("Set TLS protocol version to 1.3 only", .{});
 
-    // Configure Ed25519 signature algorithm
     const signature_algs = [_]u16{ssl.SSL_SIGN_ED25519};
     if (ssl.SSL_CTX_set_verify_algorithm_prefs(ssl_ctx, &signature_algs, 1) == 0) {
         span.err("Failed to set Ed25519 as signature algorithm", .{});
@@ -248,7 +223,6 @@ pub fn configureSSLContext(
     }
     span.trace("Configured Ed25519 as the signature algorithm", .{});
 
-    // Create certificate with the required format
     const cert_span = span.child(@src(), .create_cert);
     defer cert_span.deinit();
     cert_span.trace("Creating X509 certificate", .{});
@@ -257,7 +231,6 @@ pub fn configureSSLContext(
     defer ssl.X509_free(cert);
     cert_span.trace("Created X509 certificate", .{});
 
-    // Create EVP_PKEY from the raw private key bytes in the keypair
     const pkey_span = span.child(@src(), .create_pkey);
     defer pkey_span.deinit();
     pkey_span.trace("Creating EVP_PKEY from Ed25519 private key", .{});
@@ -274,44 +247,37 @@ pub fn configureSSLContext(
     defer ssl.EVP_PKEY_free(pkey);
     pkey_span.trace("Created EVP_PKEY successfully", .{});
 
-    // Now, load the private key into the context
     if (ssl.SSL_CTX_use_PrivateKey(ssl_ctx, pkey) == 0) {
         span.err("Failed to load private key into SSL context", .{});
         return error.SSLConfigurationFailed;
     }
     span.debug("Loaded private key into SSL context", .{});
 
-    // Load the certificate generated earlier
     if (ssl.SSL_CTX_use_certificate(ssl_ctx, cert) == 0) {
         span.err("Failed to load certificate into SSL context", .{});
         return error.SSLConfigurationFailed;
     }
     span.trace("Loaded certificate into SSL context", .{});
 
-    // Check consistency between private key and certificate
     if (ssl.SSL_CTX_check_private_key(ssl_ctx) == 0) {
         span.err("Private key does not match the certificate public key", .{});
         return error.SSLConfigurationFailed;
     }
     span.trace("Verified private key matches certificate public key", .{});
 
-    // Set certificate verification
     const verify_span = span.child(@src(), .cert_verification);
     defer verify_span.deinit();
 
     if (is_client) {
         verify_span.trace("Configuring certificate verification for client mode", .{});
-        // For clients, verify peer certificate
         ssl.SSL_CTX_set_verify(ssl_ctx, ssl.SSL_VERIFY_PEER, null);
         verify_span.trace("Set client verification to SSL_VERIFY_NONE", .{});
     } else {
         verify_span.trace("Configuring certificate verification for server mode", .{});
-        // For servers, both request and verify client certificates
         ssl.SSL_CTX_set_verify(ssl_ctx, ssl.SSL_VERIFY_PEER | ssl.SSL_VERIFY_FAIL_IF_NO_PEER_CERT, null);
         verify_span.trace("Set server verification to SSL_VERIFY_NONE | SSL_VERIFY_FAIL_IF_NO_PEER_CERT", .{});
     }
 
-    // Set ALPN
     const alpn_span = span.child(@src(), .configure_alpn);
     defer alpn_span.deinit();
 
@@ -321,7 +287,6 @@ pub fn configureSSLContext(
 
     if (is_client) {
         alpn_span.trace("Setting ALPN protocols for client mode", .{});
-        // Client sets the protocols it supports
         var alpn_proto_list: [128]u8 = undefined;
         var total_len: usize = 0;
 
@@ -339,7 +304,6 @@ pub fn configureSSLContext(
         alpn_span.debug("Set client ALPN protocols successfully", .{});
     } else {
         alpn_span.trace("Setting ALPN select callback for server mode", .{});
-        // Server selects from offered protocols
         const select_cb = struct {
             pub fn callback(_: ?*ssl.SSL, out: [*c][*c]const u8, outlen: [*c]u8, in: [*c]const u8, inlen: c_uint, arg: ?*anyopaque) callconv(.C) c_int {
                 const callback_span = trace.span(@src(), .alpn_select_callback);
@@ -363,10 +327,8 @@ pub fn configureSSLContext(
                     const proto = in[i..][0..proto_len];
                     callback_span.trace("Examining offered protocol: {s}", .{proto});
 
-                    // Check if the protocol is acceptable
                     if (std.mem.eql(u8, proto[0..proto_len], supported_proto_slice)) {
                         callback_span.debug("Found matching protocol: {s}", .{proto});
-                        // Out points to the in
                         out.* = @ptrCast(proto.ptr);
                         outlen.* = @intCast(proto.len);
                         return ssl.SSL_TLSEXT_ERR_OK;
@@ -392,12 +354,10 @@ fn ssl_info_callback(ssl_handle: ?*const ssl.SSL, where_val: c_int, ret: c_int) 
     const span = trace.span(@src(), .ssl_info_callback);
     defer span.deinit();
 
-    // Get state string only if handle is not null (can be null in early stages)
     const state_str = if (ssl_handle) |handle| ssl.SSL_state_string_long(handle) else @as([*c]const u8, @ptrCast("(null handle)"));
     span.debug("SSL state change", .{});
     span.trace("State='{s}', Where=0x{x}, Ret={d}", .{ state_str, where_val, ret });
 
-    // Also output to standard debug log for visibility during development
     std.debug.print("\x1b[32mSSL INFO: State='{s}', Where=0x{x} ({s}), Ret={d}\x1b[0m\n", .{
         state_str,
         where_val,
@@ -405,7 +365,6 @@ fn ssl_info_callback(ssl_handle: ?*const ssl.SSL, where_val: c_int, ret: c_int) 
         ret,
     });
 
-    // Add more detailed logging for alerts
     if ((where_val & ssl.SSL_CB_ALERT) != 0) {
         const is_write = (where_val & ssl.SSL_CB_WRITE) != 0;
         const alert_level_str = ssl.SSL_alert_type_string_long(ret); // Level is in upper byte of ret

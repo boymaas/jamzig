@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const types = @import("types.zig");
 const tracing = @import("tracing");
@@ -15,7 +16,6 @@ pub const GuarantorAssignmentResult = struct {
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.assignments);
-        // validators is a reference, not owned
         self.* = undefined;
     }
 };
@@ -26,8 +26,6 @@ pub fn rotateAssignments(
     cores: []u32,
     n: u32,
 ) void {
-    // Create output array
-    // Apply rotation formula from 11.20: [(x + n) mod C | x <- c]
     for (cores) |*x| {
         x.* = @mod(x.* + n, core_count);
     }
@@ -44,7 +42,6 @@ pub fn permuteAssignments(
     const span = trace.span(@src(), .permute_assignments);
     defer span.deinit();
 
-    // Create initial sequence of core indices
     var assignments = try std.ArrayList(u32).initCapacity(allocator, params.validators_count);
     errdefer assignments.deinit();
 
@@ -54,13 +51,10 @@ pub fn permuteAssignments(
         try assignments.append(core);
     }
 
-    // Shuffle using non-allocating Fisher-Yates with compile-time known validator count
     @import("fisher_yates.zig").shuffle(u32, params.validators_count, assignments.items, entropy);
 
-    // Calculate rotation based on slot
     const rotation = @divFloor(@mod(slot, params.epoch_length), params.validator_rotation_period);
 
-    // Apply rotation
     rotateAssignments(params.core_count, assignments.items, rotation);
 
     return assignments.toOwnedSlice();
@@ -83,7 +77,6 @@ pub fn buildForTimeSlot(
     entropy: [32]u8,
     slot: types.TimeSlot,
 ) !Result {
-    // Create core assignments using current entropy
     const assignments = try permuteAssignments(params, allocator, entropy, slot);
     errdefer allocator.free(assignments);
 
@@ -103,16 +96,12 @@ pub fn determineGuarantorAssignments(
     const span = trace.span(@src(), .determine_assignments);
     defer span.deinit();
 
-    // Step 1: Calculate rotation periods
     const current_rotation = @divFloor(stx.time.current_slot, params.validator_rotation_period);
     const guarantee_rotation = @divFloor(guarantee_slot, params.validator_rotation_period);
 
     span.debug("Determining assignments - current_rotation: {d}, guarantee_rotation: {d}", .{ current_rotation, guarantee_rotation });
 
-    // Step 2: Determine if we need G or G*
     if (current_rotation == guarantee_rotation) {
-        // Use G (current rotation)
-        // After safrole runs, use kappa_prime (updated validators), otherwise use base kappa
         span.debug("Using current rotation G with η'₂ and κ'", .{});
 
         const eta_prime = try stx.ensure(.eta_prime);
@@ -130,15 +119,12 @@ pub fn determineGuarantorAssignments(
             .validators = kappa,
         };
     } else {
-        // Use G* (previous rotation)
         const previous_slot = stx.time.current_slot - params.validator_rotation_period;
 
-        // Check if previous rotation was in same epoch
         const current_epoch = @divFloor(stx.time.current_slot, params.epoch_length);
         const previous_epoch = @divFloor(previous_slot, params.epoch_length);
 
         if (current_epoch == previous_epoch) {
-            // Same epoch: use current entropy and validators (prefer prime if available)
             span.debug("Using previous rotation G* with η'₂ and κ' (same epoch)", .{});
 
             const eta_prime = try stx.ensure(.eta_prime);
@@ -157,7 +143,6 @@ pub fn determineGuarantorAssignments(
                 .validators = kappa,
             };
         } else {
-            // Different epoch: use previous entropy and validators (prefer prime if available)
             span.debug("Using previous rotation G* with η'₃ and λ' (different epoch)", .{});
 
             const eta_prime = try stx.ensure(.eta_prime);

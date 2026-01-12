@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const types = @import("types.zig");
 const WorkReport = types.WorkReport;
@@ -112,15 +113,11 @@ pub fn VarTheta(comptime epoch_size: usize) type {
             };
             errdefer cloned.deinit();
 
-            // Initialize the entries array with empty SlotEntries
             cloned.entries = [_]TimeslotEntries{.{}} ** epoch_size;
 
-            // Clone each SlotEntries and their contained Entry items
             for (self.entries, 0..) |slot_entries, i| {
-                // Ensure we have enough capacity in the new list
                 try cloned.entries[i].ensureTotalCapacity(allocator, slot_entries.items.len);
 
-                // Clone each Entry in the slot
                 for (slot_entries.items) |entry| {
                     const cloned_entry = try entry.deepClone(allocator);
                     try cloned.entries[i].append(allocator, cloned_entry);
@@ -170,7 +167,6 @@ pub const WorkReportAndDeps = struct {
         var deps = WorkPackageHashSet{};
         errdefer deps.deinit(allocator);
 
-        // Add all dependencies to the hash map
         for (dependencies) |dep| {
             try deps.put(allocator, dep, {});
         }
@@ -199,10 +195,8 @@ pub const WorkReportAndDeps = struct {
     }
 
     pub fn deepClone(self: WorkReportAndDeps, allocator: std.mem.Allocator) !WorkReportAndDeps {
-        // Create a new dependencies map
         var cloned_dependencies = WorkPackageHashSet{};
 
-        // Clone each dependency key-value pair
         var iter = self.dependencies.iterator();
         while (iter.next()) |entry| {
             try cloned_dependencies.put(allocator, entry.key_ptr.*, {});
@@ -224,11 +218,9 @@ test "Theta - getReportsAtSlot" {
     var theta = VarTheta(12).init(allocator);
     defer theta.deinit();
 
-    // Create two sample WorkReports
     const work_report1 = createEmptyWorkReport([_]u8{1} ** 32);
     const work_report2 = createEmptyWorkReport([_]u8{2} ** 32);
 
-    // Create two sample Entries
     const entry1 = VarTheta(12).Entry{
         .work_report = work_report1,
         .dependencies = .{},
@@ -238,14 +230,11 @@ test "Theta - getReportsAtSlot" {
         .dependencies = .{},
     };
 
-    // Add entries to different slots
     try theta.addEntryToTimeSlot(2, entry1);
     try theta.addEntryToTimeSlot(2, entry2);
 
-    // Test empty slot
     try testing.expectEqual(@as(usize, 0), theta.getReportsAtSlot(0).len);
 
-    // Test slot with entries
     const slot_2_reports = theta.getReportsAtSlot(2);
     try testing.expectEqual(@as(usize, 2), slot_2_reports.len);
     try testing.expectEqual(work_report1, slot_2_reports[0].work_report);
@@ -259,23 +248,18 @@ test "Theta - init, add entries, and verify" {
     var theta = VarTheta(12).init(allocator);
     defer theta.deinit();
 
-    // Create a sample WorkReport
     const work_report = createEmptyWorkReport([_]u8{1} ** 32);
 
-    // Create a sample Entry
     var entry = VarTheta(12).Entry{
         .work_report = work_report,
         .dependencies = .{},
     };
 
-    // Add a dependency
     const dependency = [_]u8{ 1, 2, 3 } ++ [_]u8{0} ** 29;
     try entry.dependencies.put(allocator, dependency, {});
 
-    // Add the slot_entries to theta
     try theta.addEntryToTimeSlot(2, entry);
 
-    // Verify the contents
     try testing.expectEqual(@as(usize, 12), theta.entries.len);
     try testing.expectEqual(@as(usize, 1), theta.entries[2].items.len);
     try testing.expectEqual(work_report, theta.entries[2].items[0].work_report);
@@ -290,12 +274,10 @@ test "Theta - iterator basic functionality" {
     var theta = VarTheta(12).init(allocator);
     defer theta.deinit();
 
-    // Create sample work reports with distinct IDs
     const work_report1 = createEmptyWorkReport([_]u8{1} ** 32);
     const work_report2 = createEmptyWorkReport([_]u8{2} ** 32);
     const work_report3 = createEmptyWorkReport([_]u8{3} ** 32);
 
-    // Create entries and add them to different slots
     const entry1 = VarTheta(12).Entry{
         .work_report = work_report1,
         .dependencies = .{},
@@ -309,19 +291,16 @@ test "Theta - iterator basic functionality" {
         .dependencies = .{},
     };
 
-    // Add entries to slots 2, 5, and 11
     try theta.addEntryToTimeSlot(2, entry1);
     try theta.addEntryToTimeSlot(5, entry2);
     try theta.addEntryToTimeSlot(11, entry3);
 
-    // Test iterator starting from slot 0
     var iterator = theta.iteratorStartingFrom(0);
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{1} ** 32));
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{2} ** 32));
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{3} ** 32));
     try testing.expect(iterator.next() == null);
 
-    // Test iterator starting from slot 8
     iterator = theta.iteratorStartingFrom(8);
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{3} ** 32));
     try testing.expect(std.mem.eql(u8, &iterator.next().?.work_report.package_spec.hash, &[_]u8{1} ** 32));
@@ -336,7 +315,6 @@ test "Theta - iterator multiple entries per slot" {
     var theta = VarTheta(12).init(allocator);
     defer theta.deinit();
 
-    // Create entries with distinct IDs
     const entry1 = VarTheta(12).Entry{
         .work_report = createEmptyWorkReport([_]u8{1} ** 32),
         .dependencies = .{},
@@ -358,61 +336,47 @@ test "Theta - iterator multiple entries per slot" {
         .dependencies = .{},
     };
 
-    // Add entries to multiple slots:
-    // Slot 3: entry1
-    // Slot 5: entry2, entry3
-    // Slot 8: entry4, entry5
     try theta.addEntryToTimeSlot(3, entry1);
     try theta.addEntryToTimeSlot(5, entry2);
     try theta.addEntryToTimeSlot(5, entry3);
     try theta.addEntryToTimeSlot(8, entry4);
     try theta.addEntryToTimeSlot(8, entry5);
 
-    // Test iterator starting from slot 2
     {
         var iterator = theta.iteratorStartingFrom(2);
 
-        // Should find entry in slot 3
         const first = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &first.work_report.package_spec.hash, &[_]u8{1} ** 32));
 
-        // Should find two entries in slot 5
         const second = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &second.work_report.package_spec.hash, &[_]u8{2} ** 32));
         const third = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &third.work_report.package_spec.hash, &[_]u8{3} ** 32));
 
-        // Should find two entries in slot 8
         const fourth = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &fourth.work_report.package_spec.hash, &[_]u8{4} ** 32));
         const fifth = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &fifth.work_report.package_spec.hash, &[_]u8{5} ** 32));
 
-        // No more entries
         try testing.expect(iterator.next() == null);
     }
 
-    // Test iterator starting from slot 6 (should wrap around)
     {
         var iterator = theta.iteratorStartingFrom(6);
 
-        // Should find two entries in slot 8
         const first = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &first.work_report.package_spec.hash, &[_]u8{4} ** 32));
         const second = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &second.work_report.package_spec.hash, &[_]u8{5} ** 32));
 
-        // Should wrap around and find entry in slot 3
         const third = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &third.work_report.package_spec.hash, &[_]u8{1} ** 32));
 
-        // Should find two entries in slot 5
         const fourth = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &fourth.work_report.package_spec.hash, &[_]u8{2} ** 32));
         const fifth = iterator.next().?;
         try testing.expect(std.mem.eql(u8, &fifth.work_report.package_spec.hash, &[_]u8{3} ** 32));
 
-        // No more entries
         try testing.expect(iterator.next() == null);
     }
 }

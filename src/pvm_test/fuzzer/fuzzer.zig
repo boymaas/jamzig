@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const PVM = @import("../../pvm.zig").PVM;
@@ -26,18 +27,14 @@ pub fn mutateProgramBytes(
     defer span.deinit();
     span.debug("Evaluating program mutation (length={d} bytes)", .{bytes.len});
 
-    // Calculate total number of bits to flip based on probability
     const total_bits = bytes.len * 8;
     const bits_to_flip = (total_bits * config.bit_flip_probability) / 1_000;
 
     var i: usize = 0;
     while (i < bits_to_flip) : (i += 1) {
-        // Pick a random bit position in the entire range
         const bit_pos = seed_gen.randomIntRange(usize, 0, total_bits - 1);
-        // Calculate which byte and bit to flip
         const byte_index = bit_pos >> 3; // divide by 8
         const bit_index = @as(u3, @intCast(bit_pos & 0x7)); // mod 8
-        // Flip the bit
         bytes[byte_index] ^= @as(u8, 1) << bit_index;
     }
 }
@@ -66,15 +63,12 @@ pub const FuzzResult = struct {
     status: anyerror!PVM.SingleStepResult,
     gas_used: i64,
     was_mutated: bool,
-    // error_data: ?PVM.ErrorData,
     init_failed: bool = false,
 };
 
 const ErrorStats = struct {
-    // Array to store counts for each error type
     counts: [error_count]usize,
 
-    // Count of different error types for array size
     const error_count = blk: {
         var count: usize = 0;
         for (std.meta.fields(PVM.Error)) |_| {
@@ -100,7 +94,6 @@ const ErrorStats = struct {
             break :blk error_map;
         };
 
-        // Find the index of this error type
         for (index, 0..) |e, i| {
             if (err == e) {
                 self.counts[i] += 1;
@@ -120,7 +113,6 @@ const ErrorStats = struct {
             break :blk error_map;
         };
 
-        // Find the index of this error type
         for (index, 0..) |e, i| {
             if (err == e) {
                 return self.counts[i];
@@ -199,7 +191,6 @@ pub const FuzzResults = struct {
 
         self.accumulated.total_cases += 1;
 
-        // Handle init failures separately
         if (result.init_failed) {
             self.accumulated.init_failures += 1;
             self.accumulated.errors += 1;
@@ -222,8 +213,6 @@ pub const FuzzResults = struct {
             }
         } else |_| {
             self.accumulated.errors += 1;
-            // For error statistics, we need to check if this is a PVM error
-            // Since we're dealing with anyerror, we'll skip statistics for non-PVM errors
         }
 
         if (result.was_mutated) {
@@ -310,14 +299,12 @@ pub const PVMFuzzer = struct {
         var seed_gen = SeedGenerator.init(seed);
         var program_gen = try ProgramGenerator.init(self.allocator, &seed_gen);
 
-        // Generate program
         const num_instructions = seed_gen.randomIntRange(u32, 1, self.config.max_instruction_count);
         span.debug("Generating program with {d} instructions", .{num_instructions});
 
         var program = try program_gen.generate(num_instructions);
         defer program.deinit(self.allocator);
 
-        // Rewrite memory accesses
         try program.rewriteMemoryAccesses(
             &seed_gen,
             try PVM.Memory.HEAP_BASE_ADDRESS(0),
@@ -328,7 +315,6 @@ pub const PVMFuzzer = struct {
         const will_mutate = seed_gen.randomIntRange(u16, 0, 999) < self.config.mutation.program_mutation_probability;
 
         if (will_mutate) mutate: {
-            // We do not want crazy stuff when we are cross checking
             if (self.config.enable_cross_check) {
                 span.warn("Skipping program mutation during cross-check validation", .{});
                 break :mutate;
@@ -338,7 +324,6 @@ pub const PVMFuzzer = struct {
             mutateProgramBytes(program_bytes, self.config.mutation, &seed_gen);
         }
 
-        // Initialize our PVM
         var exec_ctx = PVM.ExecutionContext.initSimple(
             self.allocator,
             program_bytes,
@@ -358,7 +343,6 @@ pub const PVMFuzzer = struct {
         };
         defer exec_ctx.deinit(self.allocator);
 
-        // Register host call handler
         var host_calls_map = std.AutoHashMapUnmanaged(u32, PVM.HostCallFn){};
         defer host_calls_map.deinit(self.allocator);
         const HostCallError = @import("../../pvm_invocations/host_calls.zig").HostCallError;
@@ -369,7 +353,6 @@ pub const PVMFuzzer = struct {
             }
         }.func);
 
-        // Create HostCallsConfig with the map and default catchall
         const host_calls = @import("../../pvm_invocations/host_calls.zig");
         const host_calls_config = PVM.HostCallsConfig{
             .map = host_calls_map,
@@ -377,20 +360,15 @@ pub const PVMFuzzer = struct {
         };
         exec_ctx.setHostCalls(@ptrCast(&host_calls_config));
 
-        // Limit PVM allocations
         exec_ctx.memory.heap_allocation_limit = 8;
 
-        // Initialize registers
         seed_gen.randomBytes(std.mem.asBytes(&exec_ctx.registers));
         const initial_registers = exec_ctx.registers;
 
-        // Optional FFI executor for cross-checking
         var ref_executor: ?polkavm_ffi.Executor = null;
         defer if (ref_executor) |*executor| executor.deinit();
 
-        // Initialize FFI executor if cross-checking is enabled
         if (self.config.enable_cross_check) cross_check_init: {
-            // Check for sbrk instruction
             var inst_iter = exec_ctx.decoder.iterator();
             while (try inst_iter.next()) |e| {
                 if (e.inst.instruction == .sbrk) {
@@ -399,24 +377,20 @@ pub const PVMFuzzer = struct {
                 }
             }
 
-            // Check if pvm scope tracing is enabled, in that case we want polkavm logging as well
             // NOTE: use RUST_LOG=trace to actually show the pvm logs
             if (@import("tracing").findScope("pvm")) |_| {
                 polkavm_ffi.initLogging();
             }
 
-            // Get memory snapshot for FFI setup
             var memory_snapshot = try exec_ctx.memory.getMemorySnapshot();
             defer memory_snapshot.deinit(self.allocator);
 
-            // Setup memory pages for FFI from snapshot
             var pages = try std.ArrayList(polkavm_ffi.MemoryPage).initCapacity(
                 self.allocator,
                 memory_snapshot.regions.len,
             );
             defer pages.deinit();
 
-            // Create pages matching our PVM layout from snapshot
             for (memory_snapshot.regions) |region| {
                 const page_data = try self.allocator.alloc(u8, region.data.len);
                 errdefer self.allocator.free(page_data);
@@ -430,7 +404,6 @@ pub const PVMFuzzer = struct {
                 });
             }
 
-            // Initialize FFI executor
             ref_executor = try polkavm_ffi.createExecutorFromProgram(
                 self.allocator,
                 program,
@@ -439,19 +412,16 @@ pub const PVMFuzzer = struct {
                 std.math.maxInt(i64), // @intCast(self.config.max_gas),
             );
 
-            // Free temporary page data
             for (pages.items) |page| {
                 self.allocator.free(page.data[0..page.size]);
             }
         }
 
-        // We need to do one step to "initialze" the polkavm
         if (ref_executor) |*executor| {
             const _r = executor.step();
             defer _r.deinit();
         }
 
-        // Main execution loop
         const initial_gas = exec_ctx.gas;
         // FIXME: for now gas is 0 so we need to limit with max_iteration when gas is introduced again we can remove
         var max_iterations = initial_gas;
@@ -465,13 +435,10 @@ pub const PVMFuzzer = struct {
                     .init_failed = false,
                 };
             }
-            // Execute one step in our PVM
             const current_pc = exec_ctx.pc;
             const current_instruction = try exec_ctx.decoder.decodeInstruction(current_pc);
 
             // NOTE: that when .sbrk is present we do not do do a crosscheck
-            // which is why the crosscheck will not fail as we do not skip
-            // the instruction there
             if (current_instruction.instruction == .sbrk) {
                 span.warn("Skipping sbrk instruction for now", .{});
                 exec_ctx.pc += 1 + current_instruction.skip_l();
@@ -483,32 +450,25 @@ pub const PVMFuzzer = struct {
                 return error.PvmErroredInNormalOperation;
             };
 
-            // If cross-checking is enabled and we have a reference executor
             if (ref_executor) |*executor| cross_check: {
-                // If our PVM has a term result, we do not cross check
                 if (step_result.isTerminal()) {
                     break :cross_check;
                 }
 
-                // Execute one step in reference implementation
                 const ref_result = executor.step();
                 defer ref_result.deinit();
 
-                // we need to inject another step if we run into a hostcall
                 if (current_instruction.instruction == .ecalli) {
                     const _r = executor.step();
                     defer _r.deinit();
                 }
 
-                // Compare states
                 try compareRegisters("Step", exec_ctx.registers[0..13], ref_result.getRegisters()[0..13]);
                 try compareMemoryPages(&exec_ctx.memory, ref_result.getPages());
 
-                // Compare execution status
                 const expected_status = pvmStepToFfiStatus(step_result);
                 if (ref_result.raw.status != expected_status) check_status: {
                     if (ref_result.raw.status == .OutOfGas) {
-                        // Gas accounting is different on polkavm ignoring this for now
                         break :check_status;
                     }
                     std.debug.print("\nStatus mismatch during step-by-step execution!\n", .{});
@@ -518,11 +478,9 @@ pub const PVMFuzzer = struct {
                 }
             }
 
-            // Process step result
             switch (step_result) {
                 .cont => continue,
                 .host_call => |host| {
-                    // Cast to HostCallsConfig and get handler
                     const config = @as(*const PVM.HostCallsConfig, @ptrCast(@alignCast(exec_ctx.host_calls.?)));
                     const handler = config.map.get(host.idx) orelse
                         config.catchall orelse
@@ -534,10 +492,8 @@ pub const PVMFuzzer = struct {
                             .init_failed = false,
                         };
 
-                    // Execute host call
                     const dummy_ctx = struct {};
                     const result = handler(&exec_ctx, @ptrCast(@constCast(&dummy_ctx))) catch |err| {
-                        // Map error to return code as the PVM does
                         const errorToReturnCode = @import("../../pvm_invocations/host_calls.zig").errorToReturnCode;
                         exec_ctx.registers[7] = @intFromEnum(errorToReturnCode(err));
                         exec_ctx.pc = host.next_pc;
@@ -635,7 +591,6 @@ pub fn fuzzSimple(allocator: Allocator) !void {
     std.debug.print("Average Gas: {d}\n", .{stats.avgGas()});
 }
 
-// Crosscheck
 const polkavm_ffi = @import("polkavm_ffi.zig");
 
 pub const CrossCheckError = error{
@@ -647,7 +602,6 @@ pub const CrossCheckError = error{
     PvmErroredInNormalOperation,
 };
 
-// Helper function to convert PVM step result to FFI status
 fn pvmStepToFfiStatus(step: PVM.SingleStepResult) polkavm_ffi.ExecutionStatus {
     return switch (step) {
         .cont => .Running,
@@ -674,11 +628,9 @@ pub fn compareRegisters(msg: []const u8, our_registers: []const u64, ref_registe
 }
 
 pub fn compareMemoryPages(memory: *PVM.Memory, ref_pages: []const polkavm_ffi.MemoryPage) !void {
-    // Get memory snapshot for comparison
     var memory_snapshot = try memory.getMemorySnapshot();
     defer memory_snapshot.deinit(memory.allocator);
 
-    // Create a map of our pages by address for quick lookup
     var our_pages = std.AutoHashMap(u32, types.MemoryRegion).init(memory.allocator);
     defer our_pages.deinit();
 
@@ -686,10 +638,8 @@ pub fn compareMemoryPages(memory: *PVM.Memory, ref_pages: []const polkavm_ffi.Me
         try our_pages.put(region.address, region);
     }
 
-    // Compare with reference pages
     for (ref_pages) |ref_page| {
         if (our_pages.get(ref_page.address)) |our_region| {
-            // Compare page contents
             const ref_data = ref_page.data[0..ref_page.size];
 
             if (!std.mem.eql(u8, ref_data, our_region.data)) {

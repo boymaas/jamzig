@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
@@ -12,10 +13,8 @@ const host_calls = @import("host_calls.zig");
 const ReturnCode = host_calls.ReturnCode;
 const HostCallError = host_calls.HostCallError;
 
-// Add tracing import
 const trace = @import("tracing").scoped(.host_calls);
 
-// Type aliases for convenience
 const Hash256 = types.Hash;
 
 /// Work item metadata for enhanced fetch selectors
@@ -32,7 +31,6 @@ pub const WorkItemMetadata = struct {
 /// General host calls following the same pattern as accumulate
 pub fn GeneralHostCalls(comptime params: Params) type {
     return struct {
-        // Removed deprecated InvocationContext
 
         /// Context for general host calls
         pub const Context = struct {
@@ -42,7 +40,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             service_accounts: *DeltaSnapshot, // d ∈ D⟨N_S → A⟩
             /// Allocator for memory allocation
             allocator: std.mem.Allocator,
-            // Removed deprecated invocation_context
 
             const Self = @This();
 
@@ -59,10 +56,7 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             }
         };
 
-        // Encoding functions moved to specific host call implementations
 
-        // Fetch function moved to specific host call implementations
-        // (accumulate and ontransfer contexts have their own simplified versions)
 
         pub fn debugLog(
             exec_ctx: *PVM.ExecutionContext,
@@ -106,7 +100,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
 
             span.warn("DEBUGLOG {s} {s}: {s}", .{ level, target.buffer, message.buffer });
 
-            // JIP-1: Return WHAT unconditionally in register 7
             exec_ctx.registers[7] = @intFromEnum(host_calls.ReturnCode.WHAT);
             return .play;
         }
@@ -119,8 +112,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             defer span.deinit();
             span.debug("Host call: gas remaining", .{});
 
-            // Host call logging is now handled in hostcallInvocation with enhanced information
-            // exec_ctx.exec_trace.logHostCall("gasRemaining", 1, 10);
 
             exec_ctx.gas -= 10;
 
@@ -163,18 +154,14 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             });
             span.debug("Offset: {d}, Limit: {d}", .{ offset, limit });
 
-            // NOTE: order of errors is important, follow graypaper exactly
 
-            // Read hash from memory (access verification is implicit)
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
             const hash = try exec_ctx.readHash(@truncate(hash_ptr));
             span.debug("Preimage hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
-            // Resolve service ID using graypaper convention
             const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg);
             span.trace("Resolved service ID: {d}", .{resolved_service_id});
 
-            // Get service account
             const service_account: ?*const ServiceAccount = host_ctx.service_accounts.getReadOnly(resolved_service_id);
 
             if (service_account == null) {
@@ -182,35 +169,28 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 return HostCallError.NONE;
             }
 
-            // Look up preimage at the specified timeslot
             span.debug("Looking up preimage", .{});
             const preimage_key = state_keys.constructServicePreimageKey(resolved_service_id, hash);
             const preimage = service_account.?.getPreimage(preimage_key) orelse {
-                // Preimage not found, return error status
                 span.debug("Preimage not found, returning NONE", .{});
                 return HostCallError.NONE;
             };
 
-            // Determine what to read from the preimage
-            // Per graypaper: f = min(R10, |v|) and l = min(R11, |v| - f)
             const f = @min(offset, preimage.len);
             const l = @min(limit, preimage.len - f); // Use f not offset per graypaper
             span.debug("Preimage found, length: {d}, returning range {d}..{d} ({d} bytes)", .{
                 preimage.len, f, f + l, l,
             });
 
-            // Check if we're being asked for zero bytes (length query only)
             if (l == 0) {
                 span.debug("Zero len requested, returning size: {d}", .{preimage.len});
                 exec_ctx.registers[7] = preimage.len;
                 return .play;
             }
 
-            // Write length to memory first (this implicitly checks if the memory is writable)
             span.debug("Writing preimage to memory at 0x{x}", .{output_ptr});
             try exec_ctx.writeMemory(@truncate(output_ptr), preimage[f..][0..l]);
 
-            // Success result
             exec_ctx.registers[7] = preimage.len; // Success status
             span.debug("Lookup successful, returning length: {d}", .{preimage.len});
             return .play;
@@ -233,7 +213,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 return .{ .terminal = .out_of_gas };
             }
 
-            // Get registers per graypaper B.7: (s*, k_o, k_z, o)
             const service_id_reg = exec_ctx.registers[7]; // Service ID (s*)
             const k_o = exec_ctx.registers[8]; // Key offset (k_o)
             const k_z = exec_ctx.registers[9]; // Key size (k_z)
@@ -241,7 +220,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const offset = exec_ctx.registers[11]; // Offset in the value (f)
             const limit = exec_ctx.registers[12]; // Length limit (l)
 
-            // Resolve service ID using graypaper convention
             const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg);
 
             span.debug("Host call: read storage for service {d}", .{resolved_service_id});
@@ -250,14 +228,10 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             });
             span.debug("Offset: {d}, Limit: {d}", .{ offset, limit });
 
-            // Read key from memory first - memory errors must PANIC before service lookup
             span.debug("Reading key data from memory at 0x{x} (len={d})", .{ k_o, k_z });
             var key_data = try exec_ctx.readMemory(@truncate(k_o), @truncate(k_z));
             defer key_data.deinit();
 
-            // Get service account based on special cases as per graypaper B.7
-            // s* = s when R7 = 2^64-1, otherwise s* = R7
-            // a = s when s* = s, otherwise a = d[s*]
             const service_account = host_ctx.service_accounts.getReadOnly(resolved_service_id) orelse {
                 span.debug("Service {d} not found, returning NONE", .{resolved_service_id});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.NONE);
@@ -265,19 +239,15 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             };
             span.trace("Key = {s}", .{std.fmt.fmtSliceHexLower(key_data.buffer)});
 
-            // Log the service ID and key for debugging
             span.info("Service ID for storage key: {d}", .{resolved_service_id});
             span.info("Raw key data (len={d}): {s}", .{ key_data.buffer.len, std.fmt.fmtSliceHexLower(key_data.buffer) });
 
-            // Look up the value in storage using the new method
             span.debug("Looking up value in storage", .{});
             const value = service_account.readStorage(resolved_service_id, key_data.buffer) orelse {
-                // Key not found
                 span.debug("Key not found in storage, returning NONE", .{});
                 return HostCallError.NONE;
             };
 
-            // Determine what to read from the value
             const f = @min(offset, value.len);
             const l = @min(limit, value.len - f);
             span.debug("Value found, length: {d}, returning range {d}..{d} ({d} bytes) => {s}", .{
@@ -288,7 +258,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 std.fmt.fmtSliceHexLower(value[f..][0..l]),
             });
 
-            // Double check if we have any data to fetch
             const value_slice = value[f..][0..l];
             if (value_slice.len == 0) {
                 span.debug("Zero len offset requested, returning size: {d}", .{value.len});
@@ -296,11 +265,9 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 return .play;
             }
 
-            // Write the value to memory
             span.debug("Writing value to memory at 0x{x}", .{output_ptr});
             try exec_ctx.writeMemory(@truncate(output_ptr), value_slice);
 
-            // Success result
             exec_ctx.registers[7] = value.len;
             span.debug("Read successful, returning length: {d}", .{value.len});
             return .play;
@@ -323,7 +290,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 return .{ .terminal = .out_of_gas };
             }
 
-            // Get registers per graypaper B.7: (k_o, k_z, v_o, v_z)
             const k_o = exec_ctx.registers[7]; // Key offset
             const k_z = exec_ctx.registers[8]; // Key size
             const v_o = exec_ctx.registers[9]; // Value offset
@@ -334,19 +300,15 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 k_o, k_z, v_o, v_z,
             });
 
-            // Get service account - always use the current service for writing
             span.debug("Looking up service account", .{});
             const service_account: *ServiceAccount = host_ctx.service_accounts.getMutable(host_ctx.service_id) catch {
-                // Service not found, should never happen but handle gracefully
                 span.err("Could not create mutable instance of service accounts", .{});
                 return .{ .terminal = .panic };
             } orelse {
-                // Service not found, should never happen but handle gracefully
                 span.err("Service account not found, this should never happen", .{});
                 return .{ .terminal = .panic };
             };
 
-            // Read key data from memory
             span.debug("Reading key data from memory at 0x{x} (len={d})", .{ k_o, k_z });
             var key_data = exec_ctx.memory.readSlice(@truncate(k_o), @truncate(k_z)) catch {
                 span.err("Memory access failed while reading key data", .{});
@@ -358,10 +320,8 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             span.debug("Service ID for storage operation: {d}", .{host_ctx.service_id});
             span.info("Raw key data (len={d}): {s}", .{ key_data.buffer.len, std.fmt.fmtSliceHexLower(key_data.buffer) });
 
-            // Check if this is a removal operation (v_z == 0)
             if (v_z == 0) {
                 span.debug("Removal operation detected (v_z = 0)", .{});
-                // Remove the key from storage (removal always reduces cost, so always affordable)
                 if (service_account.removeStorage(host_ctx.service_id, key_data.buffer)) |value_length| {
                     span.debug("Key removed successfully, prior value length: {d}", .{value_length});
                     exec_ctx.registers[7] = value_length;
@@ -372,7 +332,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 return .play;
             }
 
-            // Read value from memory
             span.trace("Reading value data from memory at 0x{x} len={d}", .{ v_o, v_z });
             var value = try exec_ctx.readMemory(@truncate(v_o), @truncate(v_z));
             defer value.deinit();
@@ -383,15 +342,12 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             });
             span.trace("Value data: {s}", .{std.fmt.fmtSliceHexLower(value.buffer)});
 
-            // In debug builds, also print as string if it looks like valid UTF-8
             if (std.debug.runtime_safety) {
                 if (std.unicode.utf8ValidateSlice(value.buffer)) {
                     span.trace("Value as string: {s}", .{value.buffer});
                 }
             }
 
-            // GRAYPAPER COMPLIANCE: Check balance BEFORE modifying state
-            // Analyze the storage write operation - returns all needed info in one call
             const analysis = service_account.analyzeStorageWrite(
                 params,
                 host_ctx.service_id,
@@ -404,24 +360,20 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 service_account.balance,
             });
 
-            // Check if we can afford this operation (a_t > a_b check from graypaper)
             if (analysis.new_footprint.a_t > service_account.balance) {
                 span.warn("Insufficient balance for storage operation, returning FULL without modifying state", .{});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.FULL);
                 return .play;
             }
 
-            // We can afford it, so proceed with the write
             span.debug("Balance check passed, proceeding with write operation", .{});
 
-            // Allocate the new value (panic on allocation failure per graypaper)
             const value_owned = value.takeBufferOwnership(host_ctx.allocator) catch {
                 span.err("Failed to allocate memory for value", .{});
                 return .{ .terminal = .panic }; // Memory allocation failure should panic
             };
             errdefer host_ctx.allocator.free(value_owned); // Clean up on any error
 
-            // Write storage using the helper that frees old value automatically
             service_account.writeStorageFreeOldValue(host_ctx.service_id, key_data.buffer, value_owned) catch {
                 span.err("Failed to write to storage", .{});
                 return .{ .terminal = .panic }; // Panic on write failure
@@ -433,7 +385,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 span.debug("Wrote new key", .{});
             }
 
-            // Return prior value length or NONE per graypaper B.7
             exec_ctx.registers[7] = analysis.prior_value_length;
             span.debug("Write successful, returning prior value length: {d}", .{analysis.prior_value_length});
 
@@ -469,25 +420,19 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 self: ServiceInfo,
                 writer: anytype,
             ) !void {
-                // se(a_c, se_8(a_b, a_t, a_g, a_m, a_o), se_4(a_i), se_8(a_f), se_4(a_r, a_a, a_p))
 
-                // Write code hash (32 bytes)
                 try writer.writeAll(&self.code_hash);
 
-                // Write first group of 8-byte values: a_b, a_t, a_g, a_m, a_o
                 try writer.writeInt(u64, self.balance, .little);
                 try writer.writeInt(u64, self.threshold_balance, .little);
                 try writer.writeInt(u64, self.min_item_gas, .little);
                 try writer.writeInt(u64, self.min_memo_gas, .little);
                 try writer.writeInt(u64, self.total_storage_size, .little);
 
-                // Write a_i as 4-byte value
                 try writer.writeInt(u32, self.total_items, .little);
 
-                // Write a_f as 8-byte value
                 try writer.writeInt(u64, self.free_storage_offset, .little);
 
-                // Write last group of 4-byte values: a_r, a_a, a_p
                 try writer.writeInt(u32, self.creation_slot, .little);
                 try writer.writeInt(u32, self.last_accumulation_slot, .little);
                 try writer.writeInt(u32, self.parent_service, .little);
@@ -512,19 +457,16 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 return .{ .terminal = .out_of_gas };
             }
 
-            // Get registers per graypaper B.7: service ID, output pointer, offset, and limit
             const service_id_reg = exec_ctx.registers[7];
             const output_ptr = exec_ctx.registers[8];
             const offset = exec_ctx.registers[9]; // This was a typo in the graypaper 0.6.7
             const limit = exec_ctx.registers[10];
 
-            // Resolve service ID using graypaper convention
             const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg);
 
             span.debug("Host call: info for service {d}", .{resolved_service_id});
             span.debug("Output pointer: 0x{x}, Offset: {d}, Limit: {d}", .{ output_ptr, offset, limit });
 
-            // Get service account
             const service_account = host_ctx.service_accounts.getReadOnly(resolved_service_id);
 
             if (service_account == null) {
@@ -532,7 +474,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 return HostCallError.NONE;
             }
 
-            // Serialize service account info according to the graypaper
             span.debug("Service found, assembling info", .{});
             const fprint = service_account.?.getStorageFootprint(params);
             const service_info = ServiceInfo{
@@ -544,13 +485,11 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 .total_storage_size = fprint.a_o,
                 .total_items = fprint.a_i,
                 .free_storage_offset = service_account.?.storage_offset,
-                // Graypaper-compliant fields: a_r, a_a, a_p
                 .creation_slot = service_account.?.creation_slot,
                 .last_accumulation_slot = service_account.?.last_accumulation_slot,
                 .parent_service = service_account.?.parent_service,
             };
 
-            // Since we are varint encoding will only be smaller
             var service_info_buffer: [@sizeOf(ServiceInfo)]u8 = undefined;
             var fb = std.io.fixedBufferStream(&service_info_buffer);
 
@@ -560,7 +499,6 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             };
             const encoded = fb.getWritten();
 
-            // Calculate offset and limit for partial reading (graypaper formula)
             const f = @min(offset, encoded.len);
             const l = @min(limit, encoded.len - f);
 
@@ -568,19 +506,16 @@ pub fn GeneralHostCalls(comptime params: Params) type {
                 encoded.len, f, f + l, l,
             });
 
-            // Check if we're being asked for zero bytes (length query only)
             if (l == 0) {
                 span.debug("Zero len requested, returning size: {d}", .{encoded.len});
                 exec_ctx.registers[7] = encoded.len;
                 return .play;
             }
 
-            // Write the partial info to memory
             span.debug("Writing {d} bytes to memory at 0x{x}", .{ l, output_ptr });
             span.trace("Encoded Info slice: {s}", .{std.fmt.fmtSliceHexLower(encoded[f..][0..l])});
             try exec_ctx.writeMemory(@truncate(output_ptr), encoded[f..][0..l]);
 
-            // Return the total encoded length (not just what was written)
             span.debug("Info request successful, returning total length: {d}", .{encoded.len});
             exec_ctx.registers[7] = encoded.len;
             return .play;
@@ -588,4 +523,3 @@ pub fn GeneralHostCalls(comptime params: Params) type {
     };
 }
 
-// JAM parameters encoding moved to specific host call implementations

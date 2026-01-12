@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const uuid = @import("uuid");
 const lsquic = @import("lsquic");
@@ -8,7 +9,6 @@ pub const ConnectionId = shared.ConnectionId;
 
 const trace = @import("tracing").scoped(.network);
 
-// -- Nested Connection Struct
 pub fn Connection(T: type) type {
     return struct {
         id: ConnectionId, // Added UUID
@@ -16,8 +16,6 @@ pub fn Connection(T: type) type {
         owner: *T, // Either JamSnpClient or JamSnpServer
         endpoint: network.EndPoint,
 
-        // Create function is not typically called directly by user for server
-        // It's created internally in onNewConn
         pub fn create(alloc: std.mem.Allocator, server: *T, lsquic_conn: ?*lsquic.lsquic_conn_t, peer_endpoint: network.EndPoint, connection_id: ConnectionId) !*Connection(T) {
             const span = trace.span(@src(), .connection_create);
             defer span.deinit();
@@ -33,12 +31,10 @@ pub fn Connection(T: type) type {
             return connection;
         }
 
-        // Destroy method for cleanup
         pub fn destroy(self: *Connection(T), alloc: std.mem.Allocator) void {
             const span = trace.span(@src(), .connection_destroy);
             defer span.deinit();
             span.debug("Destroying connection context for ID: {}", .{self.id});
-            // Add any connection-specific resource cleanup here if needed
             alloc.destroy(self);
         }
 
@@ -50,38 +46,29 @@ pub fn Connection(T: type) type {
             lsquic.lsquic_conn_make_stream(self.lsquic_connection);
 
             span.debug("Stream creation request successful for connection ID: {}", .{self.id});
-            // Stream object itself is created in the onStreamCreated callback
         }
 
-        // --- LSQUIC Connection Callbacks ---
         pub fn onClientConnectionCreated(
             _: ?*anyopaque, // ea_stream_if_ctx (unused here)
             maybe_lsquic_connection: ?*lsquic.lsquic_conn_t,
         ) callconv(.C) ?*lsquic.lsquic_conn_ctx_t {
             const span = trace.span(@src(), .on_connection_created);
             defer span.deinit();
-            // While the documentation doesn't explicitly state that the
-            // lsquic_conn_t *c parameter cannot be null, the context strongly
-            // implies it will always be a valid pointer to the newly created
-            // connection object.
             const lsquic_connection = maybe_lsquic_connection orelse {
                 std.debug.panic("onConnectionCreated called with null lsquic connection pointer!", .{});
             };
 
-            // Context is always defined, as this is set at invocation time
             const conn_ctx = lsquic.lsquic_conn_get_ctx(lsquic_connection).?;
             const connection: *Connection(T) = @alignCast(@ptrCast(conn_ctx));
 
             span.debug("onClientConnectionCreated: {}, Assigning ID: {}", .{ connection.endpoint, connection.id });
 
-            // Store the lsquic connection pointer
             connection.lsquic_connection = lsquic_connection;
 
             shared.invokeCallback(T, &connection.owner.callback_handlers, .{
                 .connection_established = connection,
             });
 
-            // Return our connection struct pointer as the context for lsquic
             return @ptrCast(connection);
         }
 
@@ -117,7 +104,6 @@ pub fn Connection(T: type) type {
 
             const connection_id = uuid.v4.new();
 
-            // Create connection context using the new create method
             const connection = Connection(T).create(
                 owner.allocator,
                 owner,
@@ -130,7 +116,6 @@ pub fn Connection(T: type) type {
             };
             errdefer connection.destroy(owner.allocator); // Use destroy method
 
-            // Add to bookkeeping map using UUID
             owner.connections.put(connection.id, connection) catch |err| {
                 span.err("Failed to add connection {} to map: {s}", .{ connection.id, @errorName(err) });
                 return null; // Let errdefer clean up, signal error
@@ -141,7 +126,6 @@ pub fn Connection(T: type) type {
             });
 
             span.debug("Connection context created successfully for ID: {}", .{connection.id});
-            // Return our context struct pointer
             return @ptrCast(connection);
         }
 
@@ -154,7 +138,6 @@ pub fn Connection(T: type) type {
                 return;
             };
 
-            // Retrieve our connection context
             const conn_ctx = lsquic.lsquic_conn_get_ctx(lsquic_conn_ptr);
             if (conn_ctx == null) {
                 span.warn("onConnClosed called for lsquic conn 0x{*} but context was already null (double close?)", .{lsquic_conn_ptr});
@@ -165,12 +148,10 @@ pub fn Connection(T: type) type {
             const owner = connection.owner;
             span.debug("Connection closed callback triggered for ID: {}", .{conn_id});
 
-            // Invoke user callback *before* removing/destroying
             shared.invokeCallback(T, &owner.callback_handlers, .{
                 .connection_closed = conn_id,
             });
 
-            // Remove from bookkeeping map using UUID
             if (owner.connections.fetchRemove(conn_id)) |removed_entry| {
                 std.debug.assert(removed_entry.value == connection); // Sanity check
                 span.debug("Removed connection ID {} from map.", .{conn_id});
@@ -178,10 +159,8 @@ pub fn Connection(T: type) type {
                 span.warn("Closing connection (ID: {}) was not found in the map, but context existed.", .{conn_id});
             }
 
-            // Clear the context in lsquic
             lsquic.lsquic_conn_set_ctx(lsquic_conn_ptr, null);
 
-            // Destroy our connection context struct using its method
             connection.destroy(owner.allocator);
 
             span.debug("Connection resources cleaned up for formerly ID: {}", .{conn_id});
@@ -209,7 +188,6 @@ pub fn Connection(T: type) type {
                 return;
             }
 
-            // Handshake successful, invoke callback
             span.debug("Handshake successful for connection ID: {}", .{conn_id});
             _ = server;
 

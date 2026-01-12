@@ -1,3 +1,4 @@
+
 const std = @import("std");
 const math = std.math;
 const mem = std.mem;
@@ -22,7 +23,6 @@ pub const Balance = types.Balance;
 pub const GasLimit = types.Gas;
 pub const Timeslot = types.TimeSlot;
 
-// Gp@9.3
 pub const StorageFootprint = struct {
     a_i: u32,
     a_o: u64,
@@ -37,15 +37,6 @@ pub const StorageWriteAnalysis = struct {
 };
 
 pub const PreimageLookup = struct {
-    // Timeslot updates for preimage submissions (up to three slots stored)
-    // As per Section 9.2.2. Semantics, the historical status component h ∈ ⟦NT⟧:3
-    // is a sequence of up to three time slots. The cardinality of this sequence
-    // implies one of four modes:
-    //
-    // 1. h = []: The preimage is requested but not yet supplied.
-    // 2. h ∈ ⟦NT⟧1: The preimage is available since time h[0].
-    // 3. h ∈ ⟦NT⟧2: The preimage was available from h[0] until h[1], now unavailable.
-    // 4. h ∈ ⟦NT⟧3: The preimage is available since h[2], was previously available
     status: [3]?Timeslot,
 
     pub fn asSlice(self: *const @This()) []const ?Timeslot {
@@ -83,7 +74,6 @@ pub const AccountUpdate = struct {
     new_gas_limit: GasLimit,
 };
 
-// (GP §9)
 pub const ServiceAccount = struct {
     data: std.AutoHashMap(types.StateKey, []const u8),
     version: u8,
@@ -349,8 +339,6 @@ pub const ServiceAccount = struct {
         return lookup;
     }
 
-    //  PreImageLookups assume correct state, that is when you sollicit a
-    //  preimage. It should not be available already.
     pub fn getPreimageLookup(self: *const ServiceAccount, service_id: u32, hash: Hash, length: u32) ?PreimageLookup {
         const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
         const data = self.data.get(key);
@@ -391,29 +379,22 @@ pub const ServiceAccount = struct {
             current_timeslot,
         });
 
-        // Check if we already have an entry for this hash/length
         if (self.data.get(key)) |existing_data| {
             var preimage_lookup = try decodePreimageLookup(existing_data);
             const pi = preimage_lookup.asSlice();
 
-            // Validate status transitions per graypaper
             switch (pi.len) {
                 0 => {
                     span.warn("Action: Already pending, cannot re-solicit", .{});
-                    // Status [] - Already pending, can't re-solicit
                     return error.AlreadySolicited;
                 },
                 1 => {
                     span.warn("Action: Already available, no need to sollicit", .{});
-                    // Status [x] - Already available, no need to solicit
                     return error.AlreadyAvailable;
                 },
                 2 => {
                     span.debug("Action: Valid resollicitation after unavailable period", .{});
-                    // Status [x,y] - Valid re-solicitation after unavailable period
-                    // Transition: [x,y] → [x,y,t]
                     preimage_lookup.status[2] = current_timeslot;
-                    // Re-encode and store
                     const encoded = try encodePreimageLookup(self.data.allocator, preimage_lookup);
                     self.data.allocator.free(existing_data);
                     try self.data.put(key, encoded);
@@ -421,23 +402,19 @@ pub const ServiceAccount = struct {
                 },
                 3 => {
                     span.warn("Action: Already Resolicited", .{});
-                    // Status [x,y,z] - Already re-solicited, can't re-solicit again
                     return error.AlreadyReSolicited;
                 },
                 else => {
-                    // Invalid status length
                     span.err("Action: Invalid state", .{});
                     return error.InvalidState;
                 },
             }
         } else {
             span.trace("Action: Creating new lookup with empty status", .{});
-            // If no lookup exists yet, create a new one with an empty status
             const new_lookup = PreimageLookup{
                 .status = .{ null, null, null },
             };
             const encoded = try encodePreimageLookup(self.data.allocator, new_lookup);
-            // Track new preimage lookup in a_i and a_o
             self.footprint_items += 2; // Each lookup adds 2 to a_i
             self.footprint_bytes += 81 + length; // 81 base + length to a_o
             try self.data.put(key, encoded);
@@ -453,7 +430,6 @@ pub const ServiceAccount = struct {
         current_slot: types.TimeSlot,
         preimage_expungement_period: u32,
     ) !void {
-        // we can remove the entries when timeout occurred
         const lookup_key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
         const span = trace.span(@src(), .preimage_forget);
@@ -479,7 +455,6 @@ pub const ServiceAccount = struct {
             } else if (pi.len == 1) {
                 span.trace("  Action: Marking preimage as unavailable [{?}] -> [{?}, {?}]", .{ pi[0], pi[0], current_slot });
                 preimage_lookup.status[1] = current_slot; // [x, t]
-                // Re-encode and store
                 const encoded = try encodePreimageLookup(self.data.allocator, preimage_lookup);
                 self.data.allocator.free(existing_data);
                 try self.data.put(lookup_key, encoded);
@@ -492,11 +467,9 @@ pub const ServiceAccount = struct {
                 self.removePreimageByHash(service_id, hash);
             } else if (pi.len == 3 and pi[1].? < current_slot -| preimage_expungement_period) {
                 span.trace("  Action: Re-marking as unavailable [{?}, {?}, {?}] -> [{?}, {?}]", .{ pi[0], pi[1], pi[2], pi[2], current_slot });
-                // [x,y,w]
                 pi[0] = pi[2];
                 pi[1] = current_slot;
                 pi[2] = null;
-                // Re-encode and store
                 const encoded = try encodePreimageLookup(self.data.allocator, preimage_lookup);
                 self.data.allocator.free(existing_data);
                 try self.data.put(lookup_key, encoded);
@@ -513,7 +486,6 @@ pub const ServiceAccount = struct {
 
     /// Internal helper to remove preimage by hash
     fn removePreimageByHash(self: *ServiceAccount, service_id: u32, target_hash: Hash) void {
-        // Create the structured preimage key directly
         const preimage_key = state_keys.constructServicePreimageKey(service_id, target_hash);
 
         if (self.data.fetchRemove(preimage_key)) |removed| {
@@ -525,7 +497,6 @@ pub const ServiceAccount = struct {
         const span = trace.span(@src(), .preimage_needs);
         defer span.deinit();
 
-        // Check if we have an entry in preimage_lookups
         const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
         if (self.data.get(key)) |data| {
@@ -533,22 +504,18 @@ pub const ServiceAccount = struct {
             const lookup = decodePreimageLookup(data) catch return false;
             const status = lookup.asSlice();
 
-            // Case 1: Empty status - never supplied after solicitation
             if (status.len == 0) {
                 return true;
             }
 
-            // Case 2: One-element status [t1, null, null] - available since t1
             if (status.len == 1) {
                 return false; // Already available
             }
 
-            // Case 3: Two-element status [t1, t2, null] - was available but now unavailable
             if (status.len == 2) {
                 return current_timeslot >= status[1].?; // Needed if current time is past unavailability time
             }
 
-            // Case 4: Three-element status [t1, t2, t3] - available again since t3
             if (status.len == 3) {
                 span.debug("Case 4: Status [t1,t2,t3] - already available again, returning false", .{});
                 return false; // Already available again
@@ -557,7 +524,6 @@ pub const ServiceAccount = struct {
             span.debug("No lookup entry found for this hash/length, returning false", .{});
         }
 
-        // No lookup entry for this hash/length
         return false;
     }
 
@@ -580,10 +546,8 @@ pub const ServiceAccount = struct {
             timeslot,
         });
 
-        // If we do not have one, easy just set first on and ready
         const existing_data = self.data.get(key) orelse {
             span.trace("  Action: Creating new lookup with slot [{?}]", .{timeslot});
-            // If no lookup exists yet, create a new one with timeslot as the first entry
             const new_lookup = PreimageLookup{
                 .status = .{ timeslot, null, null },
             };
@@ -597,13 +561,8 @@ pub const ServiceAccount = struct {
         const existing_lookup = try decodePreimageLookup(existing_data);
         const status = existing_lookup.asSlice();
 
-        // Create a modified lookup based on the existing one
         var updated_lookup = existing_lookup;
 
-        // Update the status based on the current state:
-        // - If all slots are null, set the first slot
-        // - If first slot is set but second is and third null, set update te first slot
-        // - If first and second slots are set, set the third slot (marking available again)
         if (status.len <= 1) {
             span.trace("  Action: Updating lookup [{?}] -> [{?}]", .{ if (status.len > 0) status[0] else null, timeslot });
             updated_lookup.status[0] = timeslot;
@@ -629,16 +588,12 @@ pub const ServiceAccount = struct {
     ) !void {
         const key = state_keys.constructServicePreimageLookupKey(service_id, length, hash);
 
-        // If we do not have one, create a new lookup
         const existing_data = self.data.get(key) orelse {
-            // For test vectors, set both status[0] and status[1] to mark as "provided"
-            // This makes the preimage ejectable (status.len == 2)
             const new_lookup = PreimageLookup{
                 .status = .{ timeslot, timeslot, null },
             };
             const encoded = try encodePreimageLookup(self.data.allocator, new_lookup);
             try self.data.put(key, encoded);
-            // Note: NOT updating footprint - caller has already set it
             return;
         };
 
@@ -659,14 +614,10 @@ pub const ServiceAccount = struct {
         try self.data.put(key, encoded);
     }
 
-    // 9.2.2 Implement the historical lookup function
     pub fn historicalLookup(self: *ServiceAccount, service_id: u32, time: Timeslot, hash: Hash) ?[]const u8 {
-        // Create the structured preimage key
         const preimage_key = state_keys.constructServicePreimageKey(service_id, hash);
 
-        // first get the preimage, if not return null
         if (self.getPreimage(preimage_key)) |preimage| {
-            // see if we have it in the lookup table
             const lookup_key = state_keys.constructServicePreimageLookupKey(service_id, @intCast(preimage.len), hash);
             if (self.data.get(lookup_key)) |lookup_data| {
                 const lookup = decodePreimageLookup(lookup_data) catch return null;
@@ -708,17 +659,11 @@ pub const ServiceAccount = struct {
     /// Calculate storage footprint from tracked values
     /// Returns the footprint metrics including the threshold balance
     pub fn getStorageFootprint(self: *const ServiceAccount, params: Params) StorageFootprint {
-        // We directly track a_i and a_o
         const a_i = self.footprint_items;
         const a_o = self.footprint_bytes;
 
-        // Calculate threshold balance a_t
-        // Per graypaper: a_t = max(0, B_S + B_I·a_i + B_L·a_o - a_f)
-        // Where a_f is the storage_offset (free storage allowance)
         const base_cost = params.basic_service_balance + params.min_balance_per_item * a_i + params.min_balance_per_octet * a_o;
 
-        // Subtract free storage allowance if set (a_f > 0), otherwise use base cost
-        // storage_offset == 0 means no free storage, storage_offset > 0 means free storage granted
         const a_t: Balance = if (self.storage_offset > 0)
             base_cost -| self.storage_offset // Saturating subtraction ensures max(0, ...)
         else
@@ -740,7 +685,6 @@ pub const ServiceAccount = struct {
         const storage_key = state_keys.constructStorageKey(service_id, key);
         const old_value = self.data.get(storage_key);
 
-        // Calculate potential new a_i and a_o
         var new_a_i = self.footprint_items;
         var new_a_o = self.footprint_bytes;
 
@@ -751,15 +695,12 @@ pub const ServiceAccount = struct {
             new_a_o += 34 + key.len + new_value_len; // 34 + key length + value length
         }
 
-        // Calculate threshold balance with potential new values
-        // Per graypaper: a_t = max(0, B_S + B_I·a_i + B_L·a_o - a_f)
         const base_cost = params.basic_service_balance + params.min_balance_per_item * new_a_i + params.min_balance_per_octet * new_a_o;
         const new_a_t: Balance = if (self.storage_offset > 0)
             base_cost -| self.storage_offset // Saturating subtraction ensures max(0, ...)
         else
             base_cost;
 
-        // Use NONE constant (2^64 - 1) when no prior value exists
         const NONE = std.math.maxInt(u64) - 0; // ReturnCode.NONE value
         const prior_value_length: u64 = if (old_value) |old| old.len else NONE;
 
@@ -796,12 +737,9 @@ pub const ServiceAccount = struct {
         const storage_key = state_keys.constructStorageKey(service_id, key);
         const old_value = self.data.get(storage_key) orelse return null;
 
-        // Calculate potential new a_i and a_o after removal
         const new_a_i = self.footprint_items - 1; // One storage item removed
         const new_a_o = self.footprint_bytes - (34 + key.len + old_value.len); // 34 + key length + value length
 
-        // Calculate threshold balance with potential new values
-        // Per graypaper: a_t = max(0, B_S + B_I·a_i + B_L·a_o - a_f)
         const base_cost = params.basic_service_balance + params.min_balance_per_item * new_a_i + params.min_balance_per_octet * new_a_o;
         const new_a_t: Balance = if (self.storage_offset > 0)
             base_cost -| self.storage_offset // Saturating subtraction ensures max(0, ...)
@@ -834,14 +772,10 @@ pub const ServiceAccount = struct {
         key: []const u8,
     ) bool {
         const new_footprint = self.calculateStorageFootprintAfterRemoval(params, service_id, key) orelse return false;
-        // Removal reduces storage, so should always be affordable
-        // But we check anyway for consistency
         return new_footprint.a_t <= self.balance;
     }
 };
 
-// `Delta` is the overarching structure that manages the state of the protocol
-// and its various service accounts. As defined in GP0.4.1p@Ch9
 
 pub const Delta = struct {
     accounts: std.AutoHashMap(ServiceId, ServiceAccount),
@@ -874,7 +808,6 @@ pub const Delta = struct {
         var clone = Delta.init(self.allocator);
         errdefer clone.deinit();
 
-        // Iterate through all accounts in the source Delta
         var it = self.accounts.iterator();
         while (it.next()) |entry| {
             const account = entry.value_ptr;
@@ -916,7 +849,6 @@ pub const Delta = struct {
     pub fn integratePreimage(self: *Delta, preimages: []const PreimageSubmission, t: Timeslot) !void {
         for (preimages) |item| {
             if (self.getAccount(item.index)) |account| {
-                // Create structured preimage key using the service ID and hash
                 const preimage_key = state_keys.constructServicePreimageKey(item.index, item.hash);
                 try account.dupeAndAddPreimage(preimage_key, item.preimage);
                 try account.registerPreimageAvailable(item.index, item.hash, @intCast(item.preimage.len), t);
@@ -936,7 +868,6 @@ pub const Delta = struct {
     }
 };
 
-// == Trace helpers
 
 fn formatStateKey(key: types.StateKey) [19]u8 {
     var buf: [19]u8 = undefined;
@@ -960,10 +891,8 @@ const FormattedValue = struct {
         _ = fmt;
         _ = options;
 
-        // Write the hex data
         try writer.print("{s}", .{std.fmt.fmtSliceHexLower(self.data)});
 
-        // If truncated, add indicator
         if (self.truncated) {
             try writer.writeAll("... (truncated)");
         }
