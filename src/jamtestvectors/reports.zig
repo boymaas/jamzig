@@ -21,9 +21,8 @@ pub const AuthPools = struct {
     }
 };
 
-/// ServiceInfo type for test vectors with additional fields (v0.7.1+)
 pub const ServiceInfoTestVector = struct {
-    version: u8, // v0.7.1: Service information version (GP #472)
+    version: u8,
     code_hash: types.OpaqueHash,
     balance: types.Balance,
     min_item_gas: types.Gas,
@@ -47,7 +46,6 @@ pub const ServiceInfoTestVector = struct {
     }
 };
 
-/// BlockInfo type for test vectors with beefy_root instead of beefy_mmr
 pub const BlockInfoTestVector = struct {
     header_hash: types.Hash,
     beefy_root: types.OpaqueHash,
@@ -84,7 +82,6 @@ pub const RecentBlocks = struct {
     }
 };
 
-// TODO: use the types from ./jam_types.zig
 pub const CoresStatistics = struct {
     stats: []state.validator_stats.CoreActivityRecord,
 
@@ -111,19 +108,14 @@ pub const ServiceStatistics = struct {
         self.* = undefined;
     }
 
-    // encode would need to sort inplace
-
     pub fn decode(_: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
         const codec = @import("../codec.zig");
 
-        // Read the length as a variable integer
         const length = try codec.readInteger(reader);
 
-        // Allocate memory for the service activity records
         var stats = try allocator.alloc(ServicesStatisticsMapEntry, length);
         errdefer allocator.free(stats);
 
-        // Decode each service activity record
         for (0..length) |i| {
             stats[i] = try codec.deserializeAlloc(ServicesStatisticsMapEntry, .{}, allocator, reader);
         }
@@ -134,38 +126,25 @@ pub const ServiceStatistics = struct {
     }
 };
 
-/// State for reports processing according to the GP
 pub const State = struct {
-    /// [ρ‡] Intermediate pending reports after removal of uncertain/invalid reports
-    /// and processing availability assurances
     avail_assignments: types.AvailabilityAssignments,
 
-    /// [κ'] Posterior active validators
     curr_validators: types.ValidatorSet,
 
-    /// [λ'] Posterior previous validators
     prev_validators: types.ValidatorSet,
 
-    /// [η'] Posterior entropy buffer
     entropy: types.EntropyBuffer,
 
-    /// [ψ'_o] Posterior offenders
     offenders: []types.Ed25519Public,
 
-    /// [β] Recent blocks information
     recent_blocks: RecentBlocks,
 
-    /// [α] Authorization pools per core
     auth_pools: AuthPools,
 
-    /// [δ] Relevant services account data. Refer to T(σ) in GP Appendix D.
     accounts: []AccountsMapEntry,
 
-    /// [δ] Relevant services account data. Refer to T(σ) in GP Appendix D.
-    /// Cores-statistics
     cores_statistics: CoresStatistics,
 
-    /// Services-statistics
     services_statistics: ServiceStatistics,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -188,11 +167,8 @@ pub const ServiceItem = struct {
 };
 
 pub const Input = struct {
-    /// [E_G] Guarantees extrinsic
     guarantees: types.GuaranteesExtrinsic,
-    /// [H_t] Block's timeslot
     slot: types.TimeSlot,
-    /// Known packages - derived from recent blocks, accumulated reports, availability, and ready queue
     known_packages: []types.WorkPackageHash,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -203,9 +179,7 @@ pub const Input = struct {
 };
 
 pub const OutputData = struct {
-    /// Reported packages hash and segment tree root
     reported: []types.ReportedWorkPackage,
-    /// Reporters for reported packages
     reporters: []types.Ed25519Public,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {

@@ -26,7 +26,7 @@ const trace_hostcalls = @import("tracing").scoped(.host_calls);
 const AccumulateArgs = struct {
     timeslot: types.TimeSlot,
     service_id: types.ServiceId,
-    operand_count: u64, // |o| - just the count, not the operands themselves
+    operand_count: u64,
 
     pub fn encode(self: *const @This(), writer: anytype) !void {
         try codec.writeInteger(self.timeslot, writer);
@@ -35,14 +35,13 @@ const AccumulateArgs = struct {
     }
 };
 
-/// Accumulation Invocation
 pub fn invoke(
     comptime params: Params,
     allocator: std.mem.Allocator,
     context: AccumulationContext(params),
     service_id: types.ServiceId,
     gas_limit: types.Gas,
-    accumulation_operands: []const AccumulationOperand, // O
+    accumulation_operands: []const AccumulationOperand,
     incoming_transfers: []const TransferOperand,
 ) !AccumulationResult(params) {
     const span = trace.span(@src(), .invoke);
@@ -86,7 +85,6 @@ pub fn invoke(
 
     span.trace("AccumulateArgs: timeslot={d}, service_id={d}, operand_count={d}", .{ arguments.timeslot, arguments.service_id, arguments.operand_count });
 
-    // Use the proper JAM varint encoding instead of generic serialization
     try arguments.encode(args_buffer.writer());
 
     span.trace("AccumulateArgs Encoded ({d} bytes): {}", .{ args_buffer.items.len, std.fmt.fmtSliceHexLower(args_buffer.items) });
@@ -181,8 +179,8 @@ pub fn invoke(
 
     var result = try pvm_invocation.machineInvocation(
         allocator,
-        code_preimage, // Pass the code with metadata directly
-        5, // Accumulation entry point index per section 9.1
+        code_preimage,
+        5,
         @intCast(gas_limit),
         args_buffer.items,
         &host_calls_config,
@@ -232,31 +230,21 @@ pub fn invoke(
     else
         &host_call_context.exceptional;
 
-    // Calculate gas used
     const gas_used = result.gas_used;
     span.debug("Gas used for invocation: {d}", .{gas_used});
 
-    // See: B.12
     const accumulation_output: ?[32]u8 = outer: switch (result.result) {
         .halt => |output| {
-            // we do not include an empty accumulation output see 12.17 b
             if (output.len == 32) {
                 break :outer output[0..32].*;
             }
-            // else we use the accumulation_output of the context potentially set by the yield
-            // host call
             break :outer collapsed_dimension.accumulation_output;
         },
-        // For non-halt termination (panic, out-of-gas, trap), still check if yield was called
-        // The yield hostcall can be invoked before termination, and we should preserve that output
         else => collapsed_dimension.accumulation_output,
     };
 
-    // Return the collapsed dimension to the caller, who will apply preimages and commit changes
-    // at the appropriate level after all services have been processed
     span.debug("Accumulation invocation completed", .{});
 
-    // Extract generated transfers from the collapsed dimension (v0.7.1 inline processing)
     const generated_transfers = try collapsed_dimension.generated_transfers.toOwnedSlice();
     span.debug("Number of generated transfers (for next service): {d}", .{generated_transfers.len});
 
@@ -292,8 +280,6 @@ pub const AccumulationOperands = struct {
 
     items: []MaybeNull,
 
-    /// takes all items out of the MaybeNull, this clears all the items, as such your cannot
-    /// use this struct anymore
     pub fn toOwnedSlice(self: *@This(), allocator: std.mem.Allocator) ![]AccumulationOperand {
         var result = try allocator.alloc(AccumulationOperand, self.items.len);
         errdefer allocator.free(result);
@@ -310,21 +296,15 @@ pub const AccumulationOperands = struct {
     }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        // Clean up each AccumulationOperand in the items array
         for (self.items) |*operand| {
             operand.deinit(allocator);
         }
 
-        // Free the items array itself
         allocator.free(self.items);
-
-        // Mark as undefined to prevent use-after-free
         self.* = undefined;
     }
 };
 
-/// Transfer processed inline during accumulation per v0.7.1 graypaper
-/// T ≡ {s ∈ N_S, d ∈ N_S, a ∈ N_B, m ∈ Y_W_T, g ∈ N_G}
 pub const TransferOperand = struct {
     sender: types.ServiceId,
     destination: types.ServiceId,
@@ -333,44 +313,25 @@ pub const TransferOperand = struct {
     gas_limit: types.Gas,
 };
 
-/// 12.18 AccumulationOperand represents a wrangled tuple of operands used by the PVM Accumulation function.
-/// It contains the rephrased work items for a specific service within work reports.
-/// Following JAM protocol naming conventions: h, e, a, y, g, d, o
-/// Encoded according to graypaper C.29: E(xh, xe, xa, xy, xg, O(xd), ↕xo)
 pub const AccumulationOperand = struct {
     pub const Output = types.WorkExecResult;
 
-    /// h: The hash of the work package
     h: [32]u8,
-
-    /// e: The segment root containing the export
     e: [32]u8,
-
-    /// a: The authorizer hash
     a: [32]u8,
-
-    /// y: The hash of the payload within the work item
     y: [32]u8,
-
-    /// g: Gas used/allocated for this operand
     g: types.Gas,
-
-    /// d: The data output (success or error)
     d: Output,
-
-    /// o: The authorization output blob (variable length)
     o: []const u8,
 
     /// Encodes according to graypaper C.29: E(xh, xe, xa, xy, xg, O(xd), ↕xo)
     pub fn encode(self: *const @This(), params: anytype, writer: anytype) !void {
-        // E(xh, xe, xa, xy, xg, O(xd), ↕xo)
-        try writer.writeAll(&self.h); // xh
-        try writer.writeAll(&self.e); // xe
-        try writer.writeAll(&self.a); // xa
-        try writer.writeAll(&self.y); // xy
-        try codec.writeInteger(self.g, writer); // xg
-        try self.d.encode(params, writer); // O(xd)
-        // ↕xo - length-prefixed authorization output
+        try writer.writeAll(&self.h);
+        try writer.writeAll(&self.e);
+        try writer.writeAll(&self.a);
+        try writer.writeAll(&self.y);
+        try codec.writeInteger(self.g, writer);
+        try self.d.encode(params, writer);
         try codec.writeInteger(@intCast(self.o.len), writer);
         try writer.writeAll(self.o);
     }
@@ -378,15 +339,13 @@ pub const AccumulationOperand = struct {
     pub fn decode(params: anytype, reader: anytype, allocator: std.mem.Allocator) !@This() {
         var self: @This() = undefined;
 
-        // Read fields in C.29 order: E(xh, xe, xa, xy, xg, O(xd), ↕xo)
-        try reader.readNoEof(&self.h); // xh
-        try reader.readNoEof(&self.e); // xe
-        try reader.readNoEof(&self.a); // xa
-        try reader.readNoEof(&self.y); // xy
-        self.g = try codec.readInteger(reader); // xg
-        self.d = try Output.decode(params, reader, allocator); // O(xd)
+        try reader.readNoEof(&self.h);
+        try reader.readNoEof(&self.e);
+        try reader.readNoEof(&self.a);
+        try reader.readNoEof(&self.y);
+        self.g = try codec.readInteger(reader);
+        self.d = try Output.decode(params, reader, allocator);
 
-        // ↕xo - length-prefixed authorization output
         const o_len = try codec.readInteger(reader);
         self.o = try allocator.alloc(u8, @intCast(o_len));
         errdefer allocator.free(self.o);
@@ -396,7 +355,6 @@ pub const AccumulationOperand = struct {
     }
 
     pub fn deepClone(self: @This(), alloc: std.mem.Allocator) !@This() {
-        // Create a new operand with deep copies of all dynamic data
         var cloned = @This(){
             .h = self.h,
             .e = self.e,
@@ -406,7 +364,6 @@ pub const AccumulationOperand = struct {
             .d = undefined,
         };
 
-        // Deep copy the output based on its type
         switch (self.d) {
             .success => |data| {
                 cloned.d = .{ .success = try alloc.dupe(u8, data) };
@@ -420,36 +377,30 @@ pub const AccumulationOperand = struct {
     }
 
     pub fn fromWorkReport(allocator: std.mem.Allocator, report: types.WorkReport) !AccumulationOperands {
-        // Ensure there are results in the report
         if (report.results.len == 0) {
             return error.NoResults;
         }
 
-        // Allocate an array of AccumulationOperand with the same length as report.results
         var operands = try allocator.alloc(AccumulationOperands.MaybeNull, report.results.len);
         errdefer {
-            // Clean up any already initialized operands
             for (operands) |*operand| {
                 operand.deinit(allocator);
             }
             allocator.free(operands);
         }
 
-        // Create an AccumulationOperand for each result in the report
         for (report.results, 0..) |result, i| {
-            // Map output type from WorkExecResult to AccumulationOperand.output
             const output: Output = try result.result.deepClone(allocator);
 
-            // Set up the operand according to JAM protocol fields (h, e, a, o, y, d)
             operands[i] = .{
                 .item = .{
-                    .h = report.package_spec.hash, // Work package hash
-                    .e = report.package_spec.exports_root, // Segment root
-                    .a = report.authorizer_hash, // Authorizer hash
+                    .h = report.package_spec.hash,
+                    .e = report.package_spec.exports_root,
+                    .a = report.authorizer_hash,
                     .g = result.accumulate_gas,
-                    .o = try allocator.dupe(u8, report.auth_output), // Authorization output
-                    .y = result.payload_hash, // Payload hash
-                    .d = output, // Data output (success or error)
+                    .o = try allocator.dupe(u8, report.auth_output),
+                    .y = result.payload_hash,
+                    .d = output,
                 },
             };
         }
@@ -459,7 +410,6 @@ pub const AccumulationOperand = struct {
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.d.deinit(allocator);
-        // Free the authorization output
         allocator.free(self.o);
         self.* = undefined;
     }

@@ -5,7 +5,6 @@ const jam_params = @import("../jam_params.zig");
 
 const BASE_PATH = "src/jamtestvectors/data/stf/statistics/";
 
-/// ValidatorsStatistics is just an alias for array of ValidatorStats
 pub const ValidatorsStatistics = struct {
     stats: []validator_stats.ValidatorStats,
 
@@ -15,13 +14,9 @@ pub const ValidatorsStatistics = struct {
 };
 
 pub const State = struct {
-    // [π_V] Current validators statistics
     vals_curr_stats: ValidatorsStatistics,
-    // [π_L] Last validators statistics
     vals_last_stats: ValidatorsStatistics,
-    // [τ] Prior timeslot
     slot: types.TimeSlot,
-    // [κ'] Posterior active validators
     curr_validators: types.ValidatorSet,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -33,11 +28,8 @@ pub const State = struct {
 };
 
 pub const Input = struct {
-    // [H_t] Block timeslot
     slot: types.TimeSlot,
-    // [H_i] Block author
     author_index: types.ValidatorIndex,
-    // [E] Extrinsic
     extrinsic: types.Extrinsic,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -112,7 +104,6 @@ test "statistics_vector:decode_single_tiny" {
     );
     defer test_case.deinit(allocator);
 
-    // Print some decoded data to verify decoding works
     std.debug.print("\n=== Statistics Test Case Decoded ===\n", .{});
     std.debug.print("Input slot: {}\n", .{test_case.input.slot});
     std.debug.print("Author index: {}\n", .{test_case.input.author_index});

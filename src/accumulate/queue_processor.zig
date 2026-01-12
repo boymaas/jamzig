@@ -64,8 +64,6 @@ pub fn QueueProcessor(comptime params: Params) type {
             var i: usize = 0;
 
             while (i < queue.items.len) {
-                // TODO: Add staleness check logic here
-                // For now, just advance
                 i += 1;
             }
 
@@ -104,11 +102,8 @@ pub fn QueueProcessor(comptime params: Params) type {
             var i: usize = 0;
 
             while (i < pending.items.len) {
-                // Check if report is ready (no dependencies)
-                // This is simplified - actual logic in dependency_resolver
                 const report = &pending.items[i];
-                
-                // If ready, move to ready queue
+
                 if (report.context.prerequisites.len == 0) {
                     try ready.append(pending.orderedRemove(i));
                     moved += 1;
@@ -159,7 +154,6 @@ pub fn QueueProcessor(comptime params: Params) type {
     };
 }
 
-/// Set of queues used in accumulation
 pub const QueueSet = struct {
     pending: Queued(types.WorkReport),
     ready: Queued(types.WorkReport),
@@ -178,14 +172,12 @@ pub const QueueSet = struct {
     }
 };
 
-/// Result of queue processing
 pub const ProcessResult = struct {
     moved_to_ready: usize,
     removed_stale: usize,
     updated_deps: usize,
 };
 
-/// Queue statistics
 pub const QueueStats = struct {
     pending_count: usize,
     ready_count: usize,

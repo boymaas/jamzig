@@ -80,24 +80,18 @@ fn calculateStats(times: []u64) struct { min: u64, max: u64, median: u64, mean: 
 
     std.mem.sort(u64, times, {}, std.sort.asc(u64));
 
-    // After sorting, min/max are trivial O(1) operations:
     const min = times[0];
     const max = times[times.len - 1];
-
-    // Calculate median directly from sorted array
     const median = if (times.len % 2 == 0)
         (times[times.len / 2 - 1] + times[times.len / 2]) / 2
     else
         times[times.len / 2];
 
-    // Calculate sum in single pass
     var sum: u64 = 0;
     for (times) |t| {
         sum += t;
     }
     const mean = sum / times.len;
-
-    // Calculate standard deviation in single pass
     var variance_sum: u64 = 0;
     for (times) |t| {
         const diff = if (t > mean) t - mean else mean - t;
@@ -311,7 +305,6 @@ pub fn benchmarkBlockImportWithBufferAndConfig(
     var context = BenchmarkContext(IOExecutor).init(allocator, config, executor);
     defer context.deinit();
 
-    // Create arena for temporary allocations during benchmarking
     var arena_allocator = std.heap.ArenaAllocator.init(allocator);
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
@@ -357,13 +350,12 @@ pub fn benchmarkBlockImportWithBufferAndConfig(
     }
 
     for (trace_dirs) |trace_name| {
-        // Skip traces that don't match the filter
         if (context.config.trace_filter) |filter| {
             if (!std.mem.eql(u8, trace_name, filter)) {
                 continue;
             }
         }
-        // Clear arena between trace directories
+
         _ = arena_allocator.reset(.retain_capacity);
 
         std.debug.print("Benchmarking trace: {s}\n", .{trace_name});
@@ -489,16 +481,13 @@ fn parseArgs(allocator: std.mem.Allocator) !BenchmarkConfig {
 
     var config = BenchmarkConfig{};
 
-    // Handle positional arguments
     if (res.positionals.len > 0) {
-        // First positional: iterations (already parsed as u32 by clap)
         if (res.positionals[0]) |iterations| {
             config.iterations = iterations;
         }
     }
 
     if (res.positionals.len > 1) {
-        // Second positional: trace name (already parsed as string by clap)
         if (res.positionals[1]) |trace_name| {
             const valid_traces = [_][]const u8{ "fallback", "safrole", "preimages", "preimages_light", "storage", "storage_light" };
 
@@ -537,7 +526,6 @@ pub fn main() !void {
     var alloc = build_tuned_allocator.BuildTunedAllocator.init();
     defer alloc.deinit();
 
-    // TracyAllocator is a no-op when Tracy is disabled
     var tracy_alloc = tracy.TracyAllocator.init(alloc.allocator());
     const allocator = tracy_alloc.allocator();
 
@@ -552,7 +540,6 @@ pub fn main() !void {
 
     std.debug.print("Using JAM params: {any}\n", .{config});
 
-    // const ExecutorType = io.SequentialExecutor;
     const ExecutorType = io.ThreadPoolExecutor;
 
     var executor = try ExecutorType.init(allocator);

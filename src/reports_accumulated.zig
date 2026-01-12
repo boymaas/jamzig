@@ -6,7 +6,6 @@ const HashSet = @import("datastruct/hash_set.zig").HashSet;
 pub fn Xi(comptime epoch_size: usize) type {
     return struct {
         entries: [epoch_size]HashSet(WorkPackageHash),
-        // TODO: Optimize with Bloom filter - reduces memory by ~100x with small false positive rate
         global_index: HashSet(WorkPackageHash),
         allocator: std.mem.Allocator,
 
@@ -71,7 +70,6 @@ pub fn Xi(comptime epoch_size: usize) type {
         }
 
         pub fn shiftDown(self: *@This()) !void {
-            // TODO: Optimize with circular buffer pattern - O(1) instead of O(epoch_size)
             var dropped_slot = self.entries[0];
             for (0..epoch_size - 1) |i| {
                 self.entries[i] = self.entries[i + 1];

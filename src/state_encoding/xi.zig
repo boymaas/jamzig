@@ -8,8 +8,6 @@ const trace = @import("tracing").scoped(.codec);
 const makeLessThanSliceOfFn = @import("../utils/sort.zig").makeLessThanSliceOfFn;
 const lessThanSliceOfHashes = makeLessThanSliceOfFn([32]u8);
 
-/// Xi (ξ) is defined as a dictionary mapping hashes to hashes: D⟨H → H⟩E
-/// where H represents 32-byte hashes
 pub fn encode(comptime epoch_size: usize, allocator: std.mem.Allocator, xi: *const [epoch_size]HashSet([32]u8), writer: anytype) !void {
     const span = trace.span(@src(), .encode);
     defer span.deinit();

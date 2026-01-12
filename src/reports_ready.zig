@@ -154,9 +154,7 @@ pub fn VarTheta(comptime epoch_size: usize) type {
 }
 
 pub const WorkReportAndDeps = struct {
-    /// a work report
     work_report: WorkReport,
-    /// set of work package hashes
     dependencies: WorkPackageHashSet,
 
     pub fn initWithDependencies(

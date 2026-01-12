@@ -46,13 +46,11 @@ pub const PVMTestVector = struct {
         const json_buffer = try file.readToEndAlloc(allocator, 5 * 1024 * 1024);
         defer allocator.free(json_buffer);
 
-        // configure json scanner to track diagnostics for easier debugging
         var diagnostics = std.json.Diagnostics{};
         var scanner = std.json.Scanner.initCompleteInput(allocator, json_buffer);
         scanner.enableDiagnostics(&diagnostics);
         defer scanner.deinit();
 
-        // parse from tokensource using the scanner
         const expected = std.json.parseFromTokenSource(
             PVMTestVector,
             allocator,

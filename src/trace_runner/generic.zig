@@ -11,7 +11,6 @@ pub const KeyVal = struct {
     key: types.StateKey,
     val: []const u8,
 
-    // Add custom JSON serialization as array [key, val, id, desc]
     pub fn jsonStringify(self: *const KeyVal, writer: anytype) !void {
         try writer.beginArray();
 

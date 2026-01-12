@@ -13,7 +13,6 @@ pub const detectKeyType = @import("../state_dictionary/key_type_detection.zig").
 
 const trace = @import("tracing").scoped(.codec);
 
-/// Reconstructs a JamState from a MerklizationDictionary by decoding its entries
 pub fn reconstructState(
     comptime params: Params,
     allocator: std.mem.Allocator,
@@ -24,22 +23,18 @@ pub fn reconstructState(
 
     span.debug("Starting state reconstruction with dictionary size: {d}", .{dict.entries.count()});
 
-    // Create a decoding context for error tracking
     var decoding_context = state_decoding.DecodingContext.init(allocator);
     defer decoding_context.deinit();
 
     var jam_state = try state.JamState(params).init(allocator);
     errdefer jam_state.deinit(allocator);
 
-    // NOTE: we initialize delta here, as we always want a delta to be available
-    // also when we have a merklization dictioray without any service accounts
     jam_state.delta = state.Delta.init(allocator);
 
     span.debug("Initialized empty JamState", .{});
 
     const fbs = std.io.fixedBufferStream;
 
-    // Iterate through all entries
     var it = dict.entries.iterator();
     var entry_count: usize = 0;
     while (it.next()) |entry| {
@@ -138,7 +133,6 @@ pub fn reconstructState(
                     jam_state.pi = try state_decoding.pi.decode(pi_params, allocator, &decoding_context, f.reader());
                 },
                 14 => {
-                    // v0.6.7: VarTheta (work reports queue, renamed from Theta)
                     entry_span.debug("Decoding vartheta component (id={d})", .{key[0]});
                     var f = fbs(dict_entry.value);
                     const vartheta_params = comptime state_decoding.vartheta.DecoderParams.fromJamParams(params);
@@ -151,7 +145,6 @@ pub fn reconstructState(
                     jam_state.xi = try state_decoding.xi.decode(xi_params, allocator, &decoding_context, f.reader());
                 },
                 16 => {
-                    // v0.6.7: New Theta (accumulation outputs)
                     entry_span.debug("Decoding theta component (id={d})", .{key[0]});
                     var f = fbs(dict_entry.value);
                     jam_state.theta = try state_decoding.theta.decode(allocator, &decoding_context, f.reader());
@@ -173,7 +166,6 @@ pub fn reconstructState(
                 defer storage_span.deinit();
                 storage_span.debug("Processing delta storage entry", .{});
 
-                // Passing dict entry as we need metadata to restore this
                 try delta_reconstruction.reconstructStorageData(allocator, &jam_state.delta.?, dict_entry);
             },
         }

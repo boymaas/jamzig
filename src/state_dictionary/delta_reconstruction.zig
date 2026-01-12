@@ -11,7 +11,6 @@ const trace = @import("tracing").scoped(.codec);
 
 const log = std.log.scoped(.state_dictionary);
 
-/// Reconstructs base service account data from key type 255
 pub fn reconstructServiceAccountBase(
     allocator: std.mem.Allocator,
     delta: *state.Delta,
@@ -30,11 +29,9 @@ pub fn reconstructServiceAccountBase(
     std.debug.assert(dkey.byte == 255);
     span.debug("Deconstructed key - service index: {d}, byte: {d}", .{ dkey.service_index, dkey.byte });
 
-    // Decode base account data using existing decoder
     try state_decoding.delta.decodeServiceAccountBase(allocator, delta, dkey.service_index, reader);
 }
 
-/// Reconstructs a storage entry for a service account by reconstructing the full hash
 pub fn reconstructStorageData(
     allocator: std.mem.Allocator,
     delta: *state.Delta,
@@ -48,14 +45,11 @@ pub fn reconstructStorageData(
     const dkey = state_recovery.deconstructServiceIndexHashKey(dict_entry.key);
     span.debug("Deconstructed service index: {d}", .{dkey.service_index});
 
-    // Get or create the account
     var account = try delta.getOrCreateAccount(dkey.service_index);
 
-    // Create owned copy of value and store with full hash
     const owned_value = try allocator.dupe(u8, dict_entry.value);
     errdefer allocator.free(owned_value);
 
-    // Direct data access: key already in final form from serialized state
     const storage_key = dict_entry.key;
     try account.data.put(storage_key, owned_value);
 }

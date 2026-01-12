@@ -31,7 +31,6 @@ pub const MMR = struct {
         return self.peaks.items;
     }
 
-    /// Transfers ownership to caller - MMR is invalid after this.
     pub fn toOwnedSlice(self: *MMR) ![]?Hash {
         return try self.peaks.toOwnedSlice();
     }
@@ -54,7 +53,6 @@ pub fn filterNulls(mrange: []const Entry, buffer: []Hash) []Hash {
 }
 
 pub fn superPeak(mrange: []const Entry, hasher: anytype) Hash {
-    // 32 peaks supports 8+ billion leaves
     std.debug.assert(mrange.len <= 32);
 
     var buffer: [32]Hash = undefined;
@@ -132,7 +130,6 @@ pub fn encodePeaks(mrange: []const ?Hash, writer: anytype) !void {
     }
 }
 
-// Alias for backward compatibility
 pub const encode = encodePeaks;
 
 const testing = std.testing;

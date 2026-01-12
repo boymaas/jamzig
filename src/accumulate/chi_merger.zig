@@ -39,7 +39,7 @@ pub fn ChiMerger(comptime params: Params) type {
             };
         }
 
-        /// Apply R() function per graypaper §12.17: R(o,a,b) = b when a=o, else a
+        /// R(o,a,b) = b when a=o, else a (graypaper §12.17)
         pub fn merge(
             self: *const Self,
             manager_chi: ?*const Chi,

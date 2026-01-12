@@ -1,5 +1,3 @@
-// TODO: rename this file to recent_history.zig
-
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Blake2b256 = std.crypto.hash.blake2.Blake2b(256);
@@ -11,17 +9,12 @@ const mmr = @import("merkle/mmr.zig");
 
 const jam_params = @import("jam_params.zig");
 
-/// Represents a recent block with information needed for importing
 /// NOTE: this type was defined in the history test vectors, thus this is NOT
 /// a domain type!
 pub const RecentBlock = struct {
-    /// The hash of the block header
     header_hash: types.Hash,
-    /// The state root of the parent block (H_r)
     parent_state_root: types.Hash,
-    /// The root of the accumulate result tree, derived from C using basic merklization (M_b)
     accumulate_root: types.Hash,
-    /// The hashes of the work reports included in this block
     work_reports: []types.ReportedWorkPackage,
 
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
@@ -34,8 +27,6 @@ pub const RecentBlock = struct {
             .parent_state_root = block.header.parent_state_root,
             .accumulate_root = accumulate_root,
             .work_reports = blk: {
-                // Extract work report hashes from guarantees
-                // TODO: move this to block level, more clean
                 var reports = std.ArrayList(types.ReportedWorkPackage).init(allocator);
                 errdefer reports.deinit();
 
@@ -46,8 +37,6 @@ pub const RecentBlock = struct {
                     });
                 }
 
-                // This is actually a map in the graypaper, and as such, they need to be sorted by key
-                // when serialized. Use insertion sort as we do not expect many items here
                 std.sort.insertion(types.ReportedWorkPackage, reports.items, {}, struct {
                     pub fn lessThan(_: void, a: types.ReportedWorkPackage, b: types.ReportedWorkPackage) bool {
                         return std.mem.lessThan(u8, &a.hash, &b.hash);
@@ -94,7 +83,6 @@ pub const RecentHistory = struct {
         try formatter.format(fmt, options, writer);
     }
 
-    /// Frees all resources associated with the RecentHistory
     pub fn deinit(self: *Self) void {
         for (self.blocks.items) |*block| {
             block.deinit(self.allocator);
@@ -103,22 +91,18 @@ pub const RecentHistory = struct {
         self.* = undefined;
     }
 
-    /// Imports a new block into the recent history, takes ownership or RecentBlock
     pub fn import(self: *Self, input: RecentBlock) !void {
-        // Create a new BlockStateInformation
         var block_info = types.BlockInfo{
             .header_hash = input.header_hash,
-            .state_root = std.mem.zeroes(types.StateRoot), // This will be updated in the next block
+            .state_root = std.mem.zeroes(types.StateRoot),
             .beefy_mmr = undefined,
             .work_reports = input.work_reports,
         };
 
-        // Update the parent block's state root if it exists
         if (self.blocks.items.len > 0) {
             self.blocks.items[self.blocks.items.len - 1].state_root = input.parent_state_root;
         }
 
-        // Create or update Beefy MMR
         const last_beefy_mmr = if (self.blocks.getLastOrNull()) |last_block|
             try self.allocator.dupe(?types.Hash, last_block.beefy_mmr)
         else
@@ -127,17 +111,13 @@ pub const RecentHistory = struct {
         var beefy_mmr = mmr.MMR.fromOwnedSlice(self.allocator, @constCast(last_beefy_mmr));
         errdefer beefy_mmr.deinit();
 
-        // Append the accumulate root to the Beefy MMR
         try mmr.append(&beefy_mmr, input.accumulate_root, Keccak256);
 
-        // Update the new block's Beefy MMR (transfer ownership)
         block_info.beefy_mmr = try beefy_mmr.toOwnedSlice();
 
-        // Add the new block to the recent history
         try self.addBlockInfo(block_info);
     }
 
-    /// Adds a new BlockInfo to the recent history, removing the oldest if at capacity
     pub fn addBlockInfo(self: *Self, new_block: types.BlockInfo) !void {
         if (self.blocks.items.len == self.max_blocks) {
             var oldest_block = self.blocks.orderedRemove(0);
@@ -147,7 +127,6 @@ pub const RecentHistory = struct {
         try self.blocks.append(new_block);
     }
 
-    /// Retrieves the BlockInfo at the specified index, or null if not found
     pub fn getBlockInfo(self: Self, index: usize) ?types.BlockInfo {
         if (index < self.blocks.items.len) {
             return self.blocks.items[index];
@@ -155,7 +134,6 @@ pub const RecentHistory = struct {
         return null;
     }
 
-    /// Retrieves the BlockInfo by its header hash, or null if not found
     pub fn getBlockInfoByHash(self: Self, header_hash: types.Hash) ?types.BlockInfo {
         for (self.blocks.items) |block| {
             if (std.mem.eql(u8, &block.header_hash, &header_hash)) {
@@ -165,14 +143,12 @@ pub const RecentHistory = struct {
         return null;
     }
 
-    /// Updates the state root of the most recent block with the parent state root
     pub fn updateParentBlockStateRoot(self: *Self, parent_state_root: types.Hash) void {
         if (self.blocks.items.len > 0) {
             self.blocks.items[self.blocks.items.len - 1].state_root = parent_state_root;
         }
     }
 
-    /// Gets the hash of the most recent block, or returns zero hash if no blocks
     pub fn getLastBlockHash(self: *const Self) types.Hash {
         if (self.blocks.getLastOrNull()) |last_block| {
             return last_block.header_hash;
@@ -180,7 +156,6 @@ pub const RecentHistory = struct {
         return std.mem.zeroes(types.Hash);
     }
 
-    /// Performs a deep clone of the RecentHistory as efficiently as possible
     pub fn deepClone(self: *const Self, allocator: Allocator) !Self {
         var clone = try Self.init(allocator, self.max_blocks);
         errdefer clone.deinit();
@@ -200,10 +175,8 @@ test RecentHistory {
     var recent_history = try RecentHistory.init(allocator, 3);
     defer recent_history.deinit();
 
-    // Test initial state
     try testing.expectEqual(@as(usize, 0), recent_history.blocks.items.len);
 
-    // Create some test blocks
     const block1 = types.BlockInfo{
         .header_hash = [_]u8{1} ** 32,
         .state_root = [_]u8{2} ** 32,
@@ -241,7 +214,6 @@ test RecentHistory {
         }}),
     };
 
-    // Test adding blocks
     try recent_history.addBlockInfo(block1);
     try testing.expectEqual(@as(usize, 1), recent_history.blocks.items.len);
 
@@ -251,18 +223,15 @@ test RecentHistory {
     try recent_history.addBlockInfo(block3);
     try testing.expectEqual(@as(usize, 3), recent_history.blocks.items.len);
 
-    // Test max_blocks limit
     try recent_history.addBlockInfo(block4);
     try testing.expectEqual(@as(usize, 3), recent_history.blocks.items.len);
 
-    // Test get stateinformation
     const retrieved_block = recent_history.getBlockInfo(1);
     try testing.expect(retrieved_block != null);
     if (retrieved_block) |state_info| {
         try testing.expectEqualSlices(u8, &block3.header_hash, &state_info.header_hash);
     }
 
-    // Test getting non-existent block
     const non_existent_block = recent_history.getBlockInfo(3);
     try testing.expect(non_existent_block == null);
 }

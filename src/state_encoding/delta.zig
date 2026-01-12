@@ -8,8 +8,6 @@ const Params = @import("../jam_params.zig").Params;
 
 const trace = @import("tracing").scoped(.codec);
 
-/// Encodes base service account data for merklization: C(255, s) ↦ encode(0, a_c, E_8(...), E_4(...))
-/// v0.7.1 GP #472: Merklization encoding includes version byte 0 before account data
 pub fn encodeServiceAccountBase(params: Params, account: *const ServiceAccount, writer: anytype) !void {
     const span = trace.span(@src(), .encode_service_account_base);
     defer span.deinit();
@@ -37,14 +35,13 @@ pub fn encodeServiceAccountBase(params: Params, account: *const ServiceAccount, 
 
     span.trace("Writing items count (a_i): {d}", .{footprint.a_i});
     try writer.writeInt(u32, footprint.a_i, .little);
-    try writer.writeInt(types.U32, account.creation_slot, .little); // NEW: a_r
-    try writer.writeInt(types.U32, account.last_accumulation_slot, .little); // NEW: a_a
-    try writer.writeInt(types.U32, account.parent_service, .little); // NEW: a_p
+    try writer.writeInt(types.U32, account.creation_slot, .little);
+    try writer.writeInt(types.U32, account.last_accumulation_slot, .little);
+    try writer.writeInt(types.U32, account.parent_service, .little);
 }
 
 const state_dictionary = @import("../state_dictionary.zig");
 
-/// Encodes preimage lookup:  E(↕[E_4(x) | x <− t])
 pub fn encodePreimageLookup(lookup: PreimageLookup, writer: anytype) !void {
     const span = trace.span(@src(), .encode_preimage_lookup);
     defer span.deinit();

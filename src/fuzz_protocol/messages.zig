@@ -6,7 +6,6 @@ const jam_params = @import("../jam_params.zig");
 
 pub const MAX_MESSAGE_SIZE: u32 = constants.MAX_MESSAGE_SIZE;
 
-/// 31-byte trie key as specified in the protocol
 pub const TrieKey = [31]u8;
 
 pub const Hash = [32]u8;
@@ -14,22 +13,18 @@ pub const HeaderHash = Hash;
 pub const StateRootHash = Hash;
 pub const TimeSlot = u32;
 
-/// Feature flags for protocol capabilities
 pub const Features = u32;
 
-/// Feature flag constants
 pub const FEATURE_ANCESTRY: Features = 1;
 pub const FEATURE_FORK: Features = 2;
 pub const FEATURE_RESERVED: Features = 2147483648;
 
-/// Version information for protocol versioning
 pub const Version = struct {
     major: u8,
     minor: u8,
     patch: u8,
 };
 
-/// Peer information exchanged during handshake (v1 format)
 pub const PeerInfo = struct {
     fuzz_version: u8,
     fuzz_features: Features,
@@ -61,19 +56,16 @@ pub const PeerInfo = struct {
     }
 };
 
-/// Key-value pair for state representation
 pub const KeyValue = struct {
     key: TrieKey,
     value: []const u8,
 };
 
-/// State as a sequence of key-value pairs
 pub const State = struct {
     items: []const KeyValue,
 
     pub const Empty = State{ .items = &[_]KeyValue{} };
 
-    /// Free all allocated memory for the state
     pub fn deinit(self: *State, allocator: std.mem.Allocator) void {
         for (self.items) |kv| {
             allocator.free(kv.value);
@@ -83,16 +75,13 @@ pub const State = struct {
     }
 };
 
-/// Block import message using complex JAM types
 pub const ImportBlock = types.Block;
 
-/// Ancestry item for tracking block chain history
 pub const AncestryItem = struct {
     slot: TimeSlot,
     header_hash: HeaderHash,
 };
 
-/// Ancestry sequence (up to 24 items for tiny spec)
 pub const Ancestry = struct {
     items: []const AncestryItem,
 
@@ -104,7 +93,6 @@ pub const Ancestry = struct {
     }
 };
 
-/// Initialize message replacing SetState (v1)
 pub const Initialize = struct {
     header: types.Header,
     keyvals: State,
@@ -118,13 +106,10 @@ pub const Initialize = struct {
     }
 };
 
-/// Get state request by header hash
 pub const GetState = HeaderHash;
 
-/// State root response
 pub const StateRoot = StateRootHash;
 
-/// Error message with UTF8 string
 pub const Error = []const u8;
 
 pub const MessageType = enum(u8) {
@@ -138,7 +123,6 @@ pub const MessageType = enum(u8) {
     @"error" = 255,
 };
 
-/// Protocol message enumeration (v1 format)
 pub const Message = union(MessageType) {
     peer_info: PeerInfo,
     initialize: Initialize,
@@ -149,7 +133,6 @@ pub const Message = union(MessageType) {
     kill: void,
     @"error": Error,
 
-    /// Free any allocated memory for this message
     pub fn deinit(self: *Message, allocator: std.mem.Allocator) void {
         switch (self.*) {
             .state => |*state| {
@@ -175,7 +158,6 @@ pub const Message = union(MessageType) {
         self.* = undefined;
     }
 
-    /// Custom encode method for v1 protocol (single-byte discriminant)
     pub fn encode(self: *const Message, comptime params: anytype, writer: anytype) !void {
         const discriminant: u8 = @intFromEnum(std.meta.activeTag(self.*));
         try writer.writeByte(discriminant);
@@ -206,7 +188,6 @@ pub const Message = union(MessageType) {
         }
     }
 
-    /// Custom decode method for v1 protocol (single-byte discriminant)
     pub fn decode(comptime params: anytype, reader: anytype, allocator: std.mem.Allocator) !Message {
         const discriminant = try reader.readByte();
 
@@ -249,12 +230,10 @@ pub const Message = union(MessageType) {
     }
 };
 
-/// Encode a message using JAM codec
 pub fn encodeMessage(comptime params: jam_params.Params, allocator: std.mem.Allocator, message: Message) ![]u8 {
     return try codec.serializeAlloc(Message, params, allocator, message);
 }
 
-/// Decode a message from bytes using JAM codec
 pub fn decodeMessage(comptime params: jam_params.Params, allocator: std.mem.Allocator, data: []const u8) !Message {
     var stream = std.io.fixedBufferStream(data);
     return try codec.deserializeAlloc(Message, params, allocator, stream.reader());

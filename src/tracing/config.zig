@@ -10,11 +10,11 @@ pub const LogLevel = enum(u8) {
 
     pub fn color(self: LogLevel) []const u8 {
         return switch (self) {
-            .trace => "\x1b[90m", // Gray
-            .debug => "\x1b[36m", // Cyan
-            .info => "\x1b[32m", // Green
-            .warn => "\x1b[33m", // Yellow
-            .err => "\x1b[31m", // Red
+            .trace => "\x1b[90m",
+            .debug => "\x1b[36m",
+            .info => "\x1b[32m",
+            .warn => "\x1b[33m",
+            .err => "\x1b[31m",
         };
     }
 
@@ -109,7 +109,7 @@ pub const Config = struct {
     }
 
     fn parseLogLevel(level_str: []const u8) LogLevel {
-        return LogLevel.fromString(level_str) catch .info; // Default fallback on error
+        return LogLevel.fromString(level_str) catch .info;
     }
 
     pub fn getLevel(self: *const Config, scope: Scope) LogLevel {

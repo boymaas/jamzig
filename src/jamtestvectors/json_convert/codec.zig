@@ -8,7 +8,6 @@ const Allocator = std.mem.Allocator;
 
 pub const generic = @import("generic.zig");
 
-/// Mapping between types in the test vector and the codec.
 const TypeMapping = struct {
     pub fn HexBytes(allocator: Allocator, from: tv_types.hex.HexBytes) ![]u8 {
         return try allocator.dupe(u8, from.bytes);
@@ -37,15 +36,11 @@ const TypeMapping = struct {
         return lib_codec.TicketsMark{ .tickets = tickets };
     }
     pub fn WorkExecResult(allocator: Allocator, from: tv_lib_codec.WorkExecResult) !lib_codec.WorkExecResult {
-        // JSON test vectors use a simplified format with tags 0-4
-        // We convert to graypaper format with tags 0-6
         return switch (from) {
             .ok => |ok| lib_codec.WorkExecResult{ .ok = try allocator.dupe(u8, ok.bytes) },
             .out_of_gas => lib_codec.WorkExecResult.out_of_gas,
             .panic => lib_codec.WorkExecResult.panic,
-            // JSON bad_code (tag 3) maps to graypaper bad_code (tag 5)
             .bad_code => lib_codec.WorkExecResult.bad_code,
-            // JSON code_oversize (tag 4) maps to graypaper code_oversize (tag 6)
             .code_oversize => lib_codec.WorkExecResult.code_oversize,
         };
     }
@@ -92,12 +87,10 @@ const TypeMapping = struct {
     }
 };
 
-/// Convert a `testvecor.Header` to a `codec.Header`.
 pub fn convertHeader(allocator: Allocator, from: tv_lib_codec.Header) !lib_codec.Header {
     return try generic.convert(lib_codec.Header, TypeMapping, allocator, from);
 }
 
-/// Convert a `testvecor.<any>` to a `codec.<any>`.
 pub fn convert(comptime From: type, comptime To: type, allocator: Allocator, from: From) !To {
     return try generic.convert(To, TypeMapping, allocator, from);
 }
@@ -119,10 +112,6 @@ fn convertTicketBody(from: tv_lib_codec.TicketBody) lib_codec.TicketBody {
 }
 
 fn convertAvailAssurance(allocator: Allocator, from: tv_lib_codec.AvailAssurance) !lib_codec.AvailAssurance {
-    // anchor: OpaqueHash,
-    // bitfield: []u8, // SIZE(avail_bitfield_bytes)
-    // validator_index: ValidatorIndex,
-    // signature: Ed25519Signature,
     return lib_codec.AvailAssurance{
         .anchor = from.anchor.bytes,
         .bitfield = try allocator.dupe(u8, from.bitfield.bytes),
@@ -139,9 +128,6 @@ fn convertValidatorSignature(from: tv_lib_codec.ValidatorSignature) lib_codec.Va
 }
 
 fn convertReportGuarantee(allocator: Allocator, from: tv_lib_codec.ReportGuarantee) !lib_codec.ReportGuarantee {
-    // report: WorkReport,
-    // slot: TimeSlot,
-    // signatures: []ValidatorSignature,
     const signatures = try allocator.alloc(lib_codec.ValidatorSignature, from.signatures.len);
     for (from.signatures, signatures) |f, *s| {
         s.* = convertValidatorSignature(f);

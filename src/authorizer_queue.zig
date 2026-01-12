@@ -1,24 +1,9 @@
-
-///
-/// Authorization Queue (φ) Implementation
-///
-/// This module implements the Authorization Queue (φ) as specified in the Jam protocol.
-/// φ is a critical component of the state, maintaining pending authorizations for each core.
-///
-/// Key features:
-/// - Maintains C separate queues, one for each core.
-/// - Each queue has exactly Q authorization slots.
-/// - Authorizations are 32-byte hashes.
-/// - Supports setting/getting authorizations at specific indices.
-///
 const std = @import("std");
 
 const AuthorizerHash = [32]u8;
-
-// TODO: Authorization to Authorizer
 pub fn Phi(
     comptime core_count: u16,
-    comptime authorization_queue_length: u8, // Q
+    comptime authorization_queue_length: u8,
 ) type {
     return struct {
         queue_data: [][32]u8,

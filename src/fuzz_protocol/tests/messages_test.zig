@@ -9,29 +9,24 @@ const FUZZ_PARAMS = jam_params.TINY_PARAMS;
 test "message_encoding_and_decoding" {
     const allocator = testing.allocator;
 
-    // Test PeerInfo message (v1 format)
     const peer_info = messages.PeerInfo{
         .fuzz_version = 1,
         .fuzz_features = 0,
         .jam_version = version.PROTOCOL_VERSION,
         .app_version = version.FUZZ_TARGET_VERSION,
-        .app_name = "test-peer", // NOTE we use a static string here, no deinit on the Peerinfo or message here
+        .app_name = "test-peer",
     };
 
     const message = messages.Message{ .peer_info = peer_info };
 
-    // Encode message
     const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,message);
     defer allocator.free(encoded);
 
-    // Verify length prefix exists
     try testing.expect(encoded.len >= 4);
 
-    // Decode message
     var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
-    // Verify decoded message matches original (v1 format)
     switch (decoded) {
         .peer_info => |decoded_peer_info| {
             try testing.expectEqual(peer_info.fuzz_version, decoded_peer_info.fuzz_version);
@@ -44,7 +39,7 @@ test "message_encoding_and_decoding" {
             try testing.expectEqual(peer_info.jam_version.minor, decoded_peer_info.jam_version.minor);
             try testing.expectEqual(peer_info.jam_version.patch, decoded_peer_info.jam_version.patch);
         },
-        else => try testing.expect(false), // Should be peer_info
+        else => try testing.expect(false),
     }
 }
 
@@ -54,14 +49,12 @@ test "state_root_message" {
     const state_root: messages.StateRootHash = [_]u8{0x12} ** 32;
     const message = messages.Message{ .state_root = state_root };
 
-    // Encode and decode
     const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,message);
     defer allocator.free(encoded);
 
     var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
-    // Verify decoded message
     switch (decoded) {
         .state_root => |decoded_root| {
             try testing.expectEqualSlices(u8, &state_root, &decoded_root);
@@ -86,14 +79,12 @@ test "key-value_state_message" {
     const state = messages.State{ .items = &state_items };
     const message = messages.Message{ .state = state };
 
-    // Encode and decode
     const encoded = try messages.encodeMessage(FUZZ_PARAMS, allocator,message);
     defer allocator.free(encoded);
 
     var decoded = try messages.decodeMessage(FUZZ_PARAMS, allocator,encoded);
     defer decoded.deinit(allocator);
 
-    // Verify decoded message
     switch (decoded) {
         .state => |decoded_state| {
             try testing.expectEqual(@as(usize, 2), decoded_state.items.len);

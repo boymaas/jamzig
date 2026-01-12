@@ -17,7 +17,6 @@ pub fn buildOrGetCached(comptime params: Params, allocator: std.mem.Allocator) !
     var host_call_map = std.AutoHashMapUnmanaged(u32, PVM.HostCallFn){};
     const HostCall = HostCallsAccumulate(params);
 
-    // Register host calls
     span.debug("Registering host call functions", .{});
     try host_call_map.put(allocator, @intFromEnum(HostCallId.gas), HostCall.gasRemaining);
     try host_call_map.put(allocator, @intFromEnum(HostCallId.fetch), HostCall.fetch);

@@ -45,7 +45,6 @@ pub const Error = error{
 pub const ValidatedGuaranteeExtrinsic = struct {
     guarantees: []const types.ReportGuarantee,
 
-    // See: https://graypaper.fluffylabs.dev/#/85129da/146302146302?v=0.6.3
     pub fn validate(
         comptime params: @import("jam_params.zig").Params,
         allocator: std.mem.Allocator,
@@ -100,11 +99,6 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             try guarantor.validateSortedAndUnique(guarantee);
             try service.validateServices(params, stx, guarantee);
 
-            // TODO: Check core is not engaged
-            // if (jam_state.rho.?.isEngaged(guarantee.report.core_index)) {
-            //     return Error.CoreEngaged;
-            // }
-
             try dependency.validatePrerequisites(params, stx, guarantee, guarantees);
             try dependency.validateSegmentRootLookup(params, stx, guarantee, guarantees);
             try timing.validateSlotRange(params, stx, guarantee);
@@ -142,11 +136,6 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             try timing.validateCoreTimeout(params, stx, guarantee);
             try authorization.validateCoreAuthorization(params, stx, guarantee);
             try duplicate_check.checkDuplicatePackageInRecentHistory(params, stx, guarantee, guarantees);
-            // TODO: should we add this?
-            // // Check sufficient guarantors
-            // if (guarantee.signatures.len < params.validators_super_majority) {
-            //     return Error.InsufficientGuarantees;
-            // }
         }
 
         return @This(){ .guarantees = guarantees.data };
@@ -173,9 +162,6 @@ pub fn processGuaranteeExtrinsic(
     const span = trace.span(@src(), .process_guarantees);
     defer span.deinit();
     span.debug("Processing guarantees - count: {d}, slot: {d}", .{ validated.guarantees.len, stx.time.current_slot });
-    // span.trace("Current state root: {s}", .{
-    //     std.fmt.fmtSliceHexLower(&jam_state.beta.?.blocks.items[0].state_root),
-    // });
 
     var reported = std.ArrayList(types.ReportedWorkPackage).init(allocator);
     defer reported.deinit();
@@ -220,7 +206,6 @@ pub fn processGuaranteeExtrinsic(
 
             for (reporters.items) |reporter| {
                 if (std.mem.eql(u8, &reporter, &validator.ed25519)) {
-                    // Already added this reporter
                     continue :add_reporters;
                 }
             }

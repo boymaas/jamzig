@@ -3,7 +3,6 @@ const WorkReport = types.WorkReport;
 const RefineContext = types.RefineContext;
 const WorkPackageSpec = types.WorkPackageSpec;
 
-// TODO: move these test fixtures to a central place
 pub fn createEmptyWorkReport(id: [32]u8) WorkReport {
     return WorkReport{
         .package_spec = WorkPackageSpec{

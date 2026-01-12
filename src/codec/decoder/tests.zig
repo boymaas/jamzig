@@ -2,8 +2,6 @@ const std = @import("std");
 const decoder = @import("../decoder.zig");
 const codec_utils = @import("../util.zig");
 
-// decodeFixedLengthInteger tests
-
 const decodeFixedLengthInteger = decoder.decodeFixedLengthInteger;
 
 test "codec.decoder: decodeFixedLengthInteger - u8 (edge case: 0)" {
@@ -30,8 +28,6 @@ test "codec.decoder: decodeFixedLengthInteger - u64" {
     const decoded64 = decodeFixedLengthInteger(u64, &[_]u8{ 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 });
     try std.testing.expectEqual(@as(u64, 0x123456789ABCDEF0), decoded64);
 }
-
-// decodeInteger tests
 
 const decodeInteger = decoder.decodeInteger;
 

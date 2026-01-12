@@ -38,14 +38,6 @@ test "codec.encoder: encodeFixedLengthInteger - u64" {
     try std.testing.expectEqualSlices(u8, &expected64, &encoded64);
 }
 
-// test "codec.encoder: encodeFixedLengthInteger - u128" {
-//     const encoded128: [16]u8 = encodeFixedLengthInteger(@as(u128, 0x123456789ABCDEF0123456789ABCDEF0));
-//     const expected128: [16]u8 = [_]u8{ 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12, 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 };
-//     try std.testing.expectEqualSlices(u8, &expected128, &encoded128);
-// }
-
-// findEncodingLength tests
-
 const findEncodingLength = codec_utils.findEncodingLength;
 
 test "codec.encoder: findEncodingLength - u8 values" {

@@ -187,7 +187,6 @@ test "instruction_fuzzer_with_config" {
                             ccheck.initial_registers[instruction.args.OneRegTwoImm.register_index] = register_part;
                         },
 
-                        // Non indirect memory instructions
                         else => return error.NotInMemoryAccess,
                     }
                 }

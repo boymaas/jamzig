@@ -2,7 +2,6 @@ const std = @import("std");
 const net = std.net;
 const constants = @import("constants.zig");
 
-/// Read a length-prefixed frame from the stream
 pub fn readFrame(allocator: std.mem.Allocator, stream: net.Stream) ![]u8 {
     var len_bytes: [4]u8 = undefined;
     const bytes_read = try stream.readAll(&len_bytes);
@@ -20,7 +19,6 @@ pub fn readFrame(allocator: std.mem.Allocator, stream: net.Stream) ![]u8 {
     return frame_data;
 }
 
-/// Write a frame to the stream with length prefix
 pub fn writeFrame(stream: net.Stream, data: []const u8) !void {
     if (data.len > constants.MAX_MESSAGE_SIZE) return error.MessageTooLarge;
 

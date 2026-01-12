@@ -4,7 +4,6 @@ const jam_params = @import("../jam_params.zig");
 
 pub const BASE_PATH = "src/jamtestvectors/data/stf/history/";
 
-/// ReportedWorkPackage for test vectors
 pub const ReportedWorkPackage = struct {
     hash: types.OpaqueHash,
     exports_root: types.OpaqueHash,
@@ -14,10 +13,9 @@ pub const ReportedWorkPackage = struct {
     }
 };
 
-/// BlockInfo type for test vectors with beefy_root instead of mmr
 pub const BlockInfoTestVector = struct {
     header_hash: types.OpaqueHash,
-    beefy_root: types.OpaqueHash,  // Changed from mmr to beefy_root
+    beefy_root: types.OpaqueHash,
     state_root: types.StateRoot,
     reported: []ReportedWorkPackage,
 
@@ -30,18 +28,15 @@ pub const BlockInfoTestVector = struct {
     }
 
     pub fn toCore(self: @This()) types.BlockInfo {
-        // Note: Core BlockInfo still uses mmr field, but test vectors use beefy_root
-        // This is a test-specific change that doesn't affect core types
         return .{
             .header_hash = self.header_hash,
-            .mmr = types.Mmr{ .peaks = &[_]?types.OpaqueHash{} }, // Empty MMR for now
+            .mmr = types.Mmr{ .peaks = &[_]?types.OpaqueHash{} },
             .state_root = self.state_root,
-            .reported = &[_]types.ReportedWorkPackage{}, // Convert if needed
+            .reported = &[_]types.ReportedWorkPackage{},
         };
     }
 };
 
-/// RecentBlocks composite type for test vectors
 pub const RecentBlocks = struct {
     history: []BlockInfoTestVector,
     mmr: types.Mmr,
@@ -57,7 +52,7 @@ pub const RecentBlocks = struct {
 };
 
 pub const State = struct {
-    beta: RecentBlocks,  // Changed from []BlockInfo to RecentBlocks
+    beta: RecentBlocks,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         self.beta.deinit(allocator);
@@ -85,7 +80,6 @@ pub const Output = void;
 pub const TestCase = struct {
     input: Input,
     pre_state: State,
-    // output: Output, // in this case, the output is always null
     post_state: State,
 
     pub fn buildFrom(
@@ -124,10 +118,7 @@ test "history: load single test vector" {
         );
         defer test_vector.deinit(allocator);
 
-        // Test if the pre_state is empty
         try std.testing.expectEqual(@as(usize, 0), test_vector.pre_state.beta.history.len);
-
-        // Test if the post_state contains one block
         try std.testing.expectEqual(@as(usize, 1), test_vector.post_state.beta.history.len);
     }
 }

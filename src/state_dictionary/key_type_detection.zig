@@ -1,6 +1,5 @@
 const std = @import("std");
 
-/// Represents the different types of keys in the state dictionary
 pub const DictKeyType = enum {
     state_component,
     delta_base,
@@ -9,7 +8,6 @@ pub const DictKeyType = enum {
 
 const types = @import("../types.zig");
 
-/// Extracts service ID from an interleaved key format
 fn extractServiceId(key: types.StateKey) u32 {
     var service_bytes: [4]u8 = undefined;
     service_bytes[0] = key[0];
@@ -19,7 +17,6 @@ fn extractServiceId(key: types.StateKey) u32 {
     return std.mem.readInt(u32, &service_bytes, .little);
 }
 
-/// De-interleaves the first 8 bytes of a key to get the original 4-byte pattern
 fn deInterleavePrefix(key: types.StateKey) u32 {
     var prefix_bytes: [4]u8 = undefined;
     prefix_bytes[0] = key[1];
@@ -32,7 +29,6 @@ fn deInterleavePrefix(key: types.StateKey) u32 {
 const deInterleaveServiceId = deInterleavePrefix;
 
 pub fn detectKeyType(key: types.StateKey) DictKeyType {
-    // State component keys still work
     if (key[0] >= 1 and key[0] <= 16) {
         var is_state_component = true;
         for (key[1..]) |byte| {
@@ -46,9 +42,7 @@ pub fn detectKeyType(key: types.StateKey) DictKeyType {
         }
     }
 
-    // Delta base still works
     if (key[0] == 255) {
-        // Check the interleaving pattern
         if (key[2] == 0 and key[4] == 0 and key[6] == 0) {
             var is_delta_base = true;
             for (key[8..]) |byte| {
@@ -63,7 +57,5 @@ pub fn detectKeyType(key: types.StateKey) DictKeyType {
         }
     }
 
-    // Everything else is some form of service data
-    // We can't distinguish between storage/preimage/lookup anymore
     return .delta_service_data;
 }

@@ -156,9 +156,7 @@ pub fn outerAccumulation(
 
             try new_transfers.appendSlice(result.generated_transfers);
             if (result.generated_transfers.len > 0) {
-                span.debug("Service {d} generated {d} transfers for next batch", .{
-                    service_id, result.generated_transfers.len,
-                });
+                span.debug("Service {d} generated {d} transfers for next batch", .{ service_id, result.generated_transfers.len });
             }
 
             if (result.accumulation_output) |output| {
@@ -371,7 +369,6 @@ pub fn parallelizedAccumulation(
         work_reports.len, pending_transfers.len,
     });
 
-    // Collect all unique service IDs (work, privileged, and transfer destinations)
     var service_ids = try collectServiceIds(allocator, context, work_reports, pending_transfers, include_privileged);
     defer service_ids.deinit();
 
@@ -571,7 +568,6 @@ pub fn executeAccumulation(
         original_chi.registrar,
     });
 
-    // Build accumulation context
     var accumulation_context = pvm_accumulate.AccumulationContext(params).build(
         allocator,
         .{
@@ -678,7 +674,6 @@ fn groupWorkItemsByService(
     for (work_reports, 0..) |report, idx| {
         span.debug("Work report {d}: results.len={d}, core_index={d}", .{ idx, report.results.len, report.core_index.value });
 
-        // Convert work report to accumulation operands
         var operands = try AccumulationOperand.fromWorkReport(allocator, report);
         defer operands.deinit(allocator);
 

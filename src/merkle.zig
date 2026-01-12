@@ -11,7 +11,6 @@ pub const Entry = struct {
 
 fn branch(l: Hash, r: Hash) [64]u8 {
     var result: [64]u8 = undefined;
-    // Encoding: bit 0 = branch marker (cleared)
     result[0] = l[0] & 0b01111111;
     @memcpy(result[1..32], l[1..]);
     @memcpy(result[32..], &r);
@@ -21,13 +20,11 @@ fn branch(l: Hash, r: Hash) [64]u8 {
 fn leaf(k: Key, v: []const u8) [64]u8 {
     var result: [64]u8 = undefined;
     if (v.len <= 32) {
-        // Encoding: 10xxxxxx where x = length (embedded value)
         result[0] = 0b10000000 | (@as(u8, @truncate(v.len)) & 0x3f);
         @memcpy(result[1..32], k[0..31]);
         @memcpy(result[32..][0..v.len], v);
         @memset(result[32 + v.len ..][0..], 0);
     } else {
-        // Encoding: 11000000 (hashed value)
         result[0] = 0b11000000;
         @memcpy(result[1..32], k[0..31]);
         Blake2b256.hash(v, result[32..64], .{});
@@ -82,7 +79,6 @@ fn merkle(kvs: []Entry, i: usize) Hash {
     return result;
 }
 
-/// Modifies kvs slice in-place during computation.
 pub fn jamMerkleRoot(kvs: []Entry) Hash {
     return merkle(kvs, 0);
 }

@@ -11,8 +11,6 @@ pub const AccumulationOutput = struct {
     output_hash: Hash,
 };
 
-/// Formats a service ID and output hash according to protocol specification
-/// Each entry is: E_4(service_id) ⌢ E(hash)
 fn formatAccumulationEntry(
     service_id: ServiceId,
     output_hash: Hash,
@@ -20,11 +18,9 @@ fn formatAccumulationEntry(
 ) ![]u8 {
     std.mem.writeInt(u32, buffer[0..4], service_id, .little);
     @memcpy(buffer[4..], &output_hash);
-    return buffer[0..36]; // 4 bytes service ID + 32 bytes hash
+    return buffer[0..36];
 }
 
-/// Calculates the accumulate root from a sequence of successful accumulations
-/// Using well-balanced binary Merkle tree with Keccak256 as specified
 pub fn calculateAccumulateRoot(
     allocator: std.mem.Allocator,
     outputs: []const AccumulationOutput,
@@ -48,7 +44,6 @@ pub fn calculateAccumulateRoot(
         );
     }
 
-    // Sort entries by service ID as per protocol spec
     std.sort.block([]u8, entries, {}, struct {
         fn lessThan(_: void, a: []u8, b: []u8) bool {
             const service_id_a = std.mem.readInt(u32, a[0..4], .little);
@@ -78,7 +73,6 @@ test "calculateAccumulateRoot single output" {
         .output_hash = [_]u8{1} ** 32,
     }};
     const root = try calculateAccumulateRoot(allocator, &outputs);
-    // Single output should hash E_4(1) ⌢ [1x32]
     var expected: Hash = undefined;
     var hasher = std.crypto.hash.sha3.Keccak256.init(.{});
     var entry: [36]u8 = undefined;
@@ -107,7 +101,5 @@ test "calculateAccumulateRoot multiple sorted outputs" {
         },
     };
     const root = try calculateAccumulateRoot(allocator, &outputs);
-    // Entries will be sorted by service_id before root calculation
-    // TODO: Add expected root verification once test vectors are available
     try testing.expect(root.len == 32);
 }

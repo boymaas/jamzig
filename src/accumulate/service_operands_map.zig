@@ -70,7 +70,6 @@ pub const ServiceAccumulationOperandsMap = struct {
     }
 
     pub fn addOperand(self: *@This(), service_id: types.ServiceId, operand: Item) !void {
-        // Create a new MultiArrayList if this service ID doesn't exist yet
         if (!self.map.contains(service_id)) {
             const empty_list = std.MultiArrayList(Item){};
             try self.map.put(service_id, empty_list);

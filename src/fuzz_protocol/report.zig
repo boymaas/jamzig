@@ -5,7 +5,6 @@ const state_dictionary = @import("../state_dictionary.zig");
 const state_converter = @import("state_converter.zig");
 const jam_params = @import("../jam_params.zig");
 
-/// Represents a state root mismatch between local and target
 pub const Mismatch = struct {
     block_number: usize,
     block: types.Block,
@@ -14,7 +13,6 @@ pub const Mismatch = struct {
     target_dict: ?state_dictionary.MerklizationDictionary = null,
     target_computed_root: ?messages.StateRootHash = null,
 
-    /// Clean up allocated state if present
     pub fn deinit(self: *Mismatch, allocator: std.mem.Allocator) void {
         if (self.local_dict) |*dict| {
             dict.deinit();
@@ -26,7 +24,6 @@ pub const Mismatch = struct {
     }
 };
 
-/// Result of a fuzzing cycle
 pub const FuzzResult = struct {
     seed: u64,
     blocks_processed: usize,
@@ -35,7 +32,6 @@ pub const FuzzResult = struct {
     err: ?anyerror = null,
     err_details: ?[]const u8 = null,
 
-    /// Clean up all allocated data
     pub fn deinit(self: *FuzzResult, allocator: std.mem.Allocator) void {
         if (self.mismatch) |*mismatch| {
             mismatch.deinit(allocator);
@@ -45,13 +41,11 @@ pub const FuzzResult = struct {
         }
     }
 
-    /// Check if the fuzzing cycle was successful (no mismatches)
     pub fn isSuccess(self: *const FuzzResult) bool {
         return self.success;
     }
 };
 
-/// Generate a detailed report of fuzzing results
 pub fn generateReport(comptime params: jam_params.Params, allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
     var report = std.ArrayList(u8).init(allocator);
     errdefer report.deinit();
@@ -146,13 +140,11 @@ pub fn generateReport(comptime params: jam_params.Params, allocator: std.mem.All
                 try writer.print("  This may indicate a merklization issue.\n", .{});
             }
         } else if (mismatch.target_dict) |*target_dict| {
-            // Fallback to showing target dictionary info if we only have that
             const kv_array = try target_dict.toKeyValueArray();
             defer allocator.free(kv_array);
 
             try writer.print("  Target State Entries: {d}\n", .{kv_array.len});
 
-            // Show first few entries as sample
             const max_entries = @min(5, kv_array.len);
             if (max_entries > 0) {
                 try writer.print("  Sample State Entries:\n", .{});
@@ -172,7 +164,6 @@ pub fn generateReport(comptime params: jam_params.Params, allocator: std.mem.All
         try writer.print("No mismatches found - all state roots matched!\n\n", .{});
     }
 
-    // Summary and recommendations
     try writer.print("Summary:\n", .{});
     try writer.print("--------\n", .{});
     if (result.isSuccess()) {
@@ -207,7 +198,6 @@ pub fn generateReport(comptime params: jam_params.Params, allocator: std.mem.All
     return report.items;
 }
 
-/// Generate a JSON report for programmatic consumption
 pub fn generateJsonReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u8 {
     var json = std.ArrayList(u8).init(allocator);
     errdefer json.deinit();
@@ -227,7 +217,6 @@ pub fn generateJsonReport(allocator: std.mem.Allocator, result: FuzzResult) ![]u
         try writer.print("\"mismatch\": {{", .{});
         try writer.print("\"block_number\": {d},", .{mismatch.block_number});
 
-        // Calculate and include local state root
         if (mismatch.local_dict) |*local_dict| {
             const local_root = try local_dict.buildStateRoot(allocator);
             try writer.print("\"local_state_root\": \"{s}\",", .{std.fmt.fmtSliceHexLower(&local_root)});

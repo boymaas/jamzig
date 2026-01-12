@@ -1,5 +1,3 @@
-// Shared memory constants for all PVM memory implementations
-
 /// Page size in bytes (4KB)
 pub const Z_P: u32 = 0x1000; // 2^12 = 4,096
 

@@ -7,14 +7,12 @@ const trace = tracing.scoped(.reports);
 
 const StateTransition = @import("state_delta.zig").StateTransition;
 
-/// Error types specific to guarantor validation
 pub const Error = error{
     InvalidGuarantorAssignment,
     InvalidRotationPeriod,
     InvalidSlotRange,
 };
 
-/// Validates if a validator is assigned to a core for a specific timeslot
 pub fn validateGuarantorAssignment(
     comptime params: @import("jam_params.zig").Params,
     allocator: std.mem.Allocator,
@@ -29,41 +27,35 @@ pub fn validateGuarantorAssignment(
     span.debug("Validating assignment @ current_slot {d}", .{stx.time.current_slot});
     span.debug("Validating assignment for validator {d} on core {d} at guarantee.slot {d}", .{ validator_index, core_index, guarantee_slot });
 
-    // Calculate current and report rotations
     const current_rotation = @divFloor(stx.time.current_slot, params.validator_rotation_period);
     const report_rotation = @divFloor(guarantee_slot, params.validator_rotation_period);
 
     span.debug("Current rotation: {d}, Report rotation: {d}", .{ current_rotation, report_rotation });
 
-    // NOTE: slots are already within range, checked in the validation stage
-
-    // Determine which assignments to use based on rotation period
     const is_current_rotation = (current_rotation == report_rotation);
     span.debug("Building assignments using {s} rotation entropy", .{if (is_current_rotation) "current" else "previous"});
 
     var result = if (is_current_rotation)
-        // current rotation
         try guarantor_assignments.buildForTimeSlot(
             params,
             allocator,
-            (try stx.ensure(.eta_prime))[2], // new eta
+            (try stx.ensure(.eta_prime))[2],
             stx.time.current_slot,
         )
     else
-    // previous rotation
     if (@divFloor(stx.time.current_slot -| params.validator_rotation_period, params.epoch_length) ==
         @divFloor(stx.time.current_slot, params.epoch_length))
         try guarantor_assignments.buildForTimeSlot(
             params,
             allocator,
-            (try stx.ensure(.eta_prime))[2], // prev eta
+            (try stx.ensure(.eta_prime))[2],
             stx.time.current_slot - params.validator_rotation_period,
         )
     else
         try guarantor_assignments.buildForTimeSlot(
             params,
             allocator,
-            (try stx.ensure(.eta_prime))[3], // prev eta
+            (try stx.ensure(.eta_prime))[3],
             stx.time.current_slot - params.validator_rotation_period,
         );
 
@@ -71,9 +63,7 @@ pub fn validateGuarantorAssignment(
 
     span.debug("Built guarantor assignments successfully", .{});
 
-    // Check if validator is assigned to the core
     const is_assigned = result.assignments[validator_index] == core_index;
-    // TODO: check if validator keys match
 
     if (is_assigned) {
         span.debug("Validator {d} correctly assigned to core {d}", .{ validator_index, core_index });
@@ -84,7 +74,6 @@ pub fn validateGuarantorAssignment(
     return is_assigned;
 }
 
-/// Validates all guarantor signatures for a work report
 pub fn validateGuarantors(
     comptime params: @import("jam_params.zig").Params,
     allocator: std.mem.Allocator,

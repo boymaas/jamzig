@@ -4,7 +4,6 @@ const Allocator = std.mem.Allocator;
 
 pub const BASE_PATH = "src/jamtestvectors/pulls/erasure_coding/erasure_coding/vectors/";
 
-/// Basic erasure coding test vector
 pub const ECTestVector = struct {
     data: []u8,
     chunks: [][]u8,
@@ -39,7 +38,6 @@ pub const ECTestVector = struct {
     }
 };
 
-/// Page proof test vector
 pub const PageProofTestVector = struct {
     data: []u8,
     page_proofs: [][]u8,
@@ -75,7 +73,6 @@ pub const PageProofTestVector = struct {
     }
 };
 
-/// Segment EC test vector
 pub const SegmentECVector = struct {
     pub const Segment = struct {
         segment_ec: [][]u8,
@@ -115,7 +112,6 @@ pub const SegmentECVector = struct {
     }
 };
 
-/// Segment root test vector
 pub const SegmentRootVector = struct {
     data: []u8,
     chunks: [][]u8,
@@ -156,7 +152,6 @@ test "ec: parsing basic ec test vector" {
     const vector = try ECTestVector.build_from(allocator, BASE_PATH ++ "ec_1.json");
     defer vector.deinit();
 
-    // Add specific test assertions based on your test vector contents
     try std.testing.expect(vector.value.data.len > 0);
     try std.testing.expect(vector.value.chunks.len > 0);
 }

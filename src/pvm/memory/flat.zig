@@ -12,12 +12,9 @@ pub const ViolationType = types.ViolationType;
 pub const PageFlags = types.PageFlags;
 pub const MemoryAccessResult = types.MemoryAccessResult;
 
-/// Flat memory strategy - contiguous memory regions with direct pointer access
-/// Provides O(1) memory access through direct range checks instead of page table lookups
 pub const FlatMemory = struct {
     allocator: Allocator,
 
-    // Memory sections with contiguous allocation
     read_only_base: u32,
     read_only_size: u32,
     read_only_data: []u8,
@@ -35,17 +32,14 @@ pub const FlatMemory = struct {
     heap_top: u32,
     heap_data: []u8,
 
-    // Compatibility fields
     read_only_size_in_pages: u32,
     stack_size_in_pages: u32,
     heap_size_in_pages: u32,
     dynamic_allocation_enabled: bool,
     heap_allocation_limit: ?u32 = null,
 
-    // Compatibility field for PVM error handling
     last_violation: ?ViolationInfo,
 
-    // Re-export shared constants and types for compatibility
     pub const Z_P = shared.Z_P;
     pub const Z_Z = shared.Z_Z;
     pub const Z_I = shared.Z_I;

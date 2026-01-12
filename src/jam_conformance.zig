@@ -277,10 +277,7 @@ fn isSkippedTest(id: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Check if a directory name is a valid timestamp
-/// Accepts two formats:
-///   1. Plain timestamp: all digits (e.g., "1766241814")
-///   2. Fuzzing variant: timestamp_number (e.g., "1766243315_1733")
+/// Plain timestamp (all digits) or fuzzing variant (timestamp_number)
 fn isValidTimestamp(name: []const u8) bool {
     if (name.len == 0) return false;
 
@@ -313,7 +310,6 @@ fn isValidTimestamp(name: []const u8) bool {
     }
 }
 
-/// Build a standard TraceCollection with configured paths
 fn buildStandardTraceCollection(allocator: std.mem.Allocator) !TraceCollection {
     var collection = TraceCollection.init(allocator);
     errdefer collection.deinit();

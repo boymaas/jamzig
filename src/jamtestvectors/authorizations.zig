@@ -4,9 +4,6 @@ const jam_params = @import("../jam_params.zig");
 
 const BASE_PATH = "src/jamtestvectors/data/stf/authorizations/";
 
-// O = 8
-// Q = 80
-// Core const
 pub const AuthPool = struct {
     items: []types.OpaqueHash,
 
@@ -95,7 +92,6 @@ pub fn TestCase(comptime params: jam_params.Params) type {
     return struct {
         input: Input,
         pre_state: State(params),
-        // output: Output,
         post_state: State(params),
 
         pub fn init(allocator: std.mem.Allocator) !@This() {
@@ -162,8 +158,6 @@ test "authorizations:single" {
 
         std.debug.print("{}", .{types.fmt.format(test_vector.input)});
         try test_vector.debugPrintStateDiff(allocator);
-
-        // std.debug.print("{}", .{types.fmt.format(test_vector)});
     }
 }
 

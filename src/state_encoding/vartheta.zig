@@ -13,9 +13,6 @@ const lessThanSliceOfHashes = makeLessThanSliceOfFn(types.Hash);
 
 const trace = @import("tracing").scoped(.codec);
 
-/// VarTheta (ϑ) is defined as a sequence of work reports and their dependencies: ⟦(W, {H})⟧E
-/// where W is a work report and H is a set of 32-byte hashes representing unaccumulated dependencies
-/// v0.6.7: This was renamed from Theta to VarTheta
 pub fn encode(vartheta: anytype, writer: anytype) !void {
     const span = trace.span(@src(), .encode);
     defer span.deinit();
@@ -61,21 +58,15 @@ pub fn encodeEntry(allocator: std.mem.Allocator, entry: reports_ready.WorkReport
     defer span.deinit();
     span.debug("Starting entry encoding", .{});
 
-    // Encode the work report
     try codec.serialize(WorkReport, {}, writer, entry.work_report);
     span.debug("Encoded work report", .{});
-
-    // Encode the dependencies
     const dependency_count = entry.dependencies.count();
     try codec.writeInteger(dependency_count, writer);
     span.debug("Writing {d} dependencies", .{dependency_count});
 
-    // we need to dupe, otherwise in place sort can invalidate the
-    // arrayhashmap
     const keys = try allocator.dupe(types.WorkPackageHash, entry.dependencies.keys());
     defer allocator.free(keys);
 
-    // NOTE: assuming short lists of deps
     sort.insertion([32]u8, keys, {}, lessThanSliceOfHashes);
     span.debug("Sorted dependency hashes", .{});
 

@@ -66,12 +66,11 @@ pub fn GasCalculator(comptime params: Params) type {
                 for (report.results) |result| {
                     const current = service_gas.get(result.service_id) orelse 0;
                     const new_gas = current + result.accumulate_gas;
-                    
-                    // Check for overflow
+
                     if (new_gas < current) {
                         return error.GasOverflow;
                     }
-                    
+
                     try service_gas.put(result.service_id, new_gas);
                 }
             }

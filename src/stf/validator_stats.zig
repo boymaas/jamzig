@@ -68,7 +68,6 @@ pub fn transitionWithInput(
 ) !void {
     const span = trace.span(@src(), .transition_validator_stats);
     defer span.deinit();
-    span.debug("Starting validator_stats transition", .{});
 
     var pi: *state.Pi = try stx.ensure(.pi_prime);
 
@@ -203,11 +202,9 @@ pub fn transitionEpoch(
 ) !void {
     const span = trace.span(@src(), .transition_epoch);
     defer span.deinit();
-    span.debug("Starting validator_stats transition", .{});
     var pi: *state.Pi = try stx.ensure(.pi_prime);
 
     if (stx.time.isNewEpoch()) {
-        span.debug("Transitioning to next epoch", .{});
         try pi.transitionToNextEpoch();
     }
 }
@@ -219,8 +216,6 @@ pub fn clearPerBlockStats(
     const span = trace.span(@src(), .clear_per_block_stats);
     defer span.deinit();
     var pi: *state.Pi = try stx.ensure(.pi_prime);
-
-    span.debug("Clearing per block stats", .{});
 
     pi.clearPerBlockStats();
 }

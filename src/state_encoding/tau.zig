@@ -10,5 +10,4 @@ pub fn encode(tau: types.TimeSlot, writer: anytype) !void {
     span.trace("Timeslot value: {d}", .{tau});
 
     try writer.writeInt(u32, tau, .little);
-    span.debug("Successfully encoded timeslot", .{});
 }

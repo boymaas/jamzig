@@ -257,18 +257,14 @@ test "format JamParams" {
 }
 
 test "validate params" {
-    // Test TINY_PARAMS validation
     try TINY_PARAMS.validate();
 
-    // Test FULL_PARAMS validation
     try FULL_PARAMS.validate();
 
-    // Test invalid super majority
     var invalid_params = TINY_PARAMS;
     invalid_params.validators_super_majority = 3; // Should be 5
     try std.testing.expectError(error.InvalidSuperMajority, invalid_params.validate());
 
-    // Test invalid bitfield size
     invalid_params = TINY_PARAMS;
     invalid_params.avail_bitfield_bytes = 2; // Should be 1
     try std.testing.expectError(error.InvalidBitfieldSize, invalid_params.validate());

@@ -7,7 +7,6 @@ const Alpha = authorization_pool.Alpha;
 
 const trace = @import("tracing").scoped(.codec);
 
-/// Encodes pools where each pool is length encoded. Length of pools is assumed to be C
 pub fn encode(comptime core_count: u16, comptime max_pool_items: u8, self: *const Alpha(core_count, max_pool_items), writer: anytype) !void {
     const span = trace.span(@src(), .encode);
     defer span.deinit();
@@ -29,9 +28,7 @@ pub fn encode(comptime core_count: u16, comptime max_pool_items: u8, self: *cons
             auth_span.trace("Auth hash: {any}", .{std.fmt.fmtSliceHexLower(auth)});
             try writer.writeAll(auth);
         }
-        pool_span.debug("Successfully encoded pool {d}", .{i + 1});
     }
-    span.debug("Successfully encoded all {d} pools", .{core_count});
 }
 
 const testing = std.testing;

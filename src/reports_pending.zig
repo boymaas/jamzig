@@ -40,16 +40,9 @@ pub const RhoEntry = struct {
 
         const writer = buffer.writer();
 
-        // TODO: the whitepaper specifies we should prepend the core, this does not
-        // lead to a passing test vector, so now disabled for now.
-
-        // // Write the core index (as u16/CoreIndex) in little-endian
-        // try writer.writeInt(u16, self.core, .little);
-
         const codec = @import("codec.zig");
         try codec.serialize(WorkReport, .{}, writer, self.assignment.report);
 
-        // Create final hash from the concatenated data
         var result: WorkReportHash = undefined;
         Blake2b256.hash(buffer.items, &result, .{});
 
@@ -131,7 +124,7 @@ pub fn Rho(comptime core_count: u16) type {
             const span = trace.span(@src(), .set_report);
             defer span.deinit();
             span.debug("Setting report for core {d}", .{core});
-            std.debug.assert(core < core_count); // Core index must be within bounds
+            std.debug.assert(core < core_count);
 
             self.reports[core] = RhoEntry.init(@intCast(core), assignment);
         }
@@ -140,7 +133,7 @@ pub fn Rho(comptime core_count: u16) type {
             const span = trace.span(@src(), .get_report);
             defer span.deinit();
             span.debug("Getting report for core {d}", .{core});
-            std.debug.assert(core < core_count); // Core index must be within bounds
+            std.debug.assert(core < core_count);
 
             return self.reports[core];
         }
@@ -149,7 +142,7 @@ pub fn Rho(comptime core_count: u16) type {
             const span = trace.span(@src(), .get_report_owned);
             defer span.deinit();
             span.debug("Getting owned (deep clone) report for core {d}", .{core});
-            std.debug.assert(core < core_count); // Core index must be within bounds
+            std.debug.assert(core < core_count);
 
             if (self.reports[core]) |entry| {
                 return entry.deepClone(allocator);
@@ -161,27 +154,25 @@ pub fn Rho(comptime core_count: u16) type {
             const span = trace.span(@src(), .has_report);
             defer span.deinit();
             span.debug("Checking report presence for core {d}", .{core});
-            std.debug.assert(core < core_count); // Core index must be within bounds
+            std.debug.assert(core < core_count);
 
             return self.reports[core] != null;
         }
 
-        // TODO: how do we check if a core is engaged?
         pub fn isEngaged(self: *const @This(), core: usize) bool {
             const span = trace.span(@src(), .is_engaged);
             defer span.deinit();
             span.debug("Checking if core {d} is engaged", .{core});
-            std.debug.assert(core < core_count); // Core index must be within bounds
+            std.debug.assert(core < core_count);
 
             return self.reports[core] != null;
         }
 
-        /// takes a report out of the core leaving the core empty
         pub fn takeReport(self: *@This(), core: usize) ?RhoEntry {
             const span = trace.span(@src(), .take_report);
             defer span.deinit();
             span.debug("Taking ownership of report for core {d}", .{core});
-            std.debug.assert(core < core_count); // Core index must be within bounds
+            std.debug.assert(core < core_count);
 
             if (self.reports[core]) |entry| {
                 self.reports[core] = null;
@@ -195,7 +186,7 @@ pub fn Rho(comptime core_count: u16) type {
             const span = trace.span(@src(), .clear_report);
             defer span.deinit();
             span.debug("Clearing report for core {d}", .{core});
-            std.debug.assert(core < core_count); // Core index must be within bounds
+            std.debug.assert(core < core_count);
 
             if (self.reports[core]) |report| {
                 report.deinit(self.allocator);
@@ -235,10 +226,8 @@ pub fn Rho(comptime core_count: u16) type {
             defer span.deinit();
             span.debug("Deep cloning Rho state with {d} cores", .{core_count});
 
-            // Initialize a new Rho instance with the same allocator
             var cloned = @This().init(allocator);
 
-            // Clone each report entry
             for (self.reports, 0..) |maybe_report, index| {
                 span.trace("Processing core {d}", .{index});
                 if (maybe_report) |report| {
@@ -267,13 +256,6 @@ pub fn Rho(comptime core_count: u16) type {
     };
 }
 
-//  _____         _
-// |_   _|__  ___| |_ ___
-//   | |/ _ \/ __| __/ __|
-//   | |  __/\__ \ |_\__ \
-//   |_|\___||___/\__|___/
-//
-
 const testing = std.testing;
 
 const createEmptyWorkReport = @import("tests/fixtures.zig").createEmptyWorkReport;
@@ -290,16 +272,12 @@ test "RhoEntry - Lazy Hash Calculation" {
     var entry = RhoEntry.init(1, assignment);
     defer entry.deinit(testing.allocator);
 
-    // Initially the hash should be null
     try testing.expect(entry.cached_hash == null);
 
-    // Calculate hash
     const hash1 = try entry.hash(testing.allocator);
 
-    // Hash should now be cached
     try testing.expect(entry.cached_hash != null);
 
-    // Second calculation should use cached value
     const hash2 = try entry.hash(testing.allocator);
     try testing.expectEqualSlices(u8, &hash1, &hash2);
 }

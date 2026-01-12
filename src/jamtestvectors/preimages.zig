@@ -6,14 +6,6 @@ pub const jam_params = @import("../jam_params.zig");
 
 pub const BASE_PATH = "src/jamtestvectors/data/stf/preimages/";
 
-// --------------------------------------------
-// -- Preimages
-// --------------------------------------------
-
-// PreimagesMapEntry ::= SEQUENCE {
-//     hash OpaqueHash,
-//     blob ByteSequence
-// }
 pub const PreimagesMapEntry = struct {
     hash: types.OpaqueHash,
     blob: []u8,
@@ -24,19 +16,11 @@ pub const PreimagesMapEntry = struct {
     }
 };
 
-// LookupMetaMapKey ::= SEQUENCE {
-//     hash OpaqueHash,
-//     length U32
-// }
 pub const LookupMetaMapKey = struct {
     hash: types.OpaqueHash,
     length: types.U32,
 };
 
-// LookupMetaMapEntry ::= SEQUENCE {
-//     key LookupMetaMapKey,
-//     value SEQUENCE OF TimeSlot
-// }
 pub const LookupMetaMapEntry = struct {
     key: LookupMetaMapKey,
     value: []types.TimeSlot,
@@ -47,16 +31,8 @@ pub const LookupMetaMapEntry = struct {
     }
 };
 
-// Account ::= SEQUENCE {
-//     -- [a_p] Preimages blobs.
-//     preimages SEQUENCE OF PreimagesMapEntry,
-//     -- [a_l] Preimages lookup metadata.
-//     lookup-meta SEQUENCE OF LookupMetaMapEntry
-// }
 pub const Account = struct {
-    // [a_p] Preimages blobs
     preimages: []PreimagesMapEntry,
-    // [a_l] Preimages lookup metadata
     lookup_meta: []LookupMetaMapEntry,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -74,10 +50,6 @@ pub const Account = struct {
     }
 };
 
-// AccountsMapEntry ::= SEQUENCE {
-//     id ServiceId,
-//     data Account
-// }
 pub const AccountsMapEntry = struct {
     id: types.ServiceId,
     data: Account,
@@ -88,12 +60,7 @@ pub const AccountsMapEntry = struct {
     }
 };
 
-// State ::= SEQUENCE {
-//     Relevant services account data [δ]. Refer to T(σ) in GP Appendix D.
-//     accounts SEQUENCE OF AccountsMapEntry
-// }
 pub const State = struct {
-    // [δ] Relevant services account data
     accounts: []AccountsMapEntry,
     statistics: jam_types.ServiceStatistics,
 
@@ -107,17 +74,8 @@ pub const State = struct {
     }
 };
 
-// Input ::= SEQUENCE {
-//     -- [E_P] Preimages extrinsic.
-//     preimages PreimagesExtrinsic,
-//
-//     -- [H_t] Block's timeslot.
-//     slot TimeSlot
-// }
 pub const Input = struct {
-    // [E_P] Preimages extrinsic
     preimages: types.PreimagesExtrinsic,
-    // [H_t] Block's timeslot
     slot: types.TimeSlot,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {

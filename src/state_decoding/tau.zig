@@ -7,15 +7,13 @@ const DecodingContext = state_decoding.DecodingContext;
 
 const Tau = types.TimeSlot;
 
-/// Decodes tau (τ) from raw bytes.
-/// Tau represents the current timeslot and is encoded as a little-endian u32
 pub fn decode(
     allocator: std.mem.Allocator,
     context: *DecodingContext,
     reader: anytype,
 ) !Tau {
-    _ = allocator; // For API consistency
-    
+    _ = allocator;
+
     try context.push(.{ .component = "tau" });
     defer context.pop();
     
@@ -28,8 +26,7 @@ pub fn decode(
 
 test "decode tau - valid data" {
     const allocator = testing.allocator;
-    
-    // Test simple value
+
     {
         var context = DecodingContext.init(allocator);
         defer context.deinit();
@@ -40,7 +37,6 @@ test "decode tau - valid data" {
         try testing.expectEqual(@as(u32, 42), tau);
     }
 
-    // Test max value
     {
         var context = DecodingContext.init(allocator);
         defer context.deinit();
@@ -51,7 +47,6 @@ test "decode tau - valid data" {
         try testing.expectEqual(@as(u32, 0xffffffff), tau);
     }
 
-    // Test zero value
     {
         var context = DecodingContext.init(allocator);
         defer context.deinit();
@@ -65,13 +60,12 @@ test "decode tau - valid data" {
 
 test "decode tau - invalid data" {
     const allocator = testing.allocator;
-    
-    // Test insufficient data
+
     {
         var context = DecodingContext.init(allocator);
         defer context.deinit();
-        
-        var buffer = [_]u8{ 42, 0, 0 }; // Only 3 bytes
+
+        var buffer = [_]u8{ 42, 0, 0 };
         var fbs = std.io.fixedBufferStream(&buffer);
         try testing.expectError(error.EndOfStream, decode(allocator, &context, fbs.reader()));
     }
@@ -81,7 +75,6 @@ test "decode tau - roundtrip" {
     const allocator = testing.allocator;
     const encoder = @import("../state_encoding/tau.zig");
 
-    // Test various values
     const test_values = [_]u32{ 0, 1, 42, 0xffff, 0xffffffff };
 
     for (test_values) |expected| {
@@ -91,16 +84,12 @@ test "decode tau - roundtrip" {
         var buffer: [4]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buffer);
 
-        // Encode
         try encoder.encode(expected, fbs.writer());
 
-        // Reset buffer position
         fbs.pos = 0;
 
-        // Decode
         const decoded = try decode(allocator, &context, fbs.reader());
 
-        // Verify
         try testing.expectEqual(expected, decoded);
     }
 }

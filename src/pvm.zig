@@ -20,14 +20,10 @@ pub const PVM = struct {
 
     pub const ExecutionContext = @import("./pvm/execution_context.zig").ExecutionContext;
 
-    /// Configuration for host calls including an optional catchall handler
     pub const HostCallsConfig = struct {
-        /// Map of host call IDs to their implementations
         map: HostCallMap,
-        /// Optional catchall handler for non-existent host calls
         catchall: ?HostCallFn = null,
-        /// Optional wrapper that intercepts all host calls for error handling
-        /// The wrapper receives the host call ID, function, execution context, and host context
+        /// Wrapper receives host call ID, function, execution context, and host context
         wrapper: ?*const fn (u32, HostCallFn, *ExecutionContext, *anyopaque) HostCallResult = null,
     };
 
@@ -36,9 +32,7 @@ pub const PVM = struct {
     }
 
     pub const HostCallInvocation = struct {
-        /// Host call index
         idx: u32,
-        /// Next PC after host call
         next_pc: u32,
     };
 
@@ -91,11 +85,8 @@ pub const PVM = struct {
     };
 
     pub const SingleStepResult = union(enum) {
-        // Continue execution with next instruction
         cont: void,
-        // Need to execute host call
         host_call: HostCallInvocation,
-        // Terminal conditions from graypaper
         terminal: InvocationException,
 
         pub fn isTerminal(self: *const @This()) bool {
@@ -103,7 +94,6 @@ pub const PVM = struct {
         }
     };
 
-    // Single step invocation
     pub fn singleStepInvocation(context: *ExecutionContext) Error!SingleStepResult {
         const span = trace.span(@src(), .execute_step);
         defer span.deinit();
@@ -111,26 +101,21 @@ pub const PVM = struct {
         const pc_before = context.pc;
         const gas_before = context.gas;
 
-        // Decode instruction
         const instruction = try context.decoder.decodeInstruction(context.pc);
         span.debug("Executing instruction at PC: 0x{d:0>8}: {}", .{ context.pc, instruction });
 
-        // Check gas
         const gas_cost = getInstructionGasCost(instruction);
         context.gas -= gas_cost;
 
         span.trace("Instruction gas cost: {d}", .{gas_cost});
 
-        // Execute instruction (no per-instruction gas charge)
         const result = executeInstruction(context, instruction);
 
-        // After execute instruction, check if gas went negative
         if (context.gas < 0) {
             span.debug("Out of gas - remaining: {d}", .{context.gas});
             return .{ .terminal = .out_of_gas };
         }
 
-        // Log execution step for trace
         context.exec_trace.logStepAuto(pc_before, gas_before, context.gas, &instruction, &context.registers);
 
         return result;
@@ -145,9 +130,6 @@ pub const PVM = struct {
         }
     };
 
-    /// Basic invocation (Basic & Hostcall in one)
-    /// Calls singleStepInvocation until we reach a terminal condition/hostcall
-    /// or we run out of gas
     pub fn basicInvocation(
         context: *ExecutionContext,
     ) Error!BasicInvocationResult {
@@ -181,9 +163,7 @@ pub const PVM = struct {
         }
     };
 
-    // Host call invocation invocation
     pub fn hostcallInvocation(context: *ExecutionContext, call_ctx: *anyopaque) Error!HostCallInvocationResult {
-        // iterative host call invocation loop
         while (true) {
             switch (try basicInvocation(context)) {
                 .host_call => |params| {
@@ -191,7 +171,6 @@ pub const PVM = struct {
                     defer span.deinit();
 
                     if (context.host_calls) |host_calls_ptr| {
-                        // Cast the anyopaque pointer to our HostCallsConfig
                         const host_calls_config = @as(*const HostCallsConfig, @ptrCast(@alignCast(host_calls_ptr)));
 
                         const maybe_host_call_fn: ?HostCallFn = host_calls_config.map.get(params.idx) orelse host_calls_config.catchall;
@@ -201,19 +180,15 @@ pub const PVM = struct {
                             const registers_before = context.registers;
 
                             const result = blk: {
-                                // Use wrapper if configured, otherwise panic on errors
                                 if (host_calls_config.wrapper) |wrapper| {
-                                    // Wrapper handles all error processing and logging
                                     break :blk wrapper(params.idx, host_call_fn, context, call_ctx);
                                 } else {
-                                    // No wrapper - any error should panic to decouple PVM from implementation details
                                     break :blk host_call_fn(context, call_ctx) catch {
                                         return .{ .terminal = .panic };
                                     };
                                 }
                             };
 
-                            // Log the host call with comprehensive information
                             context.exec_trace.logHostCall(
                                 params.idx,
                                 gas_before,
@@ -226,12 +201,10 @@ pub const PVM = struct {
 
                             switch (result) {
                                 .play => {
-                                    // Check for out of gas immediately after host call
                                     if (context.gas < 0) {
                                         return .{ .terminal = .out_of_gas };
                                     }
 
-                                    // Update total gas used
                                     context.exec_trace.total_gas_used += gas_before - context.gas;
                                     context.pc = params.next_pc;
                                     continue;
@@ -243,7 +216,6 @@ pub const PVM = struct {
                                 },
                             }
                         } else {
-                            // No catchall provided - return panic as no handler exists
                             span.warn("No host calls catchall provided - return panic", .{});
                             return .{ .terminal = .panic };
                         }
@@ -259,7 +231,6 @@ pub const PVM = struct {
         }
     }
 
-    // Machine Invocation
     pub const MachineInvocationResult = union(enum) {
         halt: []const u8,
         terminal: union(enum) {
@@ -278,7 +249,7 @@ pub const PVM = struct {
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
             switch (self.*) {
                 .halt => |result| allocator.free(result),
-                .terminal => {}, // No allocated memory to free
+                .terminal => {},
             }
             self.* = undefined;
         }
@@ -289,14 +260,8 @@ pub const PVM = struct {
             .terminal => |terminal| {
                 switch (terminal) {
                     .halt => {
-                        // if memory range in valid memory
-                        // read the memory range and return it
                         var return_value = exec_ctx.readSliceBetweenRegister7AndRegister8();
                         defer return_value.deinit();
-
-                        // TODO: this return value could be referencing memory in a page
-                        // or could already be copied as it would be on a memory boundary
-                        // so we could add a takeOwned which would only dupe if necessary.
 
                         return .{ .halt = try allocator.dupe(u8, return_value.buffer) };
                     },
@@ -323,27 +288,22 @@ pub const PVM = struct {
     const signExtendToU64 = @import("./pvm/sign_extension.zig").signExtendToU64;
     fn executeInstruction(context: *ExecutionContext, i: InstructionWithArgs) Error!SingleStepResult {
         switch (i.instruction) {
-            // A.5.1 Instructions without Arguments
             .trap => return .{ .terminal = .panic },
             .fallthrough => {},
 
-            // A.5.2 Instructions with Arguments of One Immediate
             .ecalli => {
                 const args = i.args.OneImm;
-                // Return host call for execution by executeStep
                 return .{ .host_call = .{
                     .idx = @truncate(args.immediate),
                     .next_pc = context.pc + i.skip_l() + 1,
                 } };
             },
 
-            // A.5.3 Instructions with Arguments of One Register and One Extended Width Immediate
             .load_imm_64 => {
                 const args = i.args.OneRegOneExtImm;
                 context.registers[args.register_index] = args.immediate;
             },
 
-            // A.5.4 Instructions with Arguments of Two Immediates
             .store_imm_u8, .store_imm_u16, .store_imm_u32, .store_imm_u64 => {
                 const args = i.args.TwoImm;
                 const addr = @as(u32, @truncate(args.first_immediate));
@@ -369,11 +329,9 @@ pub const PVM = struct {
                     return err;
                 };
 
-                // Log memory write
                 logMemoryWrite(context, addr, value, size);
             },
 
-            // A.5.5 Instructions with Arguments of One Offset
             .jump => {
                 context.pc = updatePc(context.pc, i.args.OneOffset.offset) catch {
                     return .{ .terminal = .panic };
@@ -381,7 +339,6 @@ pub const PVM = struct {
                 return .cont;
             },
 
-            // A.5.6 Instructions with Arguments of One Register & One Immediate
             .jump_ind => {
                 const args = i.args.OneRegOneImm;
                 const jump_dest = context.program.validateJumpAddress(
@@ -442,7 +399,6 @@ pub const PVM = struct {
                 };
             },
 
-            // A.5.7 Instructions with Arguments of One Register & Two Immediates
             .store_imm_ind_u8, .store_imm_ind_u16, .store_imm_ind_u32, .store_imm_ind_u64 => {
                 const args = i.args.OneRegTwoImm;
 
