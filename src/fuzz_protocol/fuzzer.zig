@@ -100,8 +100,6 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
         // Target communication
         target: Target,
 
-        // REFACTOR: we also need to track the current block, as sometimes we need to use the header hash
-        // of the block
         state: FuzzerState = .initial,
 
         /// Initialize fuzzer with deterministic seed and pre-initialized target
@@ -111,13 +109,9 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
 
             span.debug("Initializing fuzzer with seed: {d}", .{seed});
 
-            // Create fuzzer struct first to ensure stable addresses
             const fuzzer = try allocator.create(Self);
             errdefer allocator.destroy(fuzzer);
 
-            // Use the provided target instance
-
-            // Initialize fields to safe defaults
             fuzzer.* = .{
                 .allocator = allocator,
                 .target = target_instance,
@@ -127,7 +121,6 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
                 .state = .initial,
             };
 
-            // Initialize the rng from the prng stored in fuzzer
             fuzzer.rng = fuzzer.prng.random();
 
             span.debug("Fuzzer initialized successfully", .{});
@@ -140,7 +133,6 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
             const span = trace.span(@src(), .fuzzer_deinit);
             defer span.deinit();
 
-            // Clean up target
             self.target.deinit();
 
             const allocator = self.allocator;
@@ -159,7 +151,6 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
                 self.state = .connected;
                 span.debug("Connected to target successfully", .{});
             } else {
-                // Embedded targets are always "connected"
                 self.state = .connected;
                 span.debug("Embedded target ready", .{});
             }
@@ -175,7 +166,6 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
                 self.state = .initial;
                 span.debug("Disconnected from target", .{});
             } else {
-                // Embedded targets don't need disconnection
                 span.debug("No disconnection needed for embedded target", .{});
             }
         }
@@ -190,27 +180,22 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
                 return error.NotConnected;
             }
 
-            // Send fuzzer peer info (v1 format)
             const fuzzer_peer_info = messages.PeerInfo{
                 .fuzz_version = version.FUZZ_PROTOCOL_VERSION,
                 .fuzz_features = version.IMPLEMENTED_FUZZ_FEATURES,
                 .jam_version = version.PROTOCOL_VERSION,
                 .app_version = version.FUZZ_TARGET_VERSION,
-                .app_name = "jamzig-fuzzer", // NOTE: static string here => no deinit
+                .app_name = "jamzig-fuzzer",
             };
 
-            // REFACTOR: I see  a pattern here, send message and waiting for a response. Seperate this
-            // and also add a timeout. So if we do not get a repsonse in a certain time, we error out.
             try self.target.sendMessage(params, .{ .peer_info = fuzzer_peer_info });
 
-            // Receive target peer info
             var response = try self.target.readMessage(params);
             defer response.deinit(self.allocator);
 
             switch (response) {
                 .peer_info => |peer_info| {
                     span.debug("Received peer info from: {s}", .{peer_info.app_name});
-                    // TODO: Validate protocol compatibility
                     self.state = .handshake_complete;
                 },
                 else => return error.UnexpectedHandshakeResponse,
@@ -220,7 +205,6 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
         }
 
         /// Initialize state on target (v1)
-        /// REFACTOR: rename this to initializeTarget
         pub fn setState(self: *Self, header: types.Header, state: messages.State) !messages.StateRootHash {
             const span = trace.span(@src(), .fuzzer_initialize_state);
             defer span.deinit();
@@ -230,25 +214,20 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
                 return error.HandshakeNotComplete;
             }
 
-            // Extract ancestry from current JAM state's Beta component
             var ancestry_items = std.ArrayList(messages.AncestryItem).init(self.allocator);
             defer ancestry_items.deinit();
-
-            // TODO: empty for now, now supported
 
             var ancestry = messages.Ancestry{
                 .items = try ancestry_items.toOwnedSlice(),
             };
             defer ancestry.deinit(self.allocator);
 
-            // Send Initialize message (v1) with ancestry
             try self.target.sendMessage(params, .{ .initialize = .{
                 .header = header,
                 .keyvals = state,
                 .ancestry = ancestry,
             } });
 
-            // Receive StateRoot response
             var response = try self.target.readMessage(params);
             defer response.deinit(self.allocator);
 
@@ -273,10 +252,8 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
                 return error.StateNotInitialized;
             }
 
-            // Send ImportBlock message, do not free message we do not own the block
             try self.target.sendMessage(params, .{ .import_block = block.* });
 
-            // Receive StateRoot response
             var response = try self.target.readMessage(params);
             defer response.deinit(self.allocator);
 
@@ -288,7 +265,6 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
                 },
                 .@"error" => |err| {
                     span.err("Block import error: {s}", .{err});
-                    // Take ownership of the error message
                     const error_msg = try self.allocator.dupe(u8, err);
                     return BlockImportResult{ .import_error = error_msg };
                 },
@@ -304,19 +280,16 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
 
             try self.state.assertReachedState(.state_initialized);
 
-            // Send GetState message
             try self.target.sendMessage(params, .{ .get_state = header_hash });
 
-            // Receive State response
             var response = try self.target.readMessage(params);
             defer response.deinit(self.allocator);
 
             switch (response) {
                 .state => |state| {
                     span.debug("Received state with {d} key-value pairs", .{state.items.len});
-                    // Transfer ownership to caller - clear response to prevent double-free
                     const result = state;
-                    response = .{ .state = messages.State.Empty }; // transfer of ownership
+                    response = .{ .state = messages.State.Empty };
                     return result;
                 },
                 else => return error.UnexpectedGetStateResponse,
@@ -333,16 +306,13 @@ pub fn Fuzzer(comptime IOExecutor: type, comptime Target: type, comptime params:
             defer span.deinit();
             span.debug("Ending fuzzer session", .{});
 
-            // Disconnect from target
             self.disconnect();
 
-            // Reset state
             self.state = .initial;
 
             span.debug("Fuzzer session ended successfully", .{});
         }
 
-        /// Target thread main function
         const TargetThreadContext = struct {
             allocator: std.mem.Allocator,
             socket_path: []const u8,

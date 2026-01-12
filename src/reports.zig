@@ -22,8 +22,6 @@ const StateTransition = @import("state_delta.zig").StateTransition;
 const tracing = @import("tracing");
 const trace = tracing.scoped(.reports);
 
-/// Error types for report validation and processing
-/// REFACTOR: cleanup these errors
 pub const Error = error{
     BadCoreIndex,
     InsufficientGuarantees,
@@ -58,14 +56,12 @@ pub const ValidatedGuaranteeExtrinsic = struct {
         defer span.deinit();
         span.debug("Starting guarantee validation for {d} guarantees", .{guarantees.data.len});
 
-        // Check for duplicate packages in the batch
         duplicate_check.checkDuplicatePackageInBatch(params, guarantees) catch |err| switch (err) {
             duplicate_check.Error.DuplicatePackage => return Error.DuplicatePackage,
             duplicate_check.Error.DuplicatePackageInGuarantees => return Error.DuplicatePackage,
             else => |e| return e,
         };
 
-        // Validate all guarantees
         var prev_guarantee_core: ?u32 = null;
         for (guarantees.data) |guarantee| {
             const core_span = span.child(@src(), .validate_core);
@@ -79,49 +75,29 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 std.fmt.fmtSliceHexLower(&guarantee.report.context.lookup_anchor),
             });
 
-            // Check core index
             if (guarantee.report.core_index.value >= params.core_count) {
                 core_span.err("Invalid core index {d} >= {d}", .{ guarantee.report.core_index.value, params.core_count });
                 return Error.BadCoreIndex;
             }
 
-            // v0.7.2: Check work report has at least one result (graypaper: results ∈ sequence[1:C_I])
             if (guarantee.report.results.len == 0) {
                 core_span.err("Work report has no results", .{});
                 return Error.MissingWorkResults;
             }
 
-            // Check for out-of-order guarantees
             if (prev_guarantee_core != null and guarantee.report.core_index.value <= prev_guarantee_core.?) {
                 core_span.err("Out-of-order guarantee: {d} <= {d}", .{ guarantee.report.core_index.value, prev_guarantee_core.? });
                 return Error.OutOfOrderGuarantee;
             }
             prev_guarantee_core = guarantee.report.core_index.value;
 
-            // Validate output size limits
             try output.validateOutputSize(params, guarantee);
-
-            // Validate gas limits
             try gas.validateGasLimits(params, guarantee);
-
-            // Check total dependencies don't exceed J according to equation 11.3
             try dependency.validateDependencyCount(params, guarantee);
-
-            // Check if we have enough signatures:
-
-            // Validate report slot is not in future
             try timing.validateReportSlot(params, stx, guarantee);
-
-            // Check rotation period according to graypaper 11.27
             try timing.validateRotationPeriod(params, stx, guarantee);
-
-            // Validate anchor is recent
             try anchor.validateAnchor(params, stx, guarantee);
-
-            // Validate guarantors are sorted and unique
             try guarantor.validateSortedAndUnique(guarantee);
-
-            // Check service ID exists
             try service.validateServices(params, stx, guarantee);
 
             // TODO: Check core is not engaged
@@ -129,18 +105,10 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             //     return Error.CoreEngaged;
             // }
 
-            // Validate report prerequisites exist
             try dependency.validatePrerequisites(params, stx, guarantee, guarantees);
-
-            // Verify segment root lookup is valid
             try dependency.validateSegmentRootLookup(params, stx, guarantee, guarantees);
-
-            // Check timeslot is within valid range
             try timing.validateSlotRange(params, stx, guarantee);
 
-            // 11.27 ---
-
-            // BUILD ASSIGNMENTS ONCE FOR THIS GUARANTEE
             var assignments = try @import("guarantor_assignments.zig").determineGuarantorAssignments(
                 params,
                 allocator,
@@ -149,29 +117,20 @@ pub const ValidatedGuaranteeExtrinsic = struct {
             );
             defer assignments.deinit(allocator);
 
-            // Validate signatures
             {
                 const sig_span = span.child(@src(), .validate_signatures);
                 defer sig_span.deinit();
 
                 sig_span.debug("Validating {d} guarantor signatures", .{guarantee.signatures.len});
 
-                // Validate signature count
                 try guarantor.validateSignatureCount(guarantee);
-                // Validate all validator indices are in range upfront
                 try signature.validateValidatorIndices(params, guarantee);
-
-                // Check if any guarantor is banned
                 try banned.checkBannedValidators(params, guarantee, stx, &assignments);
-
-                // Validate guarantor assignments using pre-built assignments
                 try guarantor.validateGuarantorAssignmentsWithPrebuilt(
                     params,
                     guarantee,
                     &assignments,
                 );
-
-                // Validate signatures using pre-built assignments
                 try signature.validateSignaturesWithAssignments(
                     params,
                     allocator,
@@ -180,13 +139,8 @@ pub const ValidatedGuaranteeExtrinsic = struct {
                 );
             }
 
-            // Core must be free or its previous report must have timed out
             try timing.validateCoreTimeout(params, stx, guarantee);
-
-            // Check if the authorizer hash is valid
             try authorization.validateCoreAuthorization(params, stx, guarantee);
-
-            // Check for duplicate packages across states
             try duplicate_check.checkDuplicatePackageInRecentHistory(params, stx, guarantee, guarantees);
             // TODO: should we add this?
             // // Check sufficient guarantors
@@ -200,9 +154,7 @@ pub const ValidatedGuaranteeExtrinsic = struct {
 };
 
 pub const Result = struct {
-    /// Reported packages hash and segment tree root
     reported: []types.ReportedWorkPackage,
-    /// Reporters for reported packages
     reporters: []types.Ed25519Public,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -231,7 +183,6 @@ pub fn processGuaranteeExtrinsic(
     var reporters = std.ArrayList(types.Ed25519Public).init(allocator);
     defer reporters.deinit();
 
-    // Process each validated guarantee
     for (validated.guarantees) |guarantee| {
         const process_span = span.child(@src(), .process_guarantee);
         defer process_span.deinit();
@@ -239,8 +190,6 @@ pub fn processGuaranteeExtrinsic(
         const core_index = guarantee.report.core_index.value;
         process_span.debug("Processing guarantee for core {d}", .{core_index});
 
-        // Core can be reused, this is checked when validating the guarantee
-        // Add report to Rho state
         process_span.debug("Creating availability assignment with timeout {d}", .{stx.time.current_slot});
         const assignment = types.AvailabilityAssignment{
             .report = try guarantee.report.deepClone(allocator),
@@ -253,13 +202,11 @@ pub fn processGuaranteeExtrinsic(
             assignment,
         );
 
-        // Track reported packages
         try reported.append(.{
             .hash = assignment.report.package_spec.hash,
             .exports_root = guarantee.report.package_spec.exports_root,
         });
 
-        // BUILD ASSIGNMENTS ONCE FOR REPORTER EXTRACTION
         var assignments = try @import("guarantor_assignments.zig").determineGuarantorAssignments(
             params,
             allocator,
@@ -268,7 +215,6 @@ pub fn processGuaranteeExtrinsic(
         );
         defer assignments.deinit(allocator);
 
-        // Track reporters using the correct validator set from assignments
         add_reporters: for (guarantee.signatures) |sig| {
             const validator = assignments.validators.validators[sig.validator_index];
 

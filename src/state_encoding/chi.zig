@@ -17,7 +17,6 @@ pub fn encode(
     defer span.deinit();
     span.debug("Starting Chi state encoding", .{});
 
-    // Encode the simple fields
     span.trace("Encoding manager: {d}, designate: {d}", .{
         chi.manager,
         chi.designate,
@@ -25,24 +24,15 @@ pub fn encode(
 
     try writer.writeInt(u32, chi.manager, .little);
 
-    // Encode the assigners as a fixed-size array (one per core)
-    // The graypaper expects exactly C (core_count) assigners
     span.trace("Encoding {} assigners (core_count)", .{params.core_count});
-    
-    // Chi.assign is now a fixed array of exactly core_count elements
     for (chi.assign) |assigner| {
         try writer.writeInt(u32, assigner, .little);
     }
 
     try writer.writeInt(u32, chi.designate, .little);
 
-    // Write registrar (v0.7.1 GP #473)
     span.trace("Encoding registrar: {d}", .{chi.registrar});
     try writer.writeInt(u32, chi.registrar, .little);
-
-    // Encode X_g with ordered keys
-    // TODO: this could be a method in encoder, map encoder which orders
-    // the keys
     const map_span = span.child(@src(), .map_encode);
     defer map_span.deinit();
     map_span.debug("Encoding always_accumulate map", .{});

@@ -71,14 +71,12 @@ pub const Config = struct {
             .disabled_scopes = std.StringHashMap(void).init(allocator),
         };
 
-        // Parse disabled scopes from build options
         for (disabled_scopes) |disabled_scope| {
             config.disabled_scopes.put(disabled_scope, {}) catch |err| {
                 std.debug.print("Warning: Failed to add disabled scope '{s}': {}\n", .{ disabled_scope, err });
             };
         }
 
-        // Parse scope configurations from build options
         for (scopes_str) |scope_config| {
             config.parseAndSetScope(scope_config) catch |err| {
                 std.debug.print("Warning: Failed to parse scope config '{s}': {}\n", .{ scope_config, err });
@@ -94,21 +92,17 @@ pub const Config = struct {
     }
 
     fn parseAndSetScope(self: *Config, scope_config: []const u8) !void {
-        // Split by comma first to handle multiple scope configurations
         var it = std.mem.tokenizeScalar(u8, scope_config, ',');
         while (it.next()) |single_scope| {
-            // Trim any whitespace
             const trimmed = std.mem.trim(u8, single_scope, " \t");
 
             if (std.mem.indexOf(u8, trimmed, "=")) |eq_pos| {
-                // Format: "scope=level"
                 const scope_name = trimmed[0..eq_pos];
                 const level_name = trimmed[eq_pos + 1 ..];
 
                 const level = parseLogLevel(level_name);
                 try self.scopes.put(scope_name, level);
             } else {
-                // Format: just "scope" - enable at debug level
                 try self.scopes.put(trimmed, .debug);
             }
         }
@@ -154,8 +148,6 @@ pub const Config = struct {
     }
 
     pub fn fromBuildOptions(options: []const u8) Config {
-        // This method is for compatibility but not used in current implementation
-        // The actual parsing is done in init() using build_options directly
         _ = options;
         @panic("fromBuildOptions deprecated - use init() instead");
     }

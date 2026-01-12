@@ -2,7 +2,6 @@ const std = @import("std");
 
 const InstructionWithArgs = @import("../instruction.zig").InstructionWithArgs;
 
-// Immediates: encoded as 32-bit, sign-extended to 64-bit on decode
 const ImmediateSizeInBytes: usize = 4;
 
 pub fn sizeOfInstruction(iwa: *const InstructionWithArgs) !u8 {
@@ -10,10 +9,8 @@ pub fn sizeOfInstruction(iwa: *const InstructionWithArgs) !u8 {
 }
 
 pub fn encodeInstruction(writer: anytype, iwa: *const InstructionWithArgs) !u8 {
-    // First encode the instruction opcode
     try writer.writeByte(@intFromEnum(iwa.instruction));
 
-    // Then encode the arguments based on instruction type
     const arg_length = switch (iwa.args) {
         .NoArgs => |_| try encodeNoArgs(writer),
         .OneImm => |args| try encodeOneImm(writer, @truncate(args.immediate)),
@@ -49,11 +46,9 @@ pub fn encodeInstructionOwned(iwa: *const InstructionWithArgs) !EncodedInstructi
         .len = 0,
     };
 
-    // Create a fixed buffer writer
     var fbs = std.io.fixedBufferStream(&result.buffer);
     const writer = fbs.writer();
 
-    // Encode the instruction into the buffer
     result.len = try encodeInstruction(writer, iwa);
 
     return result;

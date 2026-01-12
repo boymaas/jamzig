@@ -1,4 +1,3 @@
-// The Pi component for tracking validator statistics
 const std = @import("std");
 
 const ValidatorIndex = @import("types.zig").ValidatorIndex;
@@ -7,7 +6,6 @@ const U16 = @import("types.zig").U16;
 const U32 = @import("types.zig").U32;
 const U64 = @import("types.zig").U64;
 
-// ValidatorStats tracks the six key metrics as described in the graypaper
 pub const ValidatorStats = struct {
     blocks_produced: U32 = 0,
     tickets_introduced: U32 = 0,
@@ -46,24 +44,13 @@ pub const ValidatorStats = struct {
 };
 
 pub const CoreActivityRecord = struct {
-    // Amount of bytes which are placed into either Audits or Segments DA.
-    // This includes the work-bundle (including all extrinsics and
-    // imports) as well as all (exported) segments.
     da_load: U32,
-    // Number of validators which formed super-majority for assurance.
     popularity: U16,
-    // Number of segments imported from DA made by core for reported work.
     imports: U16,
-    // Total number of extrinsics used by core for reported work.
     extrinsic_count: U16,
-    // Total size of extrinsics used by core for reported work.
     extrinsic_size: U32,
-    // Number of segments exported into DA made by core for reported work.
     exports: U16,
-    // The work-bundle size. This is the size of data being placed into Audits DA by the core.
     bundle_size: U32,
-    // Total gas consumed by core for reported work. Includes all
-    // refinement and authorizations.
     gas_used: U64,
 
     pub fn init() CoreActivityRecord {
@@ -82,7 +69,6 @@ pub const CoreActivityRecord = struct {
     pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
         const codec = @import("codec.zig");
 
-        // Encode per graypaper statistics.tex: da_load, popularity, imports, extrinsic_count, extrinsic_size, exports, bundle_size, gas_used
         try codec.writeInteger(self.da_load, writer);
         try codec.writeInteger(self.popularity, writer);
         try codec.writeInteger(self.imports, writer);
@@ -137,7 +123,6 @@ pub const ServiceActivityRecord = struct {
     pub fn encode(self: *const @This(), _: anytype, writer: anytype) !void {
         const codec = @import("codec.zig");
 
-        // Encode per graypaper statistics.tex: imports, extrinsic_count, extrinsic_size, exports
         try codec.writeInteger(self.provided_count, writer);
         try codec.writeInteger(self.provided_size, writer);
         try codec.writeInteger(self.refinement_count, writer);
@@ -179,7 +164,6 @@ pub const ServiceActivityRecord = struct {
     }
 };
 
-/// PiComponent holds the comprehensive statistics for the system
 pub const Pi = struct {
     current_epoch_stats: std.ArrayList(ValidatorStats),
     previous_epoch_stats: std.ArrayList(ValidatorStats),
@@ -207,7 +191,6 @@ pub const Pi = struct {
         return stats;
     }
 
-    /// Initialize a new Pi component with zeroed-out stats
     pub fn init(allocator: std.mem.Allocator, validator_count: usize, core_count: usize) !Pi {
         return Pi{
             .current_epoch_stats = try Pi.initValidatorStats(allocator, validator_count),
@@ -220,7 +203,6 @@ pub const Pi = struct {
         };
     }
 
-    /// Get ValidatorStats for a given validator ID in the current epoch
     pub fn getValidatorStats(self: *Pi, id: ValidatorIndex) !*ValidatorStats {
         if (id >= self.validator_count) {
             return error.ValidatorIndexOutOfBounds;
@@ -228,7 +210,6 @@ pub const Pi = struct {
         return &self.current_epoch_stats.items[id];
     }
 
-    /// Get CoreActivityRecord for a given core ID
     pub fn getCoreStats(self: *Pi, core_id: U16) !*CoreActivityRecord {
         if (core_id >= self.core_count) {
             return error.CoreIndexOutOfBounds;
@@ -236,37 +217,30 @@ pub const Pi = struct {
         return &self.core_stats.items[core_id];
     }
 
-    /// Get or create ServiceActivityRecord for a given service ID
     pub fn getOrCreateServiceStats(self: *Pi, service_id: ServiceId) !*ServiceActivityRecord {
-        // Try to get the entry first
         if (self.service_stats.getPtr(service_id)) |record| {
             return record;
         }
 
-        // Service not found, create a new entry
         try self.service_stats.put(service_id, ServiceActivityRecord.init());
         return self.service_stats.getPtr(service_id).?;
     }
 
-    /// Move current epoch stats to previous epoch and reset current stats
     pub fn transitionToNextEpoch(self: *Pi) !void {
         self.previous_epoch_stats.deinit();
         self.previous_epoch_stats = self.current_epoch_stats;
         self.current_epoch_stats = try Pi.initValidatorStats(self.allocator, self.validator_count);
 
-        // Clear core and service stats for the new epoch
         for (self.core_stats.items) |*core_stat| {
             core_stat.* = CoreActivityRecord.init();
         }
 
-        // Clear service stats for the new epoch
         var service_iter = self.service_stats.iterator();
         while (service_iter.next()) |entry| {
             try self.service_stats.put(entry.key_ptr.*, ServiceActivityRecord.init());
         }
     }
 
-    /// Clear the per block stats
     pub fn clearPerBlockStats(self: *Pi) void {
         for (self.core_stats.items) |*stat| {
             stat.* = CoreActivityRecord.init();
@@ -275,34 +249,28 @@ pub const Pi = struct {
     }
 
     pub fn deepClone(self: @This(), allocator: std.mem.Allocator) !@This() {
-        // Create new ArrayLists
         var current_stats = try std.ArrayList(ValidatorStats).initCapacity(allocator, self.validator_count);
         var previous_stats = try std.ArrayList(ValidatorStats).initCapacity(allocator, self.validator_count);
         var cores = try std.ArrayList(CoreActivityRecord).initCapacity(allocator, self.core_count);
         var services = std.AutoHashMap(ServiceId, ServiceActivityRecord).init(allocator);
 
-        // Deep clone each ValidatorStats instance from current epoch
         for (self.current_epoch_stats.items) |stats| {
             try current_stats.append(stats);
         }
 
-        // Deep clone each ValidatorStats instance from previous epoch
         for (self.previous_epoch_stats.items) |stats| {
             try previous_stats.append(stats);
         }
 
-        // Deep clone each CoreActivityRecord
         for (self.core_stats.items) |stats| {
             try cores.append(stats);
         }
 
-        // Deep clone each ServiceActivityRecord
         var service_iter = self.service_stats.iterator();
         while (service_iter.next()) |entry| {
             try services.put(entry.key_ptr.*, entry.value_ptr.*);
         }
 
-        // Return new Pi instance with cloned data
         return @This(){
             .current_epoch_stats = current_stats,
             .previous_epoch_stats = previous_stats,
@@ -314,7 +282,6 @@ pub const Pi = struct {
         };
     }
 
-    /// Clean up allocated resources
     pub fn deinit(self: *Pi) void {
         self.current_epoch_stats.deinit();
         self.previous_epoch_stats.deinit();

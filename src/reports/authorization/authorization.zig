@@ -6,12 +6,10 @@ const tracing = @import("tracing");
 const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
 
-/// Error types for authorization validation
 pub const Error = error{
     CoreUnauthorized,
 };
 
-/// Check if the authorizer hash is valid
 pub fn validateCoreAuthorization(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),

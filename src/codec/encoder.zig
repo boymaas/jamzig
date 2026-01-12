@@ -66,27 +66,20 @@ pub fn encodeInteger(x: u64) EncodingResult {
     if (x == 0) {
         return EncodingResult.build(null, &[_]u8{0});
     } else if (x < constants.SINGLE_BYTE_MAX) {
-        // optimize the case where the value is less than 128
         return EncodingResult.build(@intCast(x), &[_]u8{});
     } else if (util.findEncodingLength(x)) |l| {
         const prefix = util.encodePrefixWithQuotient(x, l);
         if (l == 0) {
-            // If `l` is 0, the value is stored in the prefix to save space during encoding.
             return EncodingResult.build(prefix, &[_]u8{});
         } else {
-            // In this case, we need to store the length and pack the value
-            // of the remainder at the end.
             var data: [8]u8 = undefined;
             encodeFixedLengthInteger(l, x % (@as(u64, 1) << @intCast(constants.BYTE_SHIFT * l)), &data);
             return EncodingResult.build(prefix, data[0..l]);
         }
     } else {
-        // When `l` is not found, we need to encode the value as a fixed-length integer.
         var data: [8]u8 = undefined;
         encodeFixedLengthInteger(8, x, &data);
 
         return EncodingResult.build(constants.EIGHT_BYTE_MARKER, &data);
     }
 }
-
-// Tests are in encoder/tests.zig

@@ -60,8 +60,6 @@ pub fn diffBasedOnTypesFormat(
     actual: anytype,
     expected: anytype,
 ) !DiffResult {
-
-    // Print both before and after states
     const actual_str = try tfmt.formatAlloc(allocator, actual);
     defer allocator.free(actual_str);
     const expected_str = try tfmt.formatAlloc(allocator, expected);
@@ -75,8 +73,6 @@ pub fn diffBasedOnFormat(
     before: anytype,
     after: anytype,
 ) !DiffResult {
-
-    // Print both before and after states
     const before_str = try std.fmt.allocPrint(allocator, "{any}", .{before});
     defer allocator.free(before_str);
     const after_str = try std.fmt.allocPrint(allocator, "{any}", .{after});
@@ -90,17 +86,13 @@ pub fn diffBasedOnStrings(allocator: std.mem.Allocator, before_str: []const u8, 
         return .EmptyDiff;
     }
 
-    // Create temporary files to store the before and after states
     var before_file = try tmpfile.tmpFile(.{});
     defer before_file.deinit();
     var after_file = try tmpfile.tmpFile(.{});
     defer after_file.deinit();
 
-    // Write to the tempfiles
     try before_file.f.writeAll(before_str);
     try after_file.f.writeAll(after_str);
-
-    // Now do a context diff between the two files
     const result = try std.process.Child.run(.{
         .allocator = allocator,
         .argv = &[_][]const u8{
@@ -115,7 +107,6 @@ pub fn diffBasedOnStrings(allocator: std.mem.Allocator, before_str: []const u8, 
     });
     defer allocator.free(result.stderr);
 
-    // Return the owned slice, to be freed by caller
     return .{ .Diff = result.stdout };
 }
 
@@ -130,8 +121,6 @@ pub fn printDiffBasedOnFormatToStdErr(
     diff.debugPrint();
 }
 
-/// Test function to compare two values based on their evaluated format
-/// Returns an error after printing the diff
 pub fn expectFormattedEqual(
     comptime T: type,
     allocator: std.mem.Allocator,
@@ -143,7 +132,6 @@ pub fn expectFormattedEqual(
     try diff.debugPrintAndReturnErrorOnDiff();
 }
 
-// Compare values using types/fmt formatting without requiring custom formatters
 pub fn expectTypesFmtEqual(
     comptime T: type,
     allocator: std.mem.Allocator,
@@ -160,8 +148,6 @@ pub fn expectTypesFmtEqual(
     try diff.debugPrintAndReturnErrorOnDiff();
 }
 
-/// Reflection-based diff using compile-time type walking
-/// Drop-in replacement for diffBasedOnStrings with semantic output
 pub fn diffBasedOnReflection(
     comptime T: type,
     allocator: std.mem.Allocator,

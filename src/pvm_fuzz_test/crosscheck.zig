@@ -5,8 +5,6 @@ const InstructionWithArgs = PVM.InstructionWithArgs;
 const polkavm_env = @import("polkavm.zig");
 const pvm_env = @import("pvm.zig");
 
-/// CrossCheck is a utility to compare execution of the same instruction
-/// between the PVM and PolkaVM test environments.
 pub const CrossCheck = struct {
     allocator: std.mem.Allocator,
     initial_registers: [13]u64,
@@ -17,20 +15,17 @@ pub const CrossCheck = struct {
 
     const Self = @This();
 
-    /// Represents a register mismatch between PVM and PolkaVM
     pub const RegisterMismatch = struct {
         register: usize,
         pvm_value: u64,
         polkavm_value: u64,
     };
 
-    /// Result of comparing registers between PVM and PolkaVM
     pub const RegisterComparisonResult = struct {
         matches: bool,
         mismatches: std.ArrayList(RegisterMismatch),
     };
 
-    /// Result of comparing memory between PVM and PolkaVM
     pub const MemoryComparisonResult = enum {
         BothUnchanged,
         PVMChangedOnly,
@@ -40,14 +35,12 @@ pub const CrossCheck = struct {
         Identical,
     };
 
-    /// Result of comparing execution status between PVM and PolkaVM
     pub const StatusComparisonResult = struct {
         matches: bool,
         pvm_status: []const u8,
         polkavm_status: []const u8,
     };
 
-    /// Result of comparing gas usage between PVM and PolkaVM
     pub const GasComparisonResult = struct {
         matches: bool,
         pvm_gas: u64,
@@ -65,8 +58,6 @@ pub const CrossCheck = struct {
             self.polkavm_result.deinit(allocator);
         }
 
-        /// Compares register values between PVM and PolkaVM
-        /// Returns true if all registers match, false otherwise
         pub fn compareRegisters(self: *const @This()) RegisterComparisonResult {
             var result = RegisterComparisonResult{
                 .matches = true,
@@ -90,10 +81,7 @@ pub const CrossCheck = struct {
             return result;
         }
 
-        /// Compares memory changes between PVM and PolkaVM
-        /// Returns an enum indicating the memory comparison result
         pub fn compareMemory(self: *const @This()) MemoryComparisonResult {
-            // Check if either has no memory changes
             const pvm_has_memory = self.pvm_result.memory != null;
             const polkavm_has_memory = self.polkavm_result.memory != null;
 
@@ -105,12 +93,10 @@ pub const CrossCheck = struct {
                 return .PolkaVMChangedOnly;
             }
 
-            // Both have memory changes, compare addresses
             if (self.pvm_result.memory_address != self.polkavm_result.memory_address) {
                 return .DifferentAddresses;
             }
 
-            // Compare memory values
             const pvm_mem = self.pvm_result.memory.?;
             const polkavm_mem = self.polkavm_result.memory.?;
 
@@ -127,12 +113,10 @@ pub const CrossCheck = struct {
             return .Identical;
         }
 
-        /// Compares execution status between PVM and PolkaVM
         pub fn compareStatus(self: *const @This()) StatusComparisonResult {
             var pvm_status_str: []const u8 = undefined;
             var polkavm_status_str: []const u8 = undefined;
 
-            // Convert PVM status to string for comparison
             switch (self.pvm_result.status) {
                 .success => pvm_status_str = "success",
                 .terminal => |terminal| {
@@ -146,7 +130,6 @@ pub const CrossCheck = struct {
                 .@"error" => |_| pvm_status_str = "error",
             }
 
-            // Convert PolkaVM status to string for comparison
             switch (self.polkavm_result.status) {
                 .Trap => polkavm_status_str = "panic",
                 .Success => polkavm_status_str = "halt",
@@ -163,7 +146,6 @@ pub const CrossCheck = struct {
             };
         }
 
-        /// Compares gas usage between PVM and PolkaVM
         pub fn compareGas(self: *const @This()) GasComparisonResult {
             const pvm_gas = self.pvm_result.gas_used;
             const polkavm_gas = self.polkavm_result.gas_used;
@@ -176,7 +158,6 @@ pub const CrossCheck = struct {
             };
         }
 
-        /// Checks if all aspects of execution match between the two environments
         pub fn matchesExactly(self: *const @This()) bool {
             const reg_compare = self.compareRegisters();
             defer reg_compare.mismatches.deinit();
@@ -191,11 +172,9 @@ pub const CrossCheck = struct {
                 gas_compare.matches;
         }
 
-        /// Returns a comprehensive report of differences between PVM and PolkaVM
         pub fn getDifferenceReport(self: *const @This(), writer: anytype) !void {
             try writer.print("Cross-check report for instruction: {s}\n", .{@tagName(self.instruction.instruction)});
 
-            // Register comparison
             const reg_compare = self.compareRegisters();
             defer reg_compare.mismatches.deinit();
 
@@ -212,7 +191,6 @@ pub const CrossCheck = struct {
                 }
             }
 
-            // Memory comparison
             const mem_compare = self.compareMemory();
             try writer.print("Memory: ", .{});
             switch (mem_compare) {
@@ -231,7 +209,6 @@ pub const CrossCheck = struct {
                 try writer.print("PolkaVM memory address: {x}\n", .{addr});
             }
 
-            // Status comparison
             const status_compare = self.compareStatus();
             if (!status_compare.matches) {
                 try writer.print("Status mismatch: PVM={s} PolkaVM={s}\n", .{ status_compare.pvm_status, status_compare.polkavm_status });
@@ -239,7 +216,6 @@ pub const CrossCheck = struct {
                 try writer.print("Status matches: {s}\n", .{status_compare.pvm_status});
             }
 
-            // Gas comparison
             const gas_compare = self.compareGas();
             if (!gas_compare.matches) {
                 try writer.print("Gas usage mismatch: PVM={d} PolkaVM={d} (diff: {d})\n", .{ gas_compare.pvm_gas, gas_compare.polkavm_gas, gas_compare.difference });

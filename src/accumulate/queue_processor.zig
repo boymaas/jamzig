@@ -8,7 +8,6 @@ const Queued = accumulate_types.Queued;
 
 const trace = @import("tracing").scoped(.accumulate);
 
-/// Error types for queue processing
 pub const QueueError = error{
     InvalidQueueState,
     QueueOverflow,
@@ -16,7 +15,7 @@ pub const QueueError = error{
 } || error{OutOfMemory};
 
 pub fn QueueProcessor(comptime params: Params) type {
-    _ = params; // Reserved for future use
+    _ = params;
     return struct {
         allocator: std.mem.Allocator,
 
@@ -26,7 +25,6 @@ pub fn QueueProcessor(comptime params: Params) type {
             return .{ .allocator = allocator };
         }
 
-        /// Main queue processing function - coordinates queue operations
         pub fn processQueues(
             self: Self,
             queues: *QueueSet,
@@ -41,7 +39,6 @@ pub fn QueueProcessor(comptime params: Params) type {
                 .updated_deps = 0,
             };
 
-            // Process each queue type
             result.removed_stale += try self.removeStaleReports(&queues.pending);
             result.updated_deps += try self.updateDependencies(&queues.pending, resolved_hashes);
             result.moved_to_ready += try self.moveReadyReports(&queues.pending, &queues.ready);
@@ -55,7 +52,6 @@ pub fn QueueProcessor(comptime params: Params) type {
             return result;
         }
 
-        /// Removes reports that have become stale
         fn removeStaleReports(
             self: Self,
             queue: *Queued(types.WorkReport),
@@ -77,7 +73,6 @@ pub fn QueueProcessor(comptime params: Params) type {
             return removed;
         }
 
-        /// Updates dependencies based on resolved hashes
         fn updateDependencies(
             self: Self,
             queue: *Queued(types.WorkReport),
@@ -90,15 +85,12 @@ pub fn QueueProcessor(comptime params: Params) type {
 
             var updated: usize = 0;
 
-            // This functionality is handled by dependency_resolver
-            // Just count the resolved hashes as updates
             updated = resolved_hashes.len;
 
             span.debug("Updated dependencies for {d} reports", .{updated});
             return updated;
         }
 
-        /// Moves reports that are ready for accumulation
         fn moveReadyReports(
             self: Self,
             pending: *Queued(types.WorkReport),
@@ -129,13 +121,11 @@ pub fn QueueProcessor(comptime params: Params) type {
             return moved;
         }
 
-        /// Validates queue consistency
         pub fn validateQueues(self: Self, queues: *const QueueSet) !void {
             _ = self;
             const span = trace.span(@src(), .validate_queues);
             defer span.deinit();
 
-            // Check for duplicates across queues
             var all_hashes = std.AutoHashMap(types.WorkReportHash, void).init(span.allocator);
             defer all_hashes.deinit();
 
@@ -158,7 +148,6 @@ pub fn QueueProcessor(comptime params: Params) type {
             span.debug("Queue validation passed", .{});
         }
 
-        /// Queue statistics
         pub fn getQueueStats(self: Self, queues: *const QueueSet) QueueStats {
             _ = self;
             return .{

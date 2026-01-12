@@ -15,7 +15,6 @@ pub fn encode(self: *const Psi, writer: anytype) !void {
     defer span.deinit();
     span.debug("Starting PSI state encoding", .{});
 
-    // Encode each set
     try encodeOrderedSet(&self.good_set, "good", writer);
     try encodeOrderedSet(&self.bad_set, "bad", writer);
     try encodeOrderedSet(&self.wonky_set, "wonky", writer);
@@ -37,10 +36,8 @@ fn encodeOrderedSet(set: *const std.AutoArrayHashMap([32]u8, void), name: []cons
     defer list.deinit();
 
     try list.appendSlice(set.keys());
-    span.debug("Created temporary list for sorting", .{});
 
     std.sort.insertion(Hash, list.items, {}, lessThanSliceOfHashes);
-    span.debug("Sorted hash list", .{});
 
     try writer.writeAll(encoder.encodeInteger(@intCast(list.items.len)).as_slice());
     span.trace("Wrote length prefix: {d}", .{list.items.len});
@@ -76,7 +73,6 @@ test "encode" {
 
     const decoder = @import("../codec/decoder.zig");
 
-    // Decode the buffer
     var reader = buffer.items;
     const decoded = try decoder.decodeInteger(reader);
     try testing.expectEqual(@as(usize, 5), decoded.value);

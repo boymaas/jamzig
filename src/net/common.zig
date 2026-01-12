@@ -39,21 +39,17 @@ pub const Event = union(enum) {
         };
     }
 
-    // -- Server events
     listening: struct {
         local_endpoint: network.EndPoint,
         result: Result(anyerror!network.EndPoint),
     },
 
-    // -- Connection events
     connected: struct {
         connection_id: ConnectionId,
         endpoint: network.EndPoint,
         metadata: CommandMetadata(anyerror!ConnectionId),
     },
 
-    // -- Client connected from server perspective
-    // TODO: merge these connected events into one
     client_connected: struct {
         connection_id: ConnectionId,
         endpoint: network.EndPoint,
@@ -71,7 +67,6 @@ pub const Event = union(enum) {
         metadata: CommandMetadata(anyerror!ConnectionId),
     },
 
-    // -- Streams
     stream_created: struct {
         connection_id: ConnectionId,
         stream_id: StreamId,
@@ -83,11 +78,10 @@ pub const Event = union(enum) {
         stream_id: StreamId,
     },
 
-    // -- Data events
     data_received: struct {
         connection_id: ConnectionId,
         stream_id: StreamId,
-        data: []const u8, // owned by original caller
+        data: []const u8,
     },
     data_write_completed: struct {
         connection_id: ConnectionId,
@@ -101,12 +95,12 @@ pub const Event = union(enum) {
     message_received: struct {
         connection_id: ConnectionId,
         stream_id: StreamId,
-        message: []const u8, // Complete message, owned by event
+        message: []const u8,
     },
     data_end_of_stream: struct {
         connection_id: ConnectionId,
         stream_id: StreamId,
-        final_data: []const u8, // Data read just before EOS, owned by event
+        final_data: []const u8,
     },
     data_read_error: struct {
         connection_id: ConnectionId,
@@ -151,17 +145,14 @@ pub const Event = union(enum) {
 
         switch (self.*) {
             .message_received => |e| {
-                // Free the message buffer if it was allocated
                 if (e.message.len > 0) {
                     alloc.free(e.message);
                 }
             },
             .data_received => |data| {
-                // Free the data buffer if it was allocated
                 alloc.free(data.data);
             },
             .data_end_of_stream => |data| {
-                // Free the final_data buffer if it was allocated
                 alloc.free(data.final_data);
             },
             else => {},

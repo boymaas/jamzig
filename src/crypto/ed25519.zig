@@ -52,19 +52,15 @@ pub const Ed25519 = struct {
 };
 
 test "ed25519: invalid public key encoding rejected" {
-    // A public key with all 0xff bytes is an invalid curve point encoding
     const invalid_pk = Ed25519.PublicKey.fromBytes([_]u8{0xff} ** 32);
     const signature = Ed25519.Signature.fromBytes([_]u8{0} ** 64);
     const message = "test message";
 
-    // Invalid public key encoding should fail verification
     const result = signature.verify(message, invalid_pk);
     try std.testing.expectError(Ed25519.Error.InvalidSignature, result);
 }
 
 test "ed25519: corrupted signature rejected" {
-    // Test vector: valid public key but corrupted signature
-    // This public key is from a deterministic seed and is valid
     const valid_pk = Ed25519.PublicKey.fromBytes(.{
         0xd7, 0x5a, 0x98, 0x01, 0x82, 0xb1, 0x0a, 0xb7,
         0xd5, 0x4b, 0xfe, 0xd3, 0xc9, 0x64, 0x07, 0x3a,
@@ -72,7 +68,6 @@ test "ed25519: corrupted signature rejected" {
         0xaf, 0x02, 0x1a, 0x68, 0xf7, 0x07, 0x51, 0x1a,
     });
 
-    // All-zero signature is invalid for any real public key
     const bad_sig = Ed25519.Signature.fromBytes([_]u8{0} ** 64);
     const message = "test message";
 

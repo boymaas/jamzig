@@ -46,7 +46,6 @@ pub fn transition(
     defer span.deinit();
     span.debug("Starting state transition", .{});
 
-    // Process and validate ticket extrinsic
     const verified_extrinsic = try ticket_validation.processTicketExtrinsic(
         IOExecutor,
         io_executor,
@@ -56,7 +55,6 @@ pub fn transition(
     );
     defer stx.allocator.free(verified_extrinsic);
 
-    // Handle epoch transition if needed
     if (stx.time.isNewEpoch()) {
         try epoch_handler.handleEpochTransition(
             params,
@@ -64,7 +62,6 @@ pub fn transition(
         );
     }
 
-    // Acummulate tickets when within submission window
     const gamma = try stx.ensure(.gamma);
     const gamma_prime: *state.Gamma(params.validators_count, params.epoch_length) = try stx.ensure(.gamma_prime);
     if (stx.time.isInTicketSubmissionPeriod()) {
@@ -79,7 +76,6 @@ pub fn transition(
         gamma_prime.a = merged_gamma_a;
     }
 
-    // Generate markers
     var epoch_marker: ?types.EpochMark = null;
     if (stx.time.isNewEpoch()) {
         const epoch_marker_span = span.child(@src(), .generate_epoch_marker);
@@ -114,8 +110,6 @@ pub fn transition(
     };
 }
 
-// Merges the gamma_a and extrinsic tickets into a new ticket
-// accumulator, limited by the epoch length.
 fn mergeTicketsIntoTicketAccumulatorGammaA(
     allocator: std.mem.Allocator,
     gamma_a: []types.TicketBody,

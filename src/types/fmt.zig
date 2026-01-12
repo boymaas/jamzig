@@ -41,15 +41,11 @@ pub fn IndentedWriter(comptime T: type) type {
                 }
 
                 written += try self.wrapped.write(&[_]u8{byte});
-                // Only set at_start to true when we actually see a newline
                 if (byte == '\n') {
                     self.at_start = true;
                 }
             }
 
-            // We need to return the number of bytes written as expected
-            // by the caller. This is not the actual number of bytes written but an indicator
-            // that we finished writing. This happens when we have written all bytes.
             return written;
         }
 
@@ -155,7 +151,6 @@ fn detectContainerType(comptime T: type) ContainerType {
 fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: Options) !bool {
     switch (comptime detectContainerType(T)) {
         .list => {
-            // Handle array-like containers (ArrayList, BoundedArray)
             const items = if (@hasField(T, "items"))
                 value.items
             else if (@hasDecl(T, "items"))
@@ -199,8 +194,6 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
             return true;
         },
         .multi_array_list => {
-            // NOTE: ignore for now, this type
-            // pops up when using an ArrayHashMap
             return true;
         },
         .hash_map => {
@@ -216,7 +209,6 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
                 return true;
             }
 
-            // Sort keys if requested and we have an allocator
             if (options.sort_hash_fields) {
                 if (options.allocator == null) {
                     @panic("Need and allocator in options to be able to sort hash fields");
@@ -235,7 +227,6 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
                 defer kv_pairs.deinit();
                 try kv_pairs.ensureTotalCapacity(count);
 
-                // Collect all entries
                 var it = value.iterator();
                 while (it.next()) |entry| {
                     try kv_pairs.append(.{
@@ -244,28 +235,22 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
                     });
                 }
 
-                // Sort the entries based on string representation of keys
-                // This is a basic approach - for complex key types,
-                // a more sophisticated comparison might be needed
                 const KeyCompareContext = struct {
                     pub fn compare(ctx: @This(), a: KVPair, b: KVPair) bool {
                         _ = ctx;
                         const KeyT = std.meta.FieldType(KVPair, .key_ptr);
 
-                        // For strings and slices, use string comparison
                         if (@typeInfo(KeyT) == .pointer and
                             @typeInfo(KeyT).pointer.child == u8)
                         {
                             return std.mem.lessThan(u8, a.key_ptr.*, b.key_ptr.*);
                         }
 
-                        // For integers and enums, use numeric comparison
                         if (@typeInfo(KeyT) == .int or @typeInfo(KeyT) == .@"enum") {
                             return @as(u64, @intCast(@intFromEnum(a.key_ptr.*))) <
                                 @as(u64, @intCast(@intFromEnum(b.key_ptr.*)));
                         }
 
-                        // Default: compare memory
                         const a_bytes = std.mem.asBytes(a.key_ptr);
                         const b_bytes = std.mem.asBytes(b.key_ptr);
                         return std.mem.lessThan(u8, a_bytes, b_bytes);
@@ -274,7 +259,6 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
 
                 std.sort.insertion(KVPair, kv_pairs.items, KeyCompareContext{}, KeyCompareContext.compare);
 
-                // Format entries in sorted order
                 writer.context.indent();
                 for (kv_pairs.items) |entry| {
                     try writer.writeAll("key: ");
@@ -284,18 +268,15 @@ fn formatContainer(comptime T: type, value: anytype, writer: anytype, options: O
                 }
                 writer.context.outdent();
             } else {
-                // Original unsorted output logic
                 var it = value.iterator();
                 if (it.next()) |first| {
                     writer.context.indent();
 
-                    // Format first entry
                     try writer.writeAll("key: ");
                     try formatValue(first.key_ptr.*, writer, options);
                     try writer.writeAll("value: ");
                     try formatValue(first.value_ptr.*, writer, options);
 
-                    // Format remaining entries
                     while (it.next()) |entry| {
                         try writer.writeAll("key: ");
                         try formatValue(entry.key_ptr.*, writer, options);
@@ -323,7 +304,6 @@ pub fn formatValue(value: anytype, writer: anytype, options: Options) !void {
     const type_info = @typeInfo(T);
     span.debug("Formatting value of type: {s}", .{@typeName(T)});
 
-    // never format our allocators
     if (detectStdMemAllocator(T)) {
         span.debug("Skipping allocator formatting", .{});
         try writer.writeAll("<std.mem.Allocator omitted>\n");
@@ -336,8 +316,6 @@ pub fn formatValue(value: anytype, writer: anytype, options: Options) !void {
             defer struct_span.deinit();
             struct_span.debug("Formatting struct with {d} fields", .{info.fields.len});
 
-            // check it's a generic data structure we recognize, if that is the case
-            // we can format it in a more human-readable way
             @setEvalBranchQuota(10_000);
             if (try formatContainer(T, value, writer, options)) return;
 
@@ -353,9 +331,7 @@ pub fn formatValue(value: anytype, writer: anytype, options: Options) !void {
                     writer.context.indent();
                     try writer.writeAll("<field ommited per types.fmt.Options>\n");
                     writer.context.outdent();
-                } else {
-                    try formatValue(@field(value, field.name), writer, options);
-                }
+                } else try formatValue(@field(value, field.name), writer, options);
             }
             writer.context.outdent();
         },
@@ -389,7 +365,6 @@ pub fn formatValue(value: anytype, writer: anytype, options: Options) !void {
             ptr_span.debug("Formatting pointer of type {s}", .{@typeName(T)});
 
             if (ptr.child == u8 and ptr.size == .slice) {
-                ptr_span.debug("Handling as byte slice", .{});
                 try formatHex(value, writer);
                 try writer.writeAll("\n");
             } else {
@@ -439,7 +414,6 @@ pub fn formatValue(value: anytype, writer: anytype, options: Options) !void {
             arr_span.debug("Formatting array of type {s}[{d}]", .{ @typeName(arr.child), arr.len });
 
             if (arr.child == u8) {
-                arr_span.debug("Handling as byte array", .{});
                 try formatHex(&value, writer);
                 try writer.writeAll("\n");
             } else {
@@ -459,11 +433,8 @@ pub fn formatValue(value: anytype, writer: anytype, options: Options) !void {
             opt_span.debug("Formatting optional of type {s}", .{@typeName(T)});
 
             if (value) |v| {
-                opt_span.debug("Optional has value", .{});
                 try formatValue(v, writer, options);
             } else {
-                opt_span.debug("Optional is null", .{});
-
                 try writer.writeAll("null");
                 try writer.writeAll("\n");
             }

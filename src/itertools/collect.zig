@@ -1,12 +1,10 @@
 const std = @import("std");
 
-/// Collects into newly created ArrayList with capacity
 pub fn collectIntoArrayList(
     comptime T: type,
     allocator: std.mem.Allocator,
     iterator: anytype,
     options: struct {
-        /// Initial capacity for the array list, if null uses ArrayList default
         initial_capacity: ?usize = null,
     },
 ) !std.ArrayList(T) {
@@ -24,7 +22,6 @@ test "collectIntoArrayList - basic usage" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    // Create a simple number iterator
     const NumberIterator = struct {
         current: u32 = 0,
         max: u32,
@@ -41,7 +38,6 @@ test "collectIntoArrayList - basic usage" {
         }
     };
 
-    // Test collecting numbers 0 through 4
     var iter = NumberIterator.init(5);
     var list = try collectIntoArrayList(
         u32,
@@ -80,7 +76,6 @@ test "collectIntoArrayList - empty iterator" {
     try testing.expectEqual(@as(usize, 0), list.items.len);
 }
 
-/// Collects iterator values into an appendable container (e.g. ArrayList)
 pub fn collectIntoAppendable(
     iterator: anytype,
     container: anytype,
@@ -90,7 +85,6 @@ pub fn collectIntoAppendable(
     }
 }
 
-/// Collects iterator values into a HashSet
 pub fn collectIntoSet(
     iterator: anytype,
     set: anytype,
@@ -104,7 +98,6 @@ test "collectIntoAppendable - basic usage" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    // Create a simple number iterator
     const NumberIterator = struct {
         current: u32 = 0,
         max: u32,
@@ -121,7 +114,6 @@ test "collectIntoAppendable - basic usage" {
         }
     };
 
-    // Test collecting numbers 0 through 4
     var iter = NumberIterator.init(5);
     var list = std.ArrayList(u32).init(allocator);
     defer list.deinit();
@@ -139,7 +131,6 @@ test "collectIntoSet - basic usage" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    // Create a simple number iterator with duplicates
     const NumberIterator = struct {
         numbers: []const u32,
         position: usize = 0,
@@ -156,7 +147,6 @@ test "collectIntoSet - basic usage" {
         }
     };
 
-    // Test collecting numbers with duplicates
     const numbers = [_]u32{ 1, 2, 2, 3, 3, 3, 4, 4, 4, 4 };
     var iter = NumberIterator.init(&numbers);
     var set = std.AutoHashMap(u32, void).init(allocator);
@@ -164,15 +154,12 @@ test "collectIntoSet - basic usage" {
 
     try collectIntoSet(&iter, &set);
 
-    // Verify set size (should be 4 unique numbers)
     try testing.expectEqual(@as(usize, 4), set.count());
 
-    // Verify all unique numbers are present
     try testing.expect(set.contains(1));
     try testing.expect(set.contains(2));
     try testing.expect(set.contains(3));
     try testing.expect(set.contains(4));
 
-    // Verify a number not in the original sequence is not present
     try testing.expect(!set.contains(5));
 }

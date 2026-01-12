@@ -22,7 +22,6 @@ pub fn encode(
     defer span.deinit();
     span.debug("Starting Rho state encoding with {d} cores", .{params.core_count});
 
-    // The number of cores (C) is not encoded as it is a constant
     for (rho.reports, 0..) |maybe_entry, core_idx| {
         const entry_span = span.child(@src(), .entry);
         defer entry_span.deinit();
@@ -30,16 +29,13 @@ pub fn encode(
 
         if (maybe_entry) |entry| {
             entry_span.debug("Encoding entry for core {d}", .{core_idx});
-            // Entry exists
             try writer.writeByte(1);
             entry_span.trace("Wrote presence byte: 1", .{});
 
-            // Encode work report
             entry_span.debug("Serializing availability assignment", .{});
             try codec.serialize(types.AvailabilityAssignment, .{}, writer, entry.assignment);
         } else {
             entry_span.debug("No entry for core {d}", .{core_idx});
-            // No entry
             try writer.writeByte(0);
             entry_span.trace("Wrote presence byte: 0", .{});
         }

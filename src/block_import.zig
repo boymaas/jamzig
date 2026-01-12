@@ -69,7 +69,6 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
             const span = trace.span(@src(), .import_block_building_root);
             defer span.deinit();
 
-            // Build current state root for validation
             const current_state_root = try current_state.buildStateRoot(self.allocator);
 
             return self.importBlockWithCachedRoot(
@@ -89,10 +88,8 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
             const span = trace.span(@src(), .import_block_with_cached_root);
             defer span.deinit();
 
-            // Frame per block
             defer tracy.FrameMarkNamed("Block");
 
-            // Step 1: Validate header using the cached state root
             const validation_result =
                 try self.header_validator.validateHeader(
                     current_state,
@@ -103,7 +100,6 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
 
             span.debug("Header validated, sealed with tickets: {}", .{validation_result.sealed_with_tickets});
 
-            // Step 2: Apply state transition
             const state_transition =
                 try stf.stateTransition(
                     IOExecutor,
@@ -114,7 +110,6 @@ pub fn BlockImporter(comptime IOExecutor: type, comptime params: jam_params.Para
                     block,
                 );
 
-            // Step 3: After successful import, add block header to ancestry_prime (if ancestry exists)
             if (state_transition.hasBase(.ancestry)) {
                 const ancestry_prime = try state_transition.ensure(.ancestry_prime);
                 const block_hash = try block.header.header_hash(params, self.allocator);

@@ -21,14 +21,11 @@ pub fn encode(vartheta: anytype, writer: anytype) !void {
     defer span.deinit();
     span.debug("Starting vartheta encoding", .{});
 
-    // Encode each entry
     for (vartheta.entries, 0..) |slot_entry, i| {
         const entry_span = span.child(@src(), .slot_entry);
         defer entry_span.deinit();
         entry_span.debug("Processing slot entry {d}", .{i});
 
-        // Encode the dependencies set
-        // First write number of dependencies
         try codec.writeInteger(slot_entry.items.len, writer);
         entry_span.debug("Wrote {d} slot entries", .{slot_entry.items.len});
 

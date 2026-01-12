@@ -31,12 +31,10 @@ pub fn decode(
     try context.push(.{ .component = "beta" });
     defer context.pop();
 
-    // Decode recent_history
     try context.push(.{ .field = "recent_history" });
     const recent_history = try decodeRecentHistory(allocator, context, reader);
     context.pop();
 
-    // Decode beefy_belt MMR
     try context.push(.{ .field = "beefy_belt" });
     const beefy_belt = try decodeBeefyBelt(allocator, context, reader);
     context.pop();
@@ -69,11 +67,10 @@ fn decodeRecentHistory(
     span.debug("History contains {d} blocks", .{blocks_len});
     context.pop();
 
-    var history = try RecentHistory.init(allocator, 8); // Using constant 8 from original
+    var history = try RecentHistory.init(allocator, 8);
     span.debug("Initialized RecentHistory with capacity 8", .{});
     errdefer history.deinit();
 
-    // Read each block
     try context.push(.{ .field = "blocks" });
     var i: usize = 0;
     while (i < blocks_len) : (i += 1) {

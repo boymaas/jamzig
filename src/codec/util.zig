@@ -16,15 +16,13 @@ const errors = @import("errors.zig");
 ///
 /// Returns: The encoding length parameter, or null if x is too large
 pub fn findEncodingLength(x: u64) ?u8 {
-    // Iterate over l in the range of 0 to 7 (l in N_8)
     var l: u8 = 0;
     while (l <= constants.MAX_L_VALUE) : (l += 1) {
-        const lower_bound: u64 = @as(u64, 1) << @intCast(constants.ENCODING_BIT_SHIFT * l); // 2^(7l)
-        const upper_bound: u64 = @as(u64, 1) << @intCast(constants.ENCODING_BIT_SHIFT * (l + 1)); // 2^(7(l+1))
+        const lower_bound: u64 = @as(u64, 1) << @intCast(constants.ENCODING_BIT_SHIFT * l);
+        const upper_bound: u64 = @as(u64, 1) << @intCast(constants.ENCODING_BIT_SHIFT * (l + 1));
 
-        // Check if x falls within the range [2^(7l), 2^(7(l+1)))
         if (x >= lower_bound and x < upper_bound) {
-            return l; // l is found
+            return l;
         }
     }
 

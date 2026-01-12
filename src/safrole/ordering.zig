@@ -40,7 +40,6 @@ test outsideInOrdering {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    // Test case 1: Even number of elements
     {
         const input = [_]u32{ 1, 2, 3, 4, 5, 6 };
         const result = try outsideInOrdering(u32, allocator, &input);
@@ -49,7 +48,6 @@ test outsideInOrdering {
         try testing.expectEqualSlices(u32, &[_]u32{ 1, 6, 2, 5, 3, 4 }, result);
     }
 
-    // Test case 2: Odd number of elements
     {
         const input = [_]u32{ 1, 2, 3, 4, 5 };
         const result = try outsideInOrdering(u32, allocator, &input);
@@ -58,7 +56,6 @@ test outsideInOrdering {
         try testing.expectEqualSlices(u32, &[_]u32{ 1, 5, 2, 4, 3 }, result);
     }
 
-    // Test case 3: Single element
     {
         const input = [_]u32{1};
         const result = try outsideInOrdering(u32, allocator, &input);
@@ -67,7 +64,6 @@ test outsideInOrdering {
         try testing.expectEqualSlices(u32, &[_]u32{1}, result);
     }
 
-    // Test case 4: Empty input
     {
         const input = [_]u32{};
         const result = try outsideInOrdering(u32, allocator, &input);

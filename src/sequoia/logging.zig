@@ -3,7 +3,6 @@ const types = @import("../types.zig");
 const jamstate = @import("../state.zig");
 const jam_params = @import("../jam_params.zig");
 
-// Helper function to format validator information
 fn formatValidatorSet(writer: anytype, validators: ?types.ValidatorSet, name: []const u8, symbol: []const u8) !void {
     if (validators) |set| {
         try writer.print("    {s} Validators ({s}): {d} validators\n", .{ name, symbol, set.validators.len });
@@ -17,7 +16,6 @@ fn formatValidatorSet(writer: anytype, validators: ?types.ValidatorSet, name: []
     }
 }
 
-// Helper function to format ticket information
 fn formatTicket(writer: anytype, ticket: types.TicketBody, index: usize) !void {
     try writer.print("      Ticket[{d}]: ID=0x{s}, Attempt={d}\n", .{
         index,
@@ -26,7 +24,6 @@ fn formatTicket(writer: anytype, ticket: types.TicketBody, index: usize) !void {
     });
 }
 
-// Helper function to format public key information
 fn formatPublicKey(writer: anytype, key: types.BandersnatchPublic, index: usize) !void {
     try writer.print("      Key[{d}]: 0x{s}\n", .{
         index,
@@ -34,7 +31,6 @@ fn formatPublicKey(writer: anytype, key: types.BandersnatchPublic, index: usize)
     });
 }
 
-// Format state debug information
 pub fn formatStateDebug(
     writer: anytype,
     comptime params: jam_params.Params,
@@ -86,7 +82,6 @@ fn formatBlockHeaderDebug(
     });
 }
 
-// Format block debug information
 pub fn formatBlockDebug(
     writer: anytype,
     comptime params: jam_params.Params,
@@ -105,7 +100,6 @@ pub fn formatBlockEntropyDebug(
 ) !void {
     try formatBlockHeaderDebug(writer, params, block);
 
-    // Display entropy buffer if available
     if (state.eta) |eta| {
         try writer.print(" η=[", .{});
         for (eta[0..@min(4, eta.len)], 0..) |e, i| {
@@ -115,21 +109,17 @@ pub fn formatBlockEntropyDebug(
         try writer.print("]", .{});
     }
 
-    // Display Safrole consensus mode and ticket/key count
     if (state.gamma) |gamma| {
         switch (gamma.s) {
             .tickets => |tickets| try writer.print(" γs=tickets({d})", .{tickets.len}),
             .keys => |keys| try writer.print(" γs=keys({d})", .{keys.len}),
         }
-        // Accumulator
         try writer.print(" acc={d:0>4}", .{gamma.a.len});
-        // Show VRF root if present
         try writer.print(" vrf={s}", .{std.fmt.fmtSliceHexLower(gamma.z[0..4])});
     }
     try writer.print("\n", .{});
 }
 
-// Format combined state and block debug information
 pub fn formatStateTransitionDebug(
     writer: anytype,
     comptime params: jam_params.Params,
@@ -140,7 +130,6 @@ pub fn formatStateTransitionDebug(
     try formatStateDebug(writer, params, state);
 }
 
-// Wrapper functions to print to stderr
 pub fn printStateDebug(
     comptime params: jam_params.Params,
     state: *const jamstate.JamState(params),
@@ -194,7 +183,6 @@ pub fn allocPrintBlockDebug(
     return list.toOwnedSlice();
 }
 
-// Format entropy debug information
 pub fn formatEntropyDebug(writer: anytype, eta: types.EntropyBuffer) !void {
     try writer.print("\n→ Entropy State (η)\n", .{});
     for (eta, 0..) |e, i| {
@@ -206,12 +194,10 @@ pub fn formatEntropyDebug(writer: anytype, eta: types.EntropyBuffer) !void {
     }
 }
 
-// Print entropy debug information to stderr
 pub fn printEntropyDebug(eta: types.EntropyBuffer) void {
     formatEntropyDebug(std.io.getStdErr().writer(), eta) catch return;
 }
 
-// Return allocated string with entropy debug information
 pub fn allocPrintEntropyDebug(
     allocator: std.mem.Allocator,
     eta: types.EntropyBuffer,

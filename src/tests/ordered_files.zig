@@ -62,7 +62,6 @@ pub fn getOrderedFilesWithFilter(
     var files = ArrayList(Entry).init(allocator);
     var dir_iterator = dir.iterate();
 
-    // NOTE: memory of path becomes invalid after next next() call
     while (try dir_iterator.next()) |path| {
         if (path.kind == .file and filterFn(path.name)) {
             const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_path, path.name });
@@ -73,7 +72,6 @@ pub fn getOrderedFilesWithFilter(
         }
     }
 
-    // Sort files by name
     std.sort.insertion(Entry, files.items, {}, struct {
         fn lessThan(_: void, a: Entry, b: Entry) bool {
             return std.mem.lessThan(u8, a.name, b.name);

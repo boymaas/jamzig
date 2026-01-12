@@ -17,25 +17,21 @@ pub fn encode(self: *const Pi, writer: anytype) !void {
     defer span.deinit();
     span.debug("Starting Pi component encoding", .{});
 
-    // Encode current epoch stats
     const current_span = span.child(@src(), .current_epoch);
     defer current_span.deinit();
     current_span.debug("Encoding current epoch stats for {} validators", .{self.current_epoch_stats.items.len});
     try encodeEpochStats(self.current_epoch_stats.items, writer);
 
-    // Encode previous epoch stats
     const previous_span = span.child(@src(), .previous_epoch);
     defer previous_span.deinit();
     previous_span.debug("Encoding previous epoch stats for {} validators", .{self.previous_epoch_stats.items.len});
     try encodeEpochStats(self.previous_epoch_stats.items, writer);
 
-    // Encode core statistics
     const core_span = span.child(@src(), .core_stats);
     defer core_span.deinit();
     core_span.debug("Encoding core stats for {} cores", .{self.core_stats.items.len});
     try encodeCoreStats(self.core_stats.items, writer);
 
-    // Encode service statistics
     const service_span = span.child(@src(), .service_stats);
     defer service_span.deinit();
     service_span.debug("Encoding service stats for {} services", .{self.service_stats.count()});
@@ -81,9 +77,6 @@ fn encodeCoreStats(stats: []CoreActivityRecord, writer: anytype) !void {
     defer span.deinit();
     span.debug("Encoding core stats for {} cores", .{stats.len});
 
-    // // First encode the number of cores
-    // try codec.writeInteger(stats.len, writer);
-
     for (stats, 0..) |entry, i| {
         const entry_span = span.child(@src(), .core_entry);
         defer entry_span.deinit();
@@ -100,10 +93,8 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
     defer span.deinit();
     span.debug("Encoding service stats for {} services", .{stats.count()});
 
-    // First encode the number of services
     try codec.writeInteger(stats.count(), writer);
 
-    // Capture all service ids, and reserve capacity to avoid reallocations
     var service_ids = try std.ArrayList(types.ServiceId).initCapacity(stats.allocator, stats.count());
     defer service_ids.deinit();
 
@@ -119,25 +110,19 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
         defer entry_span.deinit();
         entry_span.debug("Encoding stats for service {} (ID: {})", .{ entry_index, service_id });
 
-        // Encode service ID
         entry_span.trace("Service ID: {}", .{service_id});
-        // TODO: check this against the graypaper
-        // try codec.writeInteger(service_id, writer);
         try writer.writeInt(u32, service_id, .little);
 
-        // Encode preimage stats
         entry_span.trace("Provided count: {}", .{record.provided_count});
         try codec.writeInteger(record.provided_count, writer);
         entry_span.trace("Provided size: {}", .{record.provided_size});
         try codec.writeInteger(record.provided_size, writer);
 
-        // Encode refinement stats
         entry_span.trace("Refinement count: {}", .{record.refinement_count});
         try codec.writeInteger(record.refinement_count, writer);
         entry_span.trace("Refinement gas used: {}", .{record.refinement_gas_used});
         try codec.writeInteger(record.refinement_gas_used, writer);
 
-        // Encode I/O stats per graypaper statistics.tex: imports, extrinsic_count, extrinsic_size, exports
         entry_span.trace("Imports: {}", .{record.imports});
         try codec.writeInteger(record.imports, writer);
         entry_span.trace("Extrinsic count: {}", .{record.extrinsic_count});
@@ -147,7 +132,6 @@ fn encodeServiceStats(stats: std.AutoHashMap(types.ServiceId, ServiceActivityRec
         entry_span.trace("Exports: {}", .{record.exports});
         try codec.writeInteger(record.exports, writer);
 
-        // Encode accumulation stats
         entry_span.trace("Accumulate count: {}", .{record.accumulate_count});
         try codec.writeInteger(record.accumulate_count, writer);
         entry_span.trace("Accumulate gas used: {}", .{record.accumulate_gas_used});

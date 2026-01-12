@@ -4,7 +4,6 @@ const WorkReport = types.WorkReport;
 const HashSet = @import("datastruct/hash_set.zig").HashSet;
 
 pub const TimeslotEntries = std.ArrayListUnmanaged(WorkReportAndDeps);
-// TODO: Future optimization - use HashSet for better API, but keep AutoArrayHashMap for now due to indexed access requirements
 pub const WorkPackageHashSet = std.AutoArrayHashMapUnmanaged(types.WorkPackageHash, void);
 
 pub fn VarTheta(comptime epoch_size: usize) type {
@@ -33,7 +32,6 @@ pub fn VarTheta(comptime epoch_size: usize) type {
             for (self.entries[time_slot].items) |*entry| {
                 entry.deinit(self.allocator);
             }
-
             self.entries[time_slot].clearRetainingCapacity();
         }
 
@@ -52,22 +50,16 @@ pub fn VarTheta(comptime epoch_size: usize) type {
             var slot_entries = &self.entries[time_slot];
             var i: usize = 0;
             while (i < slot_entries.items.len) {
-                // If this entry has no dependencies, remove it
                 if (slot_entries.items[i].dependencies.count() == 0) {
-                    // Deinit the entry we're removing
                     var item = slot_entries.orderedRemove(i);
                     item.deinit(self.allocator);
                     continue;
                 }
-
-                // Only increment if we didn't remove an item
                 i += 1;
             }
         }
 
-        /// Remove all WorkReports which have no dependencies from all time slots
         pub fn removeReportsWithoutDependencies(self: *@This()) void {
-            // Iterate through all time slots
             for (0..self.entries.len) |slot| {
                 self.removeReportsWithoutDependenciesAtSlot(@intCast(slot));
             }
@@ -77,10 +69,6 @@ pub fn VarTheta(comptime epoch_size: usize) type {
             return self.entries[time_slot].items;
         }
 
-        // pub fn resolveDependency(self: *@This()) !void {}
-
-        /// Iterator wich will walk form starting epoch up and will
-        /// return a pointer to each entry containin
         const Iterator = struct {
             starting_epoch: u32,
 
@@ -90,19 +78,16 @@ pub fn VarTheta(comptime epoch_size: usize) type {
             theta: *VarTheta(epoch_size),
 
             pub fn next(self: *@This()) ?*WorkReportAndDeps {
-                // If we exhausted all epochs we are done
                 if (self.processed_epochs >= epoch_size) {
                     return null;
                 }
 
-                // We are going around the clock as defined in the GP
                 const current_epoch = @mod(
                     self.starting_epoch + self.processed_epochs,
                     epoch_size,
                 );
                 const current_epoch_entry = self.theta.entries[current_epoch];
 
-                // If we exhausted this entry increase and recurse
                 if (self.processed_entry_in_epoch_entry >= current_epoch_entry.items.len) {
                     self.processed_epochs += 1;
                     self.processed_entry_in_epoch_entry = 0;

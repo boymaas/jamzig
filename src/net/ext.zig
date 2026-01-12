@@ -1,7 +1,6 @@
 const std = @import("std");
 const network = @import("network");
 
-// function is private inside of zig-network
 pub fn toSocketAddress(self: network.EndPoint) network.EndPoint.SockAddr {
     return switch (self.address) {
         .ipv4 => |addr| .{

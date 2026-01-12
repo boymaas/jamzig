@@ -7,14 +7,12 @@ const ed25519 = @import("../../crypto/ed25519.zig").Ed25519;
 const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
 
-/// Error types for signature validation
 pub const Error = error{
     BadValidatorIndex,
     BadSignature,
     InvalidValidatorPublicKey,
 };
 
-/// Validate all validator indices are in range
 pub fn validateValidatorIndices(
     comptime params: @import("../../jam_params.zig").Params,
     guarantee: types.ReportGuarantee,
@@ -32,7 +30,6 @@ pub fn validateValidatorIndices(
     }
 }
 
-/// Validate signatures using pre-built assignments and validators
 pub fn validateSignaturesWithAssignments(
     comptime params: @import("../../jam_params.zig").Params,
     allocator: std.mem.Allocator,
@@ -54,13 +51,10 @@ pub fn validateSignaturesWithAssignments(
         sig_detail_span.debug("Validating signature for validator index {d}", .{sig.validator_index});
         sig_detail_span.trace("Signature: {s}", .{std.fmt.fmtSliceHexLower(&sig.signature)});
 
-        // Get validator from the pre-determined set
         const validator = validators.validators[sig.validator_index];
         const public_key = validator.ed25519;
         sig_detail_span.trace("Validator public key: {s}", .{std.fmt.fmtSliceHexLower(&public_key)});
 
-        // Create message to verify using Blake2b
-        // The message is: "jam_guarantee" ++ H(E(anchor, bitfield))
         const prefix: []const u8 = "jam_guarantee";
         const w = try @import("../../codec.zig").serializeAlloc(types.WorkReport, params, allocator, guarantee.report);
         defer allocator.free(w);
@@ -69,7 +63,6 @@ pub fn validateSignaturesWithAssignments(
         var hash: [32]u8 = undefined;
         hasher.final(&hash);
 
-        // ZIP-215 compliant verification
         const validator_pub_key = ed25519.PublicKey.fromBytes(public_key);
         const signature = ed25519.Signature.fromBytes(sig.signature);
 

@@ -1,6 +1,5 @@
 const std = @import("std");
 
-/// Iterates over a slice of T and returns a field on the type
 pub fn MapStructFieldIter(comptime T: type, comptime accessor: []const u8) type {
     return struct {
         slice: []T,
@@ -21,26 +20,19 @@ pub fn MapStructFieldIter(comptime T: type, comptime accessor: []const u8) type 
     };
 }
 
-/// comptime recursive discovery of the type
 fn NestedFieldType(comptime T: type, comptime field: []const u8) type {
-    // If we have no dots, this is a direct field access
     if (std.mem.indexOfScalar(u8, field, '.') == null) {
         const accessor = std.meta.stringToEnum(std.meta.FieldEnum(T), field).?;
-        // Get the type of the first field
         return std.meta.FieldType(T, accessor);
     }
 
-    // For nested fields, we split at the first dot
     const first_dot = std.mem.indexOfScalar(u8, field, '.').?;
     const first_field = field[0..first_dot];
     const remaining = field[first_dot + 1 ..];
 
     const accessor = std.meta.stringToEnum(std.meta.FieldEnum(T), first_field).?;
-
-    // Get the type of the first field
     const NextType = std.meta.FieldType(T, accessor);
 
-    // Recursively get the type of the remaining path
     return NestedFieldType(NextType, remaining);
 }
 
@@ -58,7 +50,6 @@ fn accessNestedField(value: anytype, comptime field: []const u8) NestedFieldType
         };
         return @field(@field(value, f[0]), f[1]);
     } else if (dot_count == 2) {
-        // Handle three levels deep
         const f = comptime blk: {
             var it = std.mem.splitScalar(u8, field, '.');
             const f1 = it.next().?;
@@ -86,7 +77,6 @@ test "MapStructFieldIter - simple field access" {
         .{ .name = "Charlie", .age = 35 },
     };
 
-    // Test name field access
     {
         var iter = MapStructFieldIter(Person, "name").init(&people);
         try testing.expectEqualStrings("Alice", iter.next().?);
@@ -95,7 +85,6 @@ test "MapStructFieldIter - simple field access" {
         try testing.expectEqual(@as(?[]const u8, null), iter.next());
     }
 
-    // Test age field access
     {
         var iter = MapStructFieldIter(Person, "age").init(&people);
         try testing.expectEqual(@as(u32, 30), iter.next().?);
@@ -135,7 +124,6 @@ test "MapStructFieldIter - nested field access" {
         },
     };
 
-    // Test nested street field access
     {
         var iter = MapStructFieldIter(Person, "address.street").init(&people);
         try testing.expectEqualStrings("Main St", iter.next().?);
@@ -143,7 +131,6 @@ test "MapStructFieldIter - nested field access" {
         try testing.expectEqual(@as(?[]const u8, null), iter.next());
     }
 
-    // Test nested number field access
     {
         var iter = MapStructFieldIter(Person, "address.number").init(&people);
         try testing.expectEqual(@as(u32, 123), iter.next().?);
@@ -151,7 +138,6 @@ test "MapStructFieldIter - nested field access" {
         try testing.expectEqual(@as(?u32, null), iter.next());
     }
 
-    // Test nested postal code numbers field access
     {
         var iter = MapStructFieldIter(Person, "address.pc.numbers").init(&people);
         try testing.expectEqual(@as(usize, 4242), iter.next().?);
@@ -159,7 +145,6 @@ test "MapStructFieldIter - nested field access" {
         try testing.expectEqual(@as(?usize, null), iter.next());
     }
 
-    // Test nested postal code letters field access
     {
         var iter = MapStructFieldIter(Person, "address.pc.letters").init(&people);
         try testing.expectEqualSlices(u8, "AB", iter.next().?);

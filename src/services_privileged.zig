@@ -97,14 +97,13 @@ pub fn Chi(comptime core_count: u16) type {
         }
 
         pub fn isPrivilegedService(self: *const Self, index: ServiceIndex) bool {
-            // Check if index is in the assign list
             const is_assign_service = blk: {
                 for (self.assign) |assign_index| {
                     if (index == assign_index and assign_index != 0) break :blk true;
                 }
                 break :blk false;
             };
-            
+
             return (self.manager != 0 and index == self.manager) or
                 is_assign_service or
                 (self.designate != 0 and index == self.designate) or
@@ -139,10 +138,6 @@ pub fn Chi(comptime core_count: u16) type {
         }
     };
 }
-
-//
-// Tests
-//
 
 const testing = std.testing;
 

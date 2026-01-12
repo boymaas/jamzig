@@ -7,7 +7,6 @@ const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
 const Ancestry = state.Ancestry;
 
-/// Error types for anchor validation
 pub const Error = error{
     AnchorNotRecent,
     AnchorTooOld,
@@ -18,7 +17,6 @@ pub const Error = error{
     AnchorNotInAncestry,
 };
 
-/// Validate anchor is recent and roots match
 pub fn validateAnchor(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),
@@ -27,7 +25,6 @@ pub fn validateAnchor(
     const span = trace.span(@src(), .validate_anchor);
     defer span.deinit();
 
-    // Check if the timeslot of the anchor is within the recent history
     if (guarantee.report.context.lookup_anchor_slot < stx.time.current_slot -| params.max_lookup_anchor_age) {
         span.err("Anchor timeslot {d} is too old (current: {d}, max age: {d})", .{
             guarantee.report.context.lookup_anchor_slot,
@@ -73,10 +70,9 @@ pub fn validateAnchor(
         }
 
         bv_span.debug("Anchor validation successful", .{});
-        return; // Success - anchor found and validated in beta, no need to check ancestry
+        return;
     }
 
-    // Anchor not found in recent history (beta), check ancestry if available
     const av_span = span.child(@src(), .ancestry_validation);
     defer av_span.deinit();
 
@@ -100,7 +96,6 @@ pub fn validateAnchor(
             return Error.AnchorNotInAncestry;
         }
     } else {
-        // No ancestry available - this means ancestry feature is disabled
         av_span.debug("No ancestry available, skipping ancestry validation per graypaper spec", .{});
         span.err("Anchor block not found in recent history: {s}", .{
             std.fmt.fmtSliceHexLower(&guarantee.report.context.anchor),

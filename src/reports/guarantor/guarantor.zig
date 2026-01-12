@@ -7,7 +7,6 @@ const guarantor_assignments = @import("../../guarantor_assignments.zig");
 const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
 
-/// Error types for guarantor validation
 pub const Error = error{
     NotSortedOrUniqueGuarantors,
     InvalidGuarantorAssignment,
@@ -17,7 +16,6 @@ pub const Error = error{
     TooManyGuarantees,
 };
 
-/// Validates that guarantors are sorted and unique
 pub fn validateSortedAndUnique(guarantee: types.ReportGuarantee) !void {
     const span = trace.span(@src(), .signatures_sorted_unique);
     defer span.deinit();
@@ -40,7 +38,6 @@ pub fn validateSortedAndUnique(guarantee: types.ReportGuarantee) !void {
     span.debug("All guarantor indices validated as sorted and unique", .{});
 }
 
-/// Validates signature count is within acceptable range
 pub fn validateSignatureCount(guarantee: types.ReportGuarantee) !void {
     const span = trace.span(@src(), .validate_signature_count);
     defer span.deinit();
@@ -61,7 +58,6 @@ pub fn validateSignatureCount(guarantee: types.ReportGuarantee) !void {
     }
 }
 
-/// Validates guarantor assignments using pre-built assignments
 pub fn validateGuarantorAssignmentsWithPrebuilt(
     comptime params: @import("../../jam_params.zig").Params,
     guarantee: types.ReportGuarantee,

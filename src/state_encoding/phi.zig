@@ -17,13 +17,11 @@ pub fn encode(self: anytype, writer: anytype) !void {
     defer span.deinit();
     span.debug("Starting phi encoding", .{});
 
-    // Simply write all queue data in order
-    // Data is already in the correct format: C * Q hashes
     span.debug("Encoding {d} authorization slots", .{self.queue_data.len});
     for (self.queue_data) |hash| {
         try writer.writeAll(&hash);
     }
-    
+
     span.debug("Successfully completed phi encoding", .{});
 }
 
@@ -45,23 +43,17 @@ test "encode" {
     var fbs = std.io.fixedBufferStream(&buf);
     try encode(&auth_queue, fbs.writer());
 
-    // Check the first core's first hash
     try testing.expectEqualSlices(u8, &test_hash1, buf[0..H]);
-
-    // Check the second core's first hash
     try testing.expectEqualSlices(u8, &test_hash2, buf[Q * H .. Q * H + H]);
 
-    // Check that other slots in first core are zeroed
     for (buf[H .. Q * H]) |byte| {
         try testing.expectEqual(@as(u8, 0), byte);
     }
-    
-    // Check that other slots in second core are zeroed (except first)
+
     for (buf[Q * H + H .. 2 * Q * H]) |byte| {
         try testing.expectEqual(@as(u8, 0), byte);
     }
 
-    // Check that all other cores are completely zero
     for (2..C) |core| {
         const start = core * Q * H;
         const end = start + Q * H;
@@ -70,6 +62,5 @@ test "encode" {
         }
     }
 
-    // Check the total size matches
     try testing.expectEqual(@as(usize, C * Q * H), buf.len);
 }

@@ -23,11 +23,9 @@ pub fn convertToAlpha(
 
     var alpha = auth_pool.Alpha(params.core_count, params.max_authorizations_pool_items).init();
 
-    // For each core in the test state, add authorizers to the Alpha pools
     for (test_state.auth_pools, 0..) |pool, core_idx| {
         span.debug("Processing core {d} with {d} authorizers", .{ core_idx, pool.items.len });
 
-        // Add each hash in the pool to the Alpha instance
         for (pool.items) |hash| {
             try alpha.addAuthorizer(core_idx, hash);
             span.trace("Added authorizer hash to core {d}: {s}", .{
@@ -53,13 +51,10 @@ pub fn convertToPhi(
     var phi = try auth_queue.Phi(params.core_count, params.max_authorizations_queue_items).init(allocator);
     errdefer phi.deinit();
 
-    // For each core in the test state, set authorizers in the Phi queues
     for (test_state.auth_queues, 0..) |queue, core_idx| {
         span.debug("Processing core {d} queue with {d} items", .{ core_idx, queue.items.len });
 
-        // Set each hash in the queue at its corresponding index
         for (queue.items, 0..) |hash, index| {
-            // We need to set all items, including empty ones
             try phi.setAuthorization(core_idx, index, hash);
         }
     }
@@ -116,14 +111,12 @@ pub fn buildTransientFromTestState(
     var jam_state = try state.JamState(params).init(allocator);
     errdefer jam_state.deinit(allocator);
 
-    // Convert and initialize Alpha component
     jam_state.alpha = try convertToAlpha(
         params,
         allocator,
         test_state,
     );
 
-    // Convert and initialize Phi component
     jam_state.phi = try convertToPhi(
         params,
         allocator,

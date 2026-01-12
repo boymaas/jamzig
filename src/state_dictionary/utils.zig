@@ -63,17 +63,14 @@ pub fn getOrInitManaged(
         return .{ .ptr = value, .needs_free = false };
     } else {
 
-        // Get the type of T.init
         const init_fn = @TypeOf(T.init);
         if (@typeInfo(init_fn) != .@"fn") {
             @compileError("T.init must be a function");
         }
 
-        // Get the return type of T.init
         const ReturnType = @typeInfo(init_fn).@"fn".return_type.?;
         const returns_error = @typeInfo(ReturnType) == .error_union;
 
-        // If it returns an error union, verify the success type matches T
         if (comptime returns_error) {
             const SuccessType = @typeInfo(ReturnType).error_union.payload;
             if (SuccessType != T) {
@@ -83,7 +80,6 @@ pub fn getOrInitManaged(
             @compileError("T.init must return type T: T = " ++ @typeName(T));
         }
 
-        // Create the value on the heap, handling both error union and direct return types
         const instance = try allocator.create(T);
         errdefer allocator.destroy(instance);
 

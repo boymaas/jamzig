@@ -11,7 +11,6 @@ var log_err_count: usize = 0;
 var fba_buffer: [8192]u8 = undefined;
 var fba = std.heap.FixedBufferAllocator.init(&fba_buffer);
 
-// Structures to track test failures
 const TestFailure = struct {
     name: []const u8,
     error_name: []const u8,
@@ -56,7 +55,6 @@ pub fn main() !void {
 
 fn redirectStderr() !posix.fd_t {
     const old_fd = try posix.dup(posix.STDERR_FILENO);
-    // Open /dev/null for writing
     const dev_null = try posix.open("/dev/null", .{ .ACCMODE = .WRONLY }, 0);
     try posix.dup2(dev_null, posix.STDERR_FILENO);
     posix.close(dev_null);
@@ -81,7 +79,6 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
     var leaked_tests = ArrayList([]const u8).init(fba.allocator());
     defer leaked_tests.deinit();
 
-    // Open progress log file if requested
     var progress_file: ?std.fs.File = null;
     defer if (progress_file) |file| file.close();
     
@@ -103,7 +100,6 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
         }
         testing.log_level = .warn;
 
-        // Log test start to progress file
         if (progress_file) |file| {
             file.writer().print("[{d}/{d}] Starting test: {s}\n", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};
         }
@@ -112,7 +108,6 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
             std.debug.print("\x1b[1;36m{d}/{d}\x1b[0m {s}...", .{ i + 1, test_fn_list.len, test_fn.name });
         }
 
-        // Redirect stderr if not in verbose mode and nocapture is false
         const old_fd = if (!nocapture)
             try redirectStderr()
         else
@@ -124,7 +119,6 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
         const duration_ns = end_time - start_time;
         const duration_ms = @as(f64, @floatFromInt(duration_ns)) / 1_000_000.0;
 
-        // Restore stderr if it was redirected
         if (!nocapture) {
             try restoreStderr(old_fd);
         }
@@ -132,11 +126,10 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
         if (result) |_| {
             ok_count += 1;
             if (progress) std.debug.print("\x1b[1;32mOK\x1b[0m\n", .{});
-            
-            // Log test success to progress file
+
             if (progress_file) |file| {
-                file.writer().print("[{d}/{d}] Test PASSED: {s} (duration: {d:.3}ms)\n", .{ 
-                    i + 1, test_fn_list.len, test_fn.name, duration_ms 
+                file.writer().print("[{d}/{d}] Test PASSED: {s} (duration: {d:.3}ms)\n", .{
+                    i + 1, test_fn_list.len, test_fn.name, duration_ms
                 }) catch {};
             }
         } else |err| switch (err) {
@@ -145,11 +138,10 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
                 if (progress) {
                     std.debug.print("\x1b[1;33m{d}/{d}\x1b[0m {s}...\x1b[1;33mSKIP\x1b[0m\n", .{ i + 1, test_fn_list.len, test_fn.name });
                 }
-                
-                // Log test skip to progress file
+
                 if (progress_file) |file| {
-                    file.writer().print("[{d}/{d}] Test SKIPPED: {s}\n", .{ 
-                        i + 1, test_fn_list.len, test_fn.name 
+                    file.writer().print("[{d}/{d}] Test SKIPPED: {s}\n", .{
+                        i + 1, test_fn_list.len, test_fn.name
                     }) catch {};
                 }
             },
@@ -165,11 +157,10 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
                         i + 1, test_fn_list.len, test_fn.name, @errorName(err),
                     });
                 }
-                
-                // Log test failure to progress file
+
                 if (progress_file) |file| {
-                    file.writer().print("[{d}/{d}] Test FAILED: {s} (error: {s}, duration: {d:.3}ms)\n", .{ 
-                        i + 1, test_fn_list.len, test_fn.name, @errorName(err), duration_ms 
+                    file.writer().print("[{d}/{d}] Test FAILED: {s} (error: {s}, duration: {d:.3}ms)\n", .{
+                        i + 1, test_fn_list.len, test_fn.name, @errorName(err), duration_ms
                     }) catch {};
                 }
 
@@ -177,7 +168,6 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
                     std.debug.dumpStackTrace(trace.*);
                 }
 
-                // Exit immediately on first test failure if flag is set
                 if (exit_on_fail) {
                     std.process.exit(1);
                 }
@@ -185,28 +175,27 @@ fn mainTerminal(progress: bool, nocapture: bool, exit_on_fail: bool, log_progres
         }
     }
 
-    // Write summary to progress file
     if (progress_file) |file| {
         file.writer().print("\n========== TEST RUN SUMMARY ==========\n", .{}) catch {};
         file.writer().print("Total tests: {d}\n", .{test_fn_list.len}) catch {};
         file.writer().print("Passed: {d}\n", .{ok_count}) catch {};
         file.writer().print("Failed: {d}\n", .{fail_count}) catch {};
         file.writer().print("Skipped: {d}\n", .{skip_count}) catch {};
-        
+
         if (failed_tests.items.len > 0) {
             file.writer().print("\nFailed Tests:\n", .{}) catch {};
             for (failed_tests.items) |failure| {
                 file.writer().print("  - {s} (error: {s})\n", .{ failure.name, failure.error_name }) catch {};
             }
         }
-        
+
         if (leaks != 0) {
             file.writer().print("\nMemory Leaks Detected in {d} tests:\n", .{leaks}) catch {};
             for (leaked_tests.items) |test_name| {
                 file.writer().print("  - {s}\n", .{test_name}) catch {};
             }
         }
-        
+
         const end_timestamp = std.time.timestamp();
         file.writer().print("\nTest run completed at timestamp: {d}\n", .{end_timestamp}) catch {};
     }

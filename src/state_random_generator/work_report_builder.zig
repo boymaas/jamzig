@@ -11,7 +11,6 @@ pub const WorkReportBuilder = struct {
         var auth_output = std.ArrayList(u8).init(allocator);
         defer auth_output.deinit();
 
-        // Generate random auth output (simple blob)
         const auth_output_size: usize = switch (complexity) {
             .minimal => 32,
             .moderate => 128,
@@ -21,7 +20,6 @@ pub const WorkReportBuilder = struct {
         try auth_output.resize(auth_output_size);
         random.bytes(auth_output.items);
 
-        // Generate random number of results (1-4)
         const num_results: usize = switch (complexity) {
             .minimal => 1,
             .moderate => random.intRangeAtMost(u8, 1, 2),
@@ -30,7 +28,6 @@ pub const WorkReportBuilder = struct {
 
         var results = std.ArrayList(types.WorkResult).init(allocator);
         errdefer {
-            // Clean up any WorkResults that were created if we fail
             for (results.items) |*result| {
                 result.deinit(allocator);
             }
@@ -43,7 +40,6 @@ pub const WorkReportBuilder = struct {
         }
 
         var context = generateRandomRefineContext(allocator, random, complexity) catch |err| {
-            // Clean up results before propagating error
             for (results.items) |*result| {
                 result.deinit(allocator);
             }
@@ -53,7 +49,6 @@ pub const WorkReportBuilder = struct {
         errdefer context.deinit(allocator);
 
         const segment_root_lookup = generateRandomSegmentRootLookup(allocator, random, complexity) catch |err| {
-            // Clean up before propagating error
             context.deinit(allocator);
             for (results.items) |*result| {
                 result.deinit(allocator);
@@ -98,7 +93,6 @@ pub const WorkReportBuilder = struct {
         var payload = std.ArrayList(u8).init(allocator);
         defer payload.deinit();
 
-        // Generate random payload
         const payload_size: usize = switch (complexity) {
             .minimal => 64,
             .moderate => random.intRangeAtMost(u16, 64, 512),
@@ -108,7 +102,6 @@ pub const WorkReportBuilder = struct {
         try payload.resize(payload_size);
         random.bytes(payload.items);
 
-        // Generate work execution result - all 7 variants per graypaper
         const exec_result = switch (random.intRangeAtMost(u8, 0, 6)) {
             0 => blk: {
                 const owned_payload = try payload.toOwnedSlice();
@@ -163,7 +156,6 @@ pub const WorkReportBuilder = struct {
         random: std.Random,
         complexity: @import("../state_random_generator.zig").StateComplexity,
     ) !types.RefineContext {
-        // Generate prerequisites array
         const prereq_count: usize = switch (complexity) {
             .minimal => 0,
             .moderate => random.intRangeAtMost(u8, 0, 4),

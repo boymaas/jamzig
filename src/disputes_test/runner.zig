@@ -35,7 +35,7 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
 
     const time = params.Time().init(
         test_case.pre_state.tau,
-        test_case.pre_state.tau + 1, // alluming + 1
+        test_case.pre_state.tau + 1,
     );
     var stx = try StateTransition(params).init(allocator, &current_state, time);
     defer stx.deinit();
@@ -80,7 +80,6 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
                 const transitioned_psi = stx.prime.psi.?;
                 const transitioned_rho = stx.prime.rho.?;
 
-                // push all expected marks in an AutoHashMap
                 var expected_marks_map = std.AutoArrayHashMap(disputes.PublicKey, void).init(allocator);
                 defer expected_marks_map.deinit();
 
@@ -89,12 +88,10 @@ pub fn runDisputeTest(allocator: std.mem.Allocator, comptime params: Params, tes
                 }
 
                 try helpers.expectHashMapEqual(@TypeOf(expected_marks_map), disputes.PublicKey, void, expected_marks_map, transitioned_psi.punish_set);
-                // Compare the rest of the fields
                 try helpers.expectHashMapEqual(@TypeOf(post_state_psi.good_set), disputes.Hash, void, post_state_psi.good_set, transitioned_psi.good_set);
                 try helpers.expectHashMapEqual(@TypeOf(post_state_psi.bad_set), disputes.Hash, void, post_state_psi.bad_set, transitioned_psi.bad_set);
                 try helpers.expectHashMapEqual(@TypeOf(post_state_psi.wonky_set), disputes.Hash, void, post_state_psi.wonky_set, transitioned_psi.wonky_set);
 
-                // Compare the two Rho states
                 try std.testing.expectEqualDeep(post_state_rho, transitioned_rho);
             } else |err| {
                 std.debug.print("UnexpectedError: {any}\n", .{err});

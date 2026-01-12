@@ -1,17 +1,14 @@
 const std = @import("std");
 
-/// Iterates over a single slice
 pub fn SliceIter(comptime T: type) type {
     return struct {
         slice: []const T,
         position: usize = 0,
 
-        /// Initialize a new iterator with the given slice
         pub fn init(slice: []const T) @This() {
             return .{ .slice = slice };
         }
 
-        /// Returns the next element in the slice, or null if we've reached the end
         pub fn next(self: *@This()) ?T {
             if (self.position >= self.slice.len) {
                 return null;

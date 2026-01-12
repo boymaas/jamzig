@@ -6,14 +6,12 @@ const tracing = @import("tracing");
 const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
 
-/// Error types for dependency validation
 pub const Error = error{
     TooManyDependencies,
     DependencyMissing,
     SegmentRootLookupInvalid,
 };
 
-/// Check total dependencies don't exceed J according to equation 11.3
 pub fn validateDependencyCount(
     comptime params: @import("../../jam_params.zig").Params,
     guarantee: types.ReportGuarantee,
@@ -36,7 +34,6 @@ pub fn validateDependencyCount(
     span.debug("Dependencies check passed", .{});
 }
 
-/// Validate report prerequisites exist
 pub fn validatePrerequisites(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),
@@ -58,7 +55,6 @@ pub fn validatePrerequisites(
 
         var found_prereq = false;
 
-        // First check in recent blocks
         {
             const blocks_span = single_prereq_span.child(@src(), .check_recent_blocks);
             defer blocks_span.deinit();
@@ -84,7 +80,6 @@ pub fn validatePrerequisites(
             }
         }
 
-        // If not found in blocks, check current guarantees
         if (!found_prereq) {
             const guarantees_span = single_prereq_span.child(@src(), .check_current_guarantees);
             defer guarantees_span.deinit();
@@ -117,7 +112,6 @@ pub fn validatePrerequisites(
     span.debug("All prerequisites validated successfully", .{});
 }
 
-/// Verify segment root lookup is valid
 pub fn validateSegmentRootLookup(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),
@@ -146,7 +140,6 @@ pub fn validateSegmentRootLookup(
         var found_package = false;
         var matching_segment_root = false;
 
-        // First check recent blocks
         {
             const blocks_span = lookup_span.child(@src(), .check_recent_blocks);
             defer blocks_span.deinit();
@@ -172,7 +165,6 @@ pub fn validateSegmentRootLookup(
                         });
                         found_package = true;
 
-                        // Check segment root
                         blocks_span.trace("Checking segment root against exports root: {s}", .{
                             std.fmt.fmtSliceHexLower(&report.exports_root),
                         });
@@ -194,7 +186,6 @@ pub fn validateSegmentRootLookup(
             }
         }
 
-        // If not found in blocks, check current guarantees
         if (!found_package) {
             const guarantees_span = lookup_span.child(@src(), .check_current_guarantees);
             defer guarantees_span.deinit();
@@ -207,12 +198,9 @@ pub fn validateSegmentRootLookup(
                     std.fmt.fmtSliceHexLower(&g.report.package_spec.hash),
                 });
 
-                // std.debug.print("{}\n", .{types.fmt.format(g)});
                 if (std.mem.eql(u8, &segment.work_package_hash, &g.report.package_spec.hash)) {
                     found_package = true;
 
-                    // if we have this work report in our guarantees lets look if this work_package
-                    // export the correct root
                     if (std.mem.eql(u8, &g.report.package_spec.exports_root, &segment.segment_tree_root)) {
                         matching_segment_root = true;
                     }

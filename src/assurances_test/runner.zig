@@ -35,7 +35,6 @@ pub fn validateAndProcessAssuranceExtrinsic(
 }
 
 pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, test_case: tvector.TestCase) !void {
-    // Convert pre-state from test vector format to native format
     var pre_state_assignments = try converters.convertAvailabilityAssignments(
         params.core_count,
         allocator,
@@ -46,7 +45,6 @@ pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, t
     var pre_state_validators = try converters.convertValidatorSet(allocator, test_case.pre_state.curr_validators);
     defer pre_state_validators.deinit(allocator);
 
-    // Convert post-state for later comparison
     var expected_assignments = try converters.convertAvailabilityAssignments(
         params.core_count,
         allocator,
@@ -56,8 +54,6 @@ pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, t
 
     var expected_validators = try converters.convertValidatorSet(allocator, test_case.post_state.curr_validators);
     defer expected_validators.deinit(allocator);
-
-    // First validate the assurance extrinsic
 
     var process_result = validateAndProcessAssuranceExtrinsic(
         params,
@@ -104,13 +100,11 @@ pub fn runAssuranceTest(comptime params: Params, allocator: std.mem.Allocator, t
                     allocator.free(available_reports);
                 }
 
-                // Verify outputs match expected results
                 diff.expectTypesFmtEqual([]types.WorkReport, allocator, available_reports, expected_marks.reported) catch {
                     std.debug.print("Mismatch: available reports != expected reports\n", .{});
                     return error.ReportMismatch;
                 };
 
-                // Verify state matches expected state
                 diff.expectFormattedEqual(*state.Rho(params.core_count), allocator, state_rho, &expected_assignments) catch {
                     std.debug.print("Mismatch: actual Rho != expected Rho\n", .{});
                     return error.StateRhoMismatch;

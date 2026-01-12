@@ -5,7 +5,6 @@ const Params = @import("../jam_params.zig").Params;
 
 const trace = @import("tracing").scoped(.accumulate);
 
-/// Error types for history tracking
 pub const HistoryError = error{
     InvalidHistoryState,
     DuplicateEntry,
@@ -15,7 +14,6 @@ pub fn HistoryTracker(comptime params: Params) type {
     return struct {
         const Self = @This();
 
-        /// Updates xi (accumulation history) with newly accumulated reports
         pub fn updateAccumulationHistory(
             self: Self,
             xi: *state.Xi(params.epoch_length),
@@ -30,8 +28,8 @@ pub fn HistoryTracker(comptime params: Params) type {
             span.debug("Adding {d} reports to accumulation history", .{accumulated.len});
             for (accumulated, 0..) |report, i| {
                 const work_package_hash = report.package_spec.hash;
-                span.trace("Report {d} hash: {s}", .{ 
-                    i, std.fmt.fmtSliceHexLower(&work_package_hash) 
+                span.trace("Report {d} hash: {s}", .{
+                    i, std.fmt.fmtSliceHexLower(&work_package_hash)
                 });
                 try xi.addWorkPackage(work_package_hash);
             }
@@ -39,7 +37,6 @@ pub fn HistoryTracker(comptime params: Params) type {
             span.debug("Accumulation history updated successfully", .{});
         }
 
-        /// Checks if a work package has already been accumulated
         pub fn isAccumulated(
             self: Self,
             xi: *const state.Xi(params.epoch_length),
@@ -49,7 +46,6 @@ pub fn HistoryTracker(comptime params: Params) type {
             return xi.containsWorkPackage(work_package_hash);
         }
 
-        /// Gets the number of accumulated work packages in the current slot
         pub fn getCurrentSlotCount(
             self: Self,
             xi: *const state.Xi(params.epoch_length),
@@ -58,7 +54,6 @@ pub fn HistoryTracker(comptime params: Params) type {
             return xi.entries[0].count();
         }
 
-        /// Validates the history state for consistency
         pub fn validateHistory(
             self: Self,
             xi: *const state.Xi(params.epoch_length),
@@ -86,7 +81,6 @@ pub fn HistoryTracker(comptime params: Params) type {
             span.debug("History validation passed", .{});
         }
 
-        /// Gets statistics about the accumulation history
         pub fn getHistoryStats(
             self: Self,
             xi: *const state.Xi(params.epoch_length),

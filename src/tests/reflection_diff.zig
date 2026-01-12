@@ -84,7 +84,6 @@ pub const ReflectionDiffResult = struct {
 };
 
 fn extractComponent(path: []const u8) []const u8 {
-    // Returns borrowed slice - caller does not own memory
     if (std.mem.indexOf(u8, path, ".")) |dot_pos| {
         return path[0..dot_pos];
     }
@@ -101,7 +100,6 @@ fn shouldIgnoreField(field_name: []const u8, options: ReflectionDiffOptions) boo
 }
 
 fn isHashType(comptime T: type) bool {
-    // Common cryptographic sizes: 32=Hash, 64=Signature, 96=BLS G1, 144=BLS G2, 784=Ring signature
     return switch (@typeInfo(T)) {
         .array => |arr| arr.child == u8 and (arr.len == 32 or arr.len == 64 or arr.len == 96 or arr.len == 144 or arr.len == 784),
         else => false,

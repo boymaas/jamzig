@@ -67,7 +67,7 @@ pub fn N(blobs: Blobs, comptime hasher: type) Result {
     } else if (blobs.len == 1) {
         return .{ .Blob = blobs[0] };
     } else {
-        const mid = (blobs.len + 1) / 2; // Round up division
+        const mid = (blobs.len + 1) / 2;
         const left = N(blobs[0..mid], hasher);
         const right = N(blobs[mid..], hasher);
 
@@ -89,7 +89,7 @@ pub fn N_hash(hashes: []const Hash, comptime hasher: type) Hash {
     } else if (hashes.len == 1) {
         return hashes[0];
     } else {
-        const mid = (hashes.len + 1) / 2; // Round up division
+        const mid = (hashes.len + 1) / 2;
         const left = N_hash(hashes[0..mid], hasher);
         const right = N_hash(hashes[mid..], hasher);
 
@@ -107,7 +107,7 @@ pub fn N_hash(hashes: []const Hash, comptime hasher: type) Hash {
 
 pub const TraceView = struct {
     results: []Result,
-    
+
     pub fn len(self: *const TraceView) usize {
         return self.results.len;
     }
@@ -121,27 +121,26 @@ pub fn computeTrace(
     comptime hasher: type,
 ) []Result {
     std.debug.assert(all_blobs_same_size(blobs));
-    
+
     if (blobs.len == 0 or blobs.len == 1) {
         return trace_buffer[0..0];
     }
-    
+
     var depth: usize = 0;
     var current_blobs = blobs;
     var current_index = index;
-    
+
     while (current_blobs.len > 1) {
         const a = N(P_s(false, current_blobs, current_index), hasher);
         trace_buffer[depth] = a;
         depth += 1;
-        
-        // Move to next level
+
         current_blobs = P_s(true, current_blobs, current_index);
         const next_blobs = P_s(true, current_blobs, current_index);
         current_index = current_index - P_i(current_blobs, current_index);
         current_blobs = next_blobs;
     }
-    
+
     return trace_buffer[0..depth];
 }
 
@@ -159,7 +158,7 @@ pub fn T(
 }
 
 pub fn P_i(blobs: Blobs, index: usize) usize {
-    const mid = (blobs.len + 1) / 2; // Round up division
+    const mid = (blobs.len + 1) / 2;
     if (index < mid) {
         return 0;
     } else {
@@ -168,7 +167,7 @@ pub fn P_i(blobs: Blobs, index: usize) usize {
 }
 
 pub fn P_s(s: bool, blobs: Blobs, index: usize) Blobs {
-    const mid = (blobs.len + 1) / 2; // Round up division
+    const mid = (blobs.len + 1) / 2;
     if ((index < mid) == s) {
         return blobs[0..mid];
     } else {
@@ -186,21 +185,21 @@ pub fn computeTraceHashes(
     if (hashes.len == 0 or hashes.len == 1) {
         return trace_buffer[0..0];
     }
-    
+
     var depth: usize = 0;
     var current_hashes = hashes;
     var current_index = index;
-    
+
     while (current_hashes.len > 1) {
         const a = N_hash(P_s_hash(false, current_hashes, current_index), hasher);
         trace_buffer[depth] = a;
         depth += 1;
-        
+
         const next_hashes = P_s_hash(true, current_hashes, current_index);
         current_index = current_index - P_i_hash(current_hashes, current_index);
         current_hashes = next_hashes;
     }
-    
+
     return trace_buffer[0..depth];
 }
 
@@ -218,7 +217,7 @@ pub fn T_hash(
 }
 
 fn P_i_hash(hashes: []const Hash, index: usize) usize {
-    const mid = (hashes.len + 1) / 2; // Round up division
+    const mid = (hashes.len + 1) / 2;
     if (index < mid) {
         return 0;
     } else {
@@ -227,7 +226,7 @@ fn P_i_hash(hashes: []const Hash, index: usize) usize {
 }
 
 fn P_s_hash(s: bool, hashes: []const Hash, index: usize) []const Hash {
-    const mid = (hashes.len + 1) / 2; // Round up division
+    const mid = (hashes.len + 1) / 2;
     if ((index < mid) == s) {
         return hashes[0..mid];
     } else {
@@ -296,7 +295,7 @@ test "computeTrace multiple blobs" {
     const blobs = [_][]const u8{ "hello", "world", "zig  " };
     var trace_buffer: [10]Result = undefined;
     const result = computeTrace(&blobs, 2, &trace_buffer, testHasher);
-    
+
     var buffer: [32]u8 = undefined;
     const expected = try std.fmt.hexToBytes(&buffer, "addcbd7aee4b1baab8fc648daece466d8801fb0ffb8f03ed3f055dd206e7a5ce");
     try testing.expectEqualSlices(u8, expected, &result[0].Hash);
@@ -336,7 +335,7 @@ pub fn preprocessConstantDepth(
     const len = v.len;
     const next_power = std.math.ceilPowerOfTwoAssert(usize, @max(1, len));
     std.debug.assert(output_buffer.len >= next_power);
-    
+
     var i: usize = 0;
     while (i < len) : (i += 1) {
         var h = hasher.init(.{});
@@ -348,7 +347,7 @@ pub fn preprocessConstantDepth(
     while (i < next_power) : (i += 1) {
         output_buffer[i] = ZERO_HASH;
     }
-    
+
     return output_buffer[0..next_power];
 }
 
@@ -369,7 +368,7 @@ test "preprocessConstantDepth" {
         hashUsingHasher(testHasher, "leafdata2"),
         hashUsingHasher(testHasher, "leafdata3"),
     };
-    
+
     for (original_data, 0..) |_, i| {
         try testing.expectEqualSlices(u8, &expected_hashes[i], &processed[i]);
     }
@@ -412,7 +411,7 @@ pub fn J(allocator: std.mem.Allocator, v: []const Blob, i: usize, H: type) ![]Ha
     const size = std.math.ceilPowerOfTwoAssert(usize, @max(1, v.len));
     const workspace = try allocator.alloc(Hash, size);
     defer allocator.free(workspace);
-    
+
     const preprocessed = preprocessConstantDepth(v, workspace, H);
     return try T_hash(allocator, preprocessed, i, H);
 }

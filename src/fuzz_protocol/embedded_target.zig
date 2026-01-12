@@ -15,19 +15,17 @@ pub fn EmbeddedTarget(comptime IOExecutor: type, comptime params: @import("../ja
         pending_response: ?messages.Message = null,
 
         pub const Config = struct {
-            // No configuration needed for embedded target - it uses internal state
         };
 
         const Self = @This();
 
         pub fn init(allocator: std.mem.Allocator, executor: *IOExecutor, config: Config) !Self {
-            _ = config; // Config is empty for embedded target
+            _ = config;
 
-            // Create target server with no-op socket path (not used for embedded)
             const target_server = target.TargetServer(IOExecutor, params).init(
                 executor,
                 allocator,
-                "", // socket_path not used
+                "",
                 .exit_on_disconnect
             ) catch |err| {
                 std.log.err("Failed to initialize target server: {s}", .{@errorName(err)});
@@ -41,32 +39,27 @@ pub fn EmbeddedTarget(comptime IOExecutor: type, comptime params: @import("../ja
         }
 
         pub fn deinit(self: *Self) void {
-            // Clean up any pending response
             if (self.pending_response) |*response| {
                 response.deinit(self.allocator);
             }
 
-            // Clean up target server
             self.target_server.deinit();
             self.* = undefined;
         }
 
-        /// Send message to embedded target (processes immediately and stores response)
+        /// Send message to embedded target
         pub fn sendMessage(self: *Self, comptime _: @import("../jam_params.zig").Params, message: messages.Message) !void {
             const span = trace.span(@src(), .embedded_send_message);
             defer span.deinit();
             span.debug("Processing message: {s}", .{@tagName(message)});
 
-            // Clean up any existing pending response
             if (self.pending_response) |*response| {
                 response.deinit(self.allocator);
                 self.pending_response = null;
             }
 
-            // Process message directly using target server logic
             const response = try self.target_server.processMessage(message);
 
-            // Store response for later retrieval
             self.pending_response = response;
 
             if (response) |resp| {
@@ -76,13 +69,12 @@ pub fn EmbeddedTarget(comptime IOExecutor: type, comptime params: @import("../ja
             }
         }
 
-        /// Read response from embedded target (returns stored response from sendMessage)
+        /// Read response from embedded target
         pub fn readMessage(self: *Self, comptime _: @import("../jam_params.zig").Params) !messages.Message {
             const span = trace.span(@src(), .embedded_read_message);
             defer span.deinit();
 
             if (self.pending_response) |response| {
-                // Transfer ownership to caller
                 const result = response;
                 self.pending_response = null;
                 span.debug("Returning response: {s}", .{@tagName(result)});
@@ -95,7 +87,6 @@ pub fn EmbeddedTarget(comptime IOExecutor: type, comptime params: @import("../ja
     };
 }
 
-/// Helper function to create EmbeddedTarget with proper type inference
 pub fn createEmbeddedTarget(
     comptime IOExecutor: type,
     allocator: std.mem.Allocator,
@@ -105,7 +96,6 @@ pub fn createEmbeddedTarget(
     return EmbeddedTarget(IOExecutor, @import("../jam_params.zig").TINY_PARAMS).init(allocator, executor, config);
 }
 
-// Compile-time validation that EmbeddedTarget implements the target interface
 comptime {
     target_interface.validateTargetInterface(EmbeddedTarget(io.SequentialExecutor, @import("../jam_params.zig").TINY_PARAMS));
 }

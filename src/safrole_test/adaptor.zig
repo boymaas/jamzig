@@ -1,4 +1,3 @@
-/// Adapts the TestVector format to our transition function
 const std = @import("std");
 
 const types = @import("../types.zig");
@@ -12,7 +11,6 @@ const io = @import("../io.zig");
 const Allocator = std.mem.Allocator;
 const Params = @import("../jam_params.zig").Params;
 
-// Constant
 pub const TransitionResult = struct {
     output: safrole_test_vector.Output,
     state: ?safrole_test_vector.State,
@@ -80,7 +78,6 @@ pub fn transition(
     };
     defer result.deinit(allocator);
 
-    // merge the stx into
     try stx.mergePrimeOntoBase();
 
     const test_vector_post_state = try JamStateToTestVectorState(
@@ -109,7 +106,6 @@ fn performTransitions(
     var executor = try io.ThreadPoolExecutor.init(allocator);
     defer executor.deinit();
 
-    // Perform all transitions in sequence, propagating any errors
     try stf.time.transition(params, stx, input.slot);
     try stf.eta.transition(params, stx, input.entropy);
     return try stf.safrole.transition(
@@ -127,18 +123,14 @@ fn GammaFromTestVectorState(
     allocator: Allocator,
     tvstate: safrole_test_vector.State,
 ) !state.Gamma(validators_count, epoch_length) {
-    // Initialize with undefined since we'll set all fields
     var gamma: state.Gamma(validators_count, epoch_length) = undefined;
 
-    // First safely copy gamma_k (BandersnatchPublic keys)
     gamma.k = try tvstate.gamma.gamma_k.deepClone(allocator);
     errdefer gamma.k.deinit(allocator);
 
-    // Copy gamma_a (ticket accumulator)
     gamma.a = try allocator.dupe(types.TicketBody, tvstate.gamma.gamma_a);
     errdefer allocator.free(gamma.a);
 
-    // Handle gamma_s union type
     switch (tvstate.gamma.gamma_s) {
         .tickets => |tickets| {
             gamma.s = .{
@@ -154,14 +146,12 @@ fn GammaFromTestVectorState(
         },
     }
 
-    // Copy gamma_z (bandersnatch ring root)
     gamma.z = tvstate.gamma.gamma_z;
 
     return gamma;
 }
 
 fn JamStateToTestVectorState(comptime params: Params, allocator: std.mem.Allocator, post_state: *const state.JamState(params)) !safrole_test_vector.State {
-    // Create test vector state with gamma from jam state
     return safrole_test_vector.State{
         .gamma = .{
             .tau = post_state.tau.?,

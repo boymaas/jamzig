@@ -39,10 +39,8 @@ pub const TestEnvironment = struct {
         const memory = try allocator.alloc(u8, 0x1000);
         errdefer allocator.free(memory);
 
-        // Clear memory
         @memset(memory, 0);
 
-        // Create memory page
         const pages = try allocator.alloc(polkavm.MemoryPage, 1);
         errdefer allocator.free(pages);
 
@@ -53,7 +51,6 @@ pub const TestEnvironment = struct {
             .is_writable = true,
         };
 
-        // Initialize register array with zeroes
         const registers: [13]u64 = std.mem.zeroes([13]u64);
 
         return TestEnvironment{
@@ -94,29 +91,25 @@ pub const TestEnvironment = struct {
     pub fn executeInstruction(self: *@This(), instruction: InstructionWithArgs) !InstructionExecutionResult {
         const encoded_instruction = try instruction.encodeOwned();
 
-        // Create bitmask (the simplest one - just a single instruction)
         const bitmask = &switch (try std.math.divCeil(usize, encoded_instruction.len, 8)) {
             1 => [_]u8{0b00000001},
             2 => [_]u8{ 0b00000001, 0x00 },
             else => @panic("unexpected case"),
         };
 
-        // Create jump table (simplest possible)
         const jump_table = [_]u32{0};
 
-        // Build the program
         const raw_program = try polkavm.ProgramBuilder.init(
             self.allocator,
             encoded_instruction.asSlice(),
             bitmask,
             &jump_table,
-            &[_]u8{}, // ro_data
-            &[_]u8{}, // rw_data
-            .{}, // default config
+            &[_]u8{},
+            &[_]u8{},
+            .{},
         ).build();
         defer self.allocator.free(raw_program);
 
-        // Initialize executor with our memory and registers
         var executor = try polkavm.Executor.init(
             raw_program,
             self.memory_pages,
@@ -125,21 +118,16 @@ pub const TestEnvironment = struct {
         );
         defer executor.deinit();
 
-        // Execute a single step, this is the first jump
         {
             const execution_result = executor.step();
             defer execution_result.deinit();
         }
 
-        // Now execute the actual instruction
         const execution_result = executor.step();
         defer execution_result.deinit();
 
-        // Capture memory changes if applicable
         var result_memory: ?[]const u8 = null;
         var memory_address: ?u32 = null;
-
-        // For instruction that access memory, we need to capture the changes
         if (instruction.getMemoryAccess()) |access| {
             var capture_address: u64 = access.address;
             if (access.isIndirect) {
@@ -151,12 +139,10 @@ pub const TestEnvironment = struct {
                 return error.InvalidCaptureAddress;
             }
 
-            // Only capture memory if it's a write operation
             if (access.isWrite) {
                 const page_offset = capture_address - self.memory_base_address;
                 const size = access.size;
 
-                // Make a copy of the affected memory region
                 result_memory = try self.allocator.dupe(u8, execution_result.raw.pages.?[0].data[page_offset..][0..size]);
                 memory_address = @intCast(capture_address);
             }
@@ -179,10 +165,8 @@ test "pvm:fuzz:execute_instruction" {
     var env = try TestEnvironment.init(testing.allocator);
     defer env.deinit();
 
-    // Set up register r1 with an initial value
     env.setRegister(1, 1000);
 
-    // Create a simple add_imm_64 instruction that adds 42 to register r1
     const instruction = InstructionWithArgs{ .instruction = .add_imm_64, .args = .{
         .TwoRegOneImm = .{
             .first_register_index = 1,
@@ -192,14 +176,11 @@ test "pvm:fuzz:execute_instruction" {
         },
     } };
 
-    // Execute the instruction
     var result = try env.executeInstruction(instruction);
     defer result.deinit(testing.allocator);
 
-    // Verify the execution was successful
     try testing.expectEqual(polkavm.ExecutionStatus.Running, result.status);
 
-    // Verify register r1 now contains 1000 + 42 = 1042
     try testing.expectEqual(@as(u64, 1042), result.registers[1]);
 }
 
@@ -209,15 +190,12 @@ test "pvm:fuzz:memory_operations" {
     var env = try TestEnvironment.init(testing.allocator);
     defer env.deinit();
 
-    // Set up test value in register
     const test_value: u64 = 0x1122334455667788;
     env.setRegister(1, test_value);
 
-    // Calculate memory offset relative to page base
     const mem_offset: u32 = 0x100;
     const mem_addr = env.memory_base_address + mem_offset;
 
-    // Create a store_u64 instruction to write register r1 to memory
     const store_instruction = InstructionWithArgs{ .instruction = .store_u64, .args = .{
         .OneRegOneImm = .{
             .register_index = 1,

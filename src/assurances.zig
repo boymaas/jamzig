@@ -71,20 +71,16 @@ pub const ValidatedAssuranceExtrinsic = struct {
             }
             prev_validator_idx = assurance.validator_index;
 
-            // Validate anchor hash matches parent
             assurance_span.trace("Validating anchor hash", .{});
             if (!std.mem.eql(u8, &assurance.anchor, &parent_hash)) {
                 assurance_span.err("Invalid anchor hash - doesn't match parent", .{});
                 return ValidationError.InvalidAnchorHash;
             }
 
-            // Validate that bits are only set for cores with pending reports
-            // This implements the graypaper constraint: ∀a ∈ E_A, c ∈ N_C : a_f[c] ⇒ ρ†[c] ≠ ∅
             const bitfield_validation_span = assurance_span.child(@src(), .validate_bitfield_cores);
             defer bitfield_validation_span.deinit();
             bitfield_validation_span.debug("Validating bitfield against pending reports", .{});
 
-            // Check each bit in the bitfield
             for (0..params.core_count) |core_idx| {
                 const byte_idx = core_idx / 8;
                 const bit_idx: u3 = @intCast(core_idx % 8);
@@ -100,12 +96,10 @@ pub const ValidatedAssuranceExtrinsic = struct {
                 }
             }
 
-            // Validate signature
             const signature_span = assurance_span.child(@src(), .validate_signature);
             defer signature_span.deinit();
             signature_span.debug("Validating signature for validator {d}", .{assurance.validator_index});
 
-            // The message is: "jam_available" ++ H(E(anchor, bitfield))
             try validateSignature(
                 &signature_span,
                 assurance,
@@ -121,13 +115,11 @@ pub const ValidatedAssuranceExtrinsic = struct {
         assurance: types.AvailAssurance,
         validators: anytype,
     ) ValidationError!void {
-        // Validate validator index bounds
         if (assurance.validator_index >= validators.len) {
             span.err("Invalid validator index {d}, max allowed {d}", .{ assurance.validator_index, validators.len - 1 });
             return ValidationError.InvalidValidatorIndex;
         }
 
-        // Compute message hash: "jam_available" ++ H(E(anchor, bitfield))
         const prefix: []const u8 = "jam_available";
         var hasher = std.crypto.hash.blake2.Blake2b256.init(.{});
         hasher.update(&assurance.anchor);
@@ -135,11 +127,9 @@ pub const ValidatedAssuranceExtrinsic = struct {
         var hash: [32]u8 = undefined;
         hasher.final(&hash);
 
-        // Get validator public key
         span.trace("Retrieving public key for validator {d}", .{assurance.validator_index});
         const public_key = validators[assurance.validator_index].ed25519;
 
-        // ZIP-215 compliant verification
         const validator_pub_key = ed25519.PublicKey.fromBytes(public_key);
         const signature = ed25519.Signature.fromBytes(assurance.signature);
         span.trace("Verifying signature", .{});
@@ -158,7 +148,6 @@ pub const AvailableAssignments = struct {
         return self.inner;
     }
 
-    /// Returns allocated slice of WorkReport pointers. Caller owns the slice.
     pub fn getWorkReportRefs(self: @This(), allocator: std.mem.Allocator) ![]*const types.WorkReport {
         var reports = try allocator.alloc(*const types.WorkReport, self.inner.len);
         errdefer allocator.free(reports);
@@ -169,7 +158,7 @@ pub const AvailableAssignments = struct {
 
         return reports;
     }
-    /// Returns allocated slice of deepCloned WorkReports. Caller owns the slice.
+
     pub fn getWorkReports(self: @This(), allocator: std.mem.Allocator) ![]types.WorkReport {
         var reports = try allocator.alloc(types.WorkReport, self.inner.len);
         errdefer allocator.free(reports);
@@ -190,10 +179,6 @@ pub const AvailableAssignments = struct {
     }
 };
 
-/// Process a block's assurance extrinsic to determine which work reports have
-/// become available based on validator assurances
-///
-/// Warning: Errors may leave pending_reports partially mutated
 pub fn processAssuranceExtrinsic(
     comptime params: @import("jam_params.zig").Params,
     allocator: std.mem.Allocator,
@@ -205,15 +190,12 @@ pub fn processAssuranceExtrinsic(
     defer span.deinit();
     span.debug("Processing assurance extrinsic with {d} assurances", .{assurances_extrinsic.items().len});
 
-    // Assert preconditions
     std.debug.assert(params.core_count > 0);
     std.debug.assert(params.validators_super_majority > 0);
     std.debug.assert(params.validators_super_majority <= params.validators_count);
 
-    // Just track counts per core instead of individual validator bits
     var core_assurance_counts = [_]usize{0} ** params.core_count;
 
-    // Process each assurance in the extrinsic
     {
         const process_span = span.child(@src(), .process_assurances);
         defer process_span.deinit();
@@ -235,7 +217,6 @@ pub fn processAssuranceExtrinsic(
         process_span.debug("Finished processing all bitfields", .{});
     }
 
-    // Track which cores have super-majority assurance
     var assured_reports = std.ArrayList(types.AvailabilityAssignment).init(allocator);
     errdefer {
         for (assured_reports.items) |*r| {
@@ -244,13 +225,11 @@ pub fn processAssuranceExtrinsic(
         assured_reports.deinit();
     }
 
-    // Check which cores have super-majority
     {
         const majority_span = span.child(@src(), .check_super_majority);
         defer majority_span.deinit();
         majority_span.debug("Checking cores against super majority threshold {d}", .{params.validators_super_majority});
 
-        // Check which cores have super-majority
         const super_majority = params.validators_super_majority;
 
         for (core_assurance_counts, 0..) |count, core_idx| {
@@ -261,7 +240,6 @@ pub fn processAssuranceExtrinsic(
             if (count >= super_majority) {
                 if (pending_reports.hasReport(core_idx)) {
                     core_span.debug("Core {d}: super-majority reached and report present, taking ownership", .{core_idx});
-                    // Deep clone the report - ownership transferred to assured_reports (cleaned up on error)
                     try assured_reports.append(pending_reports.takeReport(core_idx).?.assignment);
                 } else {
                     core_span.err("Code {d}: we have assurances for a core which is not engaged", .{core_idx});
@@ -271,7 +249,6 @@ pub fn processAssuranceExtrinsic(
         }
     }
 
-    // Now remove any remaining timed out reports
     cleanupTimedOutReports(
         params.work_replacement_period,
         allocator,
