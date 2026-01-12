@@ -7,7 +7,6 @@ pub fn expectHashMapEqual(
     expected: Map,
     actual: Map,
 ) !void {
-    // Compile-time check that Map has required hashmap interface
     comptime {
         if (!@hasDecl(Map, "count") or
             !@hasDecl(Map, "iterator") or
@@ -41,7 +40,6 @@ fn printHashMapDifferences(
     expected: Map,
     actual: Map,
 ) !void {
-    // Collect all unique keys
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -61,13 +59,11 @@ fn printHashMapDifferences(
         }
     }
 
-    // Print sorted keys and values
     std.debug.print("\nSorted keys and values:\n", .{});
     for (all_keys.items) |key| {
         try printKey(K, key);
 
         if (V == void) {
-            // This is a set
             const in_expected = expected.contains(key);
             const in_actual = actual.contains(key);
             if (in_expected and in_actual) {
@@ -97,15 +93,13 @@ fn printHashMapDifferences(
 
 fn printKey(comptime K: type, key: K) !void {
     if (K == [32]u8 or (K == []const u8 and key.len <= 64)) {
-        // Print full hex for [32]u8 or short []u8
-        std.debug.print("\x1b[32m", .{}); // Green color
+        std.debug.print("\x1b[32m", .{});
         for (key) |byte| {
             std.debug.print("{x:0>2}", .{byte});
         }
-        std.debug.print("\x1b[0m", .{}); // Reset color
+        std.debug.print("\x1b[0m", .{});
     } else if (K == []const u8) {
-        // Print truncated hex for long []u8
-        std.debug.print("\x1b[33m", .{}); // Yellow color
+        std.debug.print("\x1b[33m", .{});
         for (key[0..32]) |byte| {
             std.debug.print("{x:0>2}", .{byte});
         }
@@ -113,9 +107,8 @@ fn printKey(comptime K: type, key: K) !void {
         for (key[key.len - 32 ..]) |byte| {
             std.debug.print("{x:0>2}", .{byte});
         }
-        std.debug.print("\x1b[0m", .{}); // Reset color
+        std.debug.print("\x1b[0m", .{});
     } else {
-        // For other types, use the default formatting
         std.debug.print("{any}", .{key});
     }
 }

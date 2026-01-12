@@ -34,13 +34,11 @@ pub fn convertBeta(
     var beta = try state.Beta.init(allocator, max_blocks);
     errdefer beta.deinit();
 
-    // Convert each BlockInfoTestVector to Beta's BlockInfo
     for (recent_blocks.history) |test_block| {
-        // For v0.6.7, we need to create a RecentHistory.BlockInfo
         const RecentHistory = @import("../beta.zig").RecentHistory;
         const block_info = RecentHistory.BlockInfo{
             .header_hash = test_block.header_hash,
-            .beefy_root = test_block.beefy_root, // Use the beefy_root directly from test vector
+            .beefy_root = test_block.beefy_root,
             .state_root = test_block.state_root,
             .work_reports = try allocator.dupe(types.ReportedWorkPackage, test_block.reported),
         };
@@ -94,7 +92,6 @@ pub fn convertCoreStatistics(
     var pi = try state.Pi.init(allocator, validators_count, core_count);
     errdefer pi.deinit();
 
-    // Copy core statistics
     for (cores_statistics.stats, 0..) |core_stat, i| {
         if (i < pi.core_stats.items.len) {
             pi.core_stats.items[i] = core_stat;
@@ -108,7 +105,6 @@ pub fn convertServiceStatistics(
     pi: *state.Pi,
     services_statistics: tvector.ServiceStatistics,
 ) !void {
-    // Copy service statistics
     for (services_statistics.stats) |entry| {
         try pi.service_stats.put(entry.id, entry.record);
     }
@@ -129,7 +125,6 @@ pub fn convertOffenders(
     if (offenders.len > validators_count) {
         return StateInitError.InvalidOffenderCount;
     }
-    // Add offenders to the punish_set
     var psi = state.Psi.init(allocator);
     try psi.registerOffenders(offenders);
 
@@ -144,14 +139,12 @@ pub fn convertState(
     var jam_state = try state.JamState(params).init(allocator);
     errdefer jam_state.deinit(allocator);
 
-    // Validate and convert availability assignments
     jam_state.rho = try convertAvailabilityAssignments(
         params.core_count,
         allocator,
         test_state.avail_assignments,
     );
 
-    // Validate and convert validator sets
     if (test_state.curr_validators.validators.len != params.validators_count) {
         return StateInitError.InvalidValidatorCount;
     }
@@ -162,28 +155,21 @@ pub fn convertState(
     }
     jam_state.lambda = try convertValidatorSet(allocator, test_state.prev_validators);
 
-    // Set entropy buffer
     jam_state.eta = test_state.entropy;
 
-    // Convert recent blocks history
     jam_state.beta = try convertBeta(allocator, test_state.recent_blocks, params.recent_history_size);
 
-    // Validate and convert auth pools
     if (test_state.auth_pools.pools.len != params.core_count) {
         return StateInitError.InvalidAuthPoolsCount;
     }
     jam_state.alpha = convertAuthPools(test_state.auth_pools, params.core_count, params.max_authorizations_pool_items);
 
-    // Convert service accounts from the new accounts field
     jam_state.delta = try convertAccounts(allocator, test_state.accounts);
 
-    // Convert core statistics and initialize Pi component
     jam_state.pi = try convertCoreStatistics(allocator, test_state.cores_statistics, params.validators_count, params.core_count);
 
-    // Add service statistics to the Pi component
     try convertServiceStatistics(&jam_state.pi.?, test_state.services_statistics);
 
-    // Convert offenders list and add to Psi (punish_set)
     jam_state.psi = try convertOffenders(allocator, test_state.offenders, params.validators_count);
 
     return jam_state;

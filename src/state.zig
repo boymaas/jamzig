@@ -126,7 +126,6 @@ pub fn JamState(comptime params: Params) type {
         }
 
         pub fn initSafrole(self: *JamState(params), allocator: std.mem.Allocator) !void {
-            // Initialize required components
             try self.initEta();
             try self.initTau();
 
@@ -167,12 +166,8 @@ pub fn JamState(comptime params: Params) type {
             try state.initTheta(allocator);
             try state.initRho(allocator);
 
-            // NOTE: Eta and Tau are initialized in Safrole
-            // try state.initEta();
-            // try state.initTau();
             try state.initSafrole(allocator);
 
-            // Auxiliary state - only initialize if enabled
             if (options.enable_ancestry) {
                 try state.initAncestry(allocator);
             }
@@ -204,19 +199,16 @@ pub fn JamState(comptime params: Params) type {
         usingnamespace StateHelpers;
 
         pub fn checkIfFullyInitialized(self: *const JamState(params)) !bool {
-            // Define our error type at compile time
             const InitError = comptime StateHelpers.buildInitErrorType(@TypeOf(self.*));
 
             const auxiliary_fields = [_][]const u8{"ancestry"};
 
             inline for (std.meta.fields(@TypeOf(self.*))) |field| {
 
-                // Only check non-auxiliary fields
                 const is_aux_field = for (auxiliary_fields) |aux_field| {
                     if (std.mem.eql(u8, aux_field, field.name)) break true;
                 } else false;
 
-                // Skip auxiliary fields (ancestry is optional auxiliary data)
                 if (!is_aux_field) {
                     if (@field(self, field.name) == null) {
                         return @field(InitError, "Uninitialized" ++ StateHelpers.capitalize(field.name));
@@ -245,8 +237,6 @@ pub fn JamState(comptime params: Params) type {
             return clone;
         }
 
-        /// NOTE: Performs a simple state merge operation for Milestone 1.
-        /// Future versions will implement optimized merge strategies.
         pub fn merge(
             self: *JamState(params),
             other: *JamState(params),
@@ -366,29 +356,21 @@ pub const Ancestry = ancestry.Ancestry;
 // Helpers to init decoupled state object by params
 pub const init = @import("state_params_init.zig");
 
-// Helper functions that will be used by our comptime methods
-// TODO: move this into src/meta.zig as these patterns occur more
 const StateHelpers = struct {
-    // Helper for merging a single field
     fn mergeField(self: anytype, other: anytype, struct_field: *const std.builtin.Type.StructField, allocator: std.mem.Allocator) !void {
         const field = @field(other, struct_field.name);
         if (field) |other_value| {
-            // If the other state has this field
             if (@field(self, struct_field.name)) |*self_value| {
-                // Clean up our existing value if needed
                 callDeinit(self_value, allocator);
             }
-            // Transfer ownership
             @field(self, struct_field.name) = other_value;
             @field(other, struct_field.name) = null;
         }
     }
 
-    // Helper for deep cloning a single field
     fn copyOrDeepCloneValue(value: anytype, allocator: std.mem.Allocator) !@TypeOf(value) {
         const T = @TypeOf(value);
 
-        // Check if its a complex type
         if (comptime isComplexType(T)) {
             if (@hasDecl(T, "deepClone")) {
                 const info = @typeInfo(@TypeOf(T.deepClone));
@@ -405,7 +387,6 @@ const StateHelpers = struct {
         return value;
     }
 
-    // Helper for deinitializing a single field
     fn deinitField(self: anytype, struct_field: *const std.builtin.Type.StructField, allocator: std.mem.Allocator) void {
         var field = @field(self, struct_field.name);
         if (field) |*value| {
@@ -413,40 +394,30 @@ const StateHelpers = struct {
         }
     }
 
-    // Helper function to check if a type is a struct or union
     fn isComplexType(comptime T: type) bool {
         const type_info = @typeInfo(T);
         return type_info == .@"struct" or type_info == .@"union";
     }
 
-    // TODO: use the meta implementation?
     fn callDeinit(value: anytype, allocator: std.mem.Allocator) void {
         const ValueType = std.meta.Child(@TypeOf(value));
 
-        // return early, as we have nothing to call here
         if (!comptime isComplexType(ValueType)) {
             return;
         }
 
-        // std.debug.print("deallocating " ++ @typeName(@TypeOf(value)) ++ "\n", .{});
-
-        // Check if the type has a deinit method
         if (!@hasDecl(ValueType, "deinit")) {
             @panic("Please implement deinit for: " ++ @typeName(ValueType));
         }
 
-        // Get the type information about the deinit function
         const deinit_info = @typeInfo(@TypeOf(@field(ValueType, "deinit")));
 
-        // Ensure it's actually a function
         if (deinit_info != .@"fn") {
             @panic("deinit must be a function for: " ++ @typeName(ValueType));
         }
 
-        // Check the number of parameters the deinit function expects
         const params_len = deinit_info.@"fn".params.len;
 
-        // Call deinit with the appropriate number of parameters
         switch (params_len) {
             1 => value.deinit(),
             2 => value.deinit(allocator),
@@ -463,15 +434,9 @@ const StateHelpers = struct {
         }
     }
 
-    /// Checks if the whole state has been initialized. We do not have any
-    /// entries which are null
-    ///
-    // Helper function to build the InitError type at compile time
     fn buildInitErrorType(comptime T: type) type {
-        // Get all fields of the state struct
         const fields = std.meta.fields(T);
 
-        // Create a tuple type containing all our error tags
         var error_fields: [fields.len]std.builtin.Type.Error = undefined;
         for (fields, 0..) |field, i| {
             error_fields[i] = .{
@@ -479,7 +444,6 @@ const StateHelpers = struct {
             };
         }
 
-        // Create and return the error set type
         return @Type(.{ .error_set = &error_fields });
     }
 };

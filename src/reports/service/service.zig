@@ -6,14 +6,12 @@ const tracing = @import("tracing");
 const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
 
-/// Error types for service validation
 pub const Error = error{
     BadServiceId,
     BadCodeHash,
     ServiceItemGasTooLow,
 };
 
-/// Validates service results in a work report
 pub fn validateServices(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),
@@ -41,7 +39,6 @@ pub fn validateServices(
                 service.min_gas_accumulate,
             });
 
-            // Validate code hash matches
             if (!std.mem.eql(u8, &service.code_hash, &result.code_hash)) {
                 result_span.err("Code hash mismatch - expected: {s}, got: {s}", .{
                     std.fmt.fmtSliceHexLower(&service.code_hash),
@@ -50,7 +47,6 @@ pub fn validateServices(
                 return Error.BadCodeHash;
             }
 
-            // Check gas limits
             if (result.accumulate_gas < service.min_gas_accumulate) {
                 result_span.err("Insufficient gas: {d} < minimum {d}", .{
                     result.accumulate_gas,

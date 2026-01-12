@@ -232,7 +232,7 @@ pub const ServiceAccount = struct {
             &formatStateKey(storage_key),
         });
 
-        return null; // Key not found
+        return null;
     }
 
     pub fn writeStorage(self: *ServiceAccount, service_id: u32, key: []const u8, value: []const u8) !?[]const u8 {
@@ -521,7 +521,6 @@ pub const ServiceAccount = struct {
         }
     }
 
-    // method to determine if this service needs a preimage
     pub fn needsPreImage(self: *const ServiceAccount, service_id: u32, hash: Hash, length: u32, current_timeslot: Timeslot) bool {
         const span = trace.span(@src(), .preimage_needs);
         defer span.deinit();
@@ -562,7 +561,6 @@ pub const ServiceAccount = struct {
         return false;
     }
 
-    // method to always set the pre-image lookup value
     pub fn registerPreimageAvailable(
         self: *ServiceAccount,
         service_id: u32,

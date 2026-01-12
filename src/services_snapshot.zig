@@ -52,7 +52,6 @@ pub const DeltaSnapshot = struct {
         span.trace("Modified services count: {d}", .{self.modified_services.count()});
         span.trace("Deleted services count: {d}", .{self.deleted_services.count()});
 
-        // Clean up modified services
         var it = self.modified_services.iterator();
         while (it.next()) |entry| {
             span.trace("Deinitializing modified service ID: {d}", .{entry.key_ptr.*});
@@ -60,7 +59,6 @@ pub const DeltaSnapshot = struct {
         }
         self.modified_services.deinit();
 
-        // Clean up deleted services tracking
         self.deleted_services.deinit();
 
         self.* = undefined;
@@ -74,20 +72,17 @@ pub const DeltaSnapshot = struct {
         defer span.deinit();
         span.debug("Getting read-only reference for service ID: {d}", .{id});
 
-        // Check if the service is marked for deletion
         if (self.deleted_services.contains(id)) {
             span.debug("Service marked for deletion, returning null", .{});
             return null;
         }
 
-        // Check if we have a modified copy
         if (self.modified_services.getPtr(id)) |account| {
             span.debug("Found in modified services", .{});
             span.trace("Account balance: {d}", .{account.balance});
             return account;
         }
 
-        // Fall back to the original state
         const result = if (self.original.getAccount(id)) |account| account else null;
         if (result) |account| {
             span.debug("Found in original Delta", .{});
@@ -125,26 +120,22 @@ pub const DeltaSnapshot = struct {
         defer span.deinit();
         span.debug("Getting mutable reference for service ID: {d}", .{id});
 
-        // Check if service is marked for deletion
         if (self.deleted_services.contains(id)) {
             span.debug("Service marked for deletion, returning null", .{});
             return null;
         }
 
-        // Check if we already have a modified copy
         if (self.modified_services.getPtr(id)) |account| {
             span.debug("Found in modified services", .{});
             span.trace("Account balance: {d}", .{account.balance});
             return account;
         }
 
-        // Check if it exists in the original state
         if (self.original.getAccount(id)) |account| {
             const clone_span = span.child(@src(), .clone_service);
             defer clone_span.deinit();
 
             clone_span.debug("Creating copy from original state", .{});
-            // Add to modified services
             var cloned = try account.deepClone(self.allocator);
             errdefer cloned.deinit();
 
@@ -166,23 +157,19 @@ pub const DeltaSnapshot = struct {
         defer span.deinit();
         span.debug("Creating new service with ID: {d}", .{id});
 
-        // Check if service already exists
         if (self.contains(id)) {
             span.err("Service already exists", .{});
             return error.ServiceAlreadyExists;
         }
 
-        // Remove from deleted if it was there
         if (self.deleted_services.remove(id)) {
             span.debug("Removed from deleted services", .{});
         }
 
-        // Create a new service
         var new_account = ServiceAccount.init(self.allocator);
         errdefer new_account.deinit();
         span.debug("Initialized new service account", .{});
 
-        // Add to modified services
         try self.modified_services.put(id, new_account);
         span.debug("Added to modified services", .{});
 
@@ -195,19 +182,16 @@ pub const DeltaSnapshot = struct {
         defer span.deinit();
         span.debug("Marking service for deletion, ID: {d}", .{id});
 
-        // Check if service exists
         if (!self.contains(id)) {
             span.debug("Service does not exist, nothing to remove", .{});
             return false;
         }
 
-        // Remove from modified services if it's there
         if (self.modified_services.fetchRemove(id)) |entry| {
             span.debug("Removing from modified services", .{});
             @constCast(&entry.value).deinit();
         }
 
-        // Mark for deletion
         try self.deleted_services.put(id, {});
         span.debug("Service marked for deletion", .{});
         return true;
@@ -227,7 +211,6 @@ pub const DeltaSnapshot = struct {
 
         var index: usize = 0;
 
-        // Add modified services
         var modified_it = self.modified_services.keyIterator();
         while (modified_it.next()) |id| {
             result[index] = id.*;
@@ -235,7 +218,6 @@ pub const DeltaSnapshot = struct {
             index += 1;
         }
 
-        // Add deleted services
         var deleted_it = self.deleted_services.keyIterator();
         while (deleted_it.next()) |id| {
             result[index] = id.*;
@@ -271,7 +253,6 @@ pub const DeltaSnapshot = struct {
 
         var destination: *Delta = @constCast(self.original);
 
-        // First handle deleted services
         {
             const delete_span = span.child(@src(), .handle_deletions);
             defer delete_span.deinit();
@@ -289,7 +270,6 @@ pub const DeltaSnapshot = struct {
             }
         }
 
-        // Then apply modified services
         {
             const modify_span = span.child(@src(), .handle_modifications);
             defer modify_span.deinit();
@@ -300,7 +280,6 @@ pub const DeltaSnapshot = struct {
                 const id = modified_entry.key_ptr.*;
                 modify_span.trace("Applying changes for service ID: {d}", .{id});
 
-                // If the service already exists in the destination, remove it first
                 if (destination.accounts.fetchRemove(id)) |removed| {
                     modify_span.trace("Removing existing service from destination", .{});
                     @constCast(&removed.value).deinit();
@@ -308,7 +287,6 @@ pub const DeltaSnapshot = struct {
                     modify_span.trace("Not yet in destination, creating", .{});
                 }
 
-                // Move the service to the destination
                 // TODO: when error occurs here, we have this value both in destination
                 // and in modified_services
                 modify_span.trace("Adding modified service to destination", .{});
@@ -316,7 +294,6 @@ pub const DeltaSnapshot = struct {
             }
         }
 
-        // Clear our tracking (without deinit-ing the services that were moved)
         span.debug("Clearing tracking structures", .{});
         self.modified_services.clearRetainingCapacity();
         self.deleted_services.clearRetainingCapacity();
@@ -333,7 +310,6 @@ pub const DeltaSnapshot = struct {
         var result = DeltaSnapshot.init(self.original);
         errdefer result.deinit();
 
-        // Copy all modified services
         {
             const copy_span = span.child(@src(), .copy_modified);
             defer copy_span.deinit();
@@ -346,12 +322,10 @@ pub const DeltaSnapshot = struct {
 
                 copy_span.trace("Cloning service ID: {d}", .{id});
 
-                // Add to result's modified services
                 try result.modified_services.put(id, try account.deepClone(self.allocator));
             }
         }
 
-        // Copy all deleted services
         {
             const copy_span = span.child(@src(), .copy_deleted);
             defer copy_span.deinit();

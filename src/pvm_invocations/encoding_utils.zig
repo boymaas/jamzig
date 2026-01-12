@@ -2,9 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const Params = @import("../jam_params.zig").Params;
 
-/// GetChainConstants returns the encoded chain constants as per the JAM specification
 pub fn encodeJamParams(allocator: std.mem.Allocator, params_val: Params) ![]u8 {
-    // JAM Constants using GrayPaper notation - encoded in order per specification
     const EncodeMap = struct {
         BI: u64, // additional_minimum_balance_per_item
         BL: u64, // additional_minimum_balance_per_octet
@@ -88,18 +86,13 @@ pub fn encodeJamParams(allocator: std.mem.Allocator, params_val: Params) ![]u8 {
 pub fn encodeOperandTuples(allocator: std.mem.Allocator, operand_tuples: []const @import("accumulate.zig").AccumulationOperand) ![]u8 {
     const codec = @import("../codec.zig");
 
-    // Calculate total size: count varint + (discriminator + operand) for each
     var buffer = std.ArrayList(u8).init(allocator);
     errdefer buffer.deinit();
 
-    // Write count as varint
     try codec.writeInteger(operand_tuples.len, buffer.writer());
 
-    // Write each operand tuple with discriminator prefix (0 = operand tuple)
     for (operand_tuples) |operand| {
-        // Discriminator 0 for operand tuple (per graypaper accinput encoding)
         try buffer.writer().writeByte(0);
-        // Encode the operand tuple
         try operand.encode(.{}, buffer.writer());
     }
 
@@ -113,9 +106,7 @@ pub fn encodeOperandTuple(allocator: std.mem.Allocator, operand_tuple: *const @i
     var buffer = std.ArrayList(u8).init(allocator);
     errdefer buffer.deinit();
 
-    // Discriminator 0 for operand tuple (per graypaper accinput encoding)
     try buffer.writer().writeByte(0);
-    // Encode the operand tuple
     try operand_tuple.encode(.{}, buffer.writer());
 
     return buffer.toOwnedSlice();
@@ -149,13 +140,11 @@ pub fn encodeCombinedInputs(
 
     try codec.writeInteger(total_count, buffer.writer());
 
-    // Transfers first (discriminator 1 per accinput union)
     for (transfers) |transfer| {
         try buffer.writer().writeByte(1);
         try codec.serialize(@import("accumulate.zig").TransferOperand, .{}, buffer.writer(), transfer);
     }
 
-    // Work operands second (discriminator 0)
     for (operands) |operand| {
         try buffer.writer().writeByte(0);
         try operand.encode(.{}, buffer.writer());

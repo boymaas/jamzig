@@ -1,7 +1,3 @@
-/// Sorting utilities
-/// This module provides generic sorting functionality for various types.
-/// It includes a function to create a less-than comparator for slices of different types,
-/// which can be used with Zig's standard library sorting functions.
 const std = @import("std");
 
 pub fn makeLessThanSliceOfFn(comptime T: type) fn (void, T, T) bool {

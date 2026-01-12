@@ -33,16 +33,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             return .{ .allocator = allocator };
         }
 
-        /// Main entry point: Prepares reports for accumulation by resolving dependencies
-        /// 
-        /// This function takes a slice of work reports and prepares them for accumulation by:
-        /// 1. Partitioning into immediately accumulatable vs queued reports
-        /// 2. Filtering out already accumulated reports
-        /// 3. Resolving dependencies between reports
-        /// 
-        /// Ownership: This function clones the input reports as needed. The caller retains
-        /// ownership of the original reports slice. The returned PreparedReports contains
-        /// newly allocated data that the caller must eventually clean up.
         pub fn prepareReportsForAccumulation(
             self: Self,
             xi: *state.Xi(params.epoch_length),
@@ -56,7 +46,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             var map_buffer = try std.ArrayList(types.WorkReportHash).initCapacity(self.allocator, 32);
             errdefer map_buffer.deinit();
 
-            // Initialize lists for various report categories
             var accumulatable_buffer = Accumulatable(types.WorkReport).init(self.allocator);
             errdefer meta.deinit.deinitEntriesAndAggregate(self.allocator, accumulatable_buffer);
             var queued = Queued(WorkReportAndDeps).init(self.allocator);
@@ -66,11 +55,9 @@ pub fn DependencyResolver(comptime params: Params) type {
             const partition_result = try self.partitionReports(reports, &accumulatable_buffer, &queued);
             span.debug("Partitioned reports: {d} immediate, {d} queued", .{ partition_result.immediate_count, partition_result.queued_count });
 
-            // Filter out already accumulated reports and resolve dependencies
             const filter_result = try self.filterAccumulatedReports(&queued, xi);
             span.debug("Filtered reports: removed {d}, resolved {d} dependencies", .{ filter_result.filtered_out, filter_result.resolved_deps });
 
-            // Build the initial set of pending reports
             var pending_reports_queue = try self.buildPendingReportsQueue(
                 theta,
                 &queued,
@@ -78,14 +65,12 @@ pub fn DependencyResolver(comptime params: Params) type {
             );
             defer meta.deinit.deinitEntriesAndAggregate(self.allocator, pending_reports_queue);
 
-            // Resolve dependencies using queue editing function
             span.debug("Resolving dependencies using queue editing function", .{});
             self.processQueueUpdates(
                 &pending_reports_queue,
                 try mapWorkPackageHash(&map_buffer, accumulatable_buffer.items),
             );
 
-            // Process reports that are ready from the queue
             span.debug("Processing accumulation queue to find accumulatable reports", .{});
             span.debug("Accumulatable buffer before processing: {d} items", .{accumulatable_buffer.items.len});
             try self.resolveAccumulatableReports(
@@ -101,7 +86,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             };
         }
 
-        /// Processes queue updates by removing resolved reports and updating dependencies (§12.7)
         fn processQueueUpdates(
             self: Self,
             queued: *Queued(WorkReportAndDeps),
@@ -117,7 +101,6 @@ pub fn DependencyResolver(comptime params: Params) type {
                 var wradeps = &queued.items[idx];
                 span.trace("Processing item {d}: hash={s}", .{ idx, std.fmt.fmtSliceHexLower(&wradeps.work_report.package_spec.hash) });
 
-                // Check if this report itself was resolved
                 for (resolved_reports) |work_package_hash| {
                     if (std.mem.eql(u8, &wradeps.work_report.package_spec.hash, &work_package_hash)) {
                         span.debug("Found matching report, removing from queue at index {d}", .{idx});
@@ -127,7 +110,6 @@ pub fn DependencyResolver(comptime params: Params) type {
                     }
                 }
 
-                // Update dependencies if this report has any
                 if (wradeps.dependencies.count() > 0) {
                     for (resolved_reports) |work_package_hash| {
                         span.trace("Checking dependency: {s}", .{std.fmt.fmtSliceHexLower(&work_package_hash)});
@@ -150,7 +132,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             span.debug("Queue updates complete, {d} items remaining in queue", .{queued.items.len});
         }
 
-        /// Processes the accumulation queue to find reports ready for accumulation (§12.8)
         fn resolveAccumulatableReports(
             self: Self,
             queued: *Queued(WorkReportAndDeps),
@@ -165,7 +146,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             defer resolved.deinit();
             span.debug("Initialized resolved reports container", .{});
 
-            // Iteratively resolve dependencies
             var iteration: usize = 0;
             while (true) {
                 const iter_span = span.child(@src(), .iteration);
@@ -198,7 +178,6 @@ pub fn DependencyResolver(comptime params: Params) type {
                     break;
                 }
 
-                // Update our queue
                 iter_span.debug("Updating queue with {d} newly resolved items", .{resolved.items.len});
                 self.processQueueUpdates(queued, resolved.items);
             }
@@ -206,7 +185,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             span.debug("Accumulation queue processing complete, found {d} accumulatable reports", .{accumulatable.items.len});
         }
 
-        /// Partitions work reports into immediately accumulatable and queued reports
         fn partitionReports(
             self: Self,
             reports: []types.WorkReport,
@@ -224,8 +202,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             for (reports, 0..) |*report, i| {
                 span.trace("Checking report {d}, hash: {s}", .{ i, std.fmt.fmtSliceHexLower(&report.package_spec.hash) });
 
-                // A report can be accumulated immediately if it has no prerequisites
-                // and no segment root lookups (§12.4)
                 if (report.context.prerequisites.len == 0 and
                     report.segment_root_lookup.len == 0)
                 {
@@ -246,7 +222,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             return .{ .immediate_count = immediate_count, .queued_count = queued_count };
         }
 
-        /// Filters out already accumulated reports and removes resolved dependencies
         fn filterAccumulatedReports(
             self: Self,
             queued: *Queued(WorkReportAndDeps),
@@ -308,7 +283,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             return .{ .filtered_out = filtered_out, .resolved_deps = resolved_deps };
         }
 
-        /// Builds the pending reports queue from theta and queued reports
         fn buildPendingReportsQueue(
             self: Self,
             theta: *state.VarTheta(params.epoch_length),
@@ -323,7 +297,6 @@ pub fn DependencyResolver(comptime params: Params) type {
             var pending_reports_queue = Queued(WorkReportAndDeps).init(self.allocator);
             errdefer meta.deinit.deinitEntriesAndAggregate(self.allocator, pending_reports_queue);
 
-            // Walk theta from current slot onwards (§12.12)
             span.debug("Walking theta from slot {d}", .{current_slot_in_epoch});
 
             var pending_reports = theta.iteratorStartingFrom(current_slot_in_epoch);
@@ -338,7 +311,6 @@ pub fn DependencyResolver(comptime params: Params) type {
 
             span.debug("Collected {d} reports from theta", .{reports_from_theta});
 
-            // Add the new queued imports
             span.debug("Adding {d} queued reports to pending queue", .{queued.items.len});
             for (queued.items) |*wradeps| {
                 span.trace("Adding queued report: {s}", .{std.fmt.fmtSliceHexLower(&wradeps.work_report.package_spec.hash)});
@@ -352,7 +324,6 @@ pub fn DependencyResolver(comptime params: Params) type {
     };
 }
 
-/// Helper function to map work reports to their package hashes
 fn mapWorkPackageHash(buffer: anytype, items: anytype) ![]types.WorkReportHash {
     buffer.clearRetainingCapacity();
     for (items) |item| {

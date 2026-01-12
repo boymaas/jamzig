@@ -32,11 +32,9 @@ pub const PVMFixture = struct {
     };
 
     pub const Status = enum {
-        panic, // the execution ended with a trap (the `trap` instruction was
-        // executed, the execution went "out of bounds", an invalid jump was made, or
-        // an invalid instruction was executed)
-        halt, // The program terminated normally.
-        page_fault, // Program halted
+        panic,
+        halt,
+        page_fault,
     };
 
     pub fn from_vector(allocator: Allocator, vector: *const PVMLib.PVMTestVector) !PVMFixture {
@@ -82,11 +80,9 @@ pub const PVMFixture = struct {
     }
 
     pub fn initMemory(self: *const PVMFixture, allocator: Allocator) !PVM.Memory {
-        // Initialize a new memory instance with the required page maps
         var memory = try PVM.Memory.initEmpty(allocator, false);
         errdefer memory.deinit();
 
-        // Map all pages according to the initial page map configuration
         for (self.initial_page_map) |page| {
             if (page.length % PVM.Memory.Z_P != 0) {
                 return error.IncorrectPageLength;
@@ -131,10 +127,8 @@ pub fn initExecContextFromTestVector(allocator: Allocator, test_vector: *const P
     );
     errdefer exec_ctx.deinit(allocator);
 
-    // Set initial registers
     @memcpy(&exec_ctx.registers, &test_vector.initial_regs);
 
-    // Set initial PC
     exec_ctx.pc = test_vector.initial_pc;
 
     return exec_ctx;
@@ -145,10 +139,8 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
     defer exec_ctx.deinit(allocator);
 
     const result = try PVM.basicInvocation(&exec_ctx);
-    // Check if the execution status matches the expected status
     const status_matches: bool = switch (result) {
-        .host_call => true, // NOTE: ignored for now
-        // ignored for now
+        .host_call => true,
         .terminal => |err| switch (err) {
             .halt => test_vector.expected_status == .halt,
             .panic => test_vector.expected_status == .panic,
@@ -175,7 +167,6 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
         test_passed = false;
     }
 
-    // Check if registers match (General Purpose Registers R0-R12)
     if (!std.mem.eql(u64, &exec_ctx.registers, &test_vector.expected_regs)) {
         std.debug.print("Register mismatch (General Purpose Registers R0-R12):\n", .{});
         std.debug.print("        Input         |    Actual        |   Expected       | Diff?\n", .{});
@@ -186,13 +177,11 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
         test_passed = false;
     }
 
-    // Check if PC matches
     if (exec_ctx.pc != test_vector.expected_pc) {
         std.debug.print("PC mismatch: expected {}, got {}\n", .{ test_vector.expected_pc, exec_ctx.pc });
         test_passed = false;
     }
 
-    // Check if memory matches
     for (test_vector.expected_memory) |expected_chunk| {
         var actual_chunk = try exec_ctx.memory.readSlice(expected_chunk.address, expected_chunk.contents.len);
         defer actual_chunk.deinit();
@@ -211,22 +200,7 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
         }
     }
 
-    // Check if gas matches
-
-    // NOTE: Gas validation is disabled because the JAM specification does not yet define
-    //       final gas costs for PVM instructions. Currently, instructions have a placeholder
-    //       cost of 1 gas unit each (see src/pvm.zig getInstructionGasCost), while host calls
-    //       have standardized costs (transfer: 10 + ω_9, others: 10, log: 0 per JIP-1).
-    //       The test vectors use expected_gas=0 to maintain compatibility across implementations.
-    //       This should be re-enabled once the JAM community establishes consensus on
-    //       per-instruction gas pricing in the Graypaper.
-    // if (exec_ctx.gas != test_vector.expected_gas) {
-    //     std.debug.print("Gas mismatch: expected {}, got {}\n", .{ test_vector.expected_gas, exec_ctx.gas });
-    //     test_passed = false;
-    // }
-
     if (!test_passed) {
-        // Read and dump the test vector file to stderr
         const file = std.fs.cwd().openFile(path, .{}) catch |err| {
             std.debug.print("Failed to open test vector file '{s}': {}\n", .{ path, err });
             return false;
@@ -241,7 +215,6 @@ pub fn runTestFixture(allocator: Allocator, test_vector: *const PVMFixture, path
 
         std.debug.print("\nTest vector file '{s}' contents:\n{s}\n", .{ path, content });
 
-        std.debug.print("\nDecompilation of the program:\n\n", .{});
         try exec_ctx.debugProgram(std.io.getStdErr().writer());
     }
 

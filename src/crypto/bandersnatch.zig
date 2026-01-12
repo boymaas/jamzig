@@ -177,23 +177,18 @@ pub const Bandersnatch = struct {
 };
 
 test "bandersnatch: key pair creation and signing" {
-    // Test with fixed seed
     const seed = "test seed for bandersnatch key generation";
     const key_pair = try Bandersnatch.KeyPair.generateDeterministic(seed);
 
-    // Test signing and verification
     const msg = "test message";
     const context = "test context";
     const sig = try key_pair.sign(msg, context);
 
-    // Verify signature
     const vrf_output = try sig.verify(msg, context, key_pair.public_key);
 
-    // Test output hash extraction
     const output_hash = try sig.outputHash();
     try std.testing.expectEqualSlices(u8, &vrf_output, &output_hash);
 
-    // Test random key generation
     const random_key_pair = try Bandersnatch.KeyPair.generateDeterministic(null);
     const random_sig = try random_key_pair.sign(msg, context);
     _ = try random_sig.verify(msg, context, random_key_pair.public_key);

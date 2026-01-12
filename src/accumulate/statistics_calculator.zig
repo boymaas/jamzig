@@ -11,14 +11,13 @@ const ProcessAccumulationResult = execution.ProcessAccumulationResult;
 
 const trace = @import("tracing").scoped(.accumulate);
 
-/// Error types for statistics calculation
 pub const StatisticsError = error{
     InvalidAccumulationOutput,
     MissingServiceData,
 } || error{OutOfMemory};
 
 pub fn StatisticsCalculator(comptime params: Params) type {
-    _ = params; // Reserved for future use
+    _ = params;
     return struct {
         allocator: std.mem.Allocator,
 
@@ -28,7 +27,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             return .{ .allocator = allocator };
         }
 
-        /// Computes all statistics from accumulation results
         pub fn computeAllStatistics(
             self: Self,
             accumulated: []const types.WorkReport,
@@ -54,7 +52,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             };
         }
 
-        /// Calculates the AccumulateRoot from accumulation outputs
         fn calculateAccumulateRoot(
             self: Self,
             accumulation_outputs: HashSet(execution.ServiceAccumulationOutput),
@@ -74,8 +71,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
                 span.trace("Added service ID: {d} with output", .{entry.key_ptr.service_id});
             }
 
-            // Sort outputs by service ID, and if equal by output, we cannot have doubles since we are using
-            // a HashSet which ensures uniqueness.
             span.debug("Sorting {d} outputs by service ID in ascending order", .{outputs.items.len});
             std.mem.sort(
                 execution.ServiceAccumulationOutput,
@@ -102,14 +97,12 @@ pub fn StatisticsCalculator(comptime params: Params) type {
 
                 blob_span.trace("Processing service ID {d} at index {d}", .{ item.service_id, i });
 
-                // Convert service ID to bytes (4-byte little-endian as per graypaper)
                 var service_id: [4]u8 = undefined;
                 std.mem.writeInt(u32, &service_id, item.service_id, .little);
                 blob_span.trace("Service ID bytes: {s}", .{std.fmt.fmtSliceHexLower(&service_id)});
 
                 blob_span.trace("Accumulation output: {s}", .{std.fmt.fmtSliceHexLower(&item.output)});
 
-                // Concatenate service ID and output (as per graypaper eq. 24: se_4(s) || se(h))
                 const blob = try self.allocator.dupe(u8, &(service_id ++ item.output));
                 try blobs.append(blob);
             }
@@ -121,7 +114,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
             return accumulate_root;
         }
 
-        /// Calculates accumulation statistics for services (Eq 12.25)
         fn calculateAccumulationStats(
             self: Self,
             accumulated: []const types.WorkReport,
@@ -135,16 +127,13 @@ pub fn StatisticsCalculator(comptime params: Params) type {
 
             span.debug("Calculating I (Accumulation) statistics for {d} accumulated reports", .{accumulated.len});
 
-            // Use the per-service gas usage returned by outerAccumulation
             var service_gas_iter = service_gas_used.iterator();
             while (service_gas_iter.next()) |entry| {
                 const service_id = entry.key_ptr.*;
                 const gas_used = entry.value_ptr.*;
 
-                // Count how many reports were processed for this service
                 var count: u32 = 0;
                 for (accumulated) |report| {
-                    // Check if this report contains any work result for this service
                     for (report.results) |work_result| {
                         if (work_result.service_id == service_id) {
                             count += 1;
@@ -152,9 +141,6 @@ pub fn StatisticsCalculator(comptime params: Params) type {
                     }
                 }
 
-                // v0.7.1: Skip services that didn't actually accumulate
-                // Services may be invoked for transfer credit but if code is unavailable,
-                // they have gas_used=0 and count=0, and should not appear in statistics.
                 if (gas_used == 0 and count == 0) {
                     span.trace("Skipping service {d} with no accumulation activity", .{service_id});
                     continue;

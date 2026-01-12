@@ -2,8 +2,6 @@ const std = @import("std");
 const encoder = @import("../encoder.zig");
 const codec_utils = @import("../util.zig");
 
-// encodeFixedLengthInteger tests
-
 const encodeFixedLengthInteger = encoder.encodeFixedLengthInteger;
 
 test "codec.encoder: encodeFixedLengthInteger - u8 (edge case: 0)" {
@@ -51,8 +49,6 @@ test "codec.encoder: encodeFixedLengthInteger - u64" {
 const findEncodingLength = codec_utils.findEncodingLength;
 
 test "codec.encoder: findEncodingLength - u8 values" {
-    // lower bound for u8 will be 1
-    // upper bound for u8 will be 128
     try std.testing.expectEqual(@as(?u8, null), findEncodingLength(@as(u8, 0)));
     for (1..128) |i| {
         try std.testing.expectEqual(@as(?u8, 0), findEncodingLength(@as(u8, @intCast(i))));
@@ -63,8 +59,6 @@ test "codec.encoder: findEncodingLength - u8 values" {
 }
 
 test "codec.encoder: findEncodingLength - u16 values" {
-    // lower bound for u8 will be 1
-    // upper bound for u8 will be 128
     try std.testing.expectEqual(@as(?u8, null), findEncodingLength(@as(u16, 0)));
 
     try std.testing.expectEqual(@as(?u8, 0), findEncodingLength(@as(u16, 127)));
@@ -97,25 +91,18 @@ test "codec.encoder: findEncodingLength - u64 values" {
     try std.testing.expectEqual(@as(?u8, null), findEncodingLength(@as(u64, std.math.maxInt(u64))));
 }
 
-// encodeInteger tests
-
 const encodeInteger = encoder.encodeInteger;
 
 test "codec.encoder: encode test" {
-    // l=0 one byte return for all values to 127
     const result_100 = encodeInteger(@as(u8, 100));
     try std.testing.expectEqualSlices(u8, &[_]u8{100}, result_100.as_slice());
 
-    // l=1 two bytes return for all values to 128 where we have a prefix indicating
-    // the length of the value.
     const result_128 = encodeInteger(@as(u8, 128));
     try std.testing.expectEqualSlices(u8, &[_]u8{ 0x80, 0x80 }, result_128.as_slice());
 
-    // 562949953421312 (2^49)
     const result_large = encodeInteger(@as(u64, 562949953421312));
     try std.testing.expectEqualSlices(u8, &[_]u8{ 0xFE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02 }, result_large.as_slice());
 
-    // 562949953421312 (2^64)
     const result_max = encodeInteger(std.math.maxInt(u64));
     try std.testing.expectEqualSlices(u8, &[_]u8{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF }, result_max.as_slice());
 }

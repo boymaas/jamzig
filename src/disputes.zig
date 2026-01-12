@@ -4,7 +4,6 @@ const ed25519 = @import("crypto/ed25519.zig").Ed25519;
 
 const trace = @import("tracing").scoped(.disputes);
 
-// Types
 pub const Hash = [32]u8;
 pub const Signature = [64]u8;
 pub const PublicKey = [32]u8;
@@ -128,12 +127,10 @@ pub fn processDisputesExtrinsic(
         } else if (positive_judgments == 0) {
             verdict_span.debug("Adding to bad set - unanimous negative", .{});
             try psi_prime.bad_set.put(verdict.target, {});
-            verdict_span.debug("Clearing from core", .{});
             _ = try rho_prime.clearFromCore(verdict.target);
         } else if (positive_judgments == validator_count / 3) {
             verdict_span.debug("Adding to wonky set - threshold negative", .{});
             try psi_prime.wonky_set.put(verdict.target, {});
-            verdict_span.debug("Clearing from core", .{});
             _ = try rho_prime.clearFromCore(verdict.target);
         }
     }
@@ -246,7 +243,6 @@ fn verifyVerdictSignatures(
 
 fn verifyCulpritSignatures(culprits: []const Culprit) VerificationError!void {
     for (culprits) |culprit| {
-        // ZIP-215 compliant verification
         const public_key = ed25519.PublicKey.fromBytes(culprit.key);
         const message = "jam_guarantee" ++ culprit.target;
         const signature = ed25519.Signature.fromBytes(culprit.signature);
@@ -259,7 +255,6 @@ fn verifyCulpritSignatures(culprits: []const Culprit) VerificationError!void {
 
 fn verifyFaultSignatures(faults: []const Fault) VerificationError!void {
     for (faults) |fault| {
-        // ZIP-215 compliant verification
         const public_key = ed25519.PublicKey.fromBytes(fault.key);
 
         const message = if (fault.vote)

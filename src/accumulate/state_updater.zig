@@ -11,7 +11,6 @@ const WorkReportAndDeps = state.reports_ready.WorkReportAndDeps;
 
 const trace = @import("tracing").scoped(.accumulate);
 
-/// Error types for state updates
 pub const StateUpdateError = error{
     InvalidStateTransition,
     InconsistentState,
@@ -28,7 +27,6 @@ pub fn StateUpdater(comptime params: Params) type {
             return .{ .allocator = allocator };
         }
 
-        /// Updates theta state after accumulation (§12.27)
         pub fn updateThetaState(
             self: Self,
             theta: *state.VarTheta(params.epoch_length),
@@ -82,7 +80,6 @@ pub fn StateUpdater(comptime params: Params) type {
             }
         }
 
-        /// Process queue updates by removing resolved reports
         fn processQueueUpdates(
             self: Self,
             queued: *Queued(WorkReportAndDeps),
@@ -131,7 +128,6 @@ pub fn StateUpdater(comptime params: Params) type {
             span.debug("Queue updates complete, {d} items remaining", .{queued.items.len});
         }
 
-        /// Updates theta with accumulation outputs from executed services
         pub fn updateAccumulationOutputs(
             _: Self,
             theta: *state.Theta,
@@ -142,10 +138,8 @@ pub fn StateUpdater(comptime params: Params) type {
 
             span.debug("Updating theta with {d} accumulation outputs", .{accumulation_outputs.count()});
 
-            // Clear existing outputs
             theta.outputs.clearRetainingCapacity();
 
-            // Convert ServiceAccumulationOutput to AccumulationOutput and add to theta
             var iter = accumulation_outputs.iterator();
             while (iter.next()) |entry| {
                 try theta.outputs.append(.{
@@ -154,8 +148,6 @@ pub fn StateUpdater(comptime params: Params) type {
                 });
             }
 
-            // Sort theta outputs by lexicographic tuple ordering as per graypaper specification
-            // Tuples (service_id, hash) are ordered first by service_id, then by hash
             std.mem.sort(
                 @import("../accumulation_outputs.zig").AccumulationOutput,
                 theta.outputs.items,
@@ -165,7 +157,6 @@ pub fn StateUpdater(comptime params: Params) type {
                         if (a.service_id != b.service_id) {
                             return a.service_id < b.service_id;
                         }
-                        // Tiebreaker: lexicographic hash comparison when service IDs are equal
                         return std.mem.lessThan(u8, &a.hash, &b.hash);
                     }
                 }.lessThan,
@@ -176,7 +167,6 @@ pub fn StateUpdater(comptime params: Params) type {
     };
 }
 
-/// Helper function to map work reports to their package hashes
 fn mapWorkPackageHash(buffer: anytype, items: anytype) ![]types.WorkReportHash {
     buffer.clearRetainingCapacity();
     for (items) |item| {

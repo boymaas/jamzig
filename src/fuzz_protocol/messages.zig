@@ -18,9 +18,9 @@ pub const TimeSlot = u32;
 pub const Features = u32;
 
 /// Feature flag constants
-pub const FEATURE_ANCESTRY: Features = 1; // 2^0
-pub const FEATURE_FORK: Features = 2; // 2^1
-pub const FEATURE_RESERVED: Features = 2147483648; // 2^31
+pub const FEATURE_ANCESTRY: Features = 1;
+pub const FEATURE_FORK: Features = 2;
+pub const FEATURE_RESERVED: Features = 2147483648;
 
 /// Version information for protocol versioning
 pub const Version = struct {
@@ -37,7 +37,6 @@ pub const PeerInfo = struct {
     app_version: Version,
     app_name: []const u8,
 
-    // Static constructor for PeerInfo
     pub fn buildFromStaticString(
         allocator: std.mem.Allocator,
         fuzz_version: u8,
@@ -178,12 +177,9 @@ pub const Message = union(MessageType) {
 
     /// Custom encode method for v1 protocol (single-byte discriminant)
     pub fn encode(self: *const Message, comptime params: anytype, writer: anytype) !void {
-
-        // Write discriminant as single byte (not varint)
         const discriminant: u8 = @intFromEnum(std.meta.activeTag(self.*));
         try writer.writeByte(discriminant);
 
-        // Serialize payload based on message type
         switch (self.*) {
             .peer_info => |peer_info| {
                 try codec.serialize(PeerInfo, params, writer, peer_info);
@@ -203,9 +199,7 @@ pub const Message = union(MessageType) {
             .state => |state| {
                 try codec.serialize(State, params, writer, state);
             },
-            .kill => {
-                // void type - no payload to serialize
-            },
+            .kill => {},
             .@"error" => |error_msg| {
                 try codec.serialize(Error, params, writer, error_msg);
             },
@@ -214,11 +208,8 @@ pub const Message = union(MessageType) {
 
     /// Custom decode method for v1 protocol (single-byte discriminant)
     pub fn decode(comptime params: anytype, reader: anytype, allocator: std.mem.Allocator) !Message {
-
-        // Read discriminant as single byte (not varint)
         const discriminant = try reader.readByte();
 
-        // Deserialize payload based on discriminant value
         return switch (discriminant) {
             0 => {
                 const peer_info = try codec.deserializeAlloc(PeerInfo, params, allocator, reader);

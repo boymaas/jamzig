@@ -13,14 +13,11 @@ pub fn convertTestStateIntoJamState(
     test_state: tv_types.State,
     tau: types.TimeSlot,
 ) !state.JamState(params) {
-    // Create a JamState to use as the base state
     var jam_state = try state.JamState(params).init(allocator);
     errdefer jam_state.deinit(allocator);
 
-    // Initial tau as a placeholder, will be updated from test vector
     jam_state.tau = tau;
 
-    // Set up delta (service accounts)
     jam_state.delta = try convertAccountsEntries(
         allocator,
         test_state.accounts,
@@ -48,13 +45,11 @@ pub fn convertAccount(allocator: std.mem.Allocator, service_id: u32, account: tv
     var service_account = state.services.ServiceAccount.init(allocator);
     errdefer service_account.deinit();
 
-    // Add preimages - need to construct proper structured keys
     for (account.preimages) |preimage_entry| {
         const preimage_key = state_keys.constructServicePreimageKey(service_id, preimage_entry.hash);
         try service_account.dupeAndAddPreimage(preimage_key, preimage_entry.blob);
     }
 
-    // Add lookup metadata
     for (account.lookup_meta) |lookup_entry| {
         var pre_image_lookup = state.services.PreimageLookup{
             .status = .{ null, null, null },
@@ -69,13 +64,11 @@ pub fn convertAccount(allocator: std.mem.Allocator, service_id: u32, account: tv
             lookup_entry.key.length,
             lookup_entry.key.hash,
         );
-        
-        // Encode the preimage lookup and store it in the unified data map
+
         const encoded = try state.services.ServiceAccount.encodePreimageLookup(allocator, pre_image_lookup);
         try service_account.data.put(lookup_key, encoded);
     }
 
-    // Set up a basic service info with default values
     service_account.code_hash = [_]u8{0} ** 32;
     service_account.balance = 1000;
     service_account.min_gas_accumulate = 1000;

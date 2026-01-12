@@ -22,28 +22,22 @@ pub fn handleEpochTransition(
     defer span.deinit();
     span.debug("Starting epoch transition", .{});
 
-    // Get current states we need
     const current_kappa: *const types.Kappa = try stx.get(.kappa);
     const current_gamma: *const state.init.Gamma(params) = try stx.get(.gamma);
     const current_iota: *const types.Iota = try stx.get(.iota);
     const eta_prime: *types.Eta = try stx.get(.eta_prime);
 
-    // Create new gamma state
     var gamma_prime: *state.init.Gamma(params) = try stx.ensure(.gamma_prime);
 
-    // Rotate validator keys
     {
         const rotate_span = span.child(@src(), .rotate_validators);
         defer rotate_span.deinit();
         span.debug("Rotating validator keys", .{});
 
-        // λ gets current κ
         try stx.createTransient(.lambda_prime, try current_kappa.deepClone(stx.allocator));
 
-        // κ gets current γ.k
         try stx.createTransient(.kappa_prime, try current_gamma.k.deepClone(stx.allocator));
 
-        // γ.k gets ι (with offenders zeroed out)
         const current_psi: *const state.Psi = try stx.get(.psi);
         gamma_prime.k.deinit(stx.allocator);
         gamma_prime.k = zeroOutOffenders(
@@ -52,12 +46,10 @@ pub fn handleEpochTransition(
         );
     }
 
-    // Calculate new gamma_z
     span.debug("Calculating new gamma_z from gamma_k", .{});
     gamma_prime.z = try buildBandersnatchRingRoot(stx.allocator, gamma_prime.k);
     span.trace("New gamma_z value: {any}", .{std.fmt.fmtSliceHexLower(&gamma_prime.z)});
 
-    // Handle gamma_s transition
     {
         const gamma_s_span = span.child(@src(), .update_gamma_s);
         defer gamma_s_span.deinit();
@@ -66,7 +58,6 @@ pub fn handleEpochTransition(
         gamma_s.deinit(stx.allocator);
         _ = gamma_s.clearAndTakeOwnership();
 
-        // Update gamma_s based on conditions
         if (stx.time.priorWasInTicketSubmissionTail() and
             current_gamma.a.len == params.epoch_length and
             stx.time.isConsecutiveEpoch())
@@ -74,7 +65,7 @@ pub fn handleEpochTransition(
             const ticket_mode_span = span.child(@src(), .ticket_mode);
             defer ticket_mode_span.deinit();
 
-            span.debug("Operating in ticket mode for gamma_s", .{});
+            span.debug("Ticket mode: gamma accumulator filled and consecutive epoch", .{});
             span.trace("Conditions met: prev_slot({d}) >= Y({d}) and gamma_a.len({d}) == epoch_length({d}) and current_epoch({d}) == prior_epoch({d}) + 1)", .{
                 stx.time.prior_slot_in_epoch,
                 params.ticket_submission_end_epoch_slot,
@@ -89,7 +80,7 @@ pub fn handleEpochTransition(
         } else {
             const key_mode_span = span.child(@src(), .key_mode);
             defer key_mode_span.deinit();
-            span.warn("Falling back to key mode for gamma_s", .{});
+            span.warn("Key mode: accumulator not full or non-consecutive epoch", .{});
 
             if (current_gamma.a.len != params.epoch_length) {
                 span.warn("  - Gamma accumulator size {d} != epoch length {d}", .{ current_gamma.a.len, params.epoch_length });
@@ -105,7 +96,6 @@ pub fn handleEpochTransition(
         }
     }
 
-    // Reset gamma_a
     span.debug("Resetting gamma_a ticket accumulator at epoch boundary", .{});
     span.trace("Freeing previous gamma_a with {d} tickets", .{current_gamma.a.len});
     stx.allocator.free(gamma_prime.a);
@@ -115,7 +105,6 @@ pub fn handleEpochTransition(
 // 58. PHI: Zero out any offenders on post_state.iota
 fn zeroOutOffenders(data: types.ValidatorSet, offenders: []const types.Ed25519Public) types.ValidatorSet {
     for (data.items()) |*validator_data| {
-        // check if in offenders list
         for (offenders) |*offender| {
             if (std.mem.eql(u8, offender, &validator_data.ed25519)) {
                 validator_data.* = std.mem.zeroes(types.ValidatorData);
@@ -135,18 +124,15 @@ fn buildBandersnatchRingRoot(
     span.debug("Calculating Bandersnatch ring root from gamma_k", .{});
     span.trace("Number of validator keys in gamma_k: {d}", .{gamma_k.len()});
 
-    // Extract the Bandersnatch public keys
     const keys = try gamma_k.getBandersnatchPublicKeys(allocator);
     defer {
         span.debug("Cleanup - freeing extracted keys", .{});
         allocator.free(keys);
     }
 
-    // Create a ring verifier instance
     var verifier = try ring_vrf.RingVerifier.init(keys);
     defer verifier.deinit();
 
-    // Get the commitment using the verifier
     const commitment = try verifier.get_commitment();
     return commitment;
 }
@@ -174,7 +160,6 @@ pub fn entropyBasedKeySelector(
         allocator.free(keys);
     }
 
-    // Allocate memory of the same length as keys to return
     var result = try allocator.alloc(types.BandersnatchPublic, epoch_length);
     errdefer allocator.free(result);
 

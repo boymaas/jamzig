@@ -6,7 +6,6 @@ const tracing = @import("tracing");
 const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
 
-/// Error types for timing validation
 pub const Error = error{
     FutureReportSlot,
     ReportEpochBeforeLast,
@@ -15,7 +14,6 @@ pub const Error = error{
     CoreEngaged,
 };
 
-/// Validate report slot is not in future
 pub fn validateReportSlot(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),
@@ -23,7 +21,7 @@ pub fn validateReportSlot(
 ) !void {
     const span = trace.span(@src(), .validate_slot);
     defer span.deinit();
-    
+
     span.debug("Validating report slot {d} against current slot {d} for core {d}", .{
         guarantee.slot,
         stx.time.current_slot,
@@ -36,7 +34,6 @@ pub fn validateReportSlot(
     }
 }
 
-/// Check rotation period according to graypaper 11.27
 pub fn validateRotationPeriod(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),
@@ -54,7 +51,6 @@ pub fn validateRotationPeriod(
         params.validator_rotation_period,
     });
 
-    // Report must be from current rotation
     if (report_rotation < current_rotation -| 1) {
         span.err(
             "Report from rotation {d} is too old (current: {d})",
@@ -67,7 +63,6 @@ pub fn validateRotationPeriod(
     }
 }
 
-/// Check timeslot is within valid range
 pub fn validateSlotRange(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),
@@ -80,7 +75,6 @@ pub fn validateSlotRange(
     const max_guarantee_slot = stx.time.current_slot;
     span.debug("Validating guarantee time slot {d} is between {d} and {d}", .{ guarantee.slot, min_guarantee_slot, max_guarantee_slot });
 
-    // Report must be from current rotation
     if (!(guarantee.slot >= min_guarantee_slot and guarantee.slot <= stx.time.current_slot)) {
         span.err(
             "Guarantee time slot out of range: {d} is NOT between {d} and {d}",
@@ -90,7 +84,6 @@ pub fn validateSlotRange(
     }
 }
 
-/// Validate core timeout has expired
 pub fn validateCoreTimeout(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),

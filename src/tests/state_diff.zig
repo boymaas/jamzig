@@ -32,10 +32,9 @@ pub fn JamStateDiff(
             options: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
-            _ = fmt; // Ignore the format string
-            _ = options; // Ignore format options
+            _ = fmt;
+            _ = options;
 
-            // Count the number of fields with diffs
             var diff_count: usize = 0;
             var it = self.fields.iterator();
             while (it.next()) |entry| {
@@ -50,7 +49,6 @@ pub fn JamStateDiff(
 
             try writer.print("\x1b[1;36mDifferences found in {d} field(s)\x1b[0m\n\n", .{diff_count});
 
-            // Iterate through all fields and show diffs
             it = self.fields.iterator();
             while (it.next()) |entry| {
                 if (entry.value_ptr.*.hasChanges()) {

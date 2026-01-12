@@ -4,12 +4,10 @@ const tracing = @import("tracing");
 
 const trace = tracing.scoped(.reports);
 
-/// Error types for output size validation
 pub const Error = error{
     WorkReportTooBig,
 };
 
-/// Validate output size limits for a work report
 pub fn validateOutputSize(
     comptime params: @import("../../jam_params.zig").Params,
     guarantee: types.ReportGuarantee,

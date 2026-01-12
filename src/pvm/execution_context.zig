@@ -17,8 +17,7 @@ pub const ExecutionContext = struct {
     decoder: Decoder,
     registers: [13]u64,
     memory: Memory,
-    // Cannot use HostCallsConfig directly due to circular dependency
-    host_calls: ?*const anyopaque, // Will be cast to *const PVM.HostCallsConfig when used
+    host_calls: ?*const anyopaque,
 
     gas: i64,
     pc: u32,
@@ -61,11 +60,6 @@ pub const ExecutionContext = struct {
         );
     }
 
-    /// Initialize execution context with standard program code format.
-    /// This implements the Y function initialization from the JAM specification.
-    ///
-    /// @param program_code The program blob containing: E_3(|o|) ∥ E_3(|w|) ∥ E_2(z) ∥ E_3(s) ∥ o ∥ w ∥ E_4(|c|) ∥ c
-    /// @param input The argument data (a) passed separately from the program blob, limited to Z_I bytes
     pub fn initStandardProgramCodeFormat(
         allocator: Allocator,
         program_code: []const u8,
@@ -204,7 +198,6 @@ pub const ExecutionContext = struct {
         });
         span.debug("Dynamic allocation: {}", .{dynamic_allocation});
 
-        // Configure memory layout with provided segments
         var memory = try Memory.initWithData(
             allocator,
             read_only,
@@ -240,8 +233,6 @@ pub const ExecutionContext = struct {
         span.trace("Program size: {d} bytes, max gas: {d}", .{ raw_program.len, max_gas });
         span.trace("Program starts with: {any}", .{std.fmt.fmtSliceHexLower(raw_program[0..@min(16, raw_program.len)])});
 
-        // Decode program
-        span.debug("Decoding program", .{});
         var program = try Program.decode(allocator, raw_program);
         errdefer {
             span.debug("Error occurred, cleaning up program", .{});
@@ -250,11 +241,9 @@ pub const ExecutionContext = struct {
 
         span.debug("Program decoded successfully, creating execution context", .{});
         const trace_mode = blk: {
-            // Check for pvm_exec=compact
             if (@import("tracing").findScope("pvm_exec_compact") != null) {
                 break :blk ExecutionTrace.TraceMode.compact;
             }
-            // Check for pvm_exec (verbose)
             if (@import("tracing").findScope("pvm_exec") != null) {
                 break :blk ExecutionTrace.TraceMode.verbose;
             }
@@ -351,7 +340,6 @@ pub const ExecutionContext = struct {
         span.debug("Host calls set successfully", .{});
     }
 
-    /// Read memory with protocol error handling
     pub fn readMemory(self: *ExecutionContext, addr: u32, size: usize) HostCallError!Memory.MemorySlice {
         return self.memory.readSlice(addr, size) catch |err| switch (err) {
             error.PageFault => return HostCallError.MemoryAccessFault,
@@ -362,7 +350,6 @@ pub const ExecutionContext = struct {
         };
     }
 
-    /// Write memory with protocol error handling
     pub fn writeMemory(self: *ExecutionContext, addr: u32, data: []const u8) HostCallError!void {
         self.memory.writeSlice(addr, data) catch |err| switch (err) {
             error.PageFault => return HostCallError.MemoryAccessFault,
@@ -373,12 +360,10 @@ pub const ExecutionContext = struct {
         };
     }
 
-    /// Read a hash from memory with protocol error handling
     pub fn readHash(self: *ExecutionContext, addr: u32) HostCallError!types.Hash {
         return self.memory.readHash(addr) catch return HostCallError.MemoryAccessFault;
     }
 
-    /// Enable or disable dynamic memory allocation
     pub fn setDynamicMemoryAllocation(self: *ExecutionContext, enable: bool) void {
         const span = trace.span(@src(), .set_dynamic_memory);
         defer span.deinit();
@@ -453,7 +438,6 @@ pub const ExecutionContext = struct {
         try writer.print("\nPC = {d} (0x{x:0>8})\n", .{ self.pc, self.pc });
         try writer.print("Gas remaining: {d}\n\n", .{self.gas});
 
-        // Print jump table
         try writer.writeAll("Jump Table:\n");
         if (self.program.jump_table.indices.len == 0) {
             try writer.writeAll("  <empty>\n");

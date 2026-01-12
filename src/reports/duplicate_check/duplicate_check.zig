@@ -6,14 +6,11 @@ const tracing = @import("tracing");
 const trace = tracing.scoped(.reports);
 const StateTransition = @import("../../state_delta.zig").StateTransition;
 
-/// Error types for duplicate validation
 pub const Error = error{
     DuplicatePackage,
     DuplicatePackageInGuarantees,
 };
 
-/// Check for duplicate packages in a batch of guarantees
-/// Uses a sorting-based approach for better runtime complexity (O(n log n) vs O(n²))
 pub fn checkDuplicatePackageInBatch(
     comptime params: @import("../../jam_params.zig").Params,
     guarantees: types.GuaranteesExtrinsic,
@@ -23,23 +20,17 @@ pub fn checkDuplicatePackageInBatch(
 
     span.debug("Starting duplicate check for {d} guarantees", .{guarantees.data.len});
 
-    // Create temporary array to store hashes for sorting
-    // avoid allocation
     var bounded_buffer = try std.BoundedArray(types.WorkPackageHash, params.core_count).init(0);
 
-    // Copy all package hashes
     for (guarantees.data, 0..) |g, i| {
         try bounded_buffer.append(g.report.package_spec.hash);
         span.trace("Collected hash at index {d}: {s}", .{ i, std.fmt.fmtSliceHexLower(&bounded_buffer.get(i)) });
     }
 
-    // Sort hashes for efficient duplicate checking
     std.mem.sortUnstable(types.WorkPackageHash, bounded_buffer.slice(), {}, @import("../../utils/sort.zig").ascHashFn);
 
-    // Get access to the sorted hashes
     const sorted_hashes = bounded_buffer.constSlice();
 
-    // Check adjacent hashes for duplicates
     if (sorted_hashes.len > 1) {
         for (sorted_hashes[0 .. sorted_hashes.len - 1], sorted_hashes[1..], 0..) |hash1, hash2, i| {
             span.trace("Comparing sorted hashes at indices {d} and {d}", .{ i, i + 1 });
@@ -54,7 +45,6 @@ pub fn checkDuplicatePackageInBatch(
     span.debug("No duplicates found in batch of {d} packages", .{guarantees.data.len});
 }
 
-/// Check for duplicate packages across recent history
 pub fn checkDuplicatePackageInRecentHistory(
     comptime params: @import("../../jam_params.zig").Params,
     stx: *StateTransition(params),
@@ -96,7 +86,6 @@ pub fn checkDuplicatePackageInRecentHistory(
         block_span.debug("No duplicates found in block {d}", .{block_idx});
     }
 
-    // Also check against other guarantees in the current batch
     for (guarantees.data) |g| {
         if (g.report.core_index.value != guarantee.report.core_index.value and
             std.mem.eql(u8, &g.report.package_spec.hash, &package_hash))

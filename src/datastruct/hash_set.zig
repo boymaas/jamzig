@@ -1,7 +1,5 @@
 const std = @import("std");
 
-/// A generic hash set implementation that wraps AutoHashMapUnmanaged for cleaner set operations.
-/// This provides a more intuitive API for set operations compared to using HashMap with void values.
 pub fn HashSet(comptime T: type) type {
     return struct {
         map: std.AutoHashMapUnmanaged(T, void),
@@ -57,7 +55,6 @@ pub fn HashSet(comptime T: type) type {
             try self.map.ensureTotalCapacity(allocator, new_capacity);
         }
 
-        /// Returns an iterator over all items in the set
         pub fn keyIterator(self: *const @This()) KeyIterator {
             return KeyIterator{ .iter = self.map.iterator() };
         }
@@ -75,37 +72,33 @@ pub fn HashSet(comptime T: type) type {
     };
 }
 
-// Basic tests
 const testing = std.testing;
 
 test "HashSet basic operations" {
     const allocator = testing.allocator;
-    
+
     var set = HashSet(u32).init();
     defer set.deinit(allocator);
 
-    // Test add and contains
     try set.add(allocator, 42);
     try set.add(allocator, 100);
-    try set.add(allocator, 42); // Adding duplicate should be fine
-    
+    try set.add(allocator, 42);
+
     try testing.expect(set.contains(42));
     try testing.expect(set.contains(100));
     try testing.expect(!set.contains(99));
     try testing.expectEqual(@as(usize, 2), set.count());
 
-    // Test remove
     try testing.expect(set.remove(42));
     try testing.expect(!set.contains(42));
     try testing.expectEqual(@as(usize, 1), set.count());
-    
-    // Test remove non-existent
+
     try testing.expect(!set.remove(999));
 }
 
 test "HashSet iteration" {
     const allocator = testing.allocator;
-    
+
     var set = HashSet(u32).init();
     defer set.deinit(allocator);
 
@@ -123,7 +116,7 @@ test "HashSet iteration" {
 
 test "HashSet clone" {
     const allocator = testing.allocator;
-    
+
     var original = HashSet(u32).init();
     defer original.deinit(allocator);
 
@@ -133,12 +126,10 @@ test "HashSet clone" {
     var cloned = try original.clone(allocator);
     defer cloned.deinit(allocator);
 
-    // Verify clone has same content
     try testing.expect(cloned.contains(10));
     try testing.expect(cloned.contains(20));
     try testing.expectEqual(original.count(), cloned.count());
 
-    // Verify they are independent
     try cloned.add(allocator, 30);
     try testing.expect(cloned.contains(30));
     try testing.expect(!original.contains(30));

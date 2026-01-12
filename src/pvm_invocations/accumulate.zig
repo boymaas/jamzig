@@ -20,22 +20,18 @@ const Params = @import("../jam_params.zig").Params;
 
 const HostCallMap = @import("accumulate/host_calls_map.zig");
 
-// Add tracing import
 const trace = @import("tracing").scoped(.accumulate);
 const trace_hostcalls = @import("tracing").scoped(.host_calls);
 
-// Replace the AccumulateArgs struct definition with this:
 const AccumulateArgs = struct {
     timeslot: types.TimeSlot,
     service_id: types.ServiceId,
     operand_count: u64, // |o| - just the count, not the operands themselves
 
-    /// Encodes according to JAM specification E(t, s, |o|) using varint encoding
     pub fn encode(self: *const @This(), writer: anytype) !void {
-        // E(t, s, |o|) - all three values are varint encoded
-        try codec.writeInteger(self.timeslot, writer); // t
-        try codec.writeInteger(self.service_id, writer); // s
-        try codec.writeInteger(self.operand_count, writer); // |o|
+        try codec.writeInteger(self.timeslot, writer);
+        try codec.writeInteger(self.service_id, writer);
+        try codec.writeInteger(self.operand_count, writer);
     }
 };
 
@@ -57,7 +53,6 @@ pub fn invoke(
     });
     span.trace("Entropy: {s}", .{std.fmt.fmtSliceHexLower(&context.entropy)});
 
-    // Look up the service account - if not found (ejected), return empty result
     const service_account = context.service_accounts.getReadOnly(service_id) orelse {
         span.info("Service {d} not found (likely ejected), returning empty result", .{service_id});
         return try AccumulationResult(params).createEmpty(allocator, context, service_id);
@@ -65,8 +60,6 @@ pub fn invoke(
 
     span.debug("Found service account for ID {d}", .{service_id});
 
-    // Count incoming transfers for this service (for operand_count)
-    // Balance crediting happens at batch start in outerAccumulation
     var transfer_count: usize = 0;
     for (incoming_transfers) |transfer| {
         if (transfer.destination == service_id) {
@@ -74,7 +67,6 @@ pub fn invoke(
         }
     }
 
-    // Check code availability - if not available, return empty result
     span.debug("Checking code availability: code_hash={}", .{std.fmt.fmtSliceHexLower(&service_account.code_hash)});
     const code_key = state_keys.constructServicePreimageKey(service_id, service_account.code_hash);
     const code_preimage = service_account.getPreimage(code_key) orelse {
@@ -83,8 +75,6 @@ pub fn invoke(
     };
     span.debug("Code available, total length: {d} bytes", .{code_preimage.len});
 
-    // Prepare accumulation arguments
-    span.debug("Preparing accumulation arguments", .{});
     var args_buffer = std.ArrayList(u8).init(allocator);
     defer args_buffer.deinit();
 
@@ -101,7 +91,6 @@ pub fn invoke(
 
     span.trace("AccumulateArgs Encoded ({d} bytes): {}", .{ args_buffer.items.len, std.fmt.fmtSliceHexLower(args_buffer.items) });
 
-    span.debug("Setting up host call functions", .{});
     var host_call_map = try HostCallMap.buildOrGetCached(params, allocator);
     defer host_call_map.deinit(allocator);
 
@@ -114,10 +103,8 @@ pub fn invoke(
             exec_ctx: *pvm.PVM.ExecutionContext,
             host_ctx: *anyopaque,
         ) pvm.PVM.HostCallResult {
-            // Capture gas before
             const gas_before = exec_ctx.gas;
 
-            // Log before host call
             {
                 const enum_val: host_calls.Id = @enumFromInt(host_call_id);
                 const hc_span = trace_hostcalls.span(@src(), .host_call_pre);
@@ -125,21 +112,17 @@ pub fn invoke(
                 hc_span.debug(">>> {s} gas_before={d}", .{ @tagName(enum_val), gas_before });
             }
 
-            // Execute host call
             const result = host_call_fn(exec_ctx, host_ctx) catch |err| switch (err) {
                 error.MemoryAccessFault => {
-                    // Memory faults cause panic per graypaper
                     return .{ .terminal = .panic };
                 },
                 else => {
-                    // Handle protocol errors by setting register and continuing
                     exec_ctx.registers[7] = @intFromEnum(host_calls.errorToReturnCode(err));
 
                     return .play;
                 },
             };
 
-            // Log after host call
             {
                 const enum_val: host_calls.Id = @enumFromInt(host_call_id);
                 const hc_span = trace_hostcalls.span(@src(), .host_call_post);
@@ -156,7 +139,6 @@ pub fn invoke(
         }
     }.wrap;
 
-    // Create HostCallsConfig with the default catchall and wrapper
     const host_calls_config = pvm.PVM.HostCallsConfig{
         .map = host_call_map,
         .catchall = host_calls.defaultHostCallCatchall,
@@ -165,7 +147,6 @@ pub fn invoke(
 
     span.debug("Cloning accumulation context and updating fetch context", .{});
 
-    // v0.7.1: Filter incoming transfers for this specific service
     var transfers_for_service = std.ArrayList(TransferOperand).init(allocator);
     defer transfers_for_service.deinit();
 
@@ -180,8 +161,6 @@ pub fn invoke(
 
     span.debug("Filtered {d} incoming transfers for service {d}", .{ transfers_slice.len, service_id });
 
-    // Initialize host call context B.6
-    span.debug("Initializing host call context", .{});
     var host_call_context = try AccumulateHostCalls(params).Context.constructUsingRegular(.{
         .allocator = allocator,
         .service_id = service_id,
@@ -196,33 +175,9 @@ pub fn invoke(
     defer host_call_context.deinit();
     span.debug("Generated new service ID: {d}", .{host_call_context.regular.new_service_id});
 
-    // Execute the PVM invocation
-    //
-    // The ΨA function (Equation B.9) specifies that if ud[s]c = ∅, the function
-    // returns a tuple indicating no state change for that service's
-    // accumulation, no deferred transfers generated by it, no accumulation
-    // output hash, and zero gas consumed for the PVM execution: (I(u,s)u, [], ∅, 0).
-    //
-    // Note: Code availability was already checked at the start of this function
-    // to prevent use-after-free when host_call_context.deinit() is called.
     span.debug("Starting PVM machine invocation", .{});
     const pvm_span = span.child(@src(), .pvm_invocation);
     defer pvm_span.deinit();
-
-    // Accumulation Host Function Context Domains
-    //
-    // The accumulation process uses a dual-domain context:
-    // - Regular domain (x): Used by most host functions for normal operations
-    // - Exceptional domain (y): Used as a fallback state in case of errors
-    //
-    // Only the checkpoint function (Ω_C, function ID 8) explicitly manipulates
-    // the exceptional domain, setting it equal to the current regular domain.
-    //
-    // If execution ends with an error (out-of-gas or panic), the system will
-    // use the exceptional domain state instead of the regular domain state,
-    // effectively restoring to the last checkpoint.
-    //
-    // All other accumulation host functions operate solely on the regular domain.
 
     var result = try pvm_invocation.machineInvocation(
         allocator,

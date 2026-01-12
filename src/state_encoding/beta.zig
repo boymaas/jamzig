@@ -21,10 +21,8 @@ pub fn encode(self: *const Beta, writer: anytype) !void {
     defer span.deinit();
     span.debug("Starting beta encoding (v0.6.7)", .{});
 
-    // First encode recent_history
     try encodeRecentHistory(&self.recent_history, writer);
 
-    // Then encode beefy_belt as MMR
     span.debug("Encoding beefy_belt MMR", .{});
     try mmr.encodePeaks(self.beefy_belt.peaks, writer);
 
@@ -38,32 +36,26 @@ fn encodeRecentHistory(self: *const RecentHistory, writer: anytype) !void {
     span.debug("Starting recent history encoding", .{});
     span.trace("Number of blocks to encode: {d}", .{self.blocks.items.len});
 
-    // Encode the number of blocks
     try writer.writeAll(encoder.encodeInteger(self.blocks.items.len).as_slice());
     span.debug("Encoded block count", .{});
 
-    // Encode each block
     for (self.blocks.items, 0..) |block, i| {
         const block_span = span.child(@src(), .block);
         defer block_span.deinit();
         block_span.debug("Encoding block {d}", .{i});
         block_span.trace("Header hash: {s}", .{std.fmt.fmtSliceHexLower(&block.header_hash)});
 
-        // Encode header hash
         try writer.writeAll(&block.header_hash);
         block_span.debug("Encoded header hash", .{});
 
-        // Encode beefy root (v0.6.7: just the root, not full MMR)
         block_span.trace("Beefy root: {s}", .{std.fmt.fmtSliceHexLower(&block.beefy_root)});
         try writer.writeAll(&block.beefy_root);
         block_span.debug("Encoded beefy root", .{});
 
-        // Encode state root
         block_span.trace("State root: {s}", .{std.fmt.fmtSliceHexLower(&block.state_root)});
         try writer.writeAll(&block.state_root);
         block_span.debug("Encoded state root", .{});
 
-        // Encode work reports
         block_span.debug("Encoding {d} work reports", .{block.work_reports.len});
         try writer.writeAll(encoder.encodeInteger(block.work_reports.len).as_slice());
 

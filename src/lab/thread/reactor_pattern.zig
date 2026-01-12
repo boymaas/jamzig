@@ -1,5 +1,3 @@
-//! Exploring the reactor pattern with Zig since I want
-//! to use this as a pattern to handle threads in JamZig
 
 const std = @import("std");
 const xev = @import("xev");
@@ -51,25 +49,21 @@ pub const Worker = struct {
         var thread = try alloc.create(Worker);
         errdefer alloc.destroy(thread);
 
-        // Initialize event loop
         thread.loop = try xev.Loop.init(.{});
         errdefer thread.loop.deinit();
 
-        // Initialize async handles
         thread.wakeup = try xev.Async.init();
         errdefer thread.wakeup.deinit();
 
         thread.stop = try xev.Async.init();
         errdefer thread.stop.deinit();
 
-        // Initialize mailbox
         thread.mailbox = try Mailbox(Request, 64).create(alloc);
         errdefer thread.mailbox.destroy(alloc);
 
         thread.alloc = alloc;
         thread.id = id;
 
-        // Configure xev
         thread.wakeup.wait(&thread.loop, &thread.wakeup_c, Worker, thread, wakeupCallback);
         thread.stop.wait(&thread.loop, &thread.stop_c, Worker, thread, stopCallback);
 
@@ -85,7 +79,6 @@ pub const Worker = struct {
     }
 
     pub fn start(self: *Worker) !std.Thread {
-        // Start the thread
         return try std.Thread.spawn(.{}, threadMain, .{self});
     }
 
@@ -101,7 +94,6 @@ pub const Worker = struct {
     fn threadMain(self: *Worker) void {
         std.debug.print("[{s}] Thread started\n", .{self.id});
 
-        // Run the event loop until stopped
         self.loop.run(.until_done) catch |err| {
             std.debug.print("[{s}] Error in event loop: {any}\n", .{ self.id, err });
         };
@@ -122,12 +114,10 @@ pub const Worker = struct {
 
         const self = self_.?;
 
-        // Process all commands in the mailbox
         self.processCommands() catch |err| {
             std.debug.print("[{s}] Error processing commands: {any}\n", .{ self.id, err });
         };
 
-        // Keep the callback active
         return .rearm;
     }
 
@@ -135,7 +125,6 @@ pub const Worker = struct {
         while (self.mailbox.pop()) |cmd| {
             std.debug.print("[{s}] Processing command: {s}\n", .{ self.id, @tagName(@as(std.meta.Tag(Command), cmd.command)) });
 
-            // Process the command and fill in the result
             const result = switch (cmd.command) {
                 .add => |params| params.a + params.b,
                 .subtract => |params| params.a - params.b,
@@ -147,20 +136,17 @@ pub const Worker = struct {
                     break :blk params.a / params.b;
                 },
                 .shutdown => blk: {
-                    // Handle shutdown command
                     try self.stop.notify();
-                    break :blk 0; // Return a default value for shutdown
+                    break :blk 0;
                 },
             };
 
-            // Allocate a new response
             const response = Response{
                 .callback = cmd.metadata.callback,
                 .context = cmd.metadata.context,
                 .result = result,
             };
 
-            // Push the response to the worker's mailbox
             _ = cmd.metadata.mailbox.push(response, .{ .instant = {} });
             cmd.metadata.mailbox_wakeup.notify() catch |err| {
                 std.debug.panic("[{s}] Error notifying mailbox wakeup: {any}\n", .{ self.id, err });
@@ -185,7 +171,6 @@ pub const Worker = struct {
     }
 };
 
-// Example callback
 fn exampleCallback(result: ?*anyopaque, context: ?*anyopaque) void {
     _ = context;
 
@@ -218,13 +203,11 @@ pub const WorkerHandle = struct {
         var worker = try alloc.create(WorkerHandle);
         errdefer alloc.destroy(worker);
 
-        // To track the worker
         worker.id = id;
         worker.loop = loop;
 
         worker.thread = thread;
 
-        // Initialize async handles
         worker.wakeup = try xev.Async.init();
         errdefer worker.wakeup.deinit();
 
@@ -236,7 +219,6 @@ pub const WorkerHandle = struct {
             wakeupCallback,
         );
 
-        // Initialize result mailbox
         worker.mailbox = try Mailbox(Response, 64).create(alloc);
         errdefer worker.mailbox.destroy(alloc);
 
@@ -255,15 +237,12 @@ pub const WorkerHandle = struct {
             std.debug.panic("[{s}] Error in wakeup callback: {any}\n", .{ self_.?.id, err });
         };
 
-        // Process any pending results
         self_.?.processResponses();
 
         return .rearm;
     }
 
     pub fn deinit(self: *WorkerHandle) void {
-
-        // Free resources
         self.mailbox.destroy(self.alloc);
         self.alloc.destroy(self);
     }
@@ -340,34 +319,25 @@ pub const WorkerHandle = struct {
 test "reactor.pattern" {
     const alloc = std.testing.allocator;
 
-    // Initialize event loop
     var main_loop = try xev.Loop.init(.{});
     errdefer main_loop.deinit();
 
-    // Worker thread
     const worker = try Worker.create(alloc, "worker_thread");
     defer worker.destroy();
     const worker_thread = try std.Thread.spawn(.{}, Worker.threadMain, .{worker});
 
-    // Create a worker handle
     var handle = try WorkerHandle.init(alloc, "worker", &main_loop, worker);
     defer handle.deinit();
 
-    // Now start a new thread where we will have a handle which is doing some work
-
-    // Send some commands to the worker
     try handle.add(5, 3, exampleCallback, null);
     try handle.divide(10, 2, exampleCallback, null);
     try handle.divide(10, 0, exampleCallback, null);
 
-    // Wait a bit and process results
     std.time.sleep(500 * std.time.ns_per_ms);
     handle.processResponses();
 
-    // Send shutdown command
     try handle.shutdown(exampleCallback, null);
-    //
-    // Wait a bit more and process final results
+
     std.time.sleep(500 * std.time.ns_per_ms);
     handle.processResponses();
 

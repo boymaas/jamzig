@@ -68,7 +68,6 @@ pub fn stateTransition(
         stx,
     );
 
-    // => rho_dagger
     _ = try disputes.transition(
         params,
         allocator,
@@ -76,8 +75,6 @@ pub fn stateTransition(
         block.extrinsic.disputes,
     );
 
-    // Run safrole transition BEFORE assurances/reports to update validator sets at epoch boundaries
-    // This ensures kappa and lambda reflect the current epoch when validating signatures
     var markers = try safrole.transition(
         IOExecutor,
         io_executor,
@@ -87,7 +84,6 @@ pub fn stateTransition(
     );
     defer markers.deinit(allocator);
 
-    // => rho_double_dagger
     var assurance_result =
         try assurances.transition(
             params,
@@ -99,15 +95,12 @@ pub fn stateTransition(
         );
     defer assurance_result.deinit(allocator);
 
-    // Update parent block's state root before processing reports
-    // This ensures guarantees can validate against the correct state root
     try recent_history.updateParentBlockStateRoot(
         params,
         stx,
         block.header.parent_state_root,
     );
 
-    // => rho_prime
     var reports_result =
         try reports.transition(
             params,
@@ -117,7 +110,6 @@ pub fn stateTransition(
         );
     defer reports_result.deinit(allocator);
 
-    // accumulate
     const ready_reports = try assurance_result.available_assignments.getWorkReports(allocator);
     defer @import("meta.zig").deinit.deinitEntriesAndFreeSlice(allocator, ready_reports);
 
@@ -146,15 +138,12 @@ pub fn stateTransition(
         accumulate_result.accumulate_root,
     );
 
-    // Process authorizations using guarantees extrinsic data
     try authorization.transition(
         params,
         stx,
         block.extrinsic.guarantees,
     );
 
-    // Create comprehensive ValidatorStatsInput with all collected data
-    // Convert reporters to validator indices for statistics
     try validator_stats.transition(
         params,
         stx,

@@ -14,7 +14,6 @@ const trace = @import("tracing").scoped(.safrole);
 
 const Error = @import("../safrole.zig").Error;
 
-// Extracted ticket processing logic
 pub fn processTicketExtrinsic(
     comptime IOExecutor: type,
     io_executor: *IOExecutor,
@@ -27,32 +26,27 @@ pub fn processTicketExtrinsic(
 
     span.debug("Processing ticket extrinsic", .{});
 
-    // in case we have no tickets leave early
     if (ticket_extrinsic.data.len == 0) {
         span.debug("No tickets in ticket extrinsic, leaving", .{});
         return &[_]types.TicketBody{};
     }
 
-    // Process tickets if not in epoch's tail
     if (stx.time.current_slot_in_epoch >= params.ticket_submission_end_epoch_slot) {
         span.err("Received ticket extrinsic in epoch's tail", .{});
         return Error.UnexpectedTicket;
     }
 
     // Chapter 6.7 Ticketing and extrensics
-    // Check the number of ticket attempts in the input when more than N we have a bad ticket attempt
     for (ticket_extrinsic.data) |extrinsic| {
         if (extrinsic.attempt >= params.max_ticket_entries_per_validator) {
             return Error.BadTicketAttempt;
         }
     }
 
-    // We should not have more than K tickets in the input
     if (ticket_extrinsic.data.len > params.epoch_length) {
         return Error.TooManyTicketsInExtrinsic;
     }
 
-    // Verify ticket envelope
     const gamma = try stx.ensure(.gamma);
     const eta_prime = try stx.ensure(.eta_prime);
     const verified_extrinsic = verifyTicketEnvelope(
@@ -78,7 +72,6 @@ pub fn processTicketExtrinsic(
         while (index < verified_extrinsic.len) : (index += 1) {
             const current_ticket = verified_extrinsic[index];
 
-            // Check order and duplicates with previous ticket
             if (index > 0) {
                 const order = std.mem.order(u8, &current_ticket.id, &verified_extrinsic[index - 1].id);
                 switch (order) {
@@ -89,7 +82,6 @@ pub fn processTicketExtrinsic(
                 }
             }
 
-            // Check for duplicates in gamma_a using binary search
             {
                 const duplicate_check_span = span.child(@src(), .check_duplicates);
                 defer duplicate_check_span.deinit();
@@ -142,7 +134,6 @@ fn verifyTicketEnvelope(
         std.fmt.fmtSliceHexLower(&n2),
     });
 
-    // For now, map the extrinsic to the ticket setting the ticketbody.id to all 0s
     var tickets = try allocator.alloc(types.TicketBody, extrinsic.len);
     errdefer {
         span.debug("Cleanup after error - freeing tickets", .{});
@@ -151,11 +142,8 @@ fn verifyTicketEnvelope(
 
     const empty_aux_data = [_]u8{};
 
-    // Use provided IO executor for parallel VRF verification
     var task_group = io_executor.createGroup();
     defer task_group.deinit();
-
-    // Spawn parallel VRF verification tasks
 
     for (extrinsic, 0..) |extr, i| {
         span.trace("Spawning VRF verification task [{d}]:", .{i});
@@ -172,10 +160,8 @@ fn verifyTicketEnvelope(
         });
     }
 
-    // Wait for all VRF verifications to complete
     try task_group.waitAndCheckErrors();
 
-    // Log results
     for (tickets, 0..) |ticket, i| {
         span.trace("VRF result [{d}] - ID: {s}", .{ i, std.fmt.fmtSliceHexLower(&ticket.id) });
     }
@@ -183,7 +169,6 @@ fn verifyTicketEnvelope(
     return tickets;
 }
 
-// Helper function for parallel VRF verification task
 fn verifyTicketTask(
     gamma_z: *const types.BandersnatchVrfRoot,
     ring_size: usize,
@@ -195,10 +180,8 @@ fn verifyTicketTask(
     const vrf_zone = trace.span(@src(), .verify_ticket_task);
     defer vrf_zone.deinit();
 
-    // Construct VRF input for this ticket
     const vrf_input = "jam_ticket_seal" ++ n2 ++ [_]u8{extr.attempt};
 
-    // Perform VRF verification
     const output = try ring_vrf.verifyRingSignatureAgainstCommitment(
         gamma_z,
         ring_size,
@@ -207,7 +190,6 @@ fn verifyTicketTask(
         &extr.signature,
     );
 
-    // Store results
     output_ticket.attempt = extr.attempt;
     output_ticket.id = output;
 }

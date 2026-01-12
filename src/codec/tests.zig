@@ -23,16 +23,10 @@ test "codec.fuzz: encodeInteger - fuzz test" {
         const test_case = TestCase.generate(prng);
         const encoded = encoder.encodeInteger(test_case.value);
 
-        // Verify that the encoded result is not empty
         try std.testing.expect(encoded.len > 0);
-
-        // Verify that the encoded result is not longer than 9 bytes
         try std.testing.expect(encoded.len <= 9);
 
-        // Decode the encoded value and verify it matches the original
         const decoded = try decoder.decodeInteger(encoded.as_slice());
-
-        // std.debug.print("Original: {}, Encoded: {any}, Decoded: {}\n", .{ test_case.value, encoded.as_slice(), decoded });
 
         try std.testing.expectEqual(test_case.value, decoded.value);
     }

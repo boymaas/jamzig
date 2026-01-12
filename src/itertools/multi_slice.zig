@@ -1,6 +1,5 @@
 const std = @import("std");
 
-/// Iterates over multiple slices
 pub fn MultiSliceIter(comptime T: type) type {
     return struct {
         slices: []const []const T,
