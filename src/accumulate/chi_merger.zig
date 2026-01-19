@@ -5,7 +5,7 @@ const Params = @import("../jam_params.zig").Params;
 
 const trace = @import("tracing").scoped(.chi_merger);
 
-/// R(o, a, b) function from graypaper §12.17
+// Graypaper §12.17
 pub fn replaceIfChanged(
     original: types.ServiceId,
     manager_value: types.ServiceId,
@@ -18,108 +18,60 @@ pub fn ChiMerger(comptime params: Params) type {
     const Chi = state.Chi(params.core_count);
 
     return struct {
-        original_manager: types.ServiceId,
-        original_assigners: [params.core_count]types.ServiceId,
-        original_delegator: types.ServiceId,
-        original_registrar: types.ServiceId,
-
         const Self = @This();
 
-        pub fn init(
-            original_manager: types.ServiceId,
-            original_assigners: [params.core_count]types.ServiceId,
-            original_delegator: types.ServiceId,
-            original_registrar: types.ServiceId,
-        ) Self {
-            return .{
-                .original_manager = original_manager,
-                .original_assigners = original_assigners,
-                .original_delegator = original_delegator,
-                .original_registrar = original_registrar,
-            };
-        }
-
-        /// R(o,a,b) = b when a=o, else a (graypaper §12.17)
+        // Graypaper §12.17
         pub fn merge(
-            self: *const Self,
-            manager_chi: ?*const Chi,
+            original_chi: *Chi,
             service_chi_map: *const std.AutoHashMap(types.ServiceId, *const Chi),
-            output_chi: *Chi,
         ) !void {
             const span = trace.span(@src(), .chi_merge);
             defer span.deinit();
 
-            const e_star = manager_chi orelse {
-                span.debug("Manager didn't accumulate, no chi changes", .{});
-                return;
+            const orig = .{
+                .manager = original_chi.manager,
+                .delegator = original_chi.designate,
+                .registrar = original_chi.registrar,
+                .assigners = original_chi.assign,
             };
 
-            span.debug("Applying R() for chi fields, original_manager={d}", .{self.original_manager});
+            const manager_chi = service_chi_map.get(orig.manager);
 
-            output_chi.manager = e_star.manager;
-            span.debug("manager: {d} (direct from manager)", .{output_chi.manager});
+            span.debug("Applying R() (manager accumulated: {any})", .{manager_chi != null});
 
-            output_chi.always_accumulate.clearRetainingCapacity();
-            var it = e_star.always_accumulate.iterator();
-            while (it.next()) |entry| {
-                try output_chi.always_accumulate.put(entry.key_ptr.*, entry.value_ptr.*);
+            original_chi.manager = if (manager_chi) |m| m.manager else orig.manager;
+            span.debug("manager: {d}", .{original_chi.manager});
+
+            if (manager_chi) |e_star| {
+                original_chi.always_accumulate.clearRetainingCapacity();
+                var it = e_star.always_accumulate.iterator();
+                while (it.next()) |entry| {
+                    try original_chi.always_accumulate.put(entry.key_ptr.*, entry.value_ptr.*);
+                }
+                span.debug("always_accumulate: {d} entries", .{original_chi.always_accumulate.count()});
             }
-            span.debug("always_accumulate: {d} entries (direct from manager)", .{output_chi.always_accumulate.count()});
 
             for (0..params.core_count) |c| {
-                const original_assigner = self.original_assigners[c];
-                const manager_assigner = e_star.assign[c];
+                const original = orig.assigners[c];
+                const manager_value = if (manager_chi) |m| m.assign[c] else original;
+                const privileged_value = if (service_chi_map.get(original)) |s| s.assign[c] else original;
 
-                const privileged_assigner = if (service_chi_map.get(original_assigner)) |chi|
-                    chi.assign[c]
-                else
-                    original_assigner;
+                original_chi.assign[c] = replaceIfChanged(original, manager_value, privileged_value);
 
-                output_chi.assign[c] = replaceIfChanged(
-                    original_assigner,
-                    manager_assigner,
-                    privileged_assigner,
-                );
-
-                if (output_chi.assign[c] != original_assigner) {
-                    span.debug("assign[{d}]: {d} -> {d} (R: orig={d}, mgr={d}, priv={d})", .{
-                        c,
-                        original_assigner,
-                        output_chi.assign[c],
-                        original_assigner,
-                        manager_assigner,
-                        privileged_assigner,
-                    });
+                if (original_chi.assign[c] != original) {
+                    span.debug("assign[{d}]: {d} -> {d}", .{ c, original, original_chi.assign[c] });
                 }
             }
 
-            const delegator_chi = service_chi_map.get(self.original_delegator);
-            const delegator_value = if (delegator_chi) |chi| chi.designate else self.original_delegator;
-            output_chi.designate = replaceIfChanged(
-                self.original_delegator,
-                e_star.designate,
-                delegator_value,
-            );
-            span.debug("designate: {d} (R: orig={d}, mgr={d}, priv={d})", .{
-                output_chi.designate,
-                self.original_delegator,
-                e_star.designate,
-                delegator_value,
-            });
+            const manager_delegator = if (manager_chi) |m| m.designate else orig.delegator;
+            const privileged_delegator = if (service_chi_map.get(orig.delegator)) |s| s.designate else orig.delegator;
+            original_chi.designate = replaceIfChanged(orig.delegator, manager_delegator, privileged_delegator);
+            span.debug("designate: {d}", .{original_chi.designate});
 
-            const registrar_chi = service_chi_map.get(self.original_registrar);
-            const registrar_value = if (registrar_chi) |chi| chi.registrar else self.original_registrar;
-            output_chi.registrar = replaceIfChanged(
-                self.original_registrar,
-                e_star.registrar,
-                registrar_value,
-            );
-            span.debug("registrar: {d} (R: orig={d}, mgr={d}, priv={d})", .{
-                output_chi.registrar,
-                self.original_registrar,
-                e_star.registrar,
-                registrar_value,
-            });
+            const manager_registrar = if (manager_chi) |m| m.registrar else orig.registrar;
+            const privileged_registrar = if (service_chi_map.get(orig.registrar)) |s| s.registrar else orig.registrar;
+            original_chi.registrar = replaceIfChanged(orig.registrar, manager_registrar, privileged_registrar);
+            span.debug("registrar: {d}", .{original_chi.registrar});
 
             span.debug("Chi R() resolution complete", .{});
         }

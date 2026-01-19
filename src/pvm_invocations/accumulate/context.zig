@@ -19,9 +19,7 @@ pub fn AccumulationContext(params: Params) type {
 
         entropy: types.Entropy,
 
-        // Original chi values from input partial state (graypaper §12.17)
-        // Used for R() function to select between manager and privileged services' changes.
-        // See accumulate/chi_merger.zig for R() implementation.
+        // Graypaper §12.17 R() function - see accumulate/chi_merger.zig
         original_manager: types.ServiceId,
         original_assigners: [params.core_count]types.ServiceId,
         original_delegator: types.ServiceId,
@@ -62,13 +60,6 @@ pub fn AccumulationContext(params: Params) type {
             try self.service_accounts.commit();
         }
 
-        /// Commit state changes for a specific service.
-        /// Per graypaper §12.17: stagingset' = (acc(delegator)_poststate)_stagingset
-        /// Only the original delegator's validator_keys changes are committed.
-        /// Per graypaper §12.17: ∀ c ∈ coreindex: authqueue'[c] = acc(assigners[c])_poststate_authqueue[c]
-        /// Only the original assigners' authorization queue changes are committed.
-        /// NOTE: privileges (chi) is NOT committed here - handled by R() resolution
-        /// in applyChiRResolution() after all services complete.
         pub fn commitForService(self: *@This(), service_id: types.ServiceId) !void {
             if (service_id == self.original_delegator) {
                 self.validator_keys.commit();
@@ -83,6 +74,8 @@ pub fn AccumulationContext(params: Params) type {
             }
 
             try self.service_accounts.commit();
+
+            self.privileges.commit();
         }
 
         pub fn deepClone(self: @This()) !@This() {

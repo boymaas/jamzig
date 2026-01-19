@@ -75,7 +75,7 @@ pub fn outerAccumulation(
     io_executor: *IOExecutor,
     comptime params: @import("../jam_params.zig").Params,
     allocator: std.mem.Allocator,
-    context: *const AccumulationContext(params),
+    context: *AccumulationContext(params),
     work_reports: []const types.WorkReport,
     gas_limit: types.Gas,
 ) !OuterAccumulationResult {
@@ -138,7 +138,7 @@ pub fn outerAccumulation(
         );
         defer parallelized_result.deinit(allocator);
 
-        try applyChiRResolution(params, allocator, &parallelized_result, context);
+        try applyChiRResolution(params, allocator, context, &parallelized_result);
 
         var batch_gas_used: types.Gas = 0;
 
@@ -310,18 +310,13 @@ pub fn ParallelizedAccumulationResult(params: jam_params.Params) type {
 fn applyChiRResolution(
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
+    context: *AccumulationContext(params),
     parallelized_result: *ParallelizedAccumulationResult(params),
-    context: *const AccumulationContext(params),
 ) !void {
     const span = trace.span(@src(), .apply_chi_r_resolution);
     defer span.deinit();
 
-    const merger = ChiMerger(params).init(
-        context.original_manager,
-        context.original_assigners,
-        context.original_delegator,
-        context.original_registrar,
-    );
+    const original_chi = try context.privileges.getMutable();
 
     var service_chi_map = std.AutoHashMap(types.ServiceId, *const state.Chi(params.core_count)).init(allocator);
     defer service_chi_map.deinit();
@@ -335,18 +330,22 @@ fn applyChiRResolution(
 
     span.debug("Built service chi map with {d} entries", .{service_chi_map.count()});
 
-    const manager_result = parallelized_result.service_results.getPtr(context.original_manager) orelse {
-        span.debug("Manager {d} did not accumulate in this batch, skipping R() resolution", .{context.original_manager});
+    const any_privileged_accumulated = service_chi_map.contains(original_chi.manager) or
+        service_chi_map.contains(original_chi.designate) or
+        service_chi_map.contains(original_chi.registrar) or
+        blk: {
+            for (original_chi.assign) |assigner| {
+                if (service_chi_map.contains(assigner)) break :blk true;
+            }
+            break :blk false;
+        };
+
+    if (!any_privileged_accumulated) {
+        span.debug("No privileged services accumulated, skipping R() resolution", .{});
         return;
-    };
+    }
 
-    const manager_chi = service_chi_map.get(context.original_manager);
-
-    const output_chi = try manager_result.collapsed_dimension.context.privileges.getMutable();
-
-    try merger.merge(manager_chi, &service_chi_map, output_chi);
-
-    manager_result.collapsed_dimension.context.privileges.commit();
+    try ChiMerger(params).merge(original_chi, &service_chi_map);
 
     span.debug("Chi R() resolution complete", .{});
 }
@@ -399,26 +398,26 @@ pub fn parallelizedAccumulation(
 
     span.debug("Parallelization decision: services={d}, gas_complexity={d}, use_parallel={}", .{ service_ids.count(), total_gas_complexity, use_parallel });
 
-    if (service_ids.count() == 0) {
-    } else if (!use_parallel) {
-        const seq_span = span.child(@src(), .sequential_accumulation);
-        defer seq_span.deinit();
+    if (service_ids.count() > 0) {
+        if (!use_parallel) {
+            const seq_span = span.child(@src(), .sequential_accumulation);
+            defer seq_span.deinit();
 
-        for (service_ids.keys()) |service_id| {
-            const maybe_operands = service_operands.getOperands(service_id);
-            const context_snapshot = try context.deepClone();
+            for (service_ids.keys()) |service_id| {
+                const maybe_operands = service_operands.getOperands(service_id);
+                const context_snapshot = try context.deepClone();
 
-            const result = try singleServiceAccumulation(
-                params,
-                allocator,
-                context_snapshot,
-                service_id,
-                maybe_operands,
-                pending_transfers,
-            );
-            try service_results.put(service_id, result);
-        }
-    } else {
+                const result = try singleServiceAccumulation(
+                    params,
+                    allocator,
+                    context_snapshot,
+                    service_id,
+                    maybe_operands,
+                    pending_transfers,
+                );
+                try service_results.put(service_id, result);
+            }
+        } else {
         const par_span = span.child(@src(), .parallel_accumulation);
         defer par_span.deinit();
 
@@ -477,9 +476,10 @@ pub fn parallelizedAccumulation(
 
         task_group.wait();
 
-        for (results_array) |slot| {
-            if (slot.result) |result| {
-                try service_results.put(slot.service_id, result);
+            for (results_array) |slot| {
+                if (slot.result) |result| {
+                    try service_results.put(slot.service_id, result);
+                }
             }
         }
     }
