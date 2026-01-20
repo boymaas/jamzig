@@ -244,60 +244,57 @@ pub const DeltaSnapshot = struct {
         return result;
     }
 
-    /// Apply all changes from this snapshot to the destination Delta
-    pub fn commit(self: *DeltaSnapshot) !void {
-        const span = trace.span(@src(), .commit);
+    /// Apply only modifications from this snapshot to destination.
+    /// Graypaper: modifications are applied before deletions.
+    pub fn applyModifications(self: *DeltaSnapshot) !void {
+        const span = trace.span(@src(), .apply_modifications);
         defer span.deinit();
-        span.debug("Committing changes to original Delta", .{});
-        span.trace("Modified services: {d}, deleted services: {d}", .{ self.modified_services.count(), self.deleted_services.count() });
 
+        if (self.modified_services.count() == 0) return;
+
+        span.debug("Applying {d} modifications", .{self.modified_services.count()});
         var destination: *Delta = @constCast(self.original);
 
-        {
-            const delete_span = span.child(@src(), .handle_deletions);
-            defer delete_span.deinit();
-            delete_span.debug("Processing {d} service deletions", .{self.deleted_services.count()});
+        var modified_it = self.modified_services.iterator();
+        while (modified_it.next()) |modified_entry| {
+            const id = modified_entry.key_ptr.*;
 
-            var deleted_it = self.deleted_services.keyIterator();
-            while (deleted_it.next()) |id| {
-                delete_span.trace("Removing service ID: {d}", .{id.*});
-                if (destination.accounts.fetchRemove(id.*)) |entry| {
-                    delete_span.trace("Service found and removed", .{});
-                    @constCast(&entry.value).deinit();
-                } else {
-                    delete_span.trace("Service not found in destination", .{});
-                }
+            if (destination.accounts.fetchRemove(id)) |removed| {
+                @constCast(&removed.value).deinit();
             }
+            try destination.accounts.put(id, modified_entry.value_ptr.*);
         }
 
-        {
-            const modify_span = span.child(@src(), .handle_modifications);
-            defer modify_span.deinit();
-            modify_span.debug("Processing {d} service modifications", .{self.modified_services.count()});
-
-            var modified_it = self.modified_services.iterator();
-            while (modified_it.next()) |modified_entry| {
-                const id = modified_entry.key_ptr.*;
-                modify_span.trace("Applying changes for service ID: {d}", .{id});
-
-                if (destination.accounts.fetchRemove(id)) |removed| {
-                    modify_span.trace("Removing existing service from destination", .{});
-                    @constCast(&removed.value).deinit();
-                } else {
-                    modify_span.trace("Not yet in destination, creating", .{});
-                }
-
-                // TODO: when error occurs here, we have this value both in destination
-                modify_span.trace("Adding modified service to destination", .{});
-                try destination.accounts.put(id, modified_entry.value_ptr.*);
-            }
-        }
-
-        span.debug("Clearing tracking structures", .{});
         self.modified_services.clearRetainingCapacity();
-        self.deleted_services.clearRetainingCapacity();
+    }
 
-        span.debug("Commit completed successfully", .{});
+    /// Apply only deletions from this snapshot to destination.
+    /// Graypaper: deletions are applied after modifications.
+    pub fn applyDeletions(self: *DeltaSnapshot) void {
+        const span = trace.span(@src(), .apply_deletions);
+        defer span.deinit();
+
+        if (self.deleted_services.count() == 0) return;
+
+        span.debug("Applying {d} deletions", .{self.deleted_services.count()});
+        var destination: *Delta = @constCast(self.original);
+
+        var deleted_it = self.deleted_services.keyIterator();
+        while (deleted_it.next()) |id| {
+            if (destination.accounts.fetchRemove(id.*)) |removed| {
+                @constCast(&removed.value).deinit();
+            }
+        }
+
+        self.deleted_services.clearRetainingCapacity();
+    }
+
+    /// Apply all changes from this snapshot to the destination Delta.
+    /// Note: For graypaper-compliant ordering across multiple snapshots,
+    /// use applyModifications() and applyDeletions() separately.
+    pub fn commit(self: *DeltaSnapshot) !void {
+        try self.applyModifications();
+        self.applyDeletions();
     }
 
     /// Create a new DeltaSnapshot from this DeltaSnapshot (used for checkpoints)

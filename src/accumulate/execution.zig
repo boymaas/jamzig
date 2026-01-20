@@ -169,7 +169,7 @@ pub fn outerAccumulation(
             batch_gas_used += result.gas_used;
         }
 
-        try parallelized_result.applyContextChanges(allocator);
+        try parallelized_result.applyContextChanges();
 
         span.debug("Applied state changes for all services", .{});
 
@@ -253,45 +253,33 @@ pub fn ParallelizedAccumulationResult(params: jam_params.Params) type {
             };
         }
 
-        pub fn applyContextChanges(self: *@This(), allocator: std.mem.Allocator) !void {
+        /// Apply context changes following graypaper ordering:
+        /// accounts' = (accounts ∪ modifications) \ deletions
+        pub fn applyContextChanges(self: *@This()) !void {
             const span = trace.span(@src(), .apply_context_changes);
             defer span.deinit();
 
-            var global_deletions = std.AutoHashMap(types.ServiceId, void).init(allocator);
-            defer global_deletions.deinit();
-
-            var first_snapshot: ?*const DeltaSnapshot = null;
+            // Phase 1: Apply all modifications
             {
                 var it = self.service_results.iterator();
                 while (it.next()) |entry| {
-                    const snapshot = &entry.value_ptr.collapsed_dimension.context.service_accounts;
-                    if (first_snapshot == null) first_snapshot = snapshot;
-                    var deleted_it = snapshot.deleted_services.keyIterator();
-                    while (deleted_it.next()) |id| {
-                        try global_deletions.put(id.*, {});
-                    }
+                    try entry.value_ptr.collapsed_dimension.context.service_accounts.applyModifications();
                 }
             }
 
-            if (global_deletions.count() > 0) {
-                span.debug("Collected {d} global deletions across all services", .{global_deletions.count()});
+            // Phase 2: Apply all deletions
+            {
+                var it = self.service_results.iterator();
+                while (it.next()) |entry| {
+                    entry.value_ptr.collapsed_dimension.context.service_accounts.applyDeletions();
+                }
             }
 
-            var it = self.service_results.iterator();
-            while (it.next()) |entry| {
-                try entry.value_ptr.collapsed_dimension.commit();
-            }
-
-            if (global_deletions.count() > 0) {
-                if (first_snapshot) |snapshot| {
-                    const destination: *Delta = @constCast(snapshot.original);
-                    var deletion_it = global_deletions.keyIterator();
-                    while (deletion_it.next()) |deleted_id| {
-                        if (destination.accounts.fetchRemove(deleted_id.*)) |removed| {
-                            span.debug("Final cleanup: removed globally deleted service {d}", .{deleted_id.*});
-                            @constCast(&removed.value).deinit();
-                        }
-                    }
+            // Phase 3: Commit non-service-account state (validator_keys, authorizer_queue)
+            {
+                var it = self.service_results.iterator();
+                while (it.next()) |entry| {
+                    try entry.value_ptr.collapsed_dimension.commit();
                 }
             }
         }
@@ -578,10 +566,6 @@ pub fn executeAccumulation(
             .privileges = try stx.ensure(.chi_prime),
             .time = &stx.time,
             .entropy = (try stx.ensure(.eta_prime))[0],
-            .original_manager = original_chi.manager,
-            .original_assigners = original_chi.assign,
-            .original_delegator = original_chi.designate,
-            .original_registrar = original_chi.registrar,
         },
     );
     defer accumulation_context.deinit();

@@ -19,12 +19,6 @@ pub fn AccumulationContext(params: Params) type {
 
         entropy: types.Entropy,
 
-        // Graypaper §12.17 R() function - see accumulate/chi_merger.zig
-        original_manager: types.ServiceId,
-        original_assigners: [params.core_count]types.ServiceId,
-        original_delegator: types.ServiceId,
-        original_registrar: types.ServiceId,
-
         const InitArgs = struct {
             service_accounts: *state.Delta,
             validator_keys: *state.Iota,
@@ -32,10 +26,6 @@ pub fn AccumulationContext(params: Params) type {
             privileges: *state.Chi(params.core_count),
             time: *const params.Time(),
             entropy: types.Entropy,
-            original_manager: types.ServiceId,
-            original_assigners: [params.core_count]types.ServiceId,
-            original_delegator: types.ServiceId,
-            original_registrar: types.ServiceId,
         };
 
         pub fn build(allocator: std.mem.Allocator, args: InitArgs) @This() {
@@ -46,36 +36,18 @@ pub fn AccumulationContext(params: Params) type {
                 .privileges = CopyOnWrite(state.Chi(params.core_count)).init(allocator, args.privileges),
                 .time = args.time,
                 .entropy = args.entropy,
-                .original_manager = args.original_manager,
-                .original_assigners = args.original_assigners,
-                .original_delegator = args.original_delegator,
-                .original_registrar = args.original_registrar,
             };
         }
 
         pub fn commit(self: *@This()) !void {
             self.validator_keys.commit();
             self.authorizer_queue.commit();
-            self.privileges.commit();
-            try self.service_accounts.commit();
-        }
 
-        pub fn commitForService(self: *@This(), service_id: types.ServiceId) !void {
-            if (service_id == self.original_delegator) {
-                self.validator_keys.commit();
-            }
+            // NOTE: service_accounts is managed by applyContextChanges to ensure
+            // graypaper ordering: modifications first, then deletions.
+            // try self.service_accounts.commit();
 
-            const is_assigner = for (self.original_assigners) |assigner| {
-                if (service_id == assigner) break true;
-            } else false;
-
-            if (is_assigner) {
-                self.authorizer_queue.commit();
-            }
-
-            try self.service_accounts.commit();
-
-            // NOTE:  chi is managed by ChiMerger, so we don't commit it here.
+            // NOTE: chi is managed by ChiMerger, so we don't commit it here.
             // self.privileges.commit();
         }
 
@@ -87,10 +59,6 @@ pub fn AccumulationContext(params: Params) type {
                 .privileges = try self.privileges.deepClone(),
                 .time = self.time,
                 .entropy = self.entropy,
-                .original_manager = self.original_manager,
-                .original_assigners = self.original_assigners,
-                .original_delegator = self.original_delegator,
-                .original_registrar = self.original_registrar,
             };
         }
 

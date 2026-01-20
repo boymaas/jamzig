@@ -62,7 +62,7 @@ pub fn HostCalls(comptime params: Params) type {
             provided_preimages: std.AutoHashMap(ProvidedKey, []const u8),
 
             pub fn commit(self: *@This()) !void {
-                try self.context.commitForService(self.service_id);
+                try self.context.commit();
             }
 
             /// Apply provided preimages after accumulation
