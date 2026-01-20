@@ -161,7 +161,23 @@ const TraceCollection = struct {
     }
 };
 
-test "jam-conformance:traces" {
+test "w3f-conformance:traces" {
+    try runTracesTest("w3f-conformance");
+}
+
+test "w3f-conformance:summary" {
+    try runSummaryTest("w3f-conformance");
+}
+
+test "davxy-conformance:traces" {
+    try runTracesTest("davxy-conformance");
+}
+
+test "davxy-conformance:summary" {
+    try runSummaryTest("davxy-conformance");
+}
+
+fn runTracesTest(base_dir: []const u8) !void {
     const allocator = testing.allocator;
 
     const trace_timestamp = std.process.getEnvVarOwned(allocator, "JAM_CONFORMANCE_ARCHIVE") catch |err| switch (err) {
@@ -179,7 +195,7 @@ test "jam-conformance:traces" {
         return;
     }
 
-    var collection = try buildStandardTraceCollection(allocator);
+    var collection = try buildTraceCollection(allocator, base_dir);
     defer collection.deinit();
 
     const maybe_entry = try collection.findByTimestamp(trace_timestamp);
@@ -258,10 +274,10 @@ test "jam-conformance:traces" {
     }
 }
 
-test "jam-conformance:summary" {
+fn runSummaryTest(base_dir: []const u8) !void {
     const allocator = testing.allocator;
 
-    var collection = try buildStandardTraceCollection(allocator);
+    var collection = try buildTraceCollection(allocator, base_dir);
     defer collection.deinit();
 
     try runTraceSummary(allocator, &collection);
@@ -310,11 +326,11 @@ fn isValidTimestamp(name: []const u8) bool {
     }
 }
 
-fn buildStandardTraceCollection(allocator: std.mem.Allocator) !TraceCollection {
+fn buildTraceCollection(allocator: std.mem.Allocator, base_dir: []const u8) !TraceCollection {
     var collection = TraceCollection.init(allocator);
     errdefer collection.deinit();
 
-    const traces_path = try buildTracesPath(allocator);
+    const traces_path = try buildTracesPath(allocator, base_dir);
     defer allocator.free(traces_path);
 
     const testing_path = try std.fmt.allocPrint(allocator, "{s}/TESTING", .{traces_path});
@@ -329,12 +345,12 @@ fn buildStandardTraceCollection(allocator: std.mem.Allocator) !TraceCollection {
     return collection;
 }
 
-fn buildTracesPath(allocator: std.mem.Allocator) ![]u8 {
+fn buildTracesPath(allocator: std.mem.Allocator, base_dir: []const u8) ![]u8 {
     const graypaper = version.GRAYPAPER_VERSION;
     const version_str = try std.fmt.allocPrint(allocator, "{d}.{d}.{d}", .{ graypaper.major, graypaper.minor, graypaper.patch });
     defer allocator.free(version_str);
 
-    return try std.fmt.allocPrint(allocator, "src/jam-conformance/fuzz-reports/{s}/traces", .{version_str});
+    return try std.fmt.allocPrint(allocator, "src/{s}/fuzz-reports/{s}/traces", .{ base_dir, version_str });
 }
 
 fn runTraceSummary(allocator: std.mem.Allocator, collection: *const TraceCollection) !void {

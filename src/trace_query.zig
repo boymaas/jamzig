@@ -265,7 +265,7 @@ fn printUsage() !void {
         \\
         \\Examples:
         \\  # Query specific trace file
-        \\  trace-query src/jam-conformance/fuzz-reports/0.7.1/traces/1761665520/00000008.bin tau
+        \\  trace-query src/w3f-conformance/fuzz-reports/0.7.1/traces/1761665520/00000008.bin tau
         \\  trace-query path/to/trace.bin gamma.s
         \\  trace-query path/to/trace.bin kappa.0.bandersnatch
         \\  trace-query path/to/trace.bin eta.2
