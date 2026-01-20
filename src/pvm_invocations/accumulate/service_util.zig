@@ -8,7 +8,7 @@ const trace = @import("tracing").scoped(.accumulate);
 
 /// C_minpublicindex = 2^16 - minimum public service index
 /// Services below this can only be created by the Registrar (graypaper definitions.tex)
-const C_MIN_PUBLIC_INDEX: u32 = 0x10000;
+pub const C_MIN_PUBLIC_INDEX: u32 = 0x10000;
 
 pub fn check(service_accounts: *const state.Delta.Snapshot, candidate_id: types.ServiceId) types.ServiceId {
     const span = trace.span(@src(), .check_service_id);
