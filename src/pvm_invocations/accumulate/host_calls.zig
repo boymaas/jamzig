@@ -989,38 +989,38 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.HUH;
             };
 
-            const additional_storage_size: u64 = 81 +| preimage_size;
-
-            span.debug("Checking if service has enough balance to store preimage", .{});
-            const footprint = service_account.getStorageFootprint(params);
-            const storage_cost = params.min_balance_per_octet *| additional_storage_size;
-            const additional_balance_needed = params.min_balance_per_item +| storage_cost;
-
-            if (additional_balance_needed > service_account.balance or
-                service_account.balance - additional_balance_needed < footprint.a_t)
-            {
-                span.debug("Insufficient balance for soliciting preimage, returning FULL", .{});
-                return HostCallError.FULL;
-            }
-
             span.debug("Attempting to solicit preimage", .{});
 
+            // Check balance for NEW solicitations only
+            const existing_lookup = service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size));
+            if (existing_lookup == null) {
+                const additional_storage_size: u64 = 81 +| preimage_size;
+                const footprint = service_account.getStorageFootprint(params);
+                const storage_cost = params.min_balance_per_octet *| additional_storage_size;
+                const additional_balance_needed = params.min_balance_per_item +| storage_cost;
+
+                if (additional_balance_needed > service_account.balance or
+                    service_account.balance - additional_balance_needed < footprint.a_t)
+                {
+                    span.debug("Insufficient balance for new preimage solicitation, returning FULL", .{});
+                    return HostCallError.FULL;
+                }
+                span.debug("Balance check passed for new solicitation", .{});
+            }
+
+            // solicitPreimage handles state validation
             if (service_account.solicitPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot)) |_| {
                 span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size))});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             } else |err| {
                 switch (err) {
+                    error.AlreadySolicited, error.AlreadyAvailable, error.AlreadyReSolicited, error.InvalidState, error.InvalidData => {
+                        span.debug("Preimage solicitation failed: {}, returning HUH", .{err});
+                        return HostCallError.HUH;
+                    },
                     error.OutOfMemory => {
                         span.err("Out of memory while soliciting preimage", .{});
                         return .{ .terminal = .panic };
-                    },
-                    error.AlreadySolicited, error.AlreadyAvailable, error.AlreadyReSolicited, error.InvalidState => {
-                        span.err("Invalid solicitation attempt: {}", .{err});
-                        return HostCallError.HUH;
-                    },
-                    else => {
-                        span.err("Unexpected error while soliciting preimage: {}", .{err});
-                        return HostCallError.HUH;
                     },
                 }
             }
