@@ -75,7 +75,8 @@ pub fn AccumulationContext(params: Params) type {
 
             try self.service_accounts.commit();
 
-            self.privileges.commit();
+            // NOTE:  chi is managed by ChiMerger, so we don't commit it here.
+            // self.privileges.commit();
         }
 
         pub fn deepClone(self: @This()) !@This() {

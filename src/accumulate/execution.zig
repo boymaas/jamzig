@@ -346,6 +346,7 @@ fn applyChiRResolution(
     }
 
     try ChiMerger(params).merge(original_chi, &service_chi_map);
+    context.privileges.commit();
 
     span.debug("Chi R() resolution complete", .{});
 }
@@ -418,63 +419,63 @@ pub fn parallelizedAccumulation(
                 try service_results.put(service_id, result);
             }
         } else {
-        const par_span = span.child(@src(), .parallel_accumulation);
-        defer par_span.deinit();
+            const par_span = span.child(@src(), .parallel_accumulation);
+            defer par_span.deinit();
 
-        var task_group = io_executor.createGroup();
+            var task_group = io_executor.createGroup();
 
-        const ResultSlot = struct {
-            service_id: types.ServiceId,
-            result: ?AccumulationResult(params) = null,
-        };
+            const ResultSlot = struct {
+                service_id: types.ServiceId,
+                result: ?AccumulationResult(params) = null,
+            };
 
-        var results_array = try allocator.alloc(ResultSlot, service_ids.count());
-        defer allocator.free(results_array);
+            var results_array = try allocator.alloc(ResultSlot, service_ids.count());
+            defer allocator.free(results_array);
 
-        for (service_ids.keys(), 0..) |service_id, index| {
-            results_array[index] = ResultSlot{ .service_id = service_id };
-        }
-
-        const TaskContext = struct {
-            allocator: std.mem.Allocator,
-            context: *const AccumulationContext(params),
-            service_operands: *ServiceAccumulationOperandsMap,
-            pending_transfers: []const pvm_accumulate.TransferOperand,
-            results_array: []ResultSlot,
-
-            fn processServiceAtIndex(self: @This(), index: usize) !void {
-                const service_id = self.results_array[index].service_id;
-                const maybe_operands = self.service_operands.getOperands(service_id);
-
-                var context_snapshot = try self.context.deepClone();
-                defer context_snapshot.deinit();
-
-                const result = try singleServiceAccumulation(
-                    params,
-                    self.allocator,
-                    context_snapshot,
-                    service_id,
-                    maybe_operands,
-                    self.pending_transfers,
-                );
-
-                self.results_array[index].result = result;
+            for (service_ids.keys(), 0..) |service_id, index| {
+                results_array[index] = ResultSlot{ .service_id = service_id };
             }
-        };
 
-        const task_context = TaskContext{
-            .allocator = allocator,
-            .context = context,
-            .service_operands = &service_operands,
-            .pending_transfers = pending_transfers,
-            .results_array = results_array,
-        };
+            const TaskContext = struct {
+                allocator: std.mem.Allocator,
+                context: *const AccumulationContext(params),
+                service_operands: *ServiceAccumulationOperandsMap,
+                pending_transfers: []const pvm_accumulate.TransferOperand,
+                results_array: []ResultSlot,
 
-        for (0..service_ids.count()) |index| {
-            try task_group.spawn(TaskContext.processServiceAtIndex, .{ task_context, index });
-        }
+                fn processServiceAtIndex(self: @This(), index: usize) !void {
+                    const service_id = self.results_array[index].service_id;
+                    const maybe_operands = self.service_operands.getOperands(service_id);
 
-        task_group.wait();
+                    var context_snapshot = try self.context.deepClone();
+                    defer context_snapshot.deinit();
+
+                    const result = try singleServiceAccumulation(
+                        params,
+                        self.allocator,
+                        context_snapshot,
+                        service_id,
+                        maybe_operands,
+                        self.pending_transfers,
+                    );
+
+                    self.results_array[index].result = result;
+                }
+            };
+
+            const task_context = TaskContext{
+                .allocator = allocator,
+                .context = context,
+                .service_operands = &service_operands,
+                .pending_transfers = pending_transfers,
+                .results_array = results_array,
+            };
+
+            for (0..service_ids.count()) |index| {
+                try task_group.spawn(TaskContext.processServiceAtIndex, .{ task_context, index });
+            }
+
+            task_group.wait();
 
             for (results_array) |slot| {
                 if (slot.result) |result| {
