@@ -842,15 +842,19 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             const footprint = target_service.getStorageFootprint(params);
+
+            // Graypaper check order: items != 2 BEFORE request lookup
+            // Line 864: d.items ≠ 2 ∨ (h,l) ∉ d.requests (left side evaluated first)
+            if (footprint.a_i != 2) {
+                span.debug("Service has {} items, expected 2, returning HUH error", .{footprint.a_i});
+                return HostCallError.HUH;
+            }
+
             const l = @max(81, footprint.a_o) - 81;
             const lookup_status = target_service.getPreimageLookup(@intCast(target_service_id), hash, @intCast(l)) orelse {
                 span.debug("Hash lookup not found, returning HUH error", .{});
                 return HostCallError.HUH;
             };
-
-            if (footprint.a_i != 2) {
-                return HostCallError.HUH;
-            }
 
             const current_timeslot = ctx_regular.context.time.current_slot;
             const status = lookup_status.asSlice();
