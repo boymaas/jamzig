@@ -61,7 +61,9 @@ pub fn HostCalls(comptime params: Params) type {
             operands: []const pvm_accumulate.AccumulationOperand,
             provided_preimages: std.AutoHashMap(ProvidedKey, []const u8),
 
+            // NOTE: a noop can be removed
             pub fn commit(self: *@This()) !void {
+                // NOTE: a noop can be removed
                 try self.context.commit();
             }
 
@@ -325,6 +327,9 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.WHO;
             }
 
+            // NOTE: Graypaper spec has NO authorization check for bless!
+            // Any service can call bless and change all privileges.
+            // While this seems like a security vulnerability, we must follow the spec exactly.
             const current_privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Could not get mutable privileges", .{});
                 return HostCallError.FULL;
@@ -562,6 +567,8 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
+            // Check against current working state per graypaper: \imX_\im¬state
+            // R() logic will ensure only appropriate changes propagate to final state
             if (ctx_regular.service_id != privileges.assign[core_index]) {
                 span.debug("Service {d} is not the assign service for core {d} (current assign: {d}), returning HUH", .{ ctx_regular.service_id, core_index, privileges.assign[core_index] });
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
@@ -676,7 +683,7 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Code hash: {s}", .{std.fmt.fmtSliceHexLower(&code_hash)});
 
-            // Get privileges once for both gratis and registrar checks
+            // Get current working privileges per graypaper: \imX_\im¬state
             const privileges = ctx_regular.context.privileges.getReadOnly();
 
             if (free_storage_offset != 0) {
@@ -1189,9 +1196,10 @@ pub fn HostCalls(comptime params: Params) type {
             };
             defer validator_data.deinit();
 
+            // Check current working privileges per graypaper: \imX_\im¬state
             const privileges: *const state.Chi(params.core_count) = ctx_regular.context.privileges.getReadOnly();
             if (privileges.designate != ctx_regular.service_id) {
-                span.debug("Service {d} does not have validator privilege, current validator service is {?d}", .{
+                span.debug("Service {d} does not have validator privilege, designate service is {?d}", .{
                     ctx_regular.service_id, privileges.designate,
                 });
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);

@@ -333,10 +333,52 @@ fn applyChiRResolution(
         return;
     }
 
+    // Capture original privileged services BEFORE R() resolution
+    var original_assigners: [params.core_count]types.ServiceId = undefined;
+    for (0..params.core_count) |c| {
+        original_assigners[c] = original_chi.assign[c];
+    }
+    const original_delegator = original_chi.designate;
+
     try ChiMerger(params).merge(original_chi, &service_chi_map);
     context.privileges.commit();
 
     span.debug("Chi R() resolution complete", .{});
+
+    // Apply authorizer queue from original assigners per graypaper
+    const original_authqueue = try context.authorizer_queue.getMutable();
+    for (0..params.core_count) |c| {
+        const original_assigner = original_assigners[c];
+        if (parallelized_result.service_results.get(original_assigner)) |assigner_result| {
+            const assigner_authqueue = assigner_result.collapsed_dimension.context.authorizer_queue.getReadOnly();
+            // Copy all authorizations for this core from the original assigner's result
+            for (0..params.max_authorizations_queue_items) |i| {
+                const auth_hash = assigner_authqueue.getAuthorization(c, i);
+                try original_authqueue.setAuthorization(c, i, auth_hash);
+            }
+            span.debug("Applied authqueue[{d}] from original assigner {d}", .{ c, original_assigner });
+        }
+    }
+    context.authorizer_queue.commit();
+
+    span.debug("Authorizer queue finalization complete", .{});
+
+    // Apply validator keys from original delegator per graypaper
+    if (parallelized_result.service_results.get(original_delegator)) |delegator_result| {
+        const delegator_validator_keys = delegator_result.collapsed_dimension.context.validator_keys.getReadOnly();
+        const original_validator_keys = try context.validator_keys.getMutable();
+
+        std.debug.assert(delegator_validator_keys.validators.len == params.validators_count);
+        std.debug.assert(original_validator_keys.validators.len == params.validators_count);
+
+        for (delegator_validator_keys.validators, 0..) |key, i| {
+            original_validator_keys.validators[i] = key;
+        }
+        span.debug("Applied validator_keys from original delegator {d}", .{original_delegator});
+    }
+    context.validator_keys.commit();
+
+    span.debug("Validator keys finalization complete", .{});
 }
 
 pub fn parallelizedAccumulation(

@@ -40,15 +40,21 @@ pub fn AccumulationContext(params: Params) type {
         }
 
         pub fn commit(self: *@This()) !void {
-            self.validator_keys.commit();
-            self.authorizer_queue.commit();
-
+            _ = self;
             // NOTE: service_accounts is managed by applyContextChanges to ensure
             // graypaper ordering: modifications first, then deletions.
             // try self.service_accounts.commit();
 
             // NOTE: chi is managed by ChiMerger, so we don't commit it here.
             // self.privileges.commit();
+
+            // NOTE: authorizer_queue is managed by applyAuthQueueFromOriginalAssigners
+            // per graypaper §12.17: authqueue'[c] = acc(assigners[c])_poststate_authqueue[c]
+            // self.authorizer_queue.commit();
+
+            // NOTE: validator_keys (stagingset) is managed by applyValidatorKeysFromOriginalDelegator
+            // per graypaper §12.17: stagingset' = acc(delegator)_poststate_stagingset
+            // self.validator_keys.commit();
         }
 
         pub fn deepClone(self: @This()) !@This() {
