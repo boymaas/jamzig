@@ -14,7 +14,7 @@ pub fn check(service_accounts: *const state.Delta.Snapshot, candidate_id: types.
     const span = trace.span(@src(), .check_service_id);
     defer span.deinit();
 
-    const modulo: u32 = @intCast(std.math.pow(u64, 2, 32) - 0x100 - C_MIN_PUBLIC_INDEX);
+    const modulo: u32 = @truncate(std.math.pow(u64, 2, 32) - 0x100 - C_MIN_PUBLIC_INDEX);
 
     var current_id = candidate_id;
     var iterations: u32 = 0;
@@ -60,7 +60,7 @@ pub fn generateServiceId(service_accounts: *const state.Delta.Snapshot, creator_
     span.trace("Hash output: {s}", .{std.fmt.fmtSliceHexLower(&hash_output)});
 
     const initial_value = std.mem.readInt(u32, hash_output[0..4], .little);
-    const modulo: u32 = @intCast(std.math.pow(u64, 2, 32) - C_MIN_PUBLIC_INDEX - 0x100);
+    const modulo: u32 = @truncate(std.math.pow(u64, 2, 32) - C_MIN_PUBLIC_INDEX - 0x100);
     const candidate_id = C_MIN_PUBLIC_INDEX + (initial_value % modulo);
     span.debug("Initial candidate ID: {d}", .{candidate_id});
 

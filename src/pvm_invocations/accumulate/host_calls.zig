@@ -438,6 +438,12 @@ pub fn HostCalls(comptime params: Params) type {
                 amount, gas_limit, memo_ptr,
             });
 
+            // Graypaper: destination is serviceid (N_32), values > u32::MAX not in keys -> WHO
+            if (destination_id > std.math.maxInt(u32)) {
+                span.debug("Destination ID {d} exceeds u32::MAX, returning WHO", .{destination_id});
+                return HostCallError.WHO;
+            }
+
             span.debug("charging 10 gas (base cost)", .{});
             exec_ctx.gas -= 10;
 
@@ -456,7 +462,7 @@ pub fn HostCalls(comptime params: Params) type {
             span.trace("Memo data: {s}", .{std.fmt.fmtSliceHexLower(memo_slice.buffer)});
 
             span.debug("Looking up destination service account", .{});
-            const destination_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(destination_id)) orelse {
+            const destination_service = ctx_regular.context.service_accounts.getReadOnly(@truncate(destination_id)) orelse {
                 span.debug("Destination service not found, returning WHO error (base 10 gas already charged)", .{});
                 return HostCallError.WHO;
             };
@@ -494,10 +500,10 @@ pub fn HostCalls(comptime params: Params) type {
 
             const transfer_operand = pvm_accumulate.TransferOperand{
                 .sender = ctx_regular.service_id,
-                .destination = @intCast(destination_id),
-                .amount = @intCast(amount),
+                .destination = @truncate(destination_id), // Validated above, truncate to u32
+                .amount = amount, // u64 -> u64, no cast needed
                 .memo = memo,
-                .gas_limit = @intCast(gas_limit),
+                .gas_limit = gas_limit, // u64 -> u64, no cast needed
             };
 
             span.debug("Adding transfer to generated_transfers for next service", .{});
@@ -506,9 +512,14 @@ pub fn HostCalls(comptime params: Params) type {
             };
 
             span.debug("Deducting {d} from source service balance", .{amount});
-            source_service.balance -= @intCast(amount);
+            source_service.balance -= amount; // u64 -= u64, no cast needed
 
             span.debug("charging {d} gas (transfer gas, refunded after processing)", .{gas_limit});
+            // Graypaper: gascounter ∈ signedgas (Z_{-2^63...2^63}), if gas_limit > i64::MAX we're OOG
+            if (gas_limit > std.math.maxInt(i64)) {
+                span.debug("Gas limit {d} exceeds i64::MAX, out of gas", .{gas_limit});
+                return .{ .terminal = .out_of_gas };
+            }
             exec_ctx.gas -= @intCast(gas_limit);
 
             if (exec_ctx.gas < 0) {
@@ -600,7 +611,7 @@ pub fn HostCalls(comptime params: Params) type {
                 };
             }
 
-            privileges.assign[core_index] = @intCast(new_assign_service);
+            privileges.assign[core_index] = @truncate(new_assign_service); // Validated above
             span.debug("Updated assign service for core {d} to service {d}", .{ core_index, new_assign_service });
 
             span.debug("Core assigned successfully", .{});
@@ -633,7 +644,9 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
-            exec_ctx.registers[7] = @intCast(exec_ctx.gas);
+            // Graypaper line 753: registers'_7 ≡ gascounter' (where gascounter' >= 0, checked above)
+            std.debug.assert(exec_ctx.gas >= 0); // Already checked, should never fail
+            exec_ctx.registers[7] = @intCast(exec_ctx.gas); // Safe: i64::MAX < u64::MAX
 
             span.debug("Checkpoint created successfully, remaining gas: {d}", .{exec_ctx.gas});
             return .play;
@@ -778,7 +791,7 @@ pub fn HostCalls(comptime params: Params) type {
 
             // Only update new_service_id for the normal path (not registrar reserved ID case)
             if (!is_registrar or !is_reserved_id) {
-                const intermediate_service_id = service_util.C_MIN_PUBLIC_INDEX + ((ctx_regular.new_service_id - service_util.C_MIN_PUBLIC_INDEX + 42) % @as(u32, @intCast(std.math.pow(u64, 2, 32) - service_util.C_MIN_PUBLIC_INDEX - 0x100)));
+                const intermediate_service_id = service_util.C_MIN_PUBLIC_INDEX + ((ctx_regular.new_service_id - service_util.C_MIN_PUBLIC_INDEX + 42) % @as(u32, @truncate(std.math.pow(u64, 2, 32) - service_util.C_MIN_PUBLIC_INDEX - 0x100)));
                 ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, intermediate_service_id);
             }
             return .play;
@@ -803,11 +816,18 @@ pub fn HostCalls(comptime params: Params) type {
             const host_ctx: *Context = @ptrCast(@alignCast(call_ctx.?));
             const ctx_regular: *Dimension = &host_ctx.regular;
 
-            const target_service_id = exec_ctx.registers[7]; // Service ID to eject (d)
+            const target_service_id_reg = exec_ctx.registers[7]; // Service ID to eject (d)
             const hash_ptr = exec_ctx.registers[8]; // Hash pointer (o)
 
-            span.debug("Host call: eject service {d}", .{target_service_id});
+            span.debug("Host call: eject service {d}", .{target_service_id_reg});
             span.debug("Hash pointer: 0x{x}", .{hash_ptr});
+
+            // Graypaper: d is serviceid (N_32), values > u32::MAX not in keys -> WHO
+            if (target_service_id_reg > std.math.maxInt(u32)) {
+                span.debug("Target service ID {d} exceeds u32::MAX, returning WHO", .{target_service_id_reg});
+                return HostCallError.WHO;
+            }
+            const target_service_id: u32 = @truncate(target_service_id_reg);
 
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
             const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
@@ -821,7 +841,7 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.WHO;
             }
 
-            const target_service = ctx_regular.context.service_accounts.getReadOnly(@intCast(target_service_id)) orelse {
+            const target_service = ctx_regular.context.service_accounts.getReadOnly(target_service_id) orelse {
                 span.debug("Target service not found, returning WHO error", .{});
                 return HostCallError.WHO;
             };
@@ -835,7 +855,7 @@ pub fn HostCalls(comptime params: Params) type {
             };
 
             var e32_service_id = std.mem.zeroes([32]u8);
-            std.mem.writeInt(u32, e32_service_id[0..4], @intCast(ctx_regular.service_id), .little);
+            std.mem.writeInt(u32, e32_service_id[0..4], ctx_regular.service_id, .little); // service_id is already u32
 
             const hash_is_e32_service = std.mem.eql(u8, &target_service.code_hash, &e32_service_id);
 
@@ -858,7 +878,7 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             const l = @max(81, footprint.a_o) - 81;
-            const lookup_status = target_service.getPreimageLookup(@intCast(target_service_id), hash, @intCast(l)) orelse {
+            const lookup_status = target_service.getPreimageLookup(target_service_id, hash, @truncate(l)) orelse {
                 span.debug("Hash lookup not found, returning HUH error", .{});
                 return HostCallError.HUH;
             };
@@ -880,7 +900,7 @@ pub fn HostCalls(comptime params: Params) type {
 
             const target_balance = target_service.balance;
 
-            _ = ctx_regular.context.service_accounts.removeService(@intCast(target_service_id)) catch {
+            _ = ctx_regular.context.service_accounts.removeService(target_service_id) catch {
                 span.err("Failed to remove service", .{});
                 return .{ .terminal = .panic };
             };
@@ -914,10 +934,18 @@ pub fn HostCalls(comptime params: Params) type {
             const ctx_regular: *Dimension = &host_ctx.regular;
 
             const hash_ptr = exec_ctx.registers[7]; // Hash pointer (o)
-            const preimage_size = exec_ctx.registers[8]; // Preimage size (z)
+            const preimage_size_reg = exec_ctx.registers[8]; // Preimage size (z)
 
             span.debug("Host call: query preimage for service {d}", .{ctx_regular.service_id});
-            span.debug("Hash ptr: 0x{x}, Preimage size: {d}", .{ hash_ptr, preimage_size });
+            span.debug("Hash ptr: 0x{x}, Preimage size: {d}", .{ hash_ptr, preimage_size_reg });
+
+            // Graypaper: z is bloblength (N_32), if > u32::MAX then (h,z) not in keys -> NONE
+            if (preimage_size_reg > std.math.maxInt(u32)) {
+                span.debug("Preimage size {d} exceeds u32::MAX, key cannot exist, returning NONE", .{preimage_size_reg});
+                exec_ctx.registers[8] = 0;
+                return HostCallError.NONE;
+            }
+            const preimage_size: u32 = @truncate(preimage_size_reg);
 
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
             const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
@@ -934,7 +962,7 @@ pub fn HostCalls(comptime params: Params) type {
             };
 
             span.debug("Querying preimage status", .{});
-            const lookup_status = service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size)) orelse {
+            const lookup_status = service_account.getPreimageLookup(ctx_regular.service_id, hash, preimage_size) orelse {
                 span.debug("Preimage lookup not found, returning NONE", .{});
                 exec_ctx.registers[8] = 0; // Per graypaper: R8 = 0 when lookup doesn't exist
                 return HostCallError.NONE;
@@ -1044,7 +1072,7 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             // solicitPreimage handles state validation
-            if (service_account.solicitPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot)) |_| {
+            if (service_account.solicitPreimage(ctx_regular.service_id, hash, preimage_size, current_timeslot)) |_| {
                 span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(ctx_regular.service_id, hash, preimage_size)});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             } else |err| {
@@ -1260,17 +1288,27 @@ pub fn HostCalls(comptime params: Params) type {
 
             const service_id_reg = exec_ctx.registers[7]; // Service ID (s* - can be current service if 2^64-1)
             const data_ptr = exec_ctx.registers[8]; // Data pointer (o)
-            const data_size = exec_ctx.registers[9]; // Data size (z)
+            const data_size_reg = exec_ctx.registers[9]; // Data size (z)
 
             span.debug("Host call: provide", .{});
-            span.debug("Service ID reg: {d}, data ptr: 0x{x}, data size: {d}", .{ service_id_reg, data_ptr, data_size });
+            span.debug("Service ID reg: {d}, data ptr: 0x{x}, data size: {d}", .{ service_id_reg, data_ptr, data_size_reg });
 
-            const service_id: types.ServiceId = host_calls.resolveTargetService(ctx_regular, service_id_reg);
+            const service_id: types.ServiceId = host_calls.resolveTargetService(ctx_regular, service_id_reg) orelse {
+                span.debug("Invalid service ID (> u32::MAX), returning WHO", .{});
+                return HostCallError.WHO;
+            };
+
+            // Graypaper: z is bloblength (N_32), if > u32::MAX then lookup key cannot match
+            if (data_size_reg > std.math.maxInt(u32)) {
+                span.debug("Data size {d} exceeds u32::MAX, cannot match solicitation, returning HUH", .{data_size_reg});
+                return HostCallError.HUH;
+            }
+            const data_size: u32 = @truncate(data_size_reg);
 
             span.debug("Providing data for service: {d}", .{service_id});
 
             span.debug("Reading {d} bytes from memory at 0x{x}", .{ data_size, data_ptr });
-            var data_slice = exec_ctx.memory.readSlice(@truncate(data_ptr), @truncate(data_size)) catch {
+            var data_slice = exec_ctx.memory.readSlice(@truncate(data_ptr), data_size) catch {
                 span.err("Memory access failed while reading provide data", .{});
                 return .{ .terminal = .panic };
             };
@@ -1286,7 +1324,7 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Data hash: {s}", .{std.fmt.fmtSliceHexLower(&data_hash)});
 
-            const lookup = service_account.getPreimageLookup(service_id, data_hash, @intCast(data_size));
+            const lookup = service_account.getPreimageLookup(service_id, data_hash, data_size);
             if (lookup == null) {
                 span.debug("Preimage not solicited (no lookup exists), returning HUH", .{});
                 return HostCallError.HUH;
@@ -1301,7 +1339,7 @@ pub fn HostCalls(comptime params: Params) type {
             const key = ProvidedKey{
                 .service_id = service_id,
                 .hash = data_hash,
-                .size = @intCast(data_size),
+                .size = data_size,
             };
             if (ctx_regular.provided_preimages.contains(key)) {
                 span.debug("Preimage already provided in this accumulation, returning HUH", .{});

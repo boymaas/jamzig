@@ -592,13 +592,6 @@ pub fn executeAccumulation(
     const span = trace.span(@src(), .execute_accumulation);
     defer span.deinit();
 
-    const original_chi = try stx.ensure(.chi);
-    span.debug("Original chi - manager={d}, delegator={d}, registrar={d}", .{
-        original_chi.manager,
-        original_chi.designate,
-        original_chi.registrar,
-    });
-
     var accumulation_context = pvm_accumulate.AccumulationContext(params).build(
         allocator,
         .{
