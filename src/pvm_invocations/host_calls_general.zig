@@ -159,7 +159,10 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const hash = try exec_ctx.readHash(@truncate(hash_ptr));
             span.debug("Preimage hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
 
-            const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg);
+            const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg) orelse {
+                span.debug("Invalid service ID (> u32::MAX), returning NONE", .{});
+                return HostCallError.NONE;
+            };
             span.trace("Resolved service ID: {d}", .{resolved_service_id});
 
             const service_account: ?*const ServiceAccount = host_ctx.service_accounts.getReadOnly(resolved_service_id);
@@ -220,7 +223,10 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const offset = exec_ctx.registers[11]; // Offset in the value (f)
             const limit = exec_ctx.registers[12]; // Length limit (l)
 
-            const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg);
+            const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg) orelse {
+                span.debug("Invalid service ID (> u32::MAX), returning NONE", .{});
+                return HostCallError.NONE;
+            };
 
             span.debug("Host call: read storage for service {d}", .{resolved_service_id});
             span.trace("Key ptr: 0x{x}, Key size: {d}, Output ptr: 0x{x}", .{
@@ -462,7 +468,10 @@ pub fn GeneralHostCalls(comptime params: Params) type {
             const offset = exec_ctx.registers[9]; // This was a typo in the graypaper 0.6.7
             const limit = exec_ctx.registers[10];
 
-            const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg);
+            const resolved_service_id = host_calls.resolveTargetService(host_ctx, service_id_reg) orelse {
+                span.debug("Invalid service ID (> u32::MAX), returning NONE", .{});
+                return HostCallError.NONE;
+            };
 
             span.debug("Host call: info for service {d}", .{resolved_service_id});
             span.debug("Output pointer: 0x{x}, Offset: {d}, Limit: {d}", .{ output_ptr, offset, limit });

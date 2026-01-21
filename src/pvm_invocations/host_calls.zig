@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub const Id = enum(u32) {
     gas = 0, // Host call for retrieving remaining gas counter
     fetch = 1, // Host call for fetching work packages
@@ -56,13 +58,16 @@ pub const ReturnCode = enum(u64) {
 
 /// Resolves a target service ID from a register value using the graypaper convention:
 /// - 0xFFFFFFFFFFFFFFFF (ReturnCode.NONE) means use current service from context
-/// - Any other value is treated as the target service ID
+/// - Values > u32::MAX return null (not a valid serviceid per graypaper N_32 type)
+/// - Any other value is treated as the target service ID (truncated to u32)
+/// Returns null if the register value is not a valid serviceid.
 /// The host_ctx must have a service_id field.
-pub fn resolveTargetService(host_ctx: anytype, register_value: u64) u32 {
-    return if (register_value == @intFromEnum(ReturnCode.NONE))
-        host_ctx.service_id
-    else
-        @as(u32, @intCast(register_value));
+pub fn resolveTargetService(host_ctx: anytype, register_value: u64) ?u32 {
+    if (register_value == @intFromEnum(ReturnCode.NONE))
+        return host_ctx.service_id;
+    if (register_value > std.math.maxInt(u32))
+        return null; // Not a valid serviceid (N_32)
+    return @truncate(register_value);
 }
 
 /// Host call error set matching JAM protocol return codes from the Graypaper.
