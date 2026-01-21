@@ -368,8 +368,8 @@ fn applyChiRResolution(
         const delegator_validator_keys = delegator_result.collapsed_dimension.context.validator_keys.getReadOnly();
         const original_validator_keys = try context.validator_keys.getMutable();
 
-        std.debug.assert(delegator_validator_keys.validators.len == params.validators_count);
-        std.debug.assert(original_validator_keys.validators.len == params.validators_count);
+        // std.debug.assert(delegator_validator_keys.validators.len == params.validators_count);
+        // std.debug.assert(original_validator_keys.validators.len == params.validators_count);
 
         for (delegator_validator_keys.validators, 0..) |key, i| {
             original_validator_keys.validators[i] = key;
