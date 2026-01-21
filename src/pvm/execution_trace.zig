@@ -10,6 +10,7 @@ pub const ExecutionTrace = struct {
     previous_registers: [13]u64 = [_]u64{0} ** 13,
     enabled: bool = false,
     mode: TraceMode = .disabled,
+    run_counter: u32 = 0,
 
     const Self = @This();
 
@@ -77,23 +78,25 @@ pub const ExecutionTrace = struct {
 
         self.step_counter += 1;
 
-        // Get instruction name only
-        const inst_name = @tagName(instruction.instruction);
-
-        // Format: step_num: PC pc_value INSTRUCTION g=gas reg=[r0 r1 r2...]
-        std.debug.print("{d:>5}: PC {d:>5} {s:<20} g={d} reg=[", .{
-            self.step_counter,
-            pc,
-            inst_name,
-            gas_after,
-        });
-
-        // Print registers
-        for (registers, 0..) |reg, i| {
-            if (i > 0) std.debug.print(" ", .{});
-            std.debug.print("{d}", .{reg});
+        // CSV header on first step
+        if (self.step_counter == 1) {
+            std.debug.print("step,pc,gas,r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,instruction\n", .{});
         }
-        std.debug.print("]\n", .{});
+
+        // Get instruction name
+        const inst_name_lower = @tagName(instruction.instruction);
+        var inst_name_buf: [64]u8 = undefined;
+        const inst_name = std.ascii.upperString(&inst_name_buf, inst_name_lower);
+
+        // CSV format: step,pc,gas,r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,instruction
+        std.debug.print("{d},{d},{d}", .{ self.step_counter, pc, gas_after });
+
+        // Print all 13 registers
+        for (registers) |reg| {
+            std.debug.print(",{d}", .{reg});
+        }
+
+        std.debug.print(",{s}\n", .{inst_name});
     }
 
     /// Log an execution step based on the configured mode

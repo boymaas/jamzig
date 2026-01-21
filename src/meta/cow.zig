@@ -45,6 +45,10 @@ pub fn CopyOnWrite(comptime T: type) type {
             return if (self.mutable) |*m| m else self.source;
         }
 
+        pub fn getOriginal(self: *const Self) *const T {
+            return self.source;
+        }
+
         pub fn commit(self: *Self) void {
             if (self.mutable) |m| {
                 const source = @constCast(self.source);

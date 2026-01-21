@@ -61,8 +61,10 @@ pub fn HostCalls(comptime params: Params) type {
             operands: []const pvm_accumulate.AccumulationOperand,
             provided_preimages: std.AutoHashMap(ProvidedKey, []const u8),
 
+            // NOTE: a noop can be removed
             pub fn commit(self: *@This()) !void {
-                try self.context.commitForService(self.service_id);
+                // NOTE: a noop can be removed
+                try self.context.commit();
             }
 
             /// Apply provided preimages after accumulation
@@ -325,6 +327,9 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.WHO;
             }
 
+            // NOTE: Graypaper spec has NO authorization check for bless!
+            // Any service can call bless and change all privileges.
+            // While this seems like a security vulnerability, we must follow the spec exactly.
             const current_privileges: *state.Chi(params.core_count) = ctx_regular.context.privileges.getMutable() catch {
                 span.err("Could not get mutable privileges", .{});
                 return HostCallError.FULL;
@@ -562,6 +567,8 @@ pub fn HostCalls(comptime params: Params) type {
                 return .{ .terminal = .panic };
             };
 
+            // Check against current working state per graypaper: \imX_\im¬state
+            // R() logic will ensure only appropriate changes propagate to final state
             if (ctx_regular.service_id != privileges.assign[core_index]) {
                 span.debug("Service {d} is not the assign service for core {d} (current assign: {d}), returning HUH", .{ ctx_regular.service_id, core_index, privileges.assign[core_index] });
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);
@@ -656,6 +663,7 @@ pub fn HostCalls(comptime params: Params) type {
             const min_gas_limit = exec_ctx.registers[9];
             const min_memo_gas = exec_ctx.registers[10];
             const free_storage_offset = exec_ctx.registers[11];
+            const desired_id_raw = exec_ctx.registers[12];
 
             if (code_len_raw > std.math.maxInt(u32)) {
                 span.err("Code length {d} exceeds u32 range, returning PANIC", .{code_len_raw});
@@ -665,7 +673,7 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.debug("Host call: new service from service {d}", .{ctx_regular.service_id});
             span.debug("Code hash ptr: 0x{x}, Code len: {d}", .{ code_hash_ptr, code_len });
-            span.debug("Min gas limit: {d}, Min memo gas: {d}, Free storage: {d}", .{ min_gas_limit, min_memo_gas, free_storage_offset });
+            span.debug("Min gas limit: {d}, Min memo gas: {d}, Free storage: {d}, Desired ID: {d}", .{ min_gas_limit, min_memo_gas, free_storage_offset, desired_id_raw });
 
             span.debug("Reading code hash from memory at 0x{x}", .{code_hash_ptr});
             var code_hash = exec_ctx.memory.readHash(@truncate(code_hash_ptr)) catch {
@@ -675,8 +683,10 @@ pub fn HostCalls(comptime params: Params) type {
 
             span.trace("Code hash: {s}", .{std.fmt.fmtSliceHexLower(&code_hash)});
 
+            // Get current working privileges per graypaper: \imX_\im¬state
+            const privileges = ctx_regular.context.privileges.getReadOnly();
+
             if (free_storage_offset != 0) {
-                const privileges = ctx_regular.context.privileges.getReadOnly();
                 if (ctx_regular.service_id != privileges.manager) {
                     span.debug("Non-manager (service {d}) trying to grant free storage, manager is {d}", .{
                         ctx_regular.service_id, privileges.manager,
@@ -686,13 +696,32 @@ pub fn HostCalls(comptime params: Params) type {
                 span.debug("Manager granting {d} bytes of free storage", .{free_storage_offset});
             }
 
+            // Determine target service ID - registrar can create services with reserved IDs
+            const is_registrar = ctx_regular.service_id == privileges.registrar;
+            const desired_id: u32 = @truncate(desired_id_raw);
+            const is_reserved_id = desired_id < service_util.C_MIN_PUBLIC_INDEX;
+
+            const target_service_id: u32 = if (is_registrar and is_reserved_id) blk: {
+                // Registrar requesting a reserved ID
+                if (ctx_regular.context.service_accounts.contains(desired_id)) {
+                    span.debug("Registrar requested reserved ID {d} but it already exists, returning FULL", .{desired_id});
+                    return HostCallError.FULL;
+                }
+                span.debug("Registrar creating service with reserved ID: {d}", .{desired_id});
+                break :blk desired_id;
+            } else blk: {
+                // Normal path - use auto-generated ID
+                span.debug("Using auto-generated service ID: {d}", .{ctx_regular.new_service_id});
+                break :blk ctx_regular.new_service_id;
+            };
+
             // WARN: We need to create the service account first, since there is a
             // chance we are growing the underlying container which could move the items
             // in memory. After we created we are ensured that the getMutable pointer will be valid
             // for as long we are not adding to the container.
 
-            span.debug("Creating new service account with ID: {d}", .{ctx_regular.new_service_id});
-            var new_account = ctx_regular.context.service_accounts.createService(ctx_regular.new_service_id) catch {
+            span.debug("Creating new service account with ID: {d}", .{target_service_id});
+            var new_account = ctx_regular.context.service_accounts.createService(target_service_id) catch {
                 span.err("Failed to create new service account", .{});
                 return .{ .terminal = .panic };
             };
@@ -717,9 +746,9 @@ pub fn HostCalls(comptime params: Params) type {
             new_account.balance = 0; // Temporary, will be set after footprint calculation
 
             span.debug("Integrating preimage lookup", .{});
-            new_account.solicitPreimage(ctx_regular.new_service_id, code_hash, code_len, ctx_regular.context.time.current_slot) catch {
+            new_account.solicitPreimage(target_service_id, code_hash, code_len, ctx_regular.context.time.current_slot) catch {
                 span.err("Failed to integrate preimage lookup, out of memory", .{});
-                _ = ctx_regular.context.service_accounts.removeService(ctx_regular.new_service_id) catch {};
+                _ = ctx_regular.context.service_accounts.removeService(target_service_id) catch {};
                 return .{ .terminal = .panic };
             };
 
@@ -736,7 +765,7 @@ pub fn HostCalls(comptime params: Params) type {
             const calling_footprint = calling_service.getStorageFootprint(params);
             if (calling_service.balance -| initial_balance < calling_footprint.a_t) {
                 span.debug("Insufficient balance to create new service, under footprint, returning CASH error", .{});
-                _ = ctx_regular.context.service_accounts.removeService(ctx_regular.new_service_id) catch {};
+                _ = ctx_regular.context.service_accounts.removeService(target_service_id) catch {};
                 return HostCallError.CASH;
             }
 
@@ -744,12 +773,14 @@ pub fn HostCalls(comptime params: Params) type {
             calling_service.balance -= initial_balance;
             span.debug("Set new service balance to {d}, deducted from calling service", .{initial_balance});
 
-            span.debug("Service created successfully, returning service ID: {d}", .{
-                ctx_regular.new_service_id,
-            });
-            exec_ctx.registers[7] = ctx_regular.new_service_id; // Return the new service ID on success
-            const intermediate_service_id = 0x100 + ((ctx_regular.new_service_id - 0x100 + 42) % @as(u32, @intCast(std.math.pow(u64, 2, 32) - 0x200)));
-            ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, intermediate_service_id);
+            span.debug("Service created successfully, returning service ID: {d}", .{target_service_id});
+            exec_ctx.registers[7] = target_service_id;
+
+            // Only update new_service_id for the normal path (not registrar reserved ID case)
+            if (!is_registrar or !is_reserved_id) {
+                const intermediate_service_id = service_util.C_MIN_PUBLIC_INDEX + ((ctx_regular.new_service_id - service_util.C_MIN_PUBLIC_INDEX + 42) % @as(u32, @intCast(std.math.pow(u64, 2, 32) - service_util.C_MIN_PUBLIC_INDEX - 0x100)));
+                ctx_regular.new_service_id = service_util.check(&ctx_regular.context.service_accounts, intermediate_service_id);
+            }
             return .play;
         }
 
@@ -818,15 +849,19 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             const footprint = target_service.getStorageFootprint(params);
+
+            // Graypaper check order: items != 2 BEFORE request lookup
+            // Line 864: d.items ≠ 2 ∨ (h,l) ∉ d.requests (left side evaluated first)
+            if (footprint.a_i != 2) {
+                span.debug("Service has {} items, expected 2, returning HUH error", .{footprint.a_i});
+                return HostCallError.HUH;
+            }
+
             const l = @max(81, footprint.a_o) - 81;
             const lookup_status = target_service.getPreimageLookup(@intCast(target_service_id), hash, @intCast(l)) orelse {
                 span.debug("Hash lookup not found, returning HUH error", .{});
                 return HostCallError.HUH;
             };
-
-            if (footprint.a_i != 2) {
-                return HostCallError.HUH;
-            }
 
             const current_timeslot = ctx_regular.context.time.current_slot;
             const status = lookup_status.asSlice();
@@ -966,8 +1001,8 @@ pub fn HostCalls(comptime params: Params) type {
             const ctx_regular: *Dimension = &host_ctx.regular;
             const current_timeslot = ctx_regular.context.time.current_slot;
 
-            const hash_ptr = exec_ctx.registers[7]; // Hash pointer
-            const preimage_size = exec_ctx.registers[8]; // Preimage size
+            const hash_ptr: u32 = @truncate(exec_ctx.registers[7]); // Hash pointer
+            const preimage_size: u32 = @truncate(exec_ctx.registers[8]); // Preimage size
 
             span.debug("Host call: solicit preimage for service {d}", .{ctx_regular.service_id});
             span.debug("Hash ptr: 0x{x}, Preimage size: {d}", .{ hash_ptr, preimage_size });
@@ -989,38 +1024,38 @@ pub fn HostCalls(comptime params: Params) type {
                 return HostCallError.HUH;
             };
 
-            const additional_storage_size: u64 = 81 +| preimage_size;
-
-            span.debug("Checking if service has enough balance to store preimage", .{});
-            const footprint = service_account.getStorageFootprint(params);
-            const storage_cost = params.min_balance_per_octet *| additional_storage_size;
-            const additional_balance_needed = params.min_balance_per_item +| storage_cost;
-
-            if (additional_balance_needed > service_account.balance or
-                service_account.balance - additional_balance_needed < footprint.a_t)
-            {
-                span.debug("Insufficient balance for soliciting preimage, returning FULL", .{});
-                return HostCallError.FULL;
-            }
-
             span.debug("Attempting to solicit preimage", .{});
 
+            // Check balance for NEW solicitations only
+            const existing_lookup = service_account.getPreimageLookup(ctx_regular.service_id, hash, preimage_size);
+            if (existing_lookup == null) {
+                const additional_storage_size: u64 = 81 +| preimage_size;
+                const footprint = service_account.getStorageFootprint(params);
+                const storage_cost = params.min_balance_per_octet *| additional_storage_size;
+                const additional_balance_needed = params.min_balance_per_item +| storage_cost;
+
+                if (additional_balance_needed > service_account.balance or
+                    service_account.balance - additional_balance_needed < footprint.a_t)
+                {
+                    span.debug("Insufficient balance for new preimage solicitation, returning FULL", .{});
+                    return HostCallError.FULL;
+                }
+                span.debug("Balance check passed for new solicitation", .{});
+            }
+
+            // solicitPreimage handles state validation
             if (service_account.solicitPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot)) |_| {
-                span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(ctx_regular.service_id, hash, @intCast(preimage_size))});
+                span.debug("Preimage solicited successfully: {any}", .{service_account.getPreimageLookup(ctx_regular.service_id, hash, preimage_size)});
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.OK);
             } else |err| {
                 switch (err) {
+                    error.AlreadySolicited, error.AlreadyAvailable, error.AlreadyReSolicited, error.InvalidState, error.InvalidData => {
+                        span.debug("Preimage solicitation failed: {}, returning HUH", .{err});
+                        return HostCallError.HUH;
+                    },
                     error.OutOfMemory => {
                         span.err("Out of memory while soliciting preimage", .{});
                         return .{ .terminal = .panic };
-                    },
-                    error.AlreadySolicited, error.AlreadyAvailable, error.AlreadyReSolicited, error.InvalidState => {
-                        span.err("Invalid solicitation attempt: {}", .{err});
-                        return HostCallError.HUH;
-                    },
-                    else => {
-                        span.err("Unexpected error while soliciting preimage: {}", .{err});
-                        return HostCallError.HUH;
                     },
                 }
             }
@@ -1048,14 +1083,14 @@ pub fn HostCalls(comptime params: Params) type {
             var ctx_regular = &host_ctx.regular;
             const current_timeslot = ctx_regular.context.time.current_slot;
 
-            const hash_ptr = exec_ctx.registers[7];
-            const preimage_size = exec_ctx.registers[8];
+            const hash_ptr: u32 = @truncate(exec_ctx.registers[7]);
+            const preimage_size: u32 = @truncate(exec_ctx.registers[8]);
 
             span.debug("Host call: forget preimage", .{});
             span.debug("Hash ptr: 0x{x}, Hash size: {d}", .{ hash_ptr, preimage_size });
 
             span.debug("Reading hash from memory at 0x{x}", .{hash_ptr});
-            const hash = exec_ctx.memory.readHash(@truncate(hash_ptr)) catch {
+            const hash = exec_ctx.memory.readHash(hash_ptr) catch {
                 span.err("Memory access failed while reading hash", .{});
                 return .{ .terminal = .panic };
             };
@@ -1072,7 +1107,7 @@ pub fn HostCalls(comptime params: Params) type {
             };
 
             span.debug("Attempting to forget preimage", .{});
-            service_account.forgetPreimage(ctx_regular.service_id, hash, @intCast(preimage_size), current_timeslot, params.preimage_expungement_period) catch |err| {
+            service_account.forgetPreimage(ctx_regular.service_id, hash, preimage_size, current_timeslot, params.preimage_expungement_period) catch |err| {
                 span.err("Error while forgetting preimage: {}", .{err});
                 return HostCallError.HUH;
             };
@@ -1161,9 +1196,10 @@ pub fn HostCalls(comptime params: Params) type {
             };
             defer validator_data.deinit();
 
+            // Check current working privileges per graypaper: \imX_\im¬state
             const privileges: *const state.Chi(params.core_count) = ctx_regular.context.privileges.getReadOnly();
             if (privileges.designate != ctx_regular.service_id) {
-                span.debug("Service {d} does not have validator privilege, current validator service is {?d}", .{
+                span.debug("Service {d} does not have validator privilege, designate service is {?d}", .{
                     ctx_regular.service_id, privileges.designate,
                 });
                 exec_ctx.registers[7] = @intFromEnum(ReturnCode.HUH);

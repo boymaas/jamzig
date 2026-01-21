@@ -75,7 +75,7 @@ pub fn outerAccumulation(
     io_executor: *IOExecutor,
     comptime params: @import("../jam_params.zig").Params,
     allocator: std.mem.Allocator,
-    context: *const AccumulationContext(params),
+    context: *AccumulationContext(params),
     work_reports: []const types.WorkReport,
     gas_limit: types.Gas,
 ) !OuterAccumulationResult {
@@ -138,7 +138,7 @@ pub fn outerAccumulation(
         );
         defer parallelized_result.deinit(allocator);
 
-        try applyChiRResolution(params, allocator, &parallelized_result, context);
+        try applyChiRResolution(params, allocator, context, &parallelized_result);
 
         var batch_gas_used: types.Gas = 0;
 
@@ -169,7 +169,7 @@ pub fn outerAccumulation(
             batch_gas_used += result.gas_used;
         }
 
-        try parallelized_result.applyContextChanges(allocator);
+        try parallelized_result.applyContextChanges();
 
         span.debug("Applied state changes for all services", .{});
 
@@ -253,45 +253,33 @@ pub fn ParallelizedAccumulationResult(params: jam_params.Params) type {
             };
         }
 
-        pub fn applyContextChanges(self: *@This(), allocator: std.mem.Allocator) !void {
+        /// Apply context changes following graypaper ordering:
+        /// accounts' = (accounts ∪ modifications) \ deletions
+        pub fn applyContextChanges(self: *@This()) !void {
             const span = trace.span(@src(), .apply_context_changes);
             defer span.deinit();
 
-            var global_deletions = std.AutoHashMap(types.ServiceId, void).init(allocator);
-            defer global_deletions.deinit();
-
-            var first_snapshot: ?*const DeltaSnapshot = null;
+            // Phase 1: Apply all modifications
             {
                 var it = self.service_results.iterator();
                 while (it.next()) |entry| {
-                    const snapshot = &entry.value_ptr.collapsed_dimension.context.service_accounts;
-                    if (first_snapshot == null) first_snapshot = snapshot;
-                    var deleted_it = snapshot.deleted_services.keyIterator();
-                    while (deleted_it.next()) |id| {
-                        try global_deletions.put(id.*, {});
-                    }
+                    try entry.value_ptr.collapsed_dimension.context.service_accounts.applyModifications();
                 }
             }
 
-            if (global_deletions.count() > 0) {
-                span.debug("Collected {d} global deletions across all services", .{global_deletions.count()});
+            // Phase 2: Apply all deletions
+            {
+                var it = self.service_results.iterator();
+                while (it.next()) |entry| {
+                    entry.value_ptr.collapsed_dimension.context.service_accounts.applyDeletions();
+                }
             }
 
-            var it = self.service_results.iterator();
-            while (it.next()) |entry| {
-                try entry.value_ptr.collapsed_dimension.commit();
-            }
-
-            if (global_deletions.count() > 0) {
-                if (first_snapshot) |snapshot| {
-                    const destination: *Delta = @constCast(snapshot.original);
-                    var deletion_it = global_deletions.keyIterator();
-                    while (deletion_it.next()) |deleted_id| {
-                        if (destination.accounts.fetchRemove(deleted_id.*)) |removed| {
-                            span.debug("Final cleanup: removed globally deleted service {d}", .{deleted_id.*});
-                            @constCast(&removed.value).deinit();
-                        }
-                    }
+            // Phase 3: Commit non-service-account state (validator_keys, authorizer_queue)
+            {
+                var it = self.service_results.iterator();
+                while (it.next()) |entry| {
+                    try entry.value_ptr.collapsed_dimension.commit();
                 }
             }
         }
@@ -310,18 +298,13 @@ pub fn ParallelizedAccumulationResult(params: jam_params.Params) type {
 fn applyChiRResolution(
     comptime params: jam_params.Params,
     allocator: std.mem.Allocator,
+    context: *AccumulationContext(params),
     parallelized_result: *ParallelizedAccumulationResult(params),
-    context: *const AccumulationContext(params),
 ) !void {
     const span = trace.span(@src(), .apply_chi_r_resolution);
     defer span.deinit();
 
-    const merger = ChiMerger(params).init(
-        context.original_manager,
-        context.original_assigners,
-        context.original_delegator,
-        context.original_registrar,
-    );
+    const original_chi = try context.privileges.getMutable();
 
     var service_chi_map = std.AutoHashMap(types.ServiceId, *const state.Chi(params.core_count)).init(allocator);
     defer service_chi_map.deinit();
@@ -335,20 +318,67 @@ fn applyChiRResolution(
 
     span.debug("Built service chi map with {d} entries", .{service_chi_map.count()});
 
-    const manager_result = parallelized_result.service_results.getPtr(context.original_manager) orelse {
-        span.debug("Manager {d} did not accumulate in this batch, skipping R() resolution", .{context.original_manager});
+    const any_privileged_accumulated = service_chi_map.contains(original_chi.manager) or
+        service_chi_map.contains(original_chi.designate) or
+        service_chi_map.contains(original_chi.registrar) or
+        blk: {
+            for (original_chi.assign) |assigner| {
+                if (service_chi_map.contains(assigner)) break :blk true;
+            }
+            break :blk false;
+        };
+
+    if (!any_privileged_accumulated) {
+        span.debug("No privileged services accumulated, skipping R() resolution", .{});
         return;
-    };
+    }
 
-    const manager_chi = service_chi_map.get(context.original_manager);
+    // Capture original privileged services BEFORE R() resolution
+    var original_assigners: [params.core_count]types.ServiceId = undefined;
+    for (0..params.core_count) |c| {
+        original_assigners[c] = original_chi.assign[c];
+    }
+    const original_delegator = original_chi.designate;
 
-    const output_chi = try manager_result.collapsed_dimension.context.privileges.getMutable();
-
-    try merger.merge(manager_chi, &service_chi_map, output_chi);
-
-    manager_result.collapsed_dimension.context.privileges.commit();
+    try ChiMerger(params).merge(original_chi, &service_chi_map);
+    context.privileges.commit();
 
     span.debug("Chi R() resolution complete", .{});
+
+    // Apply authorizer queue from original assigners per graypaper
+    const original_authqueue = try context.authorizer_queue.getMutable();
+    for (0..params.core_count) |c| {
+        const original_assigner = original_assigners[c];
+        if (parallelized_result.service_results.get(original_assigner)) |assigner_result| {
+            const assigner_authqueue = assigner_result.collapsed_dimension.context.authorizer_queue.getReadOnly();
+            // Copy all authorizations for this core from the original assigner's result
+            for (0..params.max_authorizations_queue_items) |i| {
+                const auth_hash = assigner_authqueue.getAuthorization(c, i);
+                try original_authqueue.setAuthorization(c, i, auth_hash);
+            }
+            span.debug("Applied authqueue[{d}] from original assigner {d}", .{ c, original_assigner });
+        }
+    }
+    context.authorizer_queue.commit();
+
+    span.debug("Authorizer queue finalization complete", .{});
+
+    // Apply validator keys from original delegator per graypaper
+    if (parallelized_result.service_results.get(original_delegator)) |delegator_result| {
+        const delegator_validator_keys = delegator_result.collapsed_dimension.context.validator_keys.getReadOnly();
+        const original_validator_keys = try context.validator_keys.getMutable();
+
+        // std.debug.assert(delegator_validator_keys.validators.len == params.validators_count);
+        // std.debug.assert(original_validator_keys.validators.len == params.validators_count);
+
+        for (delegator_validator_keys.validators, 0..) |key, i| {
+            original_validator_keys.validators[i] = key;
+        }
+        span.debug("Applied validator_keys from original delegator {d}", .{original_delegator});
+    }
+    context.validator_keys.commit();
+
+    span.debug("Validator keys finalization complete", .{});
 }
 
 pub fn parallelizedAccumulation(
@@ -399,87 +429,88 @@ pub fn parallelizedAccumulation(
 
     span.debug("Parallelization decision: services={d}, gas_complexity={d}, use_parallel={}", .{ service_ids.count(), total_gas_complexity, use_parallel });
 
-    if (service_ids.count() == 0) {
-    } else if (!use_parallel) {
-        const seq_span = span.child(@src(), .sequential_accumulation);
-        defer seq_span.deinit();
+    if (service_ids.count() > 0) {
+        if (!use_parallel) {
+            const seq_span = span.child(@src(), .sequential_accumulation);
+            defer seq_span.deinit();
 
-        for (service_ids.keys()) |service_id| {
-            const maybe_operands = service_operands.getOperands(service_id);
-            const context_snapshot = try context.deepClone();
-
-            const result = try singleServiceAccumulation(
-                params,
-                allocator,
-                context_snapshot,
-                service_id,
-                maybe_operands,
-                pending_transfers,
-            );
-            try service_results.put(service_id, result);
-        }
-    } else {
-        const par_span = span.child(@src(), .parallel_accumulation);
-        defer par_span.deinit();
-
-        var task_group = io_executor.createGroup();
-
-        const ResultSlot = struct {
-            service_id: types.ServiceId,
-            result: ?AccumulationResult(params) = null,
-        };
-
-        var results_array = try allocator.alloc(ResultSlot, service_ids.count());
-        defer allocator.free(results_array);
-
-        for (service_ids.keys(), 0..) |service_id, index| {
-            results_array[index] = ResultSlot{ .service_id = service_id };
-        }
-
-        const TaskContext = struct {
-            allocator: std.mem.Allocator,
-            context: *const AccumulationContext(params),
-            service_operands: *ServiceAccumulationOperandsMap,
-            pending_transfers: []const pvm_accumulate.TransferOperand,
-            results_array: []ResultSlot,
-
-            fn processServiceAtIndex(self: @This(), index: usize) !void {
-                const service_id = self.results_array[index].service_id;
-                const maybe_operands = self.service_operands.getOperands(service_id);
-
-                var context_snapshot = try self.context.deepClone();
-                defer context_snapshot.deinit();
+            for (service_ids.keys()) |service_id| {
+                const maybe_operands = service_operands.getOperands(service_id);
+                const context_snapshot = try context.deepClone();
 
                 const result = try singleServiceAccumulation(
                     params,
-                    self.allocator,
+                    allocator,
                     context_snapshot,
                     service_id,
                     maybe_operands,
-                    self.pending_transfers,
+                    pending_transfers,
                 );
-
-                self.results_array[index].result = result;
+                try service_results.put(service_id, result);
             }
-        };
+        } else {
+            const par_span = span.child(@src(), .parallel_accumulation);
+            defer par_span.deinit();
 
-        const task_context = TaskContext{
-            .allocator = allocator,
-            .context = context,
-            .service_operands = &service_operands,
-            .pending_transfers = pending_transfers,
-            .results_array = results_array,
-        };
+            var task_group = io_executor.createGroup();
 
-        for (0..service_ids.count()) |index| {
-            try task_group.spawn(TaskContext.processServiceAtIndex, .{ task_context, index });
-        }
+            const ResultSlot = struct {
+                service_id: types.ServiceId,
+                result: ?AccumulationResult(params) = null,
+            };
 
-        task_group.wait();
+            var results_array = try allocator.alloc(ResultSlot, service_ids.count());
+            defer allocator.free(results_array);
 
-        for (results_array) |slot| {
-            if (slot.result) |result| {
-                try service_results.put(slot.service_id, result);
+            for (service_ids.keys(), 0..) |service_id, index| {
+                results_array[index] = ResultSlot{ .service_id = service_id };
+            }
+
+            const TaskContext = struct {
+                allocator: std.mem.Allocator,
+                context: *const AccumulationContext(params),
+                service_operands: *ServiceAccumulationOperandsMap,
+                pending_transfers: []const pvm_accumulate.TransferOperand,
+                results_array: []ResultSlot,
+
+                fn processServiceAtIndex(self: @This(), index: usize) !void {
+                    const service_id = self.results_array[index].service_id;
+                    const maybe_operands = self.service_operands.getOperands(service_id);
+
+                    var context_snapshot = try self.context.deepClone();
+                    defer context_snapshot.deinit();
+
+                    const result = try singleServiceAccumulation(
+                        params,
+                        self.allocator,
+                        context_snapshot,
+                        service_id,
+                        maybe_operands,
+                        self.pending_transfers,
+                    );
+
+                    self.results_array[index].result = result;
+                }
+            };
+
+            const task_context = TaskContext{
+                .allocator = allocator,
+                .context = context,
+                .service_operands = &service_operands,
+                .pending_transfers = pending_transfers,
+                .results_array = results_array,
+            };
+
+            for (0..service_ids.count()) |index| {
+                try task_group.spawn(TaskContext.processServiceAtIndex, .{ task_context, index });
+            }
+
+            task_group.wait();
+
+            for (results_array) |slot| {
+                if (slot.result) |result| {
+                    try service_results.put(slot.service_id, result);
+                }
             }
         }
     }
@@ -577,10 +608,6 @@ pub fn executeAccumulation(
             .privileges = try stx.ensure(.chi_prime),
             .time = &stx.time,
             .entropy = (try stx.ensure(.eta_prime))[0],
-            .original_manager = original_chi.manager,
-            .original_assigners = original_chi.assign,
-            .original_delegator = original_chi.designate,
-            .original_registrar = original_chi.registrar,
         },
     );
     defer accumulation_context.deinit();
