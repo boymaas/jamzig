@@ -10,9 +10,6 @@
 [submodule "src/jamtestvectors/pulls/fisher-yates"]
 	path = src/jamtestvectors/pulls/fisher-yates
 	url = https://github.com/w3f/jamtestvectors/
-[submodule "src/w3f-conformance"]
-	path = src/w3f-conformance
-	url = https://github.com/w3f/jam-conformance.git
 [submodule "src/davxy-conformance"]
 	path = src/davxy-conformance
 	url = https://github.com/davxy/jam-conformance.git
