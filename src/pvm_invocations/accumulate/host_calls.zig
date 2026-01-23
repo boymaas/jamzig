@@ -859,12 +859,13 @@ pub fn HostCalls(comptime params: Params) type {
 
             const hash_is_e32_service = std.mem.eql(u8, &target_service.code_hash, &e32_service_id);
 
+            span.debug("Current service code hash: {s}", .{std.fmt.fmtSliceHexLower(&current_service.code_hash)});
+            span.debug("Target service code hash: {s}", .{std.fmt.fmtSliceHexLower(&target_service.code_hash)});
+            span.debug("Provided hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
+            span.debug("E_32(service_id={d}): {s}", .{ ctx_regular.service_id, std.fmt.fmtSliceHexLower(&e32_service_id) });
+
             if (!hash_is_e32_service) {
                 span.debug("Ejection not authorized, returning WHO error", .{});
-                span.debug("Current service code hash: {s}", .{std.fmt.fmtSliceHexLower(&current_service.code_hash)});
-                span.debug("Target service code hash: {s}", .{std.fmt.fmtSliceHexLower(&target_service.code_hash)});
-                span.debug("Provided hash: {s}", .{std.fmt.fmtSliceHexLower(&hash)});
-                span.debug("E_32(service_id={d}): {s}", .{ ctx_regular.service_id, std.fmt.fmtSliceHexLower(&e32_service_id) });
                 return HostCallError.WHO;
             }
 
@@ -878,6 +879,7 @@ pub fn HostCalls(comptime params: Params) type {
             }
 
             const l = @max(81, footprint.a_o) - 81;
+
             const lookup_status = target_service.getPreimageLookup(target_service_id, hash, @truncate(l)) orelse {
                 span.debug("Hash lookup not found, returning HUH error", .{});
                 return HostCallError.HUH;

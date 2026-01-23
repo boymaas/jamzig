@@ -104,10 +104,13 @@ pub fn invoke(
             const gas_before = exec_ctx.gas;
 
             {
-                const enum_val: host_calls.Id = @enumFromInt(host_call_id);
                 const hc_span = trace_hostcalls.span(@src(), .host_call_pre);
                 defer hc_span.deinit();
-                hc_span.debug(">>> {s} gas_before={d}", .{ @tagName(enum_val), gas_before });
+                if (std.meta.intToEnum(host_calls.Id, host_call_id)) |enum_val| {
+                    hc_span.debug(">>> {s} gas_before={d}", .{ @tagName(enum_val), gas_before });
+                } else |_| {
+                    hc_span.debug(">>> UNKNOWN({d}) gas_before={d}", .{ host_call_id, gas_before });
+                }
             }
 
             const result = host_call_fn(exec_ctx, host_ctx) catch |err| switch (err) {
@@ -122,15 +125,22 @@ pub fn invoke(
             };
 
             {
-                const enum_val: host_calls.Id = @enumFromInt(host_call_id);
                 const hc_span = trace_hostcalls.span(@src(), .host_call_post);
                 defer hc_span.deinit();
                 const gas_charged = gas_before - exec_ctx.gas;
-                hc_span.debug("<<< {s} gas_after={d} gas_charged={d}", .{
-                    @tagName(enum_val),
-                    exec_ctx.gas,
-                    gas_charged,
-                });
+                if (std.meta.intToEnum(host_calls.Id, host_call_id)) |enum_val| {
+                    hc_span.debug("<<< {s} gas_after={d} gas_charged={d}", .{
+                        @tagName(enum_val),
+                        exec_ctx.gas,
+                        gas_charged,
+                    });
+                } else |_| {
+                    hc_span.debug("<<< UNKNOWN({d}) gas_after={d} gas_charged={d}", .{
+                        host_call_id,
+                        exec_ctx.gas,
+                        gas_charged,
+                    });
+                }
             }
 
             return result;

@@ -592,10 +592,12 @@ pub fn executeAccumulation(
     const span = trace.span(@src(), .execute_accumulation);
     defer span.deinit();
 
+    const delta_prime = try stx.ensure(.delta_prime);
+
     var accumulation_context = pvm_accumulate.AccumulationContext(params).build(
         allocator,
         .{
-            .service_accounts = try stx.ensure(.delta_prime),
+            .service_accounts = delta_prime,
             .validator_keys = try stx.ensure(.iota_prime),
             .authorizer_queue = try stx.ensure(.phi_prime),
             .privileges = try stx.ensure(.chi_prime),

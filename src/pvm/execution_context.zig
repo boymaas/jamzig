@@ -481,7 +481,7 @@ pub const ExecutionContext = struct {
 
         span.debug("Context window: start_pc={d}, size={d} bytes", .{ start_pc, context_size * 2 });
 
-        std.debug.print("\x1b[1mDEBUG STATE AROUND CURRENT PC @ {}\x1b[0m\n\n", .{self.pc});
+        try writer.print("\x1b[1mDEBUG STATE AROUND CURRENT PC @ {}\x1b[0m\n\n", .{self.pc});
 
         var iter = self.decoder.iterator();
         while (try iter.next()) |entry| {
