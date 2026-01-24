@@ -117,7 +117,43 @@ fn printStateField(jam_state: *const state.JamState(params), query: []const u8) 
         return;
     };
 
-    if (std.mem.eql(u8, field, "tau")) {
+    if (std.mem.eql(u8, field, "service") or std.mem.eql(u8, field, "delta")) {
+        if (jam_state.delta) |*delta| {
+            const subfield = iter.rest();
+            if (subfield.len > 0) {
+                // Parse service ID
+                var sub_iter = std.mem.splitScalar(u8, subfield, '.');
+                const id_str = sub_iter.next() orelse {
+                    std.debug.print("Missing service ID\n", .{});
+                    return;
+                };
+                const service_id = std.fmt.parseInt(types.ServiceId, id_str, 10) catch {
+                    std.debug.print("Invalid service ID: {s}\n", .{id_str});
+                    return;
+                };
+
+                if (delta.accounts.get(service_id)) |account| {
+                    const account_field = sub_iter.rest();
+                    try printServiceAccount(service_id, &account, account_field);
+                } else {
+                    try stdout.print("Service {d} not found\n", .{service_id});
+                }
+            } else {
+                // List all services
+                try stdout.print("Services: {d}\n", .{delta.accounts.count()});
+                var it = delta.accounts.iterator();
+                while (it.next()) |entry| {
+                    try stdout.print("  [{d}] balance={d}, code_hash=0x{s}...\n", .{
+                        entry.key_ptr.*,
+                        entry.value_ptr.balance,
+                        std.fmt.fmtSliceHexLower(entry.value_ptr.code_hash[0..8]),
+                    });
+                }
+            }
+        } else {
+            try stdout.print("delta is null\n", .{});
+        }
+    } else if (std.mem.eql(u8, field, "tau")) {
         if (jam_state.tau) |tau| {
             try stdout.print("{d}\n", .{tau});
         } else {
@@ -215,6 +251,64 @@ fn printStateField(jam_state: *const state.JamState(params), query: []const u8) 
     }
 }
 
+const services = @import("services.zig");
+
+fn printServiceAccount(service_id: types.ServiceId, account: *const services.ServiceAccount, field: []const u8) !void {
+    const stdout = std.io.getStdOut().writer();
+
+    if (field.len == 0) {
+        // Print all fields
+        try stdout.print("=== Service {d} ===\n", .{service_id});
+        try stdout.print("code_hash:            0x{s}\n", .{std.fmt.fmtSliceHexLower(&account.code_hash)});
+        try stdout.print("balance:              {d}\n", .{account.balance});
+        try stdout.print("min_gas_accumulate:   {d}\n", .{account.min_gas_accumulate});
+        try stdout.print("min_gas_on_transfer:  {d}\n", .{account.min_gas_on_transfer});
+        try stdout.print("storage_offset:       {d}\n", .{account.storage_offset});
+        try stdout.print("creation_slot:        {d}\n", .{account.creation_slot});
+        try stdout.print("last_accumulation_slot: {d}\n", .{account.last_accumulation_slot});
+        try stdout.print("parent_service:       {d}\n", .{account.parent_service});
+        try stdout.print("footprint_items:      {d}\n", .{account.footprint_items});
+        try stdout.print("footprint_bytes:      {d}\n", .{account.footprint_bytes});
+        try stdout.print("version:              {d}\n", .{account.version});
+        try stdout.print("storage_entries:      {d}\n", .{account.data.count()});
+
+        // Check if code_hash is zero
+        const zero_hash: [32]u8 = .{0} ** 32;
+        const has_code = !std.mem.eql(u8, &account.code_hash, &zero_hash);
+        try stdout.print("has_code:             {}\n", .{has_code});
+    } else if (std.mem.eql(u8, field, "balance")) {
+        try stdout.print("{d}\n", .{account.balance});
+    } else if (std.mem.eql(u8, field, "code_hash")) {
+        try stdout.print("0x{s}\n", .{std.fmt.fmtSliceHexLower(&account.code_hash)});
+    } else if (std.mem.eql(u8, field, "min_gas_accumulate")) {
+        try stdout.print("{d}\n", .{account.min_gas_accumulate});
+    } else if (std.mem.eql(u8, field, "min_gas_on_transfer")) {
+        try stdout.print("{d}\n", .{account.min_gas_on_transfer});
+    } else if (std.mem.eql(u8, field, "storage_offset")) {
+        try stdout.print("{d}\n", .{account.storage_offset});
+    } else if (std.mem.eql(u8, field, "creation_slot")) {
+        try stdout.print("{d}\n", .{account.creation_slot});
+    } else if (std.mem.eql(u8, field, "last_accumulation_slot")) {
+        try stdout.print("{d}\n", .{account.last_accumulation_slot});
+    } else if (std.mem.eql(u8, field, "parent_service")) {
+        try stdout.print("{d}\n", .{account.parent_service});
+    } else if (std.mem.eql(u8, field, "footprint_items")) {
+        try stdout.print("{d}\n", .{account.footprint_items});
+    } else if (std.mem.eql(u8, field, "footprint_bytes")) {
+        try stdout.print("{d}\n", .{account.footprint_bytes});
+    } else if (std.mem.eql(u8, field, "storage")) {
+        try stdout.print("Storage entries: {d}\n", .{account.data.count()});
+        var it = account.data.iterator();
+        while (it.next()) |entry| {
+            try stdout.print("  key: 0x{s}\n", .{std.fmt.fmtSliceHexLower(&entry.key_ptr.*)});
+            try stdout.print("  val: 0x{s}\n\n", .{std.fmt.fmtSliceHexLower(entry.value_ptr.*)});
+        }
+    } else {
+        std.debug.print("Unknown service field: {s}\n", .{field});
+        std.debug.print("Available: balance, code_hash, min_gas_accumulate, min_gas_on_transfer, storage_offset, creation_slot, last_accumulation_slot, parent_service, footprint_items, footprint_bytes, storage\n", .{});
+    }
+}
+
 fn printValidatorField(validators: []const types.ValidatorData, subfield: []const u8) !void {
     const stdout = std.io.getStdOut().writer();
 
@@ -265,12 +359,18 @@ fn printUsage() !void {
         \\
         \\Examples:
         \\  # Query specific trace file
-        \\  trace-query src/w3f-conformance/fuzz-reports/0.7.1/traces/1761665520/00000008.bin tau
+        \\  trace-query path/to/trace.bin tau
         \\  trace-query path/to/trace.bin gamma.s
         \\  trace-query path/to/trace.bin kappa.0.bandersnatch
         \\  trace-query path/to/trace.bin eta.2
         \\  trace-query path/to/trace.bin block.header.slot
         \\  trace-query path/to/trace.bin tau post_state
+        \\
+        \\  # Query service accounts
+        \\  trace-query path/to/trace.bin service               # List all services
+        \\  trace-query path/to/trace.bin service.2947170938    # Full service details
+        \\  trace-query path/to/trace.bin service.0.balance     # Just balance
+        \\  trace-query path/to/trace.bin service.0.storage     # Storage entries
         \\
     , .{});
 }
@@ -285,6 +385,13 @@ fn printAvailableFields() !void {
         \\  kappa     - Validators (kappa.N.bandersnatch, etc.)
         \\  rho       - Pending reports
         \\  beta      - Recent blocks
+        \\  service   - Service accounts (service.ID, service.ID.balance, etc.)
+        \\  delta     - Alias for service
+        \\
+        \\Service fields:
+        \\  balance, code_hash, min_gas_accumulate, min_gas_on_transfer,
+        \\  storage_offset, creation_slot, last_accumulation_slot, parent_service,
+        \\  footprint_items, footprint_bytes, storage
         \\
         \\Block fields:
         \\  block.header.slot, block.header.author_index, etc.
